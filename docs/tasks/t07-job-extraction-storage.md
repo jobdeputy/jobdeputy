@@ -24,3 +24,4 @@ Pending.
 
 - [ ] Extraction is tested against saved synthetic or permitted fixture pages.
 - [ ] Re-crawling the same page does not create duplicates.
+- [ ] Any LLM extraction follows [0002](../decisions/0002-llm-loop-and-token-budget.md): at most 3 iterations, best result returned, calls per job capped.

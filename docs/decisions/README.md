@@ -5,6 +5,7 @@ Short records of choices that shape the project. Agents and contributors treat a
 | # | Decision | Status |
 |---|---|---|
 | [0001](0001-agentic-workspace-and-workflow.md) | Agentic workspace, task workflow, and branching | Accepted |
+| [0002](0002-llm-loop-and-token-budget.md) | LLM and agent loop limits (max 3) and token budget | Accepted |
 
 ## Template
 

@@ -51,6 +51,22 @@ Use synthetic data only — no real résumés, credentials, or personal data.
 - [ ] Async jobs end in a clear final state (succeeded or failed with a reason) and retries are safe to repeat.
 - [ ] Not applicable: <!-- explain -->
 
+## LLM and agent call safety
+
+<!-- Required if this PR adds or changes any LLM call, agent loop, tool-calling loop, or retry around an AI provider. Otherwise tick "Not applicable". -->
+
+- [ ] **Not applicable:** no LLM or agent calls were added or changed.
+- [ ] **Loops are bounded:** every agent, tool-calling, self-correction, or retry loop stops after **at most 3 iterations**.
+- [ ] **Best result on stop:** when the limit is reached, the loop stops and returns the best result produced so far, clearly marked as partial or low-confidence. It does not fail silently or start over.
+- [ ] **No hidden multipliers:** queue or job retries do not re-run a whole LLM loop (for example, 3 job retries × 3 loop iterations = 9 calls). The total calls per job is capped.
+- [ ] **Token limits:** every call sets a maximum output token limit, and inputs such as crawled pages are truncated to a stated size.
+- [ ] **Timeouts:** every call has a timeout.
+- [ ] **No spend without intent:** LLM calls use the user's own credentials (BYOT) only for actions the user started. Nothing spends tokens automatically in the background.
+- [ ] **Usage is visible:** the number of calls and tokens used per job is logged. Prompts and credentials are not logged.
+- [ ] **Tested:** a test forces the model or stub to never finish and proves the loop stops at 3 and returns the best result.
+
+**Calls per job (worst case):** <!-- e.g. "1 extraction call + up to 3 repair iterations = 4 max" -->
+
 ## Security review
 
 <!-- Did this PR introduce any new attack surface? Answer each question. -->

@@ -31,7 +31,8 @@ Do not design ahead of the task that needs it. For example, the crawler's archit
 - Long-running work (crawling, parsing, AI calls) is **asynchronous**: accept the request, return a job ID, and process it in a worker.
 - Never commit secrets, real résumés, or personal data. Use `.env` (git-ignored) and `.env.example`. The repo is intended to be public.
 - User credentials (BYOT) are the user's: never log them, never share them across users.
-- Every PR fills in the template: what changed, how it was tested and the proof, error cases, and security review.
+- **LLM and agent loops are capped at 3 iterations.** When the cap is hit, stop and return the best result so far, marked as partial. Every call has a maximum output token limit and a timeout, and job retries must not multiply LLM calls. See [0002](docs/decisions/0002-llm-loop-and-token-budget.md).
+- Every PR fills in the template: what changed, how it was tested and the proof, error cases, LLM and agent call safety, and security review.
 - Update the task file and task board status in the same PR as the work.
 
 ## Commands

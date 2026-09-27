@@ -24,3 +24,4 @@ Pending.
 
 - [ ] Relevance is tested with synthetic profiles and jobs, including edge cases.
 - [ ] Each stored job shows why it matched.
+- [ ] Any LLM use follows [0002](../decisions/0002-llm-loop-and-token-budget.md): at most 3 iterations, best result returned, calls per job capped.
