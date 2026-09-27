@@ -32,5 +32,7 @@ Agreed 2026-09-27. See [0001](../decisions/0001-agentic-workspace-and-workflow.m
 - [x] `.claude/` settings and skills in place.
 - [x] PR template covering changes, testing and proof, error cases, and security.
 - [x] CI runs Markdown lint and secret scanning.
+- [x] Repository moved to the `jobdeputy` GitHub organization, with the Claude GitHub App installed.
+- [x] Cloud-session workflow documented in `CONTRIBUTING.md`.
 - [ ] License chosen and added.
 - [ ] Repository made public and `main` protected.

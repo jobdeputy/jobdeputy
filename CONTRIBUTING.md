@@ -36,3 +36,18 @@ git push --force-with-lease
 ## AI-assisted contributions
 
 AI-assisted work is welcome and follows the same rules. Agents start from [CLAUDE.md](CLAUDE.md). A human reviews and is accountable for every merged PR.
+
+### Claude Code cloud sessions (maintainers)
+
+Cloud sessions clone the repo from GitHub, so they pick up `CLAUDE.md`, `.claude/settings.json`, and the project skills automatically.
+
+- **Research and alignment happen with a human first.** Only hand a task to the cloud once its **Decision** section is filled in and pushed to `main`:
+
+  ```sh
+  claude --cloud "Run /implement-task T04"
+  ```
+
+- The session works on a task branch and opens a PR using the template. Review it like any other PR.
+- Use `/autofix-pr` on a PR branch to let Claude respond to CI failures and review comments.
+- Put secrets that tests need into the cloud environment's settings, never into the repo. Keep network access at **Trusted** unless a task needs more.
+- The cloud environment's setup script, which installs the tools the tests need, is maintained as part of [T03](docs/tasks/t03-infrastructure-foundation.md).

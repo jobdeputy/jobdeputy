@@ -25,3 +25,4 @@ Pending.
 - [ ] One command starts the local environment.
 - [ ] CI runs lint and tests.
 - [ ] Setup is documented in `README.md` and `CLAUDE.md`.
+- [ ] A Claude Code cloud environment setup script installs the same tools, so cloud sessions can run the tests. It is documented in `CONTRIBUTING.md`.
