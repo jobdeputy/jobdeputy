@@ -6,12 +6,12 @@
 
 ## Goal
 
-An agreed stack for the API, worker, database, job queue, UI, and hosting, recorded as a decision.
+An agreed serverless AWS stack for the API, worker, database, async backbone, UI, infrastructure as code, and CI/CD, recorded as a decision.
 
 ## Scope
 
 - In: language and framework, database, queue or worker mechanism, UI framework, local development approach, hosting direction, monorepo layout.
-- Out: crawler design (T06), relevance approach (T08), and concrete hosting setup (T03).
+- Out: crawler design (T06), relevance approach (T08), and AWS account, Region, and budget setup (T03).
 
 ## Research
 
@@ -26,62 +26,96 @@ Library versions and maintenance were checked on 2026-09-27 on npm and PyPI. Eve
 
 **Recommendation: TypeScript everywhere.** The UI must be TypeScript anyway, and one language keeps the repo simpler for contributors and agents. The extraction gaps are small: Playwright or Crawlee handle crawling, and schema.org `JobPosting` data is plain JSON-LD that can be parsed directly. If T07 finds a real gap, a single Python extraction worker can be added behind the queue later without changing anything else.
 
-### 2. Async backbone (job queue)
+### 2. Constraint: fully serverless on AWS (set by the maintainer on 2026-09-27)
 
-Required: submit a URL and get a job ID immediately, run workers separately, retry with backoff, timeouts, dead-lettering, clear final states, and retries that are safe to repeat and don't multiply LLM calls (decision 0002).
+Everything runs on AWS managed and serverless services: no servers, no always-on containers, and nothing to patch. The earlier Postgres and pg-boss option is dropped.
 
-| Option | Strengths | Weaknesses |
+### 3. Async backbone
+
+The maintainer's baseline: API Gateway → Lambda → SQS → Lambda worker, with status reads through API Gateway → Lambda.
+
+**Problem with the baseline:** if the API Lambda writes the crawl request to the database and then sends to SQS, those are two separate steps. A crash between them leaves a request stuck in `queued`. A retried send creates a duplicate job.
+
+| Option | How it works | Assessment |
 |---|---|---|
-| **Postgres-backed queue (pg-boss)** | No extra service; the queue lives in the same database. A crawl request row and its job can be created in the same transaction, so a request is never lost or double-queued. Built-in retries, backoff, expiry timeouts, dead-letter queues, singleton jobs, and scheduling. Very active (v12, updated 2026-09-26). | Lower throughput than Redis, but far above what this project needs for a long time. |
-| Postgres-backed queue (graphile-worker) | Very fast, low latency, good design. | Fewer built-in features (dead-letter, per-queue policies); pre-1.0 version. |
-| Redis and BullMQ | Mature, high throughput, good dashboards. | A second stateful service to run and host. The job and the database row can drift apart without extra outbox code. |
-| Managed cloud queue (for example, SQS) | Fully managed, scales without limits. | Tied to one cloud, awkward to run locally, and harder for open-source contributors. |
+| A. Lambda writes to the database, then sends to SQS | Two calls in the API Lambda. | Simple, but has the stuck or duplicate problem above. |
+| **B. Database write drives the queue (recommended)** | The API Lambda only writes the crawl request item (`status=queued`). A DynamoDB Stream, through **EventBridge Pipes**, delivers it to **SQS**. The worker Lambda consumes SQS. | The write is the only commit point, so nothing is lost or double-queued, with no outbox code. SQS keeps its benefits: buffering, a dead-letter queue, a cap on worker concurrency (protecting target sites and the user's tokens), and retries. |
+| C. API Lambda starts a Step Functions workflow | Step Functions runs the steps with per-step retries, timeouts, and a visual history. | Strong for multi-step pipelines (fetch → extract → relevance) and for enforcing hard loop limits (decision 0002). Heavier than needed for the first single-step crawl. |
 
-**Recommendation: pg-boss on PostgreSQL.** One database is simpler to run, host, and back up, and transactional enqueue removes a whole class of bugs. Queue code goes behind a small interface, so moving to BullMQ or SQS later only changes that module.
+**Recommendation: B now, with Step Functions as a planned upgrade point.** T06 starts with Stream → Pipes → SQS → worker Lambda. If T06 or T07 turns the crawl into several steps (fetch, extract, relevance, a possible LLM repair loop), the Pipe can target a Step Functions workflow instead, without changing the API or the data model.
 
-### 3. Database
+Worker details (confirmed in T06):
 
-**PostgreSQL**, with no realistic alternative for this project. It gives relational data for profiles, crawl requests, and jobs, `jsonb` for raw extracted data, full-text search, and `pgvector` later if T08 uses embeddings. It also hosts the queue.
+- SQS redrive to a dead-letter queue after a set number of receives. The final `failed` status is written with a reason.
+- Idempotent handlers through Powertools for AWS Lambda (TypeScript) idempotency, so a retried message never repeats side effects or LLM spend.
+- Reserved concurrency on the worker to cap parallel crawls.
+- Lambda limits: 15 minutes and up to 10 GB memory per run. Headless-browser crawling in Lambda needs a container-image Lambda. If a crawl needs more time, Step Functions can run a Fargate task for that step. T06 decides.
+- Status: the UI polls `GET /crawl-requests/{id}` through API Gateway → Lambda → DynamoDB. Push updates (WebSocket API or AppSync) are a T09 decision.
 
-Data access: **Drizzle ORM** (recommended) is SQL-like, lightweight, has type-safe queries, and generates SQL migrations that can be reviewed. The alternative, Prisma, is heavier, uses its own schema language, and needs a code generation step.
+### 4. Database
 
-### 4. API and worker
+| Option | Assessment |
+|---|---|
+| **DynamoDB (recommended)** | Truly serverless: on-demand, pay per request, and no VPC or connection pooling for Lambda. Streams power the async flow above. Access patterns are simple and known: profile by user, crawl requests by user, jobs by user and crawl, and deduplication through conditional writes. |
+| Aurora PostgreSQL Serverless v2 | Flexible SQL and pgvector. It can scale to zero, but resuming takes seconds and the first request after idle is slow. Lambda needs the Data API or a VPC with RDS Proxy. It costs more at idle, and there is no stream to drive the queue. |
 
-- **API: Fastify** (recommended). It is mature, fast, has first-class schema validation, and a large plugin ecosystem. The alternative, Hono, is lighter and runs at the edge, which we don't need.
-- **Worker:** a separate Node process that shares code with the API and runs pg-boss handlers. The API and worker scale independently, and a worker crash never takes the API down.
-- **Shared validation:** Zod schemas in a shared package, used by the API, worker, and UI.
+**Recommendation: DynamoDB.** The access patterns are designed per task. If T08 (relevance) needs vector search, that is decided there (for example S3 Vectors or a separate store). Access goes through a small repository layer in `packages/db`, so domain code does not depend on DynamoDB APIs directly.
 
-### 5. UI
+Files (résumés) go to **S3** through presigned upload URLs. Files are never sent through the API.
 
-**React with Vite and TanStack Query** (recommended). It is a plain single-page app that talks to the API, simple to host as static files, and TanStack Query handles polling job status. The alternative, Next.js, adds server rendering and routing conventions we don't need for a logged-in app, and it blurs the line between the API and UI.
+### 5. API, auth, and UI hosting
 
-### 6. Repository layout
+- **API Gateway HTTP API** (cheaper and simpler than a REST API) with Lambda handlers. Validation uses Zod schemas shared from `packages/shared`.
+- **Auth:** Amazon Cognito user pool with the HTTP API JWT authorizer. It is added when the first user-owned data arrives (T04 or T05).
+- **UI:** React, Vite, and TanStack Query, served as static files from **S3 behind CloudFront**.
+
+### 6. Infrastructure as code
+
+| Option | Assessment |
+|---|---|
+| **AWS CDK in TypeScript (recommended)** | Same language as the app, first-party, and high-level constructs for Lambda, SQS, Pipes, DynamoDB, and CloudFront. |
+| AWS SAM | Good for Lambda, but YAML and weaker for the wider stack. |
+| Terraform or OpenTofu | Great multi-cloud tooling, but a second language, and we are AWS-only. |
+| SST | Good developer experience, but newer versions are no longer CloudFormation or CDK-based, which adds another abstraction. |
+
+### 7. CI/CD: GitHub Actions or AWS CodeBuild/CodePipeline
+
+| Option | Assessment |
+|---|---|
+| **GitHub Actions with OIDC to AWS (recommended)** | The code, PRs, and required checks are already on GitHub. Standard runners are free for public repositories. OIDC lets a workflow assume a narrowly scoped IAM role, so no AWS keys are stored anywhere. GitHub Environments add a manual approval before production. |
+| AWS CodeBuild / CodePipeline | Runs inside AWS, with VPC access and deeper AWS integration. It costs per build minute, is a second CI system alongside GitHub checks, and is less visible to open-source contributors. |
+
+**Recommendation: GitHub Actions + OIDC.** Pull requests (including from forks) run tests only and never get AWS credentials. Deploys run only from `main` or through a protected GitHub Environment. If a build ever needs to run inside AWS, CodeBuild can be used as a GitHub Actions runner without changing workflows.
+
+### 8. Repository layout
 
 A pnpm workspace monorepo:
 
 ```text
 apps/
-  api/        Fastify HTTP API
-  worker/     pg-boss job handlers (crawl, extract, relevance)
-  web/        React and Vite UI
+  api/        Lambda handlers for API Gateway
+  worker/     Lambda handlers for SQS (crawl, extract, relevance)
+  web/        React and Vite UI (static, S3 + CloudFront)
 packages/
   shared/     Zod schemas, types, constants
-  db/         Drizzle schema, migrations, database client
-  queue/      small queue interface wrapping pg-boss
+  db/         DynamoDB table design and repository layer
+infra/        AWS CDK app (stacks per environment)
 ```
 
-Testing uses **Vitest** for unit and integration tests and **Playwright** for end-to-end tests later. Node 22 LTS.
+Testing: **Vitest** for unit tests. Integration tests run against a real deployed stack, and **Playwright** handles end-to-end later. Node 22 LTS on Lambda.
 
-### 7. Local development and hosting direction
+### 9. Development environments
 
-- **Local:** Docker Compose runs only PostgreSQL, and the apps run with `pnpm dev`. Docker is not yet installed on the maintainer's machine; T03 chooses between Docker Desktop, OrbStack, and Colima.
-- **Hosting:** any container host with managed PostgreSQL (for example Fly.io, Render, Railway, or AWS). Each app ships as a container image, so there is no lock-in. T03 picks the first target.
+- **Unit tests** run locally with no AWS access (handlers are tested with mocked AWS clients).
+- **Personal dev stacks:** each developer deploys their own isolated copy (`cdk deploy` with a stage name, for example `dev-nava`). Serverless costs are close to zero when idle, and it tests real AWS behaviour instead of emulators.
+- **Environments:** `dev` (auto-deploys from `main`) and `prod` (manual approval). The AWS account structure, Region, budgets, and alarms are set in T03.
 
 ## Open questions for alignment
 
-1. Is TypeScript everywhere acceptable?
-2. Is a Postgres-only queue (pg-boss) acceptable, instead of adding Redis?
-3. Is it fine to defer the exact hosting provider to T03?
+1. TypeScript everywhere: **agreed** (2026-09-27).
+2. Async: DynamoDB write → Stream → EventBridge Pipes → SQS → worker Lambda, with Step Functions as the upgrade path?
+3. Database: DynamoDB instead of Aurora Serverless?
+4. CI/CD: GitHub Actions with OIDC instead of CodeBuild/CodePipeline? (Maintainer delegated this choice.)
 
 ## Decision
 
@@ -90,5 +124,5 @@ Pending alignment.
 ## Done when
 
 - [ ] A decision record is accepted.
-- [ ] The repository layout (`apps/`, `packages/`, `infra/` or similar) is agreed.
+- [ ] The repository layout (`apps/`, `packages/`, `infra/`) is agreed.
 - [ ] `CLAUDE.md` is updated with the stack.
