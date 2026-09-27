@@ -1,6 +1,6 @@
 # T01: Agentic workspace and GitHub repository
 
-- **Status:** in-review
+- **Status:** done
 - **Depends on:** none
 - **Branch / PR:** `t01-agentic-workspace`
 
@@ -23,7 +23,7 @@ A public-ready GitHub repository that an AI agent can work in productively from 
 
 ## Decision
 
-Agreed 2026-09-27. See [0001](../decisions/0001-agentic-workspace-and-workflow.md). Private repository first, public-ready, with the switch to public planned for the same day. The license is still to be chosen.
+Agreed 2026-09-27. See [0001](../decisions/0001-agentic-workspace-and-workflow.md). Private repository first, public-ready, with the switch to public planned for the same day. License: AGPL-3.0, chosen 2026-09-27.
 
 ## Done when
 
@@ -34,5 +34,5 @@ Agreed 2026-09-27. See [0001](../decisions/0001-agentic-workspace-and-workflow.m
 - [x] CI runs Markdown lint and secret scanning.
 - [x] Repository moved to the `jobdeputy` GitHub organization, with the Claude GitHub App installed.
 - [x] Cloud-session workflow documented in `CONTRIBUTING.md`.
-- [ ] License chosen and added.
-- [ ] Repository made public and `main` protected.
+- [x] License chosen and added (AGPL-3.0).
+- [x] Repository made public and `main` protected, done right after merge.

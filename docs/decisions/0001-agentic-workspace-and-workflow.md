@@ -22,6 +22,7 @@ The project is built mainly with AI coding agents working alongside a human, and
 - Branch per task (`tNN-slug`), PR into a protected `main`, squash merge.
 - Every PR explains what changed, how it was tested with proof, the error cases, and a security review.
 - Long-running work is asynchronous (job queue and workers).
+- The repository is licensed under AGPL-3.0, so hosted modified versions must share their source.
 - The repository is public-ready: no secrets, synthetic test data only, secret scanning in CI.
 
 ## Why

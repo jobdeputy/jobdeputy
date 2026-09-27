@@ -15,4 +15,8 @@ JobDeputy helps job seekers find relevant roles from any job site and prepare ta
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Report security issues as described in [SECURITY.md](SECURITY.md).
 
+## License
+
+JobDeputy is licensed under the [GNU Affero General Public License v3.0](LICENSE). If you run a modified version as a network service, you must make your source code available to its users.
+
 This repository is set up for AI-assisted development. Agents start from [CLAUDE.md](CLAUDE.md).
