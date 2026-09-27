@@ -1,0 +1,25 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Dependencies and builds
+node_modules/
+dist/
+build/
+coverage/
+.venv/
+__pycache__/
+
+# Local Claude Code settings (personal, not shared)
+.claude/settings.local.json
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.log
