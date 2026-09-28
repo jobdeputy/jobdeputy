@@ -1,6 +1,6 @@
 # T12: Delete my account
 
-- **Status:** awaiting-alignment
+- **Status:** in-progress
 - **Depends on:** T05
 - **Issue:** [#17](https://github.com/jobdeputy/jobdeputy/issues/17)
 - **Branch / PR:** `t12-account-deletion`
@@ -78,7 +78,17 @@ API Gateway checks a token's signature and expiry, not whether the user still ex
 
 ## Decision
 
-Pending.
+Agreed with the maintainer on 2026-09-28 (revised during review):
+
+1. **Trigger:** `DELETE /me` writes a `DELETION` item in `users` (`status = queued`). A stream on `users` and the existing `AsyncPipeline` (filtered to that item) start the deletion worker. No new table.
+2. **Block, then one sweep** (replaces the five sweeps in the research):
+   - From the moment the `DELETION` item exists, every **write** request from that user returns `410 Gone`.
+   - The worker signs the user out everywhere, deletes the Cognito user, all table items, and all files.
+   - **One final sweep 15 minutes later** (a single delayed SQS message) catches work that was already in flight.
+   - The `DELETION` item (user ID and timestamps only) expires 2 hours after the request, which outlives any access token, so the block holds until then.
+3. **Tell the user up front:** the confirmation text and the `202` response say that deletion is permanent, sessions end now, data is removed immediately, and a final check runs within 15 minutes.
+4. **Re-authentication:** the body must be `{ "confirm": "delete my account" }`, and the token's `auth_time` (the last real sign-in; refreshing keeps it) must be within 15 minutes. Otherwise `403` with `code: reauthentication-required`; nothing changes. The UI (T09) shows a "Confirm it's you" sign-in (password, plus the MFA code if enabled) and retries.
+5. **Data export** is left for later, with the UI.
 
 ## Done when
 

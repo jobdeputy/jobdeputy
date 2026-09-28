@@ -11,6 +11,8 @@ export interface AsyncPipelineProps extends QueueWorkerProps {
   readonly table: Table;
   /** Name of the string partition key sent to the worker as `id`. */
   readonly idAttribute: string;
+  /** Extra conditions on the new item, for tables where only some inserts start work. */
+  readonly newImageFilter?: Record<string, unknown>;
 }
 
 /**
@@ -67,7 +69,7 @@ export class AsyncPipeline extends Construct {
             {
               pattern: JSON.stringify({
                 eventName: ['INSERT'],
-                dynamodb: { NewImage: { status: { S: ['queued'] } } },
+                dynamodb: { NewImage: { status: { S: ['queued'] }, ...props.newImageFilter } },
               }),
             },
           ],

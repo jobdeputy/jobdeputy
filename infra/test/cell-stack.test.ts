@@ -168,15 +168,20 @@ describe('least privilege (T04)', () => {
 
   it('gives each function only the DynamoDB calls it makes', () => {
     const api = actionsFor('PingApiFn').filter((a) => a.startsWith('dynamodb:'));
-    expect(api.sort()).toEqual(['dynamodb:GetItem', 'dynamodb:PutItem']);
+    // Ping table: PutItem and GetItem; users: GetItem (the T12 deletion check).
+    expect([...new Set(api)].sort()).toEqual(['dynamodb:GetItem', 'dynamodb:PutItem']);
     const worker = actionsFor('PingWorkerFn').filter((a) => a.startsWith('dynamodb:'));
     for (const broad of ['dynamodb:Scan', 'dynamodb:Query', 'dynamodb:BatchWriteItem']) {
       expect(worker).not.toContain(broad);
     }
   });
 
-  it('lets GET /me only read users, and nothing else', () => {
-    expect(actionsFor('MeApiFn')).toEqual(['cognito-idp:AdminGetUser']);
+  it('lets /me read the user and record a deletion request, and nothing else', () => {
+    expect([...new Set(actionsFor('MeApiFn'))].sort()).toEqual([
+      'cognito-idp:AdminGetUser',
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+    ]);
   });
 
   it('gives the profile API only the calls it makes on its two tables', () => {
@@ -228,6 +233,7 @@ describe('HTTP API (T04)', () => {
         .map((r) => r.Properties.RouteKey)
         .sort(),
     ).toEqual([
+      'DELETE /me',
       'DELETE /me/documents/{documentId}',
       'DELETE /me/roles/{roleId}',
       'GET /me',

@@ -1,3 +1,4 @@
+export * from './account-repository.js';
 export * from './client.js';
 export * from './document-repository.js';
 export * from './ping-repository.js';

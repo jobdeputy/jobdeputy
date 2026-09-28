@@ -1,4 +1,4 @@
-import { documentClient, PingRepository } from '@jobdeputy/db';
+import { AccountRepository, documentClient, PingRepository } from '@jobdeputy/db';
 import {
   callerFromEvent,
   createLogger,
@@ -11,20 +11,27 @@ import {
   validationProblem,
 } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, Context } from 'aws-lambda';
+import { refuseWritesWhileDeleting } from './account-guard.js';
 
 const logger = createLogger('api');
 
 export interface Deps {
   repo: Pick<PingRepository, 'create' | 'get'>;
   stage: string;
+  isBeingDeleted: (userId: string) => Promise<boolean>;
 }
 
 function defaultDeps(): Deps {
   const tableName = process.env.PING_TABLE_NAME;
-  if (!tableName) throw new Error('PING_TABLE_NAME is not set');
+  const usersTable = process.env.USERS_TABLE_NAME;
+  if (!tableName || !usersTable)
+    throw new Error('PING_TABLE_NAME and USERS_TABLE_NAME must be set');
+  const client = documentClient();
+  const account = new AccountRepository(client, usersTable);
   return {
-    repo: new PingRepository(documentClient(), tableName),
+    repo: new PingRepository(client, tableName),
     stage: process.env.STAGE ?? 'dev',
+    isBeingDeleted: (userId) => account.isBeingDeleted(userId),
   };
 }
 
@@ -39,6 +46,13 @@ export async function route(
   const requestId = event.requestContext.requestId;
   const caller = callerFromEvent(event);
   if (!caller) return problem(401, 'Unauthorized', { requestId });
+  const blocked = await refuseWritesWhileDeleting(
+    event.routeKey,
+    caller.userId,
+    deps.isBeingDeleted,
+    requestId,
+  );
+  if (blocked) return blocked;
   switch (event.routeKey) {
     case 'POST /ping-jobs': {
       const body = parseJsonBody(event.body, event.isBase64Encoded);

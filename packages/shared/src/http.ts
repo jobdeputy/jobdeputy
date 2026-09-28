@@ -21,7 +21,8 @@ export function json(statusCode: number, body: unknown): HttpResponse {
 export function problem(
   status: number,
   title: string,
-  extra: { detail?: string; requestId?: string; errors?: unknown } = {},
+  /** `code` is a stable, machine-readable reason the UI can act on. */
+  extra: { detail?: string; requestId?: string; errors?: unknown; code?: string } = {},
 ): HttpResponse {
   return {
     statusCode: status,

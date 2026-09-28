@@ -1,4 +1,5 @@
 import {
+  AccountRepository,
   documentClient,
   PreferencesRepository,
   ProfileRepository,
@@ -22,6 +23,7 @@ import {
 } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, Context } from 'aws-lambda';
 import type { z } from 'zod';
+import { refuseWritesWhileDeleting } from './account-guard.js';
 import { cognitoEmailLookup } from './cognito.js';
 
 const logger = createLogger('api-profile');
@@ -34,6 +36,7 @@ export interface ProfileDeps {
     'getSearch' | 'saveSearch' | 'listRoles' | 'createRole' | 'updateRole' | 'deleteRole'
   >;
   emailOf: (username: string) => Promise<string | undefined>;
+  isBeingDeleted: (userId: string) => Promise<boolean>;
 }
 
 function defaultDeps(): ProfileDeps {
@@ -42,7 +45,9 @@ function defaultDeps(): ProfileDeps {
     throw new Error('USERS_TABLE_NAME, PREFERENCES_TABLE_NAME, USER_POOL_ID, and CELL must be set');
   }
   const client = documentClient();
+  const account = new AccountRepository(client, USERS_TABLE_NAME);
   return {
+    isBeingDeleted: (userId) => account.isBeingDeleted(userId),
     cell: CELL,
     profiles: new ProfileRepository(client, USERS_TABLE_NAME),
     preferences: new PreferencesRepository(client, PREFERENCES_TABLE_NAME),
@@ -69,6 +74,13 @@ export async function route(event: Event, deps: ProfileDeps): Promise<HttpRespon
   const caller = callerFromEvent(event);
   if (!caller) return problem(401, 'Unauthorized', { requestId });
   const { userId } = caller;
+  const blocked = await refuseWritesWhileDeleting(
+    event.routeKey,
+    userId,
+    deps.isBeingDeleted,
+    requestId,
+  );
+  if (blocked) return blocked;
 
   function body<S extends z.ZodType>(
     schema: S,

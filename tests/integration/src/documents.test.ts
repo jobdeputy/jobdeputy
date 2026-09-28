@@ -1,7 +1,14 @@
-import { GetMalwareProtectionPlanCommand, GuardDutyClient } from '@aws-sdk/client-guardduty';
 import { makeDocx, makeEicar, makePdf } from '@jobdeputy/test-fixtures';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { callApi, createTestUser, region, stackOutputs, type TestUser, waitFor } from './stack.js';
+import {
+  callApi,
+  createTestUser,
+  stackOutputs,
+  type TestUser,
+  uploadDocument,
+  waitFor,
+  waitForMalwareScanning,
+} from './stack.js';
 
 /**
  * Deployed wiring of T05c: presigned uploads that S3 enforces, GuardDuty scanning,
@@ -20,19 +27,7 @@ let bob: TestUser;
 beforeAll(async () => {
   const outputs = await stackOutputs();
   api = outputs.ApiUrl ?? '';
-  // Files uploaded before the plan is ACTIVE are never scanned, so wait for it.
-  const guardduty = new GuardDutyClient({ region });
-  await waitFor(
-    async () => {
-      const plan = await guardduty.send(
-        new GetMalwareProtectionPlanCommand({
-          MalwareProtectionPlanId: outputs.MalwareProtectionPlanId,
-        }),
-      );
-      return plan.Status === 'ACTIVE' ? true : undefined;
-    },
-    { timeoutMs: 300_000, intervalMs: 5_000 },
-  );
+  await waitForMalwareScanning(outputs);
   [alice, bob] = await Promise.all([createTestUser(outputs), createTestUser(outputs)]);
 }, 360_000);
 
@@ -40,27 +35,13 @@ afterAll(async () => {
   await Promise.allSettled([alice?.delete(), bob?.delete()]);
 });
 
-/** Starts an upload and posts the file to S3 with the presigned form. Returns the S3 status. */
-async function upload(
+const upload = (
   user: TestUser,
   fileName: string,
   contentType: string,
   bytes: Uint8Array,
   formType = contentType,
-) {
-  const started = await callApi(api, 'POST', 'me/documents', user.accessToken, {
-    fileName,
-    contentType,
-  });
-  expect(started.status).toBe(201);
-  const form = new FormData();
-  for (const [k, v] of Object.entries(started.body.upload.fields as Record<string, string>)) {
-    form.append(k, k === 'Content-Type' ? formType : v);
-  }
-  form.append('file', new Blob([bytes], { type: formType }), fileName);
-  const s3 = await fetch(started.body.upload.url, { method: 'POST', body: form });
-  return { documentId: started.body.document.documentId as string, s3Status: s3.status };
-}
+) => uploadDocument(api, user, fileName, contentType, bytes, formType);
 
 async function finalState(user: TestUser, documentId: string) {
   return waitFor(

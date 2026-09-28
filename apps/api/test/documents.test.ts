@@ -47,6 +47,7 @@ const doc = (over: Partial<Document> = {}): Document => ({
 function deps() {
   const d = {
     newId: () => ID,
+    isBeingDeleted: vi.fn(async () => false),
     presignUpload: vi.fn(async () => ({
       url: 'https://bucket.s3.amazonaws.com/',
       fields: { key: 'k' },
@@ -167,6 +168,20 @@ describe('reading documents', () => {
     );
     expect(res.statusCode).toBe(400);
     expect(d.repo.get).not.toHaveBeenCalled();
+  });
+});
+
+describe('account deletion (T12)', () => {
+  it('refuses uploads, changes, and deletes while the account is being deleted', async () => {
+    const d = deps();
+    d.isBeingDeleted.mockResolvedValue(true);
+    const upload = await route(
+      event('POST /me/documents', body({ fileName: 'a.pdf', contentType: PDF })),
+      d,
+    );
+    expect(upload.statusCode).toBe(410);
+    expect(d.presignUpload).not.toHaveBeenCalled();
+    expect((await route(event('DELETE /me/documents/{documentId}', path), d)).statusCode).toBe(410);
   });
 });
 

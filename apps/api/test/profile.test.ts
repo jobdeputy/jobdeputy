@@ -25,6 +25,7 @@ function event(
 function deps() {
   const d = {
     cell: 'iad',
+    isBeingDeleted: vi.fn(async () => false),
     emailOf: vi.fn(async () => 'a@example.com'),
     profiles: {
       get: vi.fn(async () => undefined as unknown),
@@ -189,6 +190,29 @@ describe('roles', () => {
     );
     expect(res.statusCode).toBe(400);
     expect(d.preferences.deleteRole).not.toHaveBeenCalled();
+  });
+});
+
+describe('account deletion (T12)', () => {
+  it.each(['PUT /me/profile', 'PUT /me/preferences/search', 'POST /me/roles'])(
+    '%s is refused while the account is being deleted',
+    async (routeKey) => {
+      const d = deps();
+      d.isBeingDeleted.mockResolvedValue(true);
+      const res = await route(
+        event(routeKey, json({ version: 0, firstName: 'A', lastName: 'B', title: 'X' })),
+        d,
+      );
+      expect(res.statusCode).toBe(410);
+      expect(d.profiles.save).not.toHaveBeenCalled();
+      expect(d.preferences.createRole).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not check on reads', async () => {
+    const d = deps();
+    await route(event('GET /me/profile'), d);
+    expect(d.isBeingDeleted).not.toHaveBeenCalled();
   });
 });
 
