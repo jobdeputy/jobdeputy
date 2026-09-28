@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  checks: read # reuse the previous commit's result for Markdown-only pushes
   id-token: write # GitHub OIDC -> AWS, no stored keys
 
 concurrency:
@@ -20,7 +21,7 @@ concurrency:
 jobs:
   integration:
     name: Integration
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: pr
     timeout-minutes: 45
     env:
@@ -38,17 +39,44 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Detect docs-only changes
+      - name: Decide whether to deploy
         id: changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BEFORE: ${{ github.event.action == 'synchronize' && github.event.before || '' }}
         run: |
-          files=$(git diff --name-only "${{ github.event.pull_request.base.sha }}" HEAD)
-          echo "$files"
-          if echo "$files" | grep -qvE '\.md$'; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "code=false" >> "$GITHUB_OUTPUT"
-            echo "Only Markdown changed: no deploy needed."
+          # True only if every file changed between two commits is Markdown.
+          # Fails safe: a missing commit or an empty diff counts as "not only Markdown".
+          only_markdown() {
+            local files
+            files=$(git diff --name-only "$1" "$2") || return 1
+            [ -n "$files" ] || return 1
+            ! grep -qvE '\.md$' <<< "$files"
+          }
+
+          # 1. Nothing but Markdown in the whole PR: nothing to test.
+          if only_markdown "$BASE" "$HEAD_SHA"; then
+            echo "Only Markdown changed in this PR: no deploy needed."
+            echo "code=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
+
+          # 2. Only Markdown since the last push, and that commit already passed:
+          #    the code is identical to what was tested, so reuse the result.
+          if [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null \
+             && only_markdown "$BEFORE" "$HEAD_SHA"; then
+            previous=$(gh api "repos/$REPO/commits/$BEFORE/check-runs?check_name=Integration" \
+              --jq '[.check_runs[] | select(.status == "completed")] | sort_by(.completed_at) | last | .conclusion // ""')
+            if [ "$previous" = "success" ]; then
+              echo "Only Markdown changed since ${BEFORE:0:7}, which passed Integration: reusing that result."
+              echo "code=false" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+            echo "Previous commit's Integration result was '${previous:-none}': running in full."
+          fi
+
+          echo "code=true" >> "$GITHUB_OUTPUT"
 
       - uses: pnpm/action-setup@v6
         if: steps.changes.outputs.code == 'true'

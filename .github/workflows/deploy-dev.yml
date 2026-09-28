@@ -16,7 +16,7 @@ concurrency:
 jobs:
   deploy:
     name: Deploy dev-iad
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: dev # only main may deploy (environment branch policy)
     steps:
       - uses: actions/checkout@v7
