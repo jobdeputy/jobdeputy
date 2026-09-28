@@ -1,7 +1,7 @@
 # T05: Sign-up, sign-in, and profile API
 
 - **Status:** in-progress
-- **Branch / PR:** `t05-auth` (part 1)
+- **Branch / PR:** `t05-auth`, [#14](https://github.com/jobdeputy/jobdeputy/pull/14) (part 1, in review)
 - **Depends on:** T04
 
 ## Goal
@@ -120,9 +120,9 @@ Part 1, agreed with the maintainer on 2026-09-28 (all five recommendations):
 
 Part 1 (auth):
 
-- [ ] Each cell has a Cognito pool; `GET /me` returns the caller's `userId`, email, and `homeCell`.
-- [ ] Every API route requires a valid token; no token, invalid tokens, and another user's data are rejected (integration tests).
-- [ ] CI no longer has `execute-api:Invoke`; its Cognito permissions are the four admin calls only.
+- [x] Each cell has a Cognito pool; `GET /me` returns the caller's `userId`, email, and `homeCell`.
+- [x] Every API route requires a valid token; no token, invalid tokens, and another user's data are rejected (integration tests).
+- [x] CI no longer has `execute-api:Invoke`; its Cognito permissions are the four admin calls only.
 
 Part 2 (profile):
 
