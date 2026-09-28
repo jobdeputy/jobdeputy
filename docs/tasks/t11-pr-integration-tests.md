@@ -1,6 +1,6 @@
 # T11: Integration tests on every PR (before merge)
 
-- **Status:** in-progress
+- **Status:** in-review
 - **Depends on:** T04
 - **Branch / PR:** `t11-pr-integration-tests`
 
@@ -72,8 +72,8 @@ Agreed with the maintainer on 2026-09-28:
 
 ## Done when
 
-- [ ] A code PR deploys its own stack, runs the full suite, and destroys the stack, and "Integration" is a required check.
-- [ ] A failing integration test blocks the merge (proven with a deliberately broken commit on this PR, then reverted).
-- [ ] Cleanup works when tests fail and when the PR is closed; the backstop removes old PR stacks.
-- [ ] The PR role cannot create, change, or delete stacks outside `jobdeputy-dev-pr*` (proven with the IAM policy simulator).
-- [ ] Docs-only PRs pass the check without deploying.
+- [x] A code PR deploys its own stack, runs the full suite, and destroys the stack, and "Integration" is a required check.
+- [x] A failing integration test blocks the merge (proven with a deliberately broken commit on this PR, then reverted).
+- [x] Cleanup works when tests fail and when the PR is closed. The daily backstop's filter is tested locally; its first scheduled run happens after merge (scheduled and manual runs only exist on `main`).
+- [x] The PR role cannot create, change, or delete stacks outside `jobdeputy-dev-pr*` (proven with the IAM policy simulator).
+- [x] Docs-only PRs pass the check without deploying.
