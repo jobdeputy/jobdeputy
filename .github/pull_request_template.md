@@ -76,6 +76,7 @@ Use synthetic data only — no real résumés, credentials, or personal data.
 - [ ] **Access control:** users can only read or change their own data.
 - [ ] **Data residency:** user data stays in the user's home Region. No cross-Region replication, references, or central user store ([0004](../docs/decisions/0004-regional-cells-and-data-residency.md)).
 - [ ] **Untrusted input:** URLs, uploaded files, and crawled content are validated. No SSRF, injection, or unsafe file handling.
+- [ ] **Cost:** nothing added that costs money while idle. Throttles, concurrency, and retention are set. Only services allowed by [0005](../docs/decisions/0005-pre-launch-cost-guardrails.md) are used.
 - [ ] **Dependencies:** new dependencies are necessary, maintained, and have no known critical vulnerabilities.
 - [ ] **No new threats**, or new threats are listed below with their mitigations.
 

@@ -1,6 +1,6 @@
 # 0004: Regional cells and data residency
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-27
 - **Task:** t03
 

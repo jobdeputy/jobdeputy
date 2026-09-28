@@ -1,6 +1,6 @@
 # T03: AWS foundation, monorepo, and CI/CD
 
-- **Status:** awaiting-alignment
+- **Status:** in-progress
 - **Depends on:** T02
 - **Branch / PR:** `t03-aws-foundation`
 
@@ -18,7 +18,8 @@ The AWS foundation and pipeline for the stack in [0003](../decisions/0003-server
 - Management account: the existing AWS account, used for nothing else. OK to enable AWS Organizations and create member accounts.
 - Launch Regions: US (`us-east-1`), India (`ap-south-1`, Mumbai), UK (`eu-west-2`, London). Dev runs only in `us-east-1`. Prod runs in all three and is created at launch.
 - User data never moves between Regions, from day 1. A user's Region is chosen at signup and fixed.
-- Budget: a $10 per month alert. Aim for about $0 until launch.
+- Budget: **strict**. Alerts start early, and **all spend is blocked automatically at $20** until launch. Aim for about $0. See [0005](../decisions/0005-pre-launch-cost-guardrails.md).
+- Root MFA: already enabled by the maintainer.
 - Domain `jobdeputy.com` is registered with Amazon Registrar and has a Route 53 hosted zone. It is used at launch.
 
 ## Research
@@ -54,16 +55,14 @@ Management account (billing, Organizations, IAM Identity Center, Route 53 domain
 
 ### 4. Cost control
 
-| Control | Detail | Cost |
-|---|---|---|
-| Budget | $10 per month across the organization. Email alerts at 50%, 80%, and 100% of actual spend, and at 100% of forecast spend. | Free (the first 2 budgets are free) |
-| Cost Anomaly Detection | Daily email for unusual spend | Free |
-| Hard stop (optional) | A budget action attaches a "deny create" policy to `jobdeputy-dev` at 100% | Free |
-| Serverless-only services | Lambda, DynamoDB on-demand, SQS, API Gateway, S3, and Cognito all cost about $0 when idle and fall within the free tier | ~$0 |
-| Avoided until launch | NAT gateways, WAF, customer-managed KMS keys, Secrets Manager (SSM Parameter Store is used instead), GuardDuty, AWS Config, VPCs | — |
-| Log retention | 14 days by default for all log groups | Pennies |
-| CDK bootstrap | One S3 bucket and one empty ECR repository per account and Region | ~$0 |
-| Route 53 hosted zone | Already exists | $0.50 per month |
+Defined in [0005](../decisions/0005-pre-launch-cost-guardrails.md): **prevent** (service control policies deny costly services), **limit** (throttles, concurrency, retention in CDK), **watch** (alerts at $5, $10, and $15, plus forecast and anomaly detection), and **block** (a deny-all policy on the Workloads OU at $20 actual).
+
+| Item | Cost |
+|---|---|
+| Budgets, budget actions, anomaly detection, Organizations, Identity Center, service control policies | Free |
+| Lambda, DynamoDB on-demand, SQS, API Gateway, S3, and Cognito when idle or within the free tier | ~$0 |
+| CDK bootstrap (one S3 bucket and one empty ECR repository per account and Region) | ~$0 |
+| Route 53 hosted zone (management account) | $0.50 per month |
 
 Audit logging: CloudTrail event history (90 days, per Region, free) is enough until launch. An organization-wide trail stores logs in one central bucket, which would move log data across Regions. At launch, trails are designed per Region, following decision 0004.
 
@@ -111,20 +110,20 @@ infra/
 
 ## Open questions for alignment
 
-1. Accounts: Organizations with `jobdeputy-dev` and `jobdeputy-prod` under a Workloads OU?
-2. Region cells and the data-residency rules in [0004](../decisions/0004-regional-cells-and-data-residency.md)?
-3. Budget: $10 organization-wide with alerts. Should the dev account get the optional hard stop?
-4. Tooling: Biome, or ESLint with Prettier?
-5. Setup split: the maintainer does the root and console steps; the scripts and CDK handle the rest?
+1. Accounts: Organizations with `jobdeputy-dev` and `jobdeputy-prod` under a Workloads OU: **agreed**.
+2. Region cells and data residency ([0004](../decisions/0004-regional-cells-and-data-residency.md)): **agreed**.
+3. Budget: strict. Alerts at $5, $10, and $15, and a hard block at $20 (0005): **agreed**.
+4. Tooling: Biome: **agreed**.
+5. Setup split: the maintainer does the root and console steps; scripts and CDK do the rest: **agreed**.
 
 ## Decision
 
-Pending alignment.
+Agreed with the maintainer on 2026-09-27: [0004](../decisions/0004-regional-cells-and-data-residency.md) Region cells, [0005](../decisions/0005-pre-launch-cost-guardrails.md) cost guardrails, Organizations with dev and prod accounts, Biome, and the setup split above.
 
 ## Done when
 
 - [ ] Organizations, the dev and prod accounts, Identity Center access, and service control policies are in place and verified. A test resource in a disallowed Region is denied.
-- [ ] Budget and anomaly alerts are active and a test notification is received.
+- [ ] Cost guardrails from 0005 are active: the deny-list policy is attached, alerts at $5, $10, and $15 plus forecast, anomaly detection, and the $20 budget action that attaches the deny-all policy (verified by a dry run on a test OU).
 - [ ] Monorepo skeleton with lint, typecheck, and unit tests running locally and in CI.
 - [ ] CDK app with cells; `cdk synth` succeeds for all dev and prod cells; residency assertion tests pass.
 - [ ] `dev-us` is bootstrapped and deployed from `main` through GitHub OIDC, with no stored keys.
