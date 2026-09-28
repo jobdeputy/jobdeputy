@@ -11,6 +11,17 @@ JobDeputy helps job seekers find relevant roles from any job site and prepare ta
 - [Task board](docs/tasks/README.md)
 - [Decision records](docs/decisions/README.md)
 
+## Quick start
+
+```sh
+npm install -g corepack@latest && corepack enable pnpm
+pnpm install
+pnpm verify   # lint, typecheck, tests
+pnpm synth    # build the AWS CloudFormation for every Region cell
+```
+
+Architecture: fully serverless on AWS, with one self-contained cell per Region (US, India, UK). See the [decision records](docs/decisions/README.md).
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Report security issues as described in [SECURITY.md](SECURITY.md).

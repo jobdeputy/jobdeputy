@@ -5,7 +5,7 @@
     "MD024": { "siblings_only": true },
     "MD033": { "allowed_elements": ["details", "summary"] },
     "MD041": false, // PR template starts with an H2 by design
-    "MD060": false  // table pipe alignment is cosmetic
+    "MD060": false // table pipe alignment is cosmetic
   },
-  "ignores": ["node_modules/**"]
+  "ignores": ["**/node_modules/**", "**/cdk.out/**"]
 }

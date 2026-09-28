@@ -1,5 +1,11 @@
 # Contributing
 
+## Development setup
+
+1. Install Node 22 (see `.nvmrc`), then run `npm install -g corepack@latest && corepack enable pnpm`.
+2. Run `pnpm install`, then `pnpm verify`. Unit and guard tests need no AWS account.
+3. **Optional, for deploying:** use your own AWS account, or ask a maintainer for access to the JobDeputy dev account. Then run `cd infra && pnpm cdk deploy -c stage=dev -c owner=<you>`. Remove it with `cdk destroy` when done.
+
 ## Workflow
 
 1. Pick or create a task in [docs/tasks/](docs/tasks/README.md).
@@ -50,4 +56,4 @@ Cloud sessions clone the repo from GitHub, so they pick up `CLAUDE.md`, `.claude
 - The session works on a task branch and opens a PR using the template. Review it like any other PR.
 - Use `/autofix-pr` on a PR branch to let Claude respond to CI failures and review comments.
 - Put secrets that tests need into the cloud environment's settings, never into the repo. Keep network access at **Trusted** unless a task needs more.
-- The cloud environment's setup script, which installs the tools the tests need, is maintained as part of [T03](docs/tasks/t03-infrastructure-foundation.md).
+- Set the cloud environment's setup script to run [`scripts/cloud-setup.sh`](scripts/cloud-setup.sh). It installs pnpm and the dependencies, so sessions can run `pnpm verify`. Cloud sessions never get AWS credentials.
