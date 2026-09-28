@@ -26,6 +26,7 @@ What is deployed today, per cell. Every table is DynamoDB on-demand (`PAY_PER_RE
 |---|---|---|---|---|---|---|---|
 | `<stack>-users` | `userId` (S) | `sk` (S) | — | — | prod only | dev: deleted; prod: kept | T05b |
 | `<stack>-preferences` | `userId` (S) | `sk` (S) | — | — | prod only | dev: deleted; prod: kept | T05b |
+| `<stack>-documents` | `userId` (S) | `documentId` (S) | — | `ttl` (pending uploads only) | prod only | dev: deleted; prod: kept | T05c |
 | `<stack>-ping-jobs` | `id` (S) | — | `NEW_IMAGE` → Pipe → queue | `ttl` | — | dev: deleted; prod: kept | T04 |
 | `<stack>-idempotency` | `id` (S) | — | — | `expiration` | — | dev: deleted; prod: kept | T04 |
 
@@ -41,6 +42,10 @@ Every user-table call is keyed by the caller's `userId` from the token; no reque
 | `preferences` | `Query` `begins_with(sk, "ROLE#")` (consistent) | `userId` | `GET /me/roles`; role count before `POST` |
 | `preferences` | `GetItem` / conditional `PutItem` | `userId`, `sk = ROLE#<roleId>` | `POST`, `PUT /me/roles/{roleId}` |
 | `preferences` | `DeleteItem` with `attribute_exists(userId)` | `userId`, `sk = ROLE#<roleId>` | `DELETE /me/roles/{roleId}` |
+| `documents` | `Query` (consistent) | `userId` | `GET /me/documents`; count before upload; clearing the old default |
+| `documents` | `PutItem` with `attribute_not_exists(userId)` | `userId`, `documentId` | `POST /me/documents` (status `pending`) |
+| `documents` | `GetItem` / conditional `UpdateItem` / `TransactWriteItems` (default switch) / `DeleteItem` | `userId`, `documentId` | `GET`, `PUT`, `DELETE /me/documents/{documentId}` |
+| `documents` | `GetItem` / `UpdateItem` conditioned on `status` or `eTag` | `userId`, `documentId` (parsed from the S3 key) | document worker |
 | `ping-jobs` | `PutItem` / `GetItem` / conditional `UpdateItem` | `id` | ping API and worker |
 | `idempotency` | Powertools reads and writes | `id` | ping worker |
 
@@ -110,11 +115,13 @@ Work history and education are prefilled from the parsed résumé, and the user 
 
 ## 3. `documents`: files
 
-Key: `userId`, `documentId`.
+Key: `userId`, `documentId` (ULID).
 
-`kind` (`resume`, `cover_letter`, `transcript`, `portfolio`, or `other`), `origin` (`uploaded` or `generated`), `title`, `fileName`, `mimeType`, `sizeBytes`, `s3Key`, `sha256`, `status` (`processing`, `ready`, or `failed`), `isDefault B`, `version N`.
+`kind` (`resume` now; `cover_letter`, `transcript`, `portfolio`, or `other` later), `origin` (`uploaded` now; `generated` later), `title`, `fileName`, `mimeType`, `format` (`pdf` or `docx`), `s3Key`, `status`, `isDefault B` (at most one per user), `version N` (user edits only: title and default), `eTag?` (S3 ETag of the file processed), `sizeBytes?`, `error?` (shown to the user), `ttl?` (only while `pending`: 1 day).
 
-- For uploaded résumés: `parsed? {textS3Key, skills L, experienceIds L}`.
+`status`: `pending` (upload link issued, waiting for the file and its malware scan) → `processing` → `ready`, or `rejected` (failed the malware scan; the file is deleted) or `failed` (unusable file, scan not possible, or processing error; the file is deleted). A re-upload with a new ETag goes back through `processing`.
+
+- For uploaded résumés: `parsed? {textS3Key, pageCount?, charCount, noText B, truncated B}`. `noText` means the file has no text layer (for example a scanned image PDF). Structured fields (`skills`, `experienceIds`) come with AI later.
 - For generated documents: `baseDocumentId`, `jobId`, `roleId?`, `generation {provider, model, promptVersion, inputTokens, outputTokens}`.
 
 ## 4. `sources`: pages the user saved
@@ -203,12 +210,13 @@ Key: `userId`, `sk`. Values are encrypted in the application before they are wri
 ## S3 layout (one bucket per cell)
 
 ```text
-users/<userId>/documents/<documentId>/<file>       résumés, cover letters, other files
+users/<userId>/documents/<documentId>/original     the uploaded file (PDF or DOCX, at most 5 MB)
+users/<userId>/documents/<documentId>/text.txt     its extracted text (at most 200,000 characters)
 users/<userId>/applications/<applicationId>/...    screenshots and confirmations
 users/<userId>/snapshots/<jobId>/...               page snapshots (deleted after 30 days)
 ```
 
-Everything under `users/<userId>/` goes with account deletion or export.
+Everything under `users/<userId>/` goes with account deletion or export. GuardDuty scans every new object under `users/` and tags it `GuardDutyMalwareScanStatus`; the API can only read an `original` tagged `NO_THREATS_FOUND` (bucket policy). The bucket is private, S3-encrypted, HTTPS-only, and never replicated.
 
 ## Change log
 
@@ -219,3 +227,4 @@ Everything under `users/<userId>/` goes with account deletion or export.
 | 2026-09-28 | `ping-jobs`: add `userId` (owner from the token); other users get 404 | T05 |
 | 2026-09-28 | `users` `PROFILE`, `preferences` `SEARCH` and `ROLE#`: add `version`; `ROLE#` also stores `roleId`. `users` and `preferences` tables built. | T05b |
 | 2026-09-28 | Documented the physical schema (keys, settings, access patterns, examples) of built tables; an infra test checks it lists every deployed table | T05b |
+| 2026-09-28 | `documents` table and file bucket built: statuses `pending`/`processing`/`ready`/`rejected`/`failed`, `format`, `eTag`, `error`, `ttl`, and `parsed` fields; S3 `original` and `text.txt` | T05c |

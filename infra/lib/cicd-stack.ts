@@ -70,6 +70,7 @@ export class CicdStack extends Stack {
     // Integration tests sign in as throwaway users (T05). Pool IDs are generated
     // at deploy time, so they cannot be named; this account holds only dev pools.
     role.addToPolicy(testUserStatement(this.region, this.account));
+    role.addToPolicy(malwarePlanStatusStatement(this.region, this.account));
     // Duplicate-delivery test: send to the stack's work queues.
     role.addToPolicy(
       new PolicyStatement({
@@ -160,6 +161,7 @@ export class CicdStack extends Stack {
       }),
       // Integration tests, as for the main deploy role but only on PR stacks.
       testUserStatement(region, account),
+      malwarePlanStatusStatement(region, account),
       new PolicyStatement({ actions: ['sqs:SendMessage'], resources: [sqsArn(`${prefix}*`)] }),
       new PolicyStatement({
         actions: ['sqs:ReceiveMessage', 'sqs:DeleteMessage'],
@@ -183,5 +185,13 @@ function testUserStatement(region: string, account: string): PolicyStatement {
   return new PolicyStatement({
     actions: TEST_USER_ACTIONS,
     resources: [`arn:aws:cognito-idp:${region}:${account}:userpool/*`],
+  });
+}
+
+/** Read-only: tests wait until a new stack's malware scanning is ACTIVE before uploading (T05c). */
+function malwarePlanStatusStatement(region: string, account: string): PolicyStatement {
+  return new PolicyStatement({
+    actions: ['guardduty:GetMalwareProtectionPlan'],
+    resources: [`arn:aws:guardduty:${region}:${account}:malware-protection-plan/*`],
   });
 }
