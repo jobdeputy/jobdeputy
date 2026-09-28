@@ -44,3 +44,5 @@ The full suite (`JD_FULL=1`) runs automatically:
 - **After every merge to `main`**, against the shared `jobdeputy-dev-iad`.
 
 Leftover PR stacks are deleted when the PR closes, and a daily job deletes any older than 24 hours.
+
+<!-- T11 docs-only probe; this PR is closed without merging. -->
