@@ -1,6 +1,6 @@
 # T12: Delete my account
 
-- **Status:** in-progress
+- **Status:** in-review
 - **Depends on:** T05
 - **Issue:** [#17](https://github.com/jobdeputy/jobdeputy/issues/17)
 - **Branch / PR:** `t12-account-deletion`
@@ -90,9 +90,14 @@ Agreed with the maintainer on 2026-09-28 (revised during review):
 4. **Re-authentication:** the body must be `{ "confirm": "delete my account" }`, and the token's `auth_time` (the last real sign-in; refreshing keeps it) must be within 15 minutes. Otherwise `403` with `code: reauthentication-required`; nothing changes. The UI (T09) shows a "Confirm it's you" sign-in (password, plus the MFA code if enabled) and retries.
 5. **Data export** is left for later, with the UI.
 
+Implementation notes (2026-09-28):
+
+- The first deployed run found a real bug: after deletion, a still-valid token made `GET /me/profile` fail with a 500, because the Cognito email lookup threw "user not found". The shared lookup now treats a missing login as "no email" (with a regression test), so reads with an old token return empty data instead of errors.
+- Verified on the personal stack: 16 test accounts deleted in one run, with 0 Cognito users, 0 table records (besides the expiring `DELETION` markers), and 0 files left.
+
 ## Done when
 
-- [ ] `DELETE /me` removes every user-table item, every file under the user's prefixes, and the Cognito user; proven by an integration test.
-- [ ] An infra test fails if any table keyed by `userId` is not covered by the deletion worker.
-- [ ] Integration tests clean up with `DELETE /me`; dev stacks keep no test records.
-- [ ] Confirmation and recent sign-in are enforced (unit tests).
+- [x] `DELETE /me` removes every user-table item, every file under the user's prefixes, and the Cognito user; proven by an integration test.
+- [x] An infra test fails if any table keyed by `userId` is not covered by the deletion worker.
+- [x] Integration tests clean up with `DELETE /me`; dev stacks keep no test records.
+- [x] Confirmation and recent sign-in are enforced (unit tests).

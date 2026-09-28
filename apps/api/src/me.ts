@@ -31,17 +31,9 @@ function defaultDeps(): MeDeps {
   if (!USER_POOL_ID || !CELL || !USERS_TABLE_NAME) {
     throw new Error('USER_POOL_ID, CELL, and USERS_TABLE_NAME must be set');
   }
-  const lookup = cognitoEmailLookup(USER_POOL_ID);
   return {
     cell: CELL,
-    emailOf: async (username) => {
-      try {
-        return await lookup(username);
-      } catch (error) {
-        if ((error as Error).name === 'UserNotFoundException') return undefined;
-        throw error;
-      }
-    },
+    emailOf: cognitoEmailLookup(USER_POOL_ID),
     account: new AccountRepository(documentClient(), USERS_TABLE_NAME),
     now: () => new Date(),
   };
