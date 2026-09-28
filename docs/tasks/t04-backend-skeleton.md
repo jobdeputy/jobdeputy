@@ -1,6 +1,6 @@
 # T04: Serverless backend skeleton (API, async pipeline, and worker)
 
-- **Status:** awaiting-alignment
+- **Status:** in-progress
 - **Branch / PR:** `t04-backend-skeleton`
 - **Depends on:** T03
 
@@ -104,7 +104,15 @@ Nothing costs money while idle. Per ping: API Gateway $1 per million requests, L
 
 ## Decision
 
-Pending.
+Agreed with the maintainer on 2026-09-28:
+
+- **Data model:** [0006](../decisions/0006-data-model.md) (15 tables per cell, one per category), with the living schema in [docs/data-model.md](../data-model.md). Research option 1 above (one generic table) was replaced by this. T04 builds only `ping-jobs` and `idempotency`.
+- **Async path:** as researched. The Pipe (L1 `CfnPipe`) passes only `INSERT` with `status = queued` and sends IDs only. The worker is capped by SQS event source maximum concurrency 2 (reserved concurrency is impossible at the account limit of 10).
+- **Retries:** 3 SQS receives, then the dead-letter queue. The 3rd failure marks the item `failed` with the reason.
+- **Idempotency:** Powertools with its own table, plus conditional status writes.
+- **Auth:** IAM authorization on the ping routes until Cognito arrives in T05, which now starts with sign-up and sign-in.
+- **Alarm:** "dead-letter queue not empty" alarm emails the maintainer through an SNS topic. The email address comes from the `JD_ALERT_EMAIL` environment variable (a GitHub secret in CI), never from the repository.
+- **Integration tests:** find the stack by name through CloudFormation outputs; `pnpm test:integration` runs locally against a personal stack and in the dev deploy workflow after each deploy.
 
 ## Done when
 

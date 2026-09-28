@@ -14,6 +14,7 @@ JobDeputy discovers jobs from any URL a user gives, keeps the relevant ones, and
 |---|---|
 | Task board and current status | [docs/tasks/README.md](docs/tasks/README.md) |
 | One task's goal, research, decision, done criteria | `docs/tasks/tNN-*.md` |
+| Tables, attributes, and S3 paths | [docs/data-model.md](docs/data-model.md) |
 | Agreed decisions (do not re-litigate) | [docs/decisions/](docs/decisions/README.md) |
 | Contribution and branch rules | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
@@ -37,6 +38,7 @@ Do not design ahead of the task that needs it. For example, the crawler's archit
 - **LLM and agent loops are capped at 3 iterations.** When the cap is hit, stop and return the best result so far, marked as partial. Every call has a maximum output token limit and a timeout, and job retries must not multiply LLM calls. See [0002](docs/decisions/0002-llm-loop-and-token-budget.md).
 - Every PR fills in the template: what changed, how it was tested and the proof, error cases, LLM and agent call safety, and security review.
 - Update the task file and task board status in the same PR as the work.
+- **Schema changes are documented in the same PR:** update [docs/data-model.md](docs/data-model.md) and its change log whenever an attribute, item kind, or S3 path changes. New tables or key changes need a decision record ([0006](docs/decisions/0006-data-model.md)).
 
 ## Stack
 

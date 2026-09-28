@@ -9,7 +9,7 @@ Short records of choices that shape the project. Agents and contributors treat a
 | [0003](0003-serverless-aws-stack.md) | Serverless AWS stack, async backbone, and CI/CD | Accepted |
 | [0004](0004-regional-cells-and-data-residency.md) | Regional cells and data residency (US, India, UK) | Accepted |
 | [0005](0005-pre-launch-cost-guardrails.md) | Pre-launch cost guardrails ($20 hard stop) | Accepted |
-| [0006](0006-data-model.md) | Data model: tables, keys, companies, and limits | Proposed |
+| [0006](0006-data-model.md) | Data model: tables, keys, and schemas | Accepted |
 
 ## Template
 

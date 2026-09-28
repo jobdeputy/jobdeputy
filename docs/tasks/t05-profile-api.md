@@ -1,11 +1,14 @@
-# T05: Profile API (details, résumé, target roles)
+# T05: Sign-up, sign-in, and profile API
 
 - **Status:** planned
 - **Depends on:** T04
 
 ## Goal
 
-A user can create and update a profile with basic details, a résumé, and target roles.
+Built in this order, as separate PRs:
+
+1. **Auth and registration first:** a user signs up and signs in with Cognito, choosing their home Region at signup. The API switches from IAM authorization (T04) to the Cognito JWT authorizer.
+2. **Profile:** the user creates and updates a profile with basic details, résumés, and target roles, stored in the `users`, `preferences`, and `documents` tables ([data model](../data-model.md)).
 
 ## Scope
 

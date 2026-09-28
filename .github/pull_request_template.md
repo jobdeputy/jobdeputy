@@ -67,6 +67,14 @@ Use synthetic data only — no real résumés, credentials, or personal data.
 
 **Calls per job (worst case):** <!-- e.g. "1 extraction call + up to 3 repair iterations = 4 max" -->
 
+## Data schema
+
+- [ ] **Not applicable:** no table, attribute, item kind, or S3 path changed.
+- [ ] [docs/data-model.md](../docs/data-model.md) is updated, with a change-log line.
+- [ ] Renamed or removed attributes bump `schemaVersion`, and old items still read correctly.
+- [ ] New tables or key changes have a decision record.
+- [ ] No forbidden data (government ID numbers, bank or card details); secrets and sensitive data only in `vault`.
+
 ## Security review
 
 <!-- Did this PR introduce any new attack surface? Answer each question. -->
