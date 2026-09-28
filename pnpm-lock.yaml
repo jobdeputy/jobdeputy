@@ -256,12 +256,18 @@ importers:
       '@aws-sdk/lib-dynamodb':
         specifier: 3.1141.0
         version: 3.1141.0(@aws-sdk/client-dynamodb@3.1141.0)
+      '@jobdeputy/shared':
+        specifier: workspace:*
+        version: link:../shared
+      ulid:
+        specifier: 3.0.2
+        version: 3.0.2
 
   packages/shared:
     dependencies:
       '@aws-lambda-powertools/logger':
         specifier: 2.35.0
-        version: 2.35.0
+        version: 2.35.0(@aws-lambda-powertools/jmespath@2.35.0)
       zod:
         specifier: 4.6.5
         version: 4.6.5
@@ -1149,6 +1155,10 @@ packages:
     engines: {node: '>=16.20.0'}
     hasBin: true
 
+  ulid@3.0.2:
+    resolution: {integrity: sha512-yu26mwteFYzBAot7KVMqFGCVpsF6g8wXfJzQUHvu1no3+rRRSFcSV2nKeYvNPLD2J4b08jYBDhHUjeH0ygIl9w==}
+    hasBin: true
+
   undici-types@6.21.0:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
 
@@ -1274,10 +1284,12 @@ snapshots:
     dependencies:
       '@aws-lambda-powertools/commons': 2.35.0
 
-  '@aws-lambda-powertools/logger@2.35.0':
+  '@aws-lambda-powertools/logger@2.35.0(@aws-lambda-powertools/jmespath@2.35.0)':
     dependencies:
       '@aws-lambda-powertools/commons': 2.35.0
       '@aws/lambda-invoke-store': 0.3.0
+    optionalDependencies:
+      '@aws-lambda-powertools/jmespath': 2.35.0
 
   '@aws-sdk/client-cloudformation@3.1141.0':
     dependencies:
@@ -1993,6 +2005,8 @@ snapshots:
       '@typescript/typescript-sunos-x64': 7.0.2
       '@typescript/typescript-win32-arm64': 7.0.2
       '@typescript/typescript-win32-x64': 7.0.2
+
+  ulid@3.0.2: {}
 
   undici-types@6.21.0: {}
 

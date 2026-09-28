@@ -1,9 +1,6 @@
-import {
-  AdminGetUserCommand,
-  CognitoIdentityProviderClient,
-} from '@aws-sdk/client-cognito-identity-provider';
 import { callerFromEvent, createLogger, type HttpResponse, json, problem } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, Context } from 'aws-lambda';
+import { cognitoEmailLookup } from './cognito.js';
 
 const logger = createLogger('api-me');
 
@@ -18,16 +15,7 @@ function defaultDeps(): MeDeps {
   const userPoolId = process.env.USER_POOL_ID;
   const cell = process.env.CELL;
   if (!userPoolId || !cell) throw new Error('USER_POOL_ID and CELL must be set');
-  const cognito = new CognitoIdentityProviderClient({});
-  return {
-    cell,
-    emailOf: async (username) => {
-      const res = await cognito.send(
-        new AdminGetUserCommand({ UserPoolId: userPoolId, Username: username }),
-      );
-      return res.UserAttributes?.find((a) => a.Name === 'email')?.Value;
-    },
-  };
+  return { cell, emailOf: cognitoEmailLookup(userPoolId) };
 }
 
 /** GET /me: who the signed-in caller is, and their home Region. */

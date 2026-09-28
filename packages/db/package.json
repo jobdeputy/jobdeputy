@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "3.1141.0",
-    "@aws-sdk/lib-dynamodb": "3.1141.0"
+    "@aws-sdk/lib-dynamodb": "3.1141.0",
+    "ulid": "3.0.2",
+    "@jobdeputy/shared": "workspace:*"
   }
 }

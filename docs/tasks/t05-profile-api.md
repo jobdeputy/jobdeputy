@@ -1,7 +1,7 @@
 # T05: Sign-up, sign-in, and profile API
 
 - **Status:** in-progress
-- **Branch / PR:** `t05-auth`, [#14](https://github.com/jobdeputy/jobdeputy/pull/14) (part 1, in review)
+- **Branch / PR:** part 1 `t05-auth`, [#14](https://github.com/jobdeputy/jobdeputy/pull/14) (merged); T05b `t05-profile` (in review); T05c to follow
 - **Depends on:** T04
 
 ## Goal
@@ -18,7 +18,7 @@ Built in this order, as separate PRs:
 
 ## Research
 
-This round covers **part 1 (auth and registration)**. Part 2 (profile, résumé upload, and text extraction) is researched when part 1 is merged, so the topics listed for it (upload limits, file risks, PDF/DOCX extraction) stay open.
+Part 1 (auth and registration) is below. [Part 2](#part-2-research-profile-roles-and-résumés) (profile, roles, and résumés) follows it.
 
 ### 1. One Cognito user pool per cell
 
@@ -106,6 +106,94 @@ The public web client allows only secure sign-in (SRP) and refresh. The admin si
 4. **SES for production email** added as a release blocker?
 5. **Ping routes move to the JWT authorizer**, and CI swaps `execute-api:Invoke` for the four Cognito admin permissions?
 
+### Part 2 research: profile, roles, and résumés
+
+Tables and fields are fixed by [docs/data-model.md](../data-model.md). This decides the API, uploads, safety, and text extraction. Every route is under `/me` and keyed on the token's `userId`, so a user can only ever reach their own data.
+
+#### 1. What the current slice stores
+
+| Item | Now | Later |
+|---|---|---|
+| `users` → `PROFILE` | Name, phone, location, links, headline, summary, years of experience, skills, languages, timezone. `email` is copied from Cognito and is read-only here. `homeCell` is set by the server. | — |
+| `preferences` → `SEARCH` and `ROLE#<id>` | Search settings and target roles (**at most 10**). | Company rules with the relevance filter (T08); apply settings in Phase 2. |
+| `documents` | Uploaded résumés (**at most 10**), one of them the default. | Cover letters and generated documents. |
+| `APPLICANT`, `EXPERIENCE#`, `EDUCATION#`, `CERTIFICATION#` | Not yet. | Phase 2 (application forms). |
+
+#### 2. API
+
+| Route | Behaviour |
+|---|---|
+| `GET /me/profile`, `PUT /me/profile` | Returns an empty profile until the first save. `PUT` replaces the editable fields and uses a `version` number: if two tabs save at once, the second gets `409 Conflict` instead of silently overwriting. |
+| `GET /me/preferences/search`, `PUT` | The same pattern. |
+| `GET /me/roles`, `POST /me/roles`, `PUT /me/roles/{roleId}`, `DELETE /me/roles/{roleId}` | CRUD. `POST` is rejected past 10 roles. |
+| `POST /me/documents` | Starts an upload. Returns a `documentId` and a **presigned POST** (below). The item is created with `status = uploading`. |
+| `GET /me/documents`, `GET /me/documents/{id}` | Status (`uploading → scanning → processing → ready`, or `rejected` / `failed` with a reason) and a short-lived download link. |
+| `PUT /me/documents/{id}` | Rename, or make it the default. |
+| `DELETE /me/documents/{id}` | Deletes the item and its S3 objects. |
+
+All input is validated with Zod: strict objects, length limits on every string, list size limits, and URL checks on links.
+
+#### 3. Uploading résumés
+
+- **Presigned POST, not PUT.** Only a POST policy can make S3 itself enforce the rules: the exact key, a **5 MB** limit (`content-length-range`), the content type, and a 5-minute expiry. The browser uploads straight to S3, so no file passes through Lambda.
+- **Allowed types: PDF and DOCX only.** No `.doc`, images, or others.
+- **The content type is never trusted.** The worker checks the file's real signature: PDF starts with `%PDF-`; DOCX is a ZIP that contains `word/document.xml`.
+- **Bucket:** one per cell (0004), all public access blocked, S3-managed encryption (free), HTTPS only. Keys are `users/<userId>/documents/<documentId>/…`, so deleting an account removes one prefix. Unfinished uploads are cleaned up after 1 day.
+- **Downloads:** presigned GET links, valid for 5 minutes, sent as an attachment (never shown inline). Only the owner can get them.
+
+#### 4. Malware and malicious files
+
+Résumés come from users. Today only the owner downloads their own file, but in Phase 2 we would send the file to job sites, and our parser reads every file.
+
+| Option | Assessment |
+|---|---|
+| **GuardDuty Malware Protection for S3 (recommended)** | Fully managed and can run on its own without the rest of GuardDuty. It scans every new object in the bucket and tags it with the result. **Pay per use, $0 idle.** Free tier: 1,000 objects and 1 GB per month. After that, $0.215 per 1,000 objects plus $0.09 per GB ([pricing](https://aws.amazon.com/guardduty/pricing/), checked 2026-09-28). A 5 MB résumé costs about $0.0007 to scan. It is in all three launch Regions. |
+| ClamAV in a Lambda container | Free to run, but virus definitions must be updated constantly, the image is large (stored in ECR, a small idle cost), and we would maintain it ourselves. |
+| No scanning; limits only | Cheapest, but we would pass unscanned files to job sites in Phase 2. |
+
+**Flow:** upload → GuardDuty scan → the result arrives through EventBridge.
+
+- Clean files are queued for text extraction.
+- Infected files are **deleted**, and the document becomes `rejected` with the reason "failed malware scan".
+
+The parser also has its own limits, because a clean scan does not rule out every harmful file:
+
+- at most 5 MB and 20 pages;
+- decompressed DOCX size checked before reading, against zip bombs;
+- a 60-second timeout;
+- pdf.js with script evaluation turned off (a past pdf.js vulnerability);
+- the worker has no access to other users' data.
+
+#### 5. Text extraction (asynchronous)
+
+The text of the résumé is extracted in a worker, the same way as T04: S3 → scan → queue with dead-letter queue (3 attempts) → worker.
+
+| Library | For | Notes |
+|---|---|---|
+| **`unpdf`** 1.8.1 (MIT) | PDF | A serverless build of Mozilla's pdf.js, maintained (updated 2026-08). |
+| **`mammoth`** 1.13.0 (BSD-2) | DOCX | Plain-text extraction; maintained (updated 2026-09). |
+
+- The text is saved to S3 as `users/<userId>/documents/<documentId>/text.txt` (at most 200 KB). The item records the page and character counts.
+- **Scanned-image PDFs** have no text layer. They end as `ready` with a "no text found; upload a text-based PDF or DOCX" warning. OCR (for example AWS Textract, which is paid per page) could be added later.
+- Understanding the résumé (skills, experience) needs AI and comes later with BYOT ([0002](../decisions/0002-llm-loop-and-token-budget.md)). Nothing here calls an LLM.
+
+#### 6. Delivery: two PRs
+
+1. **T05b:** profile, search settings, and roles (the `users` and `preferences` tables). Small, and no files.
+2. **T05c:** résumé upload, scanning, and extraction (the `documents` table, bucket, GuardDuty, and worker).
+
+"Later" in this section means **product Phase 2** (automated applications), not a part of this task.
+
+Each PR carries its own unit and integration tests. Integration tests upload small synthetic PDF and DOCX files (never real résumés) and check that a fake PDF is rejected, an oversized upload is refused by S3, and another user cannot read or download the document.
+
+#### Open questions (part 2)
+
+1. **Two PRs** (T05b profile and roles, then T05c résumés)?
+2. **Now vs later:** profile, search settings, and roles now; application details, work history, and education in Phase 2?
+3. **Limits:** PDF and DOCX only, 5 MB, 20 pages, at most 10 résumés and 10 roles?
+4. **GuardDuty malware scanning** (pay per use: free for 1,000 files a month, then about $0.0007 per résumé; $0 idle)? It is a new paid-per-use service, so it needs your OK under 0005.
+5. **Scanned PDFs** end as "ready, no text found" for now, with OCR later?
+
 ## Decision
 
 Part 1, agreed with the maintainer on 2026-09-28 (all five recommendations):
@@ -116,6 +204,19 @@ Part 1, agreed with the maintainer on 2026-09-28 (all five recommendations):
 4. **SES for production email** is a release blocker ([#13](https://github.com/jobdeputy/jobdeputy/issues/13)).
 5. **Every route uses the JWT authorizer**, including ping. CI loses `execute-api:Invoke` and gains only four Cognito admin calls for test users.
 
+Part 2, agreed with the maintainer on 2026-09-28 (all five recommendations):
+
+1. Two PRs: **T05b** (profile, search settings, roles), then **T05c** (résumés).
+2. Profile, search settings, and roles now. Application details, work history, education, and certifications wait for product Phase 2.
+3. Limits: PDF and DOCX only, 5 MB, 20 pages, at most 10 résumés and 10 roles.
+4. **GuardDuty Malware Protection for S3** is approved as a pay-per-use service under [0005](../decisions/0005-pre-launch-cost-guardrails.md) ($0 idle; free for 1,000 objects and 1 GB a month).
+5. Normal PDFs and DOCX files need no OCR. Image-only PDFs end as "ready, no text found"; OCR may come later.
+
+Agreed during T05b review (2026-09-28):
+
+- **Separate endpoints** for profile, search settings, and each role (not one page-wide endpoint): each item keeps its own version, so edits in different tabs do not conflict; role IDs stay stable for jobs and scores (T08); storage maps one-to-one to items with no multi-table transaction on every save. A combined read-only endpoint is reconsidered in T09 if the UI needs it.
+- **Account deletion** (`DELETE /me`) becomes its own ticket ([#17](https://github.com/jobdeputy/jobdeputy/issues/17)) after T05c; test clean-up will use it.
+
 ## Done when
 
 Part 1 (auth):
@@ -124,7 +225,12 @@ Part 1 (auth):
 - [x] Every API route requires a valid token; no token, invalid tokens, and another user's data are rejected (integration tests).
 - [x] CI no longer has `execute-api:Invoke`; its Cognito permissions are the four admin calls only.
 
-Part 2 (profile):
+T05b (profile, search settings, roles):
 
-- [ ] Profile endpoints are tested, including invalid input and oversized or unsupported files.
-- [ ] Users can access only their own profile.
+- [x] Profile, search settings, and role endpoints are tested, including invalid input and concurrent saves (409).
+- [x] Users can access only their own profile and roles (unit and integration tests).
+
+T05c (résumés):
+
+- [ ] Uploads are tested, including oversized, unsupported, and fake files, and a failed malware scan.
+- [ ] Users can access and download only their own documents.

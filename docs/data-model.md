@@ -7,7 +7,7 @@ The living reference for every DynamoDB table and S3 path. The decisions behind 
 1. **Any PR that adds, renames, or removes an attribute or item kind updates this file in the same PR** and adds a line to the [change log](#change-log). The PR template asks for it.
 2. **Adding** an optional attribute is always allowed. **Renaming or removing** one, or changing its meaning, bumps that item's `schemaVersion`, and the code must still read the old version (items are migrated lazily when they are next written).
 3. **New tables, new keys, or key changes** need a new decision record, because keys are permanent.
-4. The code's source of truth is the Zod schemas in `packages/db`. This file and those schemas must agree; reviewers check both.
+4. The code's source of truth is the Zod input schemas in `packages/shared` and the item types in `packages/db`. This file and the code must agree; reviewers check both, and an infra test fails if a deployed table is missing from the [physical schema](#physical-schema-built-tables) below.
 5. Never add attributes that 0006 forbids (government ID numbers, bank or card details), and never put secrets or sensitive answers outside `vault`.
 
 ## Conventions
@@ -18,11 +18,80 @@ The living reference for every DynamoDB table and S3 path. The decisions behind 
 - Every item also has `type`, `createdAt`, `updatedAt`, and `schemaVersion`.
 - Table names are prefixed with the stack, for example `jobdeputy-dev-iad-users`.
 
+## Physical schema (built tables)
+
+What is deployed today, per cell. Every table is DynamoDB on-demand (`PAY_PER_REQUEST`), encrypted at rest with the AWS-owned key, has no secondary indexes, and never replicates to another Region ([0004](decisions/0004-regional-cells-and-data-residency.md)). Tables described in the sections below but not listed here are designed, not created yet.
+
+| Table | Partition key | Sort key | Stream | Time to live | Backups (PITR) | On stack deletion | Built in |
+|---|---|---|---|---|---|---|---|
+| `<stack>-users` | `userId` (S) | `sk` (S) | — | — | prod only | dev: deleted; prod: kept | T05b |
+| `<stack>-preferences` | `userId` (S) | `sk` (S) | — | — | prod only | dev: deleted; prod: kept | T05b |
+| `<stack>-ping-jobs` | `id` (S) | — | `NEW_IMAGE` → Pipe → queue | `ttl` | — | dev: deleted; prod: kept | T04 |
+| `<stack>-idempotency` | `id` (S) | — | — | `expiration` | — | dev: deleted; prod: kept | T04 |
+
+### Access patterns
+
+Every user-table call is keyed by the caller's `userId` from the token; no request can name another user.
+
+| Table | Operation | Key | Used by |
+|---|---|---|---|
+| `users` | `GetItem` (consistent) | `userId`, `sk = PROFILE` | `GET` and `PUT /me/profile` |
+| `users` | `PutItem` with `attribute_not_exists(userId)` or `version = :expected` | `userId`, `sk = PROFILE` | `PUT /me/profile` |
+| `preferences` | `GetItem` / conditional `PutItem` | `userId`, `sk = SEARCH` | `/me/preferences/search` |
+| `preferences` | `Query` `begins_with(sk, "ROLE#")` (consistent) | `userId` | `GET /me/roles`; role count before `POST` |
+| `preferences` | `GetItem` / conditional `PutItem` | `userId`, `sk = ROLE#<roleId>` | `POST`, `PUT /me/roles/{roleId}` |
+| `preferences` | `DeleteItem` with `attribute_exists(userId)` | `userId`, `sk = ROLE#<roleId>` | `DELETE /me/roles/{roleId}` |
+| `ping-jobs` | `PutItem` / `GetItem` / conditional `UpdateItem` | `id` | ping API and worker |
+| `idempotency` | Powertools reads and writes | `id` | ping worker |
+
+### Example items
+
+Synthetic data. `version`, `createdAt`, `updatedAt`, and `schemaVersion` are on every item.
+
+```json
+{
+  "userId": "14e85498-0000-0000-0000-000000000000",
+  "sk": "PROFILE",
+  "type": "profile",
+  "version": 1,
+  "firstName": "Ada",
+  "lastName": "Lovelace",
+  "email": "ada@example.com",
+  "homeCell": "iad",
+  "skills": ["TypeScript"],
+  "languages": [],
+  "links": { "other": [] },
+  "createdAt": "2026-09-28T20:00:00.000Z",
+  "updatedAt": "2026-09-28T20:00:00.000Z",
+  "schemaVersion": 1
+}
+```
+
+```json
+{
+  "userId": "14e85498-0000-0000-0000-000000000000",
+  "sk": "ROLE#01J8ZQ4Y3N5W6X7Y8Z9A0B1C2D",
+  "type": "role",
+  "roleId": "01J8ZQ4Y3N5W6X7Y8Z9A0B1C2D",
+  "version": 2,
+  "title": "Staff Engineer",
+  "altTitles": [],
+  "seniority": ["senior"],
+  "mustHave": [],
+  "exclude": [],
+  "priority": 50,
+  "active": true,
+  "createdAt": "2026-09-28T20:00:00.000Z",
+  "updatedAt": "2026-09-28T20:05:00.000Z",
+  "schemaVersion": 1
+}
+```
+
 ## 1. `users`: who the user is
 
 | `sk` | Attributes |
 |---|---|
-| `PROFILE` | `firstName`, `lastName`, `preferredName?`, `email`, `phone? {countryCode, number}`, `location {city, region, country, postalCode?}`, `address? {line1, line2?, city, region, postalCode, country}`, `headline?`, `summary?`, `yearsExperience?`, `skills L<S>`, `languages L<{name, level}>`, `links {linkedin?, github?, portfolio?, website?, other L}`, `homeCell` (`iad`, `bom`, or `lhr`), `timezone` |
+| `PROFILE` | `version` (optimistic concurrency: a save must send the version it read), `firstName`, `lastName`, `preferredName?`, `email`, `phone? {countryCode, number}`, `location {city, region, country, postalCode?}`, `address? {line1, line2?, city, region, postalCode, country}` (accepted from product Phase 2), `headline?`, `summary?`, `yearsExperience?`, `skills L<S>`, `languages L<{name, level}>`, `links {linkedin?, github?, portfolio?, website?, other L}`, `homeCell` (`iad`, `bom`, or `lhr`), `timezone` |
 | `APPLICANT` | Details that application forms ask for: `workAuthorization L<{country, status, visaType?, expiresOn?}>` (status: `citizen`, `permanent_resident`, `visa`, or `none`), `needsSponsorship M<country, B>`, `noticePeriodDays?`, `earliestStartDate?`, `currentCompensation?` (money), `expectedCompensation?` (money), `willingToRelocate B`, `relocationCountries L`, `maxTravelPercent?`, `securityClearance?`, `over18 B`, `formerEmployers L<companyId>` |
 | `EXPERIENCE#<id>` | `company`, `companyId?`, `title`, `employmentType?`, `location?`, `startDate` (yyyy-mm), `endDate?` (absent while current), `description?`, `highlights L`, `skills L` |
 | `EDUCATION#<id>` | `school`, `degree`, `field?`, `startDate?`, `endDate?`, `grade?`, `highlights L` |
@@ -34,8 +103,8 @@ Work history and education are prefilled from the parsed résumé, and the user 
 
 | `sk` | Attributes |
 |---|---|
-| `SEARCH` | `locations L<{city?, region?, country}>`, `workplace L` (`onsite`, `hybrid`, `remote`), `employmentTypes L` (`full_time`, `contract`, …), `minSalary?` (money), `seniority L`, `excludeKeywords L` |
-| `ROLE#<roleId>` | `title`, `altTitles L`, `seniority L`, `locations? L` (overrides `SEARCH`), `mustHave L`, `exclude L`, `resumeDocumentId?`, `priority N`, `active B` |
+| `SEARCH` | `version`, `locations L<{city?, region?, country}>`, `workplace L` (`onsite`, `hybrid`, `remote`), `employmentTypes L` (`full_time`, `contract`, …), `minSalary?` (money), `seniority L`, `excludeKeywords L` |
+| `ROLE#<roleId>` | `roleId` (ULID), `version`, `title`, `altTitles L`, `seniority L`, `locations? L` (overrides `SEARCH`), `mustHave L`, `exclude L`, `resumeDocumentId?`, `priority N`, `active B` |
 | `COMPANY_RULE#<companyId>` | `mode` (`limit`, `block`, or `prefer`), `maxJobs N`, `windowDays N` (default 30), `countsOn` (`found` now; `applied` later), `extraCompanyIds L`, `note?`. The sort key `COMPANY_RULE#*` is the user's default for companies they did not list. |
 | `APPLY_SETTINGS` | `mode` (`off`, `review_each`, or `auto_within_rules`; default `review_each`; `auto_within_rules` arrives in Phase 2), `dailyMax N`, `alwaysReview L` (for example `cover_letter`, `custom_questions`), `quietHours? {start, end, timezone}`, `notify {email B}` |
 
@@ -148,3 +217,5 @@ Everything under `users/<userId>/` goes with account deletion or export.
 | 2026-09-28 | Initial schema for all 15 tables ([0006](decisions/0006-data-model.md)) | T04 |
 | 2026-09-28 | `ping-jobs`: add `deliveries`, so tests wait on a counted delivery instead of sleeping | T04 |
 | 2026-09-28 | `ping-jobs`: add `userId` (owner from the token); other users get 404 | T05 |
+| 2026-09-28 | `users` `PROFILE`, `preferences` `SEARCH` and `ROLE#`: add `version`; `ROLE#` also stores `roleId`. `users` and `preferences` tables built. | T05b |
+| 2026-09-28 | Documented the physical schema (keys, settings, access patterns, examples) of built tables; an infra test checks it lists every deployed table | T05b |
