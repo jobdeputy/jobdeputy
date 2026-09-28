@@ -26,6 +26,7 @@ Captured so they are not forgotten. Not started until the current slice is done.
 | AI credentials (BYOT and premium) | Users store their own AI keys. Premium users use JobDeputy's credentials. Keys are encrypted in the user's home Region ([0004](../decisions/0004-regional-cells-and-data-residency.md)), never logged or returned. Every AI call follows [0002](../decisions/0002-llm-loop-and-token-budget.md). Storage and encryption are researched then. |
 | Tailored résumé and cover-letter generation | Depends on AI credentials. |
 | LinkedIn discovery | Phase 1 requirement from the [problem statement](../problem-statement.md). |
+| Shared job postings | A per-Region `postings` table so a page saved by many users is extracted once; jobs reference it. See [0006](../decisions/0006-data-model.md). |
 | Prod launch in `us`, `in`, and `uk` | Deploy the prod cells, domain and subdomains, per-Region audit trails, and WAF. |
 | Phase 2: application automation | See the problem statement. |
 
