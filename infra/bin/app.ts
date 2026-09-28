@@ -1,4 +1,5 @@
 import { App } from 'aws-cdk-lib';
+import { GITHUB_OIDC_SUBJECT_PREFIX } from '../config/github.js';
 import { buildApp, stageFromContext } from '../lib/build-app.js';
 import { CicdStack } from '../lib/cicd-stack.js';
 
@@ -13,7 +14,7 @@ buildApp({ app, stage, ...(owner ? { owner } : {}) });
 if (app.node.tryGetContext('cicd') === 'true' || app.node.tryGetContext('cicd') === true) {
   new CicdStack(app, `jobdeputy-cicd-${stage}-iad`, {
     env: { region: 'us-east-1' },
-    repository: 'jobdeputy/jobdeputy',
+    subjectPrefix: GITHUB_OIDC_SUBJECT_PREFIX,
     githubEnvironment: stage,
   });
 }

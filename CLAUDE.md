@@ -28,6 +28,7 @@ Do not design ahead of the task that needs it. For example, the crawler's archit
 ## Rules
 
 - Never commit to `main`. Branch `tNN-short-slug` (or `fix/…`, `chore/…`) → PR → squash merge.
+- **Agents never merge PRs.** Open or update the PR, get CI green, report the link, and stop. The maintainer reviews and merges.
 - Long-running work (crawling, parsing, AI calls) is **asynchronous**: accept the request, return a job ID, and process it in a worker.
 - Never commit secrets, real résumés, or personal data. Use `.env` (git-ignored) and `.env.example`. The repo is intended to be public.
 - **User data never leaves its home Region** (US `us-east-1`, India `ap-south-1`, UK `eu-west-2`). Each Region is a self-contained cell. See [0004](docs/decisions/0004-regional-cells-and-data-residency.md).

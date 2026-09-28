@@ -3,8 +3,8 @@ import { CfnOIDCProvider, FederatedPrincipal, PolicyStatement, Role } from 'aws-
 import type { Construct } from 'constructs';
 
 export interface CicdStackProps extends StackProps {
-  /** GitHub repository allowed to deploy, for example "jobdeputy/jobdeputy". */
-  readonly repository: string;
+  /** GitHub OIDC subject prefix for the repository; see config/github.ts. */
+  readonly subjectPrefix: string;
   /** GitHub Environment the deploy job must run in, for example "dev". */
   readonly githubEnvironment: string;
 }
@@ -27,13 +27,13 @@ export class CicdStack extends Stack {
 
     const role = new Role(this, 'GitHubDeployRole', {
       roleName: 'jobdeputy-github-deploy',
-      description: `GitHub Actions deploys from ${props.repository} (${props.githubEnvironment})`,
+      description: `GitHub Actions deploys (${props.githubEnvironment})`,
       assumedBy: new FederatedPrincipal(
         provider.attrArn,
         {
           StringEquals: {
             [`${GITHUB_OIDC}:aud`]: 'sts.amazonaws.com',
-            [`${GITHUB_OIDC}:sub`]: `repo:${props.repository}:environment:${props.githubEnvironment}`,
+            [`${GITHUB_OIDC}:sub`]: `${props.subjectPrefix}:environment:${props.githubEnvironment}`,
           },
         },
         'sts:AssumeRoleWithWebIdentity',
