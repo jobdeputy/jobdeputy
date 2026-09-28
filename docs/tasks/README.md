@@ -8,7 +8,7 @@ Every task goes through these statuses: `planned` → `researching` → `awaitin
 |---|---|---|---|
 | T01 | [Agentic workspace and GitHub repository](t01-agentic-workspace.md) | done | — |
 | T02 | [Tech stack and async backbone decision](t02-stack-and-async-backbone.md) | done | T01 |
-| T03 | [AWS foundation, monorepo, and CI/CD](t03-infrastructure-foundation.md) | in-progress | T02 |
+| T03 | [AWS foundation, monorepo, and CI/CD](t03-infrastructure-foundation.md) | in-review | T02 |
 | T04 | [Serverless backend skeleton](t04-backend-skeleton.md) | planned | T03 |
 | T05 | [Profile API](t05-profile-api.md) | planned | T04 |
 | T06 | [Asynchronous crawl request pipeline](t06-async-crawl-pipeline.md) | planned | T04, T05 |

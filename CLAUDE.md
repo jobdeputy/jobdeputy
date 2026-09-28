@@ -50,4 +50,17 @@ Everything runs on AWS serverless services. See [0003](docs/decisions/0003-serve
 
 ## Commands
 
-No application code yet. T03 adds the build, test, and deploy commands here.
+Node 22 and pnpm (through corepack). Run from the repo root unless noted.
+
+| Command | What it does |
+|---|---|
+| `pnpm install` | Install dependencies |
+| `pnpm verify` | Biome lint and format check, typecheck, and all tests. **Run before every PR.** |
+| `pnpm format` | Auto-fix formatting and safe lint issues |
+| `pnpm synth` | Synthesize all dev and prod cells (no AWS access needed) |
+| `cd infra && pnpm cdk deploy -c stage=dev -c owner=<you> --profile jobdeputy-dev-iad` | Deploy your personal dev stack |
+| `cd infra && pnpm cdk destroy -c stage=dev -c owner=<you> --profile jobdeputy-dev-iad` | Remove your personal dev stack |
+
+- The shared `dev-iad` stack deploys automatically from `main`. Never deploy it by hand.
+- Guard tests in `infra/test/` enforce decisions 0004 and 0005 (Region isolation and cost). Never weaken them to make a build pass.
+- One-time AWS organization setup lives in `infra/bootstrap/` (maintainers only).

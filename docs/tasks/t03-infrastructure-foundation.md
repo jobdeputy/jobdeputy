@@ -1,6 +1,6 @@
 # T03: AWS foundation, monorepo, and CI/CD
 
-- **Status:** in-progress
+- **Status:** in-review
 - **Depends on:** T02
 - **Branch / PR:** `t03-aws-foundation`
 
@@ -79,13 +79,13 @@ Audit logging: CloudTrail event history (90 days, per Region, free) is enough un
 ```text
 infra/
   bin/app.ts            creates one stack set per (stage, cell)
-  config/cells.ts       us → us-east-1, in → ap-south-1, uk → eu-west-2
+  config/cells.ts       iad → us-east-1, bom → ap-south-1, lhr → eu-west-2
   config/stages.ts      dev → [us], prod → [us, in, uk], personal → [us]
   lib/cell-stack.ts     everything a cell needs (empty placeholder in T03; T04 adds resources)
   test/                 CDK assertion tests
 ```
 
-- Stack names look like `jobdeputy-dev-us`, `jobdeputy-prod-in`, and `jobdeputy-dev-nava-us` (personal).
+- Stack names look like `jobdeputy-dev-iad`, `jobdeputy-prod-bom`, and `jobdeputy-dev-nava-iad` (personal). One AWS account per stage and Region: `jobdeputy-dev-iad` now, and `jobdeputy-prod-iad`, `-bom`, and `-lhr` at launch.
 - **Account IDs stay out of the public repo.** They come from environment variables: GitHub Environment variables in CI, and the developer's profile locally.
 - Tests that enforce 0004: every stack's Region is in its stage's allow-list; there are no cross-Region references; and there are no global tables, replication, or NAT gateways.
 - CI **synthesizes all prod cells** on every PR, so they stay valid without being deployed.
@@ -95,7 +95,7 @@ infra/
 - **PR workflow:** install, lint, typecheck, unit tests, and `cdk synth` for all cells. No AWS credentials, so this is safe for fork PRs.
 - **Deploy workflow:** on push to `main`, deploy `dev-us` using the GitHub OIDC role in `jobdeputy-dev`.
 - The role trusts only `repo:jobdeputy/jobdeputy`, on `main`, in the `dev` environment. It can only assume the CDK bootstrap deploy roles.
-- **Prod:** a manually triggered workflow with GitHub Environment approval. It stays unused until launch.
+- **Prod:** the deploy workflow is added at launch, together with the prod accounts, as a manually triggered workflow behind GitHub Environment approval.
 - Existing checks (Markdown lint, Secret scan) stay. The new checks are added to the required checks on `main`.
 
 ### 8. Setup automation
@@ -124,9 +124,9 @@ Agreed with the maintainer on 2026-09-27: [0004](../decisions/0004-regional-cell
 
 - [x] Organizations, the `Workloads/Dev` and `Workloads/Prod` OUs, `jobdeputy-dev-iad`, Identity Center access, centralized root access, and service control policies are in place and verified on 2026-09-27. Calls to `ap-south-1` and `eu-west-2` are denied, and EC2 instances, NAT gateways, KMS keys, and Bedrock are denied in dev. Prod accounts are created at launch.
 - [x] Cost guardrails from 0005 are active and read back on 2026-09-27: a $20 gross-cost budget, alerts at $5, $10, and $15 actual and $20 forecast, anomaly emails at $1 or more, and the automatic $20 action (`STANDBY`) that attaches `jd-budget-stop` to `Workloads`. AWS cannot trigger a budget action without real spend, so the action is verified by its configuration and the policy's effect is covered by the service control policy tests above.
-- [ ] Monorepo skeleton with lint, typecheck, and unit tests running locally and in CI.
-- [ ] CDK app with cells; `cdk synth` succeeds for all dev and prod cells; residency assertion tests pass.
-- [ ] `dev-us` is bootstrapped and deployed from `main` through GitHub OIDC, with no stored keys.
-- [ ] One command deploys a personal dev stack, and one command runs the unit tests.
-- [ ] Setup is documented in `README.md`, `CLAUDE.md`, and `CONTRIBUTING.md`.
-- [ ] A Claude Code cloud environment setup script installs the same tools, so cloud sessions can run the tests. It is documented in `CONTRIBUTING.md`.
+- [x] Monorepo skeleton (pnpm 12, TypeScript 7, Biome, Vitest) with lint, typecheck, and unit tests running locally and in CI.
+- [x] CDK app with cells (`iad`, `bom`, `lhr`). `cdk synth` succeeds for all dev and prod cells, and the guard tests (Region isolation, cost) pass, including negative tests that prove each guard catches a violation.
+- [ ] `dev-iad` is bootstrapped (done), and the OIDC role and the `dev` GitHub environment are in place (done). The first deploy from `main` is verified after this PR merges.
+- [x] One command deploys a personal dev stack (verified with `jobdeputy-dev-nava-iad`), and one command runs the unit tests (`pnpm verify`).
+- [x] Setup is documented in `README.md`, `CLAUDE.md`, and `CONTRIBUTING.md`.
+- [x] A Claude Code cloud environment setup script (`scripts/cloud-setup.sh`) installs the same tools, so cloud sessions can run the tests. It is documented in `CONTRIBUTING.md`.

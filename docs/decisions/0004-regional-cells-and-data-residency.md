@@ -14,9 +14,9 @@ JobDeputy launches in the US, India, and the UK. From day 1, user data must not 
 
    | Cell | AWS Region | Stages |
    |---|---|---|
-   | `us` | `us-east-1` (N. Virginia) | dev, prod |
-   | `in` | `ap-south-1` (Mumbai) | prod |
-   | `uk` | `eu-west-2` (London) | prod |
+   | `iad` | `us-east-1` (N. Virginia) | dev, prod |
+   | `bom` | `ap-south-1` (Mumbai) | prod |
+   | `lhr` | `eu-west-2` (London) | prod |
 
    Each cell has its own Cognito user pool, DynamoDB tables, S3 buckets, SQS queues, Lambdas, logs, and (later) credential storage.
 
@@ -31,7 +31,9 @@ JobDeputy launches in the US, India, and the UK. From day 1, user data must not 
    - CDK assertion tests fail the build on disallowed Regions, cross-Region references, global tables, or replication;
    - the PR template's security review asks whether data crosses a Region.
 
-6. **Third parties.** When a user brings their own AI key (BYOT), their chosen provider processes the data under that provider's terms and location. The product discloses this. JobDeputy does not relay the data through another JobDeputy Region.
+6. **One AWS account per stage and Region:** `jobdeputy-dev-iad`, plus `jobdeputy-prod-iad`, `jobdeputy-prod-bom`, and `jobdeputy-prod-lhr` at launch. Each account's service control policy allows only its own Region, so the account boundary also enforces residency.
+
+7. **Third parties.** When a user brings their own AI key (BYOT), their chosen provider processes the data under that provider's terms and location. The product discloses this. JobDeputy does not relay the data through another JobDeputy Region.
 
 ## Why
 

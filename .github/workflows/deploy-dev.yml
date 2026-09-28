@@ -1,0 +1,38 @@
+name: Deploy dev
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # GitHub OIDC -> AWS, no stored keys
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy dev-iad
+    runs-on: ubuntu-latest
+    environment: dev # only main may deploy (environment branch policy)
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Deploy dev cells
+        working-directory: infra
+        env:
+          JD_ACCOUNT_DEV_IAD: ${{ secrets.JD_ACCOUNT_DEV_IAD }}
+        run: pnpm cdk deploy --all -c stage=dev --require-approval never

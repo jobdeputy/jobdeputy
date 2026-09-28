@@ -4,13 +4,7 @@
     {
       "Sid": "BudgetExceededDenyAllExceptHumanAdmins",
       "Effect": "Deny",
-      "NotAction": [
-        "aws-portal:*",
-        "billing:*",
-        "budgets:*",
-        "ce:*",
-        "sts:GetCallerIdentity"
-      ],
+      "NotAction": ["aws-portal:*", "billing:*", "budgets:*", "ce:*", "sts:GetCallerIdentity"],
       "Resource": "*",
       "Condition": {
         "ArnNotLike": {

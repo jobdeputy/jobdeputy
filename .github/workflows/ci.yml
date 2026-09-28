@@ -9,6 +9,26 @@ permissions:
   contents: read
 
 jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Lint and format (Biome)
+        run: pnpm check
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit and guard tests
+        run: pnpm test
+      - name: Synthesize all cells (dev and prod)
+        run: pnpm synth
+
   docs-lint:
     name: Markdown lint
     runs-on: ubuntu-latest
