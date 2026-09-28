@@ -17,6 +17,9 @@ Built in this order, as separate PRs:
 
 ## Research
 
+Carry-over from T04 (least privilege): once routes use the Cognito JWT authorizer, integration tests should call them as a test user, and the CI role's `execute-api:Invoke` (account-wide, because API IDs are generated at deploy time) should be removed or reduced to the IAM-only routes that remain.
+
+
 To do. Storage is decided (S3 with presigned URLs, [0003](../decisions/0003-serverless-aws-stack.md)). Research how login finds the user's Region without a global directory, safe upload limits and file types, malware and content risks of uploaded files, and a PDF/DOCX text extraction approach inside Lambda.
 
 ## Decision

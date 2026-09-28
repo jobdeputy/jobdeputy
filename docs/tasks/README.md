@@ -17,6 +17,14 @@ Every task goes through these statuses: `planned` → `researching` → `awaitin
 | T09 | [User interface for the slice](t09-ui.md) | planned | T05, T06, T08 |
 | T10 | [End-to-end tests and hardening](t10-end-to-end-hardening.md) | planned | T09 |
 
+## Release blockers
+
+Must be fixed before the prod launch. Tracked as GitHub issues with the [`release-blocker`](https://github.com/jobdeputy/jobdeputy/labels/release-blocker) label; the launch task cannot close while any are open.
+
+| Issue | Summary |
+|---|---|
+| [#8](https://github.com/jobdeputy/jobdeputy/issues/8) | Narrow the CDK deploy execution role (`AdministratorAccess`) and add a permissions boundary |
+
 ## Future (after this slice)
 
 Captured so they are not forgotten. Not started until the current slice is done.
