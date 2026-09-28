@@ -122,8 +122,8 @@ Agreed with the maintainer on 2026-09-27: [0004](../decisions/0004-regional-cell
 
 ## Done when
 
-- [ ] Organizations, the dev and prod accounts, Identity Center access, and service control policies are in place and verified. A test resource in a disallowed Region is denied.
-- [ ] Cost guardrails from 0005 are active: the deny-list policy is attached, alerts at $5, $10, and $15 plus forecast, anomaly detection, and the $20 budget action that attaches the deny-all policy (verified by a dry run on a test OU).
+- [x] Organizations, the `Workloads/Dev` and `Workloads/Prod` OUs, `jobdeputy-dev-iad`, Identity Center access, centralized root access, and service control policies are in place and verified on 2026-09-27. Calls to `ap-south-1` and `eu-west-2` are denied, and EC2 instances, NAT gateways, KMS keys, and Bedrock are denied in dev. Prod accounts are created at launch.
+- [x] Cost guardrails from 0005 are active and read back on 2026-09-27: a $20 gross-cost budget, alerts at $5, $10, and $15 actual and $20 forecast, anomaly emails at $1 or more, and the automatic $20 action (`STANDBY`) that attaches `jd-budget-stop` to `Workloads`. AWS cannot trigger a budget action without real spend, so the action is verified by its configuration and the policy's effect is covered by the service control policy tests above.
 - [ ] Monorepo skeleton with lint, typecheck, and unit tests running locally and in CI.
 - [ ] CDK app with cells; `cdk synth` succeeds for all dev and prod cells; residency assertion tests pass.
 - [ ] `dev-us` is bootstrapped and deployed from `main` through GitHub OIDC, with no stored keys.

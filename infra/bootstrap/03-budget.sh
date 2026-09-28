@@ -64,14 +64,19 @@ if [[ "$existing" == "0" ]]; then
 fi
 echo "Budget action: attach jd-budget-stop to Workloads at \$20 actual (automatic)"
 
-# Daily anomaly email for any anomaly with impact >= $1.
+# Daily anomaly email for any anomaly with impact >= $1. AWS creates a default
+# subscription at $100 and 40%, which is too loose for a $20 budget, so tighten it.
 monitor=$(aws ce get-anomaly-monitors --query 'AnomalyMonitors[0].MonitorArn' --output text)
-if [[ "$(aws ce get-anomaly-subscriptions --query 'length(AnomalySubscriptions)' --output text)" == "0" ]]; then
+threshold='{"Dimensions": {"Key": "ANOMALY_TOTAL_IMPACT_ABSOLUTE", "Values": ["1"], "MatchOptions": ["GREATER_THAN_OR_EQUAL"]}}'
+sub_arn=$(aws ce get-anomaly-subscriptions --query 'AnomalySubscriptions[0].SubscriptionArn' --output text)
+if [[ "$sub_arn" == "None" ]]; then
   aws ce create-anomaly-subscription --anomaly-subscription "{
     \"SubscriptionName\": \"jobdeputy-daily\", \"Frequency\": \"DAILY\",
     \"MonitorArnList\": [\"$monitor\"],
     \"Subscribers\": [{\"Type\": \"EMAIL\", \"Address\": \"$ALERT_EMAIL\"}],
-    \"ThresholdExpression\": {\"Dimensions\": {\"Key\": \"ANOMALY_TOTAL_IMPACT_ABSOLUTE\",
-      \"Values\": [\"1\"], \"MatchOptions\": [\"GREATER_THAN_OR_EQUAL\"]}}}" >/dev/null
+    \"ThresholdExpression\": $threshold}" >/dev/null
+else
+  aws ce update-anomaly-subscription --subscription-arn "$sub_arn" --frequency DAILY \
+    --threshold-expression "$threshold" >/dev/null
 fi
 echo "Anomaly alerts: daily email for impact >= \$1"
