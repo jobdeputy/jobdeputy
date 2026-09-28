@@ -1,6 +1,6 @@
 # T04: Serverless backend skeleton (API, async pipeline, and worker)
 
-- **Status:** in-review
+- **Status:** done
 - **Branch / PR:** `t04-backend-skeleton`
 - **Depends on:** T03
 
