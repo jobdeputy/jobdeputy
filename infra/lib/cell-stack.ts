@@ -1,6 +1,6 @@
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps, Tags } from 'aws-cdk-lib';
 import { HttpApi, HttpMethod, HttpStage } from 'aws-cdk-lib/aws-apigatewayv2';
-import { HttpIamAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
+import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import { AttributeType, BillingMode, StreamViewType, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Topic } from 'aws-cdk-lib/aws-sns';
@@ -10,6 +10,7 @@ import type { Construct } from 'constructs';
 import { CELLS, type CellId } from '../config/cells.js';
 import type { StageName } from '../config/stages.js';
 import { AsyncPipeline } from './constructs/async-pipeline.js';
+import { Auth } from './constructs/auth.js';
 import { AppFunction } from './constructs/node-function.js';
 
 export interface CellStackProps extends StackProps {
@@ -54,6 +55,13 @@ export class CellStack extends Stack {
     for (const email of props.alertEmails ?? []) {
       alarmTopic.addSubscription(new EmailSubscription(email));
     }
+
+    const auth = new Auth(this, 'Auth', {
+      namePrefix: id,
+      removalPolicy,
+      deletionProtection: isProd,
+      testsClient: props.stage === 'dev',
+    });
 
     const pingTable = new Table(this, 'PingJobsTable', {
       tableName: `${id}-ping-jobs`,
@@ -112,11 +120,23 @@ export class CellStack extends Stack {
       queueName: `${id}-ping-jobs`,
     });
 
+    const me = new AppFunction(this, 'MeApi', {
+      entry: 'apps/api/src/me.ts',
+      timeout: Duration.seconds(10),
+      removalPolicy,
+      environment: { USER_POOL_ID: auth.userPool.userPoolId, CELL: props.cell },
+    });
+    // Least privilege: read one user's attributes (the email) in this cell's pool only.
+    auth.userPool.grant(me.fn, 'cognito-idp:AdminGetUser');
+
     const httpApi = new HttpApi(this, 'HttpApi', {
       apiName: id,
       createDefaultStage: false,
-      // IAM (SigV4) until Cognito arrives in T05: nothing is callable anonymously.
-      defaultAuthorizer: new HttpIamAuthorizer(),
+      // Every route needs a valid token from this cell's pool (T05). API Gateway
+      // rejects missing, invalid, or expired tokens before any Lambda runs.
+      defaultAuthorizer: new HttpUserPoolAuthorizer('Cognito', auth.userPool, {
+        userPoolClients: [auth.webClient, ...(auth.testsClient ? [auth.testsClient] : [])],
+      }),
     });
     const stage = new HttpStage(this, 'DefaultStage', {
       httpApi,
@@ -127,8 +147,18 @@ export class CellStack extends Stack {
     const integration = new HttpLambdaIntegration('PingIntegration', api.fn);
     httpApi.addRoutes({ path: '/ping-jobs', methods: [HttpMethod.POST], integration });
     httpApi.addRoutes({ path: '/ping-jobs/{id}', methods: [HttpMethod.GET], integration });
+    httpApi.addRoutes({
+      path: '/me',
+      methods: [HttpMethod.GET],
+      integration: new HttpLambdaIntegration('MeIntegration', me.fn),
+    });
 
     new CfnOutput(this, 'ApiUrl', { value: stage.url });
+    new CfnOutput(this, 'UserPoolId', { value: auth.userPool.userPoolId });
+    new CfnOutput(this, 'WebClientId', { value: auth.webClient.userPoolClientId });
+    if (auth.testsClient) {
+      new CfnOutput(this, 'TestsClientId', { value: auth.testsClient.userPoolClientId });
+    }
     new CfnOutput(this, 'PingTableName', { value: pingTable.tableName });
     new CfnOutput(this, 'PingQueueUrl', { value: pipeline.queue.queueUrl });
     new CfnOutput(this, 'PingDeadLetterQueueUrl', { value: pipeline.deadLetterQueue.queueUrl });

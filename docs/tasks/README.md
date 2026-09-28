@@ -11,7 +11,7 @@ Every task goes through these statuses: `planned` → `researching` → `awaitin
 | T03 | [AWS foundation, monorepo, and CI/CD](t03-infrastructure-foundation.md) | done | T02 |
 | T04 | [Serverless backend skeleton](t04-backend-skeleton.md) | done | T03 |
 | T11 | [Integration tests on every PR (before merge)](t11-pr-integration-tests.md) | in-review | T04 |
-| T05 | [Sign-up, sign-in, and profile API](t05-profile-api.md) | awaiting-alignment | T04 |
+| T05 | [Sign-up, sign-in, and profile API](t05-profile-api.md) | in-progress | T04 |
 | T06 | [Asynchronous crawl request pipeline](t06-async-crawl-pipeline.md) | planned | T04, T05 |
 | T07 | [Job extraction, normalization, and storage](t07-job-extraction-storage.md) | planned | T06 |
 | T08 | [Relevance filter](t08-relevance-filter.md) | planned | T05, T07 |
@@ -25,6 +25,7 @@ Must be fixed before the prod launch. Tracked as GitHub issues with the [`releas
 | Issue | Summary |
 |---|---|
 | [#8](https://github.com/jobdeputy/jobdeputy/issues/8) | Narrow the CDK deploy execution role (`AdministratorAccess`) and add a permissions boundary |
+| [#13](https://github.com/jobdeputy/jobdeputy/issues/13) | Send Cognito emails through SES in each prod Region |
 
 ## Future (after this slice)
 

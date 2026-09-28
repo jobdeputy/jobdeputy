@@ -1,5 +1,6 @@
 import { documentClient, PingRepository } from '@jobdeputy/db';
 import {
+  callerFromEvent,
   createLogger,
   createPingJobRequest,
   type HttpResponse,
@@ -9,7 +10,7 @@ import {
   problem,
   validationProblem,
 } from '@jobdeputy/shared';
-import type { APIGatewayProxyEventV2, Context } from 'aws-lambda';
+import type { APIGatewayProxyEventV2WithJWTAuthorizer, Context } from 'aws-lambda';
 
 const logger = createLogger('api');
 
@@ -27,9 +28,17 @@ function defaultDeps(): Deps {
   };
 }
 
-/** POST /ping-jobs and GET /ping-jobs/{id}. Auth is enforced by API Gateway (IAM until T05). */
-export async function route(event: APIGatewayProxyEventV2, deps: Deps): Promise<HttpResponse> {
+/**
+ * POST /ping-jobs and GET /ping-jobs/{id}. API Gateway's JWT authorizer has
+ * already verified the token; the owner is always the token's `sub`.
+ */
+export async function route(
+  event: APIGatewayProxyEventV2WithJWTAuthorizer,
+  deps: Deps,
+): Promise<HttpResponse> {
   const requestId = event.requestContext.requestId;
+  const caller = callerFromEvent(event);
+  if (!caller) return problem(401, 'Unauthorized', { requestId });
   switch (event.routeKey) {
     case 'POST /ping-jobs': {
       const body = parseJsonBody(event.body, event.isBase64Encoded);
@@ -42,7 +51,10 @@ export async function route(event: APIGatewayProxyEventV2, deps: Deps): Promise<
           requestId,
         });
       }
-      const job = await deps.repo.create(parsed.data.fail ? { fail: true } : {});
+      const job = await deps.repo.create({
+        userId: caller.userId,
+        ...(parsed.data.fail ? { fail: true } : {}),
+      });
       logger.info('Ping job queued', { jobId: job.id });
       return json(202, { id: job.id, status: job.status });
     }
@@ -50,7 +62,8 @@ export async function route(event: APIGatewayProxyEventV2, deps: Deps): Promise<
       const id = pingJobId.safeParse(event.pathParameters?.id);
       if (!id.success) return validationProblem(id.error, requestId);
       const job = await deps.repo.get(id.data);
-      if (!job) return problem(404, 'Not found', { requestId });
+      // Someone else's job looks exactly like a missing one: no existence leak.
+      if (!job || job.userId !== caller.userId) return problem(404, 'Not found', { requestId });
       const {
         id: jobId,
         status,
@@ -80,7 +93,7 @@ export async function route(event: APIGatewayProxyEventV2, deps: Deps): Promise<
 let deps: Deps | undefined;
 
 export async function handler(
-  event: APIGatewayProxyEventV2,
+  event: APIGatewayProxyEventV2WithJWTAuthorizer,
   context: Context,
 ): Promise<HttpResponse> {
   logger.addContext(context);

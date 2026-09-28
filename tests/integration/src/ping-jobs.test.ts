@@ -4,12 +4,13 @@ import {
   SendMessageCommand,
   SQSClient,
 } from '@aws-sdk/client-sqs';
-import { beforeAll, describe, expect, it } from 'vitest';
-import { callApi, region, stackOutputs, waitFor } from './stack.js';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { callApi, createTestUser, region, stackOutputs, type TestUser, waitFor } from './stack.js';
 
 /**
  * Only what unit tests cannot prove: the deployed wiring of the T04 pipeline
- * (IAM auth, stream → Pipe → queue → worker, retries, dead-letter queue, duplicates).
+ * (stream → Pipe → queue → worker, retries, dead-letter queue, duplicates).
+ * Auth is covered in auth.test.ts.
  * Validation and error-mapping cases live in the unit tests. See docs/testing.md.
  *
  * Timeouts are generous on purpose: a freshly created Pipe can take minutes to
@@ -22,15 +23,21 @@ const QUEUE_TIMEOUT_MS = 120_000;
 
 let api: string;
 let outputs: Record<string, string>;
+let user: TestUser;
 
 beforeAll(async () => {
   outputs = await stackOutputs();
   api = outputs.ApiUrl ?? '';
   expect(api).toMatch(/^https:\/\//);
+  user = await createTestUser(outputs);
+});
+
+afterAll(async () => {
+  await user?.delete();
 });
 
 async function getJob(id: string) {
-  const res = await callApi(api, 'GET', `ping-jobs/${id}`);
+  const res = await callApi(api, 'GET', `ping-jobs/${id}`, user.accessToken);
   expect(res.status).toBe(200);
   return res.body;
 }
@@ -52,13 +59,8 @@ async function waitForJob(
 const isFinal = (job: { status: string }) => ['succeeded', 'failed'].includes(job.status);
 
 describe('ping jobs (deployed pipeline)', () => {
-  it('rejects unsigned requests (IAM auth)', async () => {
-    const res = await callApi(api, 'POST', 'ping-jobs', {}, { unsigned: true });
-    expect(res.status).toBe(403);
-  });
-
   it('accepts a job immediately and the worker marks it succeeded', async () => {
-    const created = await callApi(api, 'POST', 'ping-jobs', {});
+    const created = await callApi(api, 'POST', 'ping-jobs', user.accessToken, {});
     expect(created.status).toBe(202);
     expect(created.body.status).toBe('queued');
     const job = await waitForJob(created.body.id, isFinal, SUCCESS_TIMEOUT_MS);
@@ -66,7 +68,7 @@ describe('ping jobs (deployed pipeline)', () => {
   });
 
   it('fails a forced failure after 3 attempts, then dead-letters it', async () => {
-    const created = await callApi(api, 'POST', 'ping-jobs', { fail: true });
+    const created = await callApi(api, 'POST', 'ping-jobs', user.accessToken, { fail: true });
     expect(created.status).toBe(202);
     const job = await waitForJob(created.body.id, isFinal, FAILURE_TIMEOUT_MS);
     expect(job).toMatchObject({ status: 'failed', attempts: 3 });
@@ -94,7 +96,7 @@ describe('ping jobs (deployed pipeline)', () => {
   });
 
   it.runIf(full)('does not repeat side effects on a duplicate delivery', async () => {
-    const created = await callApi(api, 'POST', 'ping-jobs', {});
+    const created = await callApi(api, 'POST', 'ping-jobs', user.accessToken, {});
     const first = await waitForJob(created.body.id, isFinal, SUCCESS_TIMEOUT_MS);
     expect(first).toMatchObject({ status: 'succeeded', sideEffectCount: 1, deliveries: 1 });
 

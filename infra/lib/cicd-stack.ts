@@ -67,14 +67,9 @@ export class CicdStack extends Stack {
         resources: [`arn:aws:cloudformation:${this.region}:${this.account}:stack/${tested}/*`],
       }),
     );
-    // The API ID is generated at deploy time, so it cannot be named here. This account
-    // only holds dev stacks, and the role is usable only from main in one environment.
-    role.addToPolicy(
-      new PolicyStatement({
-        actions: ['execute-api:Invoke'],
-        resources: [`arn:aws:execute-api:${this.region}:${this.account}:*/*/*/*`],
-      }),
-    );
+    // Integration tests sign in as throwaway users (T05). Pool IDs are generated
+    // at deploy time, so they cannot be named; this account holds only dev pools.
+    role.addToPolicy(testUserStatement(this.region, this.account));
     // Duplicate-delivery test: send to the stack's work queues.
     role.addToPolicy(
       new PolicyStatement({
@@ -164,10 +159,7 @@ export class CicdStack extends Stack {
         resources: [`arn:aws:ssm:${region}:${account}:parameter/cdk-bootstrap/hnb659fds/version`],
       }),
       // Integration tests, as for the main deploy role but only on PR stacks.
-      new PolicyStatement({
-        actions: ['execute-api:Invoke'],
-        resources: [`arn:aws:execute-api:${region}:${account}:*/*/*/*`],
-      }),
+      testUserStatement(region, account),
       new PolicyStatement({ actions: ['sqs:SendMessage'], resources: [sqsArn(`${prefix}*`)] }),
       new PolicyStatement({
         actions: ['sqs:ReceiveMessage', 'sqs:DeleteMessage'],
@@ -177,4 +169,19 @@ export class CicdStack extends Stack {
     for (const statement of statements) role.addToPolicy(statement);
     return role;
   }
+}
+
+/** Create, sign in, and delete throwaway integration-test users. Nothing else in Cognito. */
+export const TEST_USER_ACTIONS = [
+  'cognito-idp:AdminCreateUser',
+  'cognito-idp:AdminSetUserPassword',
+  'cognito-idp:AdminInitiateAuth',
+  'cognito-idp:AdminDeleteUser',
+];
+
+function testUserStatement(region: string, account: string): PolicyStatement {
+  return new PolicyStatement({
+    actions: TEST_USER_ACTIONS,
+    resources: [`arn:aws:cognito-idp:${region}:${account}:userpool/*`],
+  });
 }

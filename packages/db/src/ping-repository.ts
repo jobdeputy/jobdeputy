@@ -7,6 +7,8 @@ import { isConditionFailure } from './client.js';
 export interface PingJob {
   id: string;
   type: 'ping';
+  /** Owner (Cognito `sub`). Only the owner can read the job. */
+  userId: string;
   status: 'queued' | 'running' | 'succeeded' | 'failed';
   attempts: number;
   sideEffectCount: number;
@@ -30,11 +32,12 @@ export class PingRepository {
     private readonly now: () => Date = () => new Date(),
   ) {}
 
-  async create(options: { fail?: boolean } = {}): Promise<PingJob> {
+  async create(options: { userId: string; fail?: boolean }): Promise<PingJob> {
     const at = this.now();
     const job: PingJob = {
       id: randomUUID(),
       type: 'ping',
+      userId: options.userId,
       status: 'queued',
       attempts: 0,
       sideEffectCount: 0,

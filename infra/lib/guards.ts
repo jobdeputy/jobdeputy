@@ -83,6 +83,18 @@ export function checkGuards(app: App): GuardViolation[] {
           message: `${logicalId}: log retention must be set to at most ${MAX_LOG_RETENTION_DAYS} days.`,
         });
       }
+      if (resource.Type === 'AWS::Cognito::UserPool') {
+        // 0005: Plus has no free tier, and SMS is paid per message.
+        if (props.UserPoolTier === 'PLUS') {
+          violations.push({
+            stack,
+            message: `${logicalId}: the Cognito Plus plan is not allowed.`,
+          });
+        }
+        if ('SmsConfiguration' in props) {
+          violations.push({ stack, message: `${logicalId}: Cognito SMS is not allowed.` });
+        }
+      }
       if (resource.Type === 'AWS::Lambda::Alias' && 'ProvisionedConcurrencyConfig' in props) {
         violations.push({
           stack,

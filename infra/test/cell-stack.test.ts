@@ -1,5 +1,6 @@
 import { App, Stack } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
+import { CfnUserPool } from 'aws-cdk-lib/aws-cognito';
 import { CfnFunction } from 'aws-cdk-lib/aws-lambda';
 import { LogGroup } from 'aws-cdk-lib/aws-logs';
 import { describe, expect, it } from 'vitest';
@@ -110,6 +111,46 @@ describe('async pipeline (T04)', () => {
   });
 });
 
+describe('Cognito (T05)', () => {
+  const t = devTemplate();
+
+  it('uses email-only sign-in on the free Essentials plan, with no SMS', () => {
+    t.hasResourceProperties('AWS::Cognito::UserPool', {
+      UserPoolTier: 'ESSENTIALS',
+      UsernameAttributes: ['email'],
+      UsernameConfiguration: { CaseSensitive: false },
+      AutoVerifiedAttributes: ['email'],
+      MfaConfiguration: 'OPTIONAL',
+      EnabledMfas: ['SOFTWARE_TOKEN_MFA'],
+      Policies: { PasswordPolicy: Match.objectLike({ MinimumLength: 12 }) },
+      AccountRecoverySetting: { RecoveryMechanisms: [{ Name: 'verified_email', Priority: 1 }] },
+      Schema: [Match.objectLike({ Name: 'email', Required: true })],
+    });
+    const pool = Object.values(t.findResources('AWS::Cognito::UserPool'))[0];
+    expect(pool?.Properties.SmsConfiguration).toBeUndefined();
+  });
+
+  it('lets the web client use only secure password sign-in, and hides whether accounts exist', () => {
+    t.hasResourceProperties('AWS::Cognito::UserPoolClient', {
+      ClientName: 'web',
+      ExplicitAuthFlows: ['ALLOW_USER_SRP_AUTH', 'ALLOW_REFRESH_TOKEN_AUTH'],
+      GenerateSecret: false,
+      PreventUserExistenceErrors: 'ENABLED',
+    });
+  });
+
+  it('has a tests client only in dev, and protects prod pools from deletion', () => {
+    t.resourceCountIs('AWS::Cognito::UserPoolClient', 2);
+    const prod = buildApp({ stage: 'prod', env: {} }).node.findChild('jobdeputy-prod-lhr');
+    const pt = Template.fromStack(prod as never);
+    pt.resourceCountIs('AWS::Cognito::UserPoolClient', 1);
+    pt.hasResource('AWS::Cognito::UserPool', {
+      Properties: Match.objectLike({ DeletionProtection: 'ACTIVE' }),
+      DeletionPolicy: 'Retain',
+    });
+  });
+});
+
 describe('least privilege (T04)', () => {
   const t = devTemplate();
 
@@ -133,17 +174,29 @@ describe('least privilege (T04)', () => {
       expect(worker).not.toContain(broad);
     }
   });
+
+  it('lets GET /me only read users, and nothing else', () => {
+    expect(actionsFor('MeApiFn')).toEqual(['cognito-idp:AdminGetUser']);
+  });
 });
 
 describe('HTTP API (T04)', () => {
   const t = devTemplate();
 
-  it('requires IAM auth on every route', () => {
+  it('requires a Cognito token on every route', () => {
     const routes = t.findResources('AWS::ApiGatewayV2::Route');
-    expect(Object.keys(routes)).toHaveLength(2);
+    expect(
+      Object.values(routes)
+        .map((r) => r.Properties.RouteKey)
+        .sort(),
+    ).toEqual(['GET /me', 'GET /ping-jobs/{id}', 'POST /ping-jobs']);
     for (const route of Object.values(routes)) {
-      expect(route.Properties.AuthorizationType).toBe('AWS_IAM');
+      expect(route.Properties.AuthorizationType).toBe('JWT');
     }
+    t.hasResourceProperties('AWS::ApiGatewayV2::Authorizer', {
+      AuthorizerType: 'JWT',
+      IdentitySource: ['$request.header.Authorization'],
+    });
   });
 
   it('throttles the dev stage', () => {
@@ -162,6 +215,18 @@ describe('HTTP API (T04)', () => {
 });
 
 describe('new guards', () => {
+  it('reject the paid Cognito plan and SMS', () => {
+    const app = new App();
+    const stack = new Stack(app, 'probe', { env: { region: 'us-east-1' } });
+    new CfnUserPool(stack, 'P', {
+      userPoolTier: 'PLUS',
+      smsConfiguration: { snsCallerArn: 'arn:aws:iam::111111111111:role/r' },
+    });
+    const messages = checkGuards(app).map((v) => v.message);
+    expect(messages.some((m) => m.includes('Plus plan'))).toBe(true);
+    expect(messages.some((m) => m.includes('SMS'))).toBe(true);
+  });
+
   it('reject reserved concurrency and unbounded log retention', () => {
     const app = new App();
     const stack = new Stack(app, 'probe', { env: { region: 'us-east-1' } });

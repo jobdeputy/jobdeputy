@@ -1,6 +1,6 @@
 # T05: Sign-up, sign-in, and profile API
 
-- **Status:** awaiting-alignment
+- **Status:** in-progress
 - **Branch / PR:** `t05-auth` (part 1)
 - **Depends on:** T04
 
@@ -108,7 +108,13 @@ The public web client allows only secure sign-in (SRP) and refresh. The admin si
 
 ## Decision
 
-Pending.
+Part 1, agreed with the maintainer on 2026-09-28 (all five recommendations):
+
+1. One Cognito user pool per cell on the **Essentials** plan.
+2. **Email is the only sign-in and required attribute** in Cognito (permanent). Everything else lives in our tables.
+3. The home Region is the cell that handles the signup. The UI uses a **Region picker plus a per-Region address** (T09 and launch). There is no global directory.
+4. **SES for production email** is a release blocker ([#13](https://github.com/jobdeputy/jobdeputy/issues/13)).
+5. **Every route uses the JWT authorizer**, including ping. CI loses `execute-api:Invoke` and gains only four Cognito admin calls for test users.
 
 ## Done when
 
