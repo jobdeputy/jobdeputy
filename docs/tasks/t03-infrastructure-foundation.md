@@ -1,6 +1,6 @@
 # T03: AWS foundation, monorepo, and CI/CD
 
-- **Status:** in-review
+- **Status:** done
 - **Depends on:** T02
 - **Branch / PR:** `t03-aws-foundation`
 
@@ -94,7 +94,7 @@ infra/
 
 - **PR workflow:** install, lint, typecheck, unit tests, and `cdk synth` for all cells. No AWS credentials, so this is safe for fork PRs.
 - **Deploy workflow:** on push to `main`, deploy `dev-us` using the GitHub OIDC role in `jobdeputy-dev`.
-- The role trusts only `repo:jobdeputy/jobdeputy`, on `main`, in the `dev` environment. It can only assume the CDK bootstrap deploy roles.
+- The role trusts only this repository, by its immutable GitHub OIDC subject (owner and repo IDs, so a re-created org or repo with the same name cannot deploy), in the `dev` environment, which only `main` can use. It can only assume the CDK bootstrap deploy roles.
 - **Prod:** the deploy workflow is added at launch, together with the prod accounts, as a manually triggered workflow behind GitHub Environment approval.
 - Existing checks (Markdown lint, Secret scan) stay. The new checks are added to the required checks on `main`.
 
@@ -126,7 +126,7 @@ Agreed with the maintainer on 2026-09-27: [0004](../decisions/0004-regional-cell
 - [x] Cost guardrails from 0005 are active and read back on 2026-09-27: a $20 gross-cost budget, alerts at $5, $10, and $15 actual and $20 forecast, anomaly emails at $1 or more, and the automatic $20 action (`STANDBY`) that attaches `jd-budget-stop` to `Workloads`. AWS cannot trigger a budget action without real spend, so the action is verified by its configuration and the policy's effect is covered by the service control policy tests above.
 - [x] Monorepo skeleton (pnpm 12, TypeScript 7, Biome, Vitest) with lint, typecheck, and unit tests running locally and in CI.
 - [x] CDK app with cells (`iad`, `bom`, `lhr`). `cdk synth` succeeds for all dev and prod cells, and the guard tests (Region isolation, cost) pass, including negative tests that prove each guard catches a violation.
-- [ ] `dev-iad` is bootstrapped (done), and the OIDC role and the `dev` GitHub environment are in place (done). The first deploy from `main` is verified after this PR merges.
+- [x] `dev-iad` is bootstrapped and deployed from `main` through GitHub OIDC, with no stored keys (verified 2026-09-28: Deploy dev run succeeded, the stack is `CREATE_COMPLETE`, and CloudTrail shows the OIDC sign-in). The deploy role trusts GitHub's immutable subject (`repo:<owner>@<id>/<repo>@<id>:environment:dev`).
 - [x] One command deploys a personal dev stack (verified with `jobdeputy-dev-nava-iad`), and one command runs the unit tests (`pnpm verify`).
 - [x] Setup is documented in `README.md`, `CLAUDE.md`, and `CONTRIBUTING.md`.
 - [x] A Claude Code cloud environment setup script (`scripts/cloud-setup.sh`) installs the same tools, so cloud sessions can run the tests. It is documented in `CONTRIBUTING.md`.

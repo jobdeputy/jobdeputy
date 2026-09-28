@@ -99,7 +99,7 @@ describe('CI/CD deploy role', () => {
     const app = new App();
     const stack = new CicdStack(app, 'cicd', {
       env: { region: 'us-east-1', account: '111111111111' },
-      repository: 'jobdeputy/jobdeputy',
+      subjectPrefix: 'repo:jobdeputy@334723288/jobdeputy@1391498158',
       githubEnvironment: 'dev',
     });
     const t = Template.fromStack(stack);
@@ -112,7 +112,7 @@ describe('CI/CD deploy role', () => {
               StringEquals: {
                 'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
                 'token.actions.githubusercontent.com:sub':
-                  'repo:jobdeputy/jobdeputy:environment:dev',
+                  'repo:jobdeputy@334723288/jobdeputy@1391498158:environment:dev',
               },
             },
           },

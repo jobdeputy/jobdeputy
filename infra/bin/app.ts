@@ -13,7 +13,8 @@ buildApp({ app, stage, ...(owner ? { owner } : {}) });
 if (app.node.tryGetContext('cicd') === 'true' || app.node.tryGetContext('cicd') === true) {
   new CicdStack(app, `jobdeputy-cicd-${stage}-iad`, {
     env: { region: 'us-east-1' },
-    repository: 'jobdeputy/jobdeputy',
+    // Immutable OIDC subject for jobdeputy/jobdeputy (owner and repo IDs are public metadata).
+    subjectPrefix: 'repo:jobdeputy@334723288/jobdeputy@1391498158',
     githubEnvironment: stage,
   });
 }
