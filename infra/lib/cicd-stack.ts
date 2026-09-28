@@ -3,12 +3,7 @@ import { CfnOIDCProvider, FederatedPrincipal, PolicyStatement, Role } from 'aws-
 import type { Construct } from 'constructs';
 
 export interface CicdStackProps extends StackProps {
-  /**
-   * GitHub OIDC subject prefix for the repository. This repo uses GitHub's
-   * immutable subject format (owner and repo numeric IDs), so a deleted and
-   * re-created org or repo with the same name cannot deploy. Read it with:
-   * gh api repos/OWNER/REPO/actions/oidc/customization/sub
-   */
+  /** GitHub OIDC subject prefix for the repository; see config/github.ts. */
   readonly subjectPrefix: string;
   /** GitHub Environment the deploy job must run in, for example "dev". */
   readonly githubEnvironment: string;

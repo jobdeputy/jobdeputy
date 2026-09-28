@@ -1,4 +1,5 @@
 import { App } from 'aws-cdk-lib';
+import { GITHUB_OIDC_SUBJECT_PREFIX } from '../config/github.js';
 import { buildApp, stageFromContext } from '../lib/build-app.js';
 import { CicdStack } from '../lib/cicd-stack.js';
 
@@ -13,8 +14,7 @@ buildApp({ app, stage, ...(owner ? { owner } : {}) });
 if (app.node.tryGetContext('cicd') === 'true' || app.node.tryGetContext('cicd') === true) {
   new CicdStack(app, `jobdeputy-cicd-${stage}-iad`, {
     env: { region: 'us-east-1' },
-    // Immutable OIDC subject for jobdeputy/jobdeputy (owner and repo IDs are public metadata).
-    subjectPrefix: 'repo:jobdeputy@334723288/jobdeputy@1391498158',
+    subjectPrefix: GITHUB_OIDC_SUBJECT_PREFIX,
     githubEnvironment: stage,
   });
 }
