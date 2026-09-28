@@ -110,6 +110,31 @@ describe('async pipeline (T04)', () => {
   });
 });
 
+describe('least privilege (T04)', () => {
+  const t = devTemplate();
+
+  function actionsFor(logicalIdPrefix: string): string[] {
+    const policies = Object.entries(t.findResources('AWS::IAM::Policy')).filter(([id]) =>
+      id.startsWith(logicalIdPrefix),
+    );
+    expect(policies.length).toBeGreaterThan(0);
+    return policies.flatMap(([, p]) =>
+      p.Properties.PolicyDocument.Statement.flatMap((s: { Action: string | string[] }) =>
+        [s.Action].flat(),
+      ),
+    );
+  }
+
+  it('gives each function only the DynamoDB calls it makes', () => {
+    const api = actionsFor('PingApiFn').filter((a) => a.startsWith('dynamodb:'));
+    expect(api.sort()).toEqual(['dynamodb:GetItem', 'dynamodb:PutItem']);
+    const worker = actionsFor('PingWorkerFn').filter((a) => a.startsWith('dynamodb:'));
+    for (const broad of ['dynamodb:Scan', 'dynamodb:Query', 'dynamodb:BatchWriteItem']) {
+      expect(worker).not.toContain(broad);
+    }
+  });
+});
+
 describe('HTTP API (T04)', () => {
   const t = devTemplate();
 

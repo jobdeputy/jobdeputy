@@ -16,5 +16,6 @@ if (app.node.tryGetContext('cicd') === 'true' || app.node.tryGetContext('cicd') 
     env: { region: 'us-east-1' },
     subjectPrefix: GITHUB_OIDC_SUBJECT_PREFIX,
     githubEnvironment: stage,
+    testedStackName: `jobdeputy-${stage}-iad`,
   });
 }

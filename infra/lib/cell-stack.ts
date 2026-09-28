@@ -78,7 +78,8 @@ export class CellStack extends Stack {
       removalPolicy,
       environment: { PING_TABLE_NAME: pingTable.tableName, STAGE: props.stage },
     });
-    pingTable.grantReadWriteData(api.fn);
+    // Least privilege: only the calls each function makes.
+    pingTable.grant(api.fn, 'dynamodb:PutItem', 'dynamodb:GetItem');
 
     const worker = new AppFunction(this, 'PingWorker', {
       entry: 'apps/worker/src/ping-worker.ts',
@@ -90,8 +91,15 @@ export class CellStack extends Stack {
         STAGE: props.stage,
       },
     });
-    pingTable.grantReadWriteData(worker.fn);
-    idempotencyTable.grantReadWriteData(worker.fn);
+    pingTable.grant(worker.fn, 'dynamodb:UpdateItem');
+    // What Powertools idempotency needs.
+    idempotencyTable.grant(
+      worker.fn,
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+      'dynamodb:UpdateItem',
+      'dynamodb:DeleteItem',
+    );
 
     const pipeline = new AsyncPipeline(this, 'PingPipeline', {
       table: pingTable,

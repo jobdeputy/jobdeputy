@@ -7,6 +7,8 @@ export interface CicdStackProps extends StackProps {
   readonly subjectPrefix: string;
   /** GitHub Environment the deploy job must run in, for example "dev". */
   readonly githubEnvironment: string;
+  /** The cell stack CI runs integration tests against, for example "jobdeputy-dev-iad". */
+  readonly testedStackName: string;
 }
 
 const GITHUB_OIDC = 'token.actions.githubusercontent.com';
@@ -49,29 +51,36 @@ export class CicdStack extends Stack {
       }),
     );
 
-    // Post-deploy integration tests: find the stack's outputs and call its IAM-protected API.
+    // Post-deploy integration tests, limited to the one stack CI tests.
+    const tested = props.testedStackName;
+    const sqsArn = (name: string) => `arn:aws:sqs:${this.region}:${this.account}:${name}`;
     role.addToPolicy(
       new PolicyStatement({
         actions: ['cloudformation:DescribeStacks'],
-        resources: [
-          `arn:aws:cloudformation:${this.region}:${this.account}:stack/jobdeputy-${props.githubEnvironment}-*/*`,
-        ],
+        resources: [`arn:aws:cloudformation:${this.region}:${this.account}:stack/${tested}/*`],
       }),
     );
+    // The API ID is generated at deploy time, so it cannot be named here. This account
+    // only holds dev stacks, and the role is usable only from main in one environment.
     role.addToPolicy(
       new PolicyStatement({
         actions: ['execute-api:Invoke'],
         resources: [`arn:aws:execute-api:${this.region}:${this.account}:*/*/*/*`],
       }),
     );
-
-    // Queue-level integration tests (JD_FULL=1): send a duplicate, read the dead-letter queue.
+    // Duplicate-delivery test: send to the stack's work queues.
     role.addToPolicy(
       new PolicyStatement({
-        actions: ['sqs:SendMessage', 'sqs:ReceiveMessage', 'sqs:DeleteMessage'],
-        resources: [
-          `arn:aws:sqs:${this.region}:${this.account}:jobdeputy-${props.githubEnvironment}-*`,
-        ],
+        actions: ['sqs:SendMessage'],
+        resources: [sqsArn(`${tested}-*`)],
+      }),
+    );
+    // Dead-letter test: read, then delete the one test message found, so the
+    // "dead-letter queue not empty" alarm does not email everyone after each deploy.
+    role.addToPolicy(
+      new PolicyStatement({
+        actions: ['sqs:ReceiveMessage', 'sqs:DeleteMessage'],
+        resources: [sqsArn(`${tested}-*-dlq`)],
       }),
     );
 

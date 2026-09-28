@@ -101,6 +101,7 @@ describe('CI/CD deploy role', () => {
       env: { region: 'us-east-1', account: '111111111111' },
       subjectPrefix: 'repo:jobdeputy@334723288/jobdeputy@1391498158',
       githubEnvironment: 'dev',
+      testedStackName: 'jobdeputy-dev-iad',
     });
     const t = Template.fromStack(stack);
     t.hasResourceProperties('AWS::IAM::Role', {
@@ -130,7 +131,7 @@ describe('CI/CD deploy role', () => {
           {
             Action: 'cloudformation:DescribeStacks',
             Effect: 'Allow',
-            Resource: 'arn:aws:cloudformation:us-east-1:111111111111:stack/jobdeputy-dev-*/*',
+            Resource: 'arn:aws:cloudformation:us-east-1:111111111111:stack/jobdeputy-dev-iad/*',
           },
           {
             Action: 'execute-api:Invoke',
@@ -138,9 +139,14 @@ describe('CI/CD deploy role', () => {
             Resource: 'arn:aws:execute-api:us-east-1:111111111111:*/*/*/*',
           },
           {
-            Action: ['sqs:SendMessage', 'sqs:ReceiveMessage', 'sqs:DeleteMessage'],
+            Action: 'sqs:SendMessage',
             Effect: 'Allow',
-            Resource: 'arn:aws:sqs:us-east-1:111111111111:jobdeputy-dev-*',
+            Resource: 'arn:aws:sqs:us-east-1:111111111111:jobdeputy-dev-iad-*',
+          },
+          {
+            Action: ['sqs:ReceiveMessage', 'sqs:DeleteMessage'],
+            Effect: 'Allow',
+            Resource: 'arn:aws:sqs:us-east-1:111111111111:jobdeputy-dev-iad-*-dlq',
           },
         ],
       },
