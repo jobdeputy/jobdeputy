@@ -1,6 +1,6 @@
 # T02: Tech stack and async backbone decision
 
-- **Status:** awaiting-alignment
+- **Status:** done
 - **Depends on:** T01
 - **Branch / PR:** `t02-stack-and-async-backbone`
 
@@ -113,16 +113,16 @@ Testing: **Vitest** for unit tests. Integration tests run against a real deploye
 ## Open questions for alignment
 
 1. TypeScript everywhere: **agreed** (2026-09-27).
-2. Async: DynamoDB write → Stream → EventBridge Pipes → SQS → worker Lambda, with Step Functions as the upgrade path?
-3. Database: DynamoDB instead of Aurora Serverless?
-4. CI/CD: GitHub Actions with OIDC instead of CodeBuild/CodePipeline? (Maintainer delegated this choice.)
+2. Async: DynamoDB write → Stream → EventBridge Pipes → SQS → worker Lambda, with Step Functions as the upgrade path: **agreed**.
+3. Database: DynamoDB: **agreed**.
+4. CI/CD: GitHub Actions with OIDC: **agreed**.
 
 ## Decision
 
-Pending alignment.
+Agreed with the maintainer on 2026-09-27. See [0003](../decisions/0003-serverless-aws-stack.md).
 
 ## Done when
 
-- [ ] A decision record is accepted.
-- [ ] The repository layout (`apps/`, `packages/`, `infra/`) is agreed.
-- [ ] `CLAUDE.md` is updated with the stack.
+- [x] A decision record is accepted.
+- [x] The repository layout (`apps/`, `packages/`, `infra/`) is agreed.
+- [x] `CLAUDE.md` is updated with the stack.

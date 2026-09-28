@@ -35,6 +35,17 @@ Do not design ahead of the task that needs it. For example, the crawler's archit
 - Every PR fills in the template: what changed, how it was tested and the proof, error cases, LLM and agent call safety, and security review.
 - Update the task file and task board status in the same PR as the work.
 
+## Stack
+
+Everything runs on AWS serverless services. See [0003](docs/decisions/0003-serverless-aws-stack.md).
+
+- TypeScript everywhere on Node 22, in a pnpm monorepo: `apps/api`, `apps/worker`, `apps/web`, `packages/shared`, `packages/db`, `infra/` (AWS CDK).
+- API: API Gateway HTTP API → Lambda, with Zod validation from `packages/shared`.
+- Async: the API writes to DynamoDB (`status=queued`) → Stream → EventBridge Pipes → SQS → worker Lambda. Never send to SQS directly from the API. Workers must be idempotent.
+- Data: DynamoDB, accessed only through `packages/db`. Files go to S3 through presigned URLs.
+- UI: React, Vite, and TanStack Query on S3 and CloudFront. Auth is Cognito.
+- CI/CD: GitHub Actions with OIDC. No AWS keys anywhere.
+
 ## Commands
 
-No application code yet. The stack is chosen in T02; add the build, test and run commands here when they exist.
+No application code yet. T03 adds the build, test, and deploy commands here.

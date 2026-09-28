@@ -7,7 +7,7 @@ Every task goes through these statuses: `planned` → `researching` → `awaitin
 | ID | Task | Status | Depends on |
 |---|---|---|---|
 | T01 | [Agentic workspace and GitHub repository](t01-agentic-workspace.md) | done | — |
-| T02 | [Tech stack and async backbone decision](t02-stack-and-async-backbone.md) | awaiting-alignment | T01 |
+| T02 | [Tech stack and async backbone decision](t02-stack-and-async-backbone.md) | done | T01 |
 | T03 | [Infrastructure foundation](t03-infrastructure-foundation.md) | planned | T02 |
 | T04 | [Backend skeleton (API and worker)](t04-backend-skeleton.md) | planned | T03 |
 | T05 | [Profile API](t05-profile-api.md) | planned | T04 |
