@@ -50,7 +50,7 @@ Management account (billing, Organizations, IAM Identity Center, Route 53 domain
 ### 3. Region guardrail (service control policies)
 
 - **Deny all actions outside allowed Regions.** Dev allows only `us-east-1`. Prod allows `us-east-1`, `ap-south-1`, and `eu-west-2`. Global services (IAM, STS, Organizations, Route 53, CloudFront, ACM for CloudFront, Budgets, Cost Explorer, Support) are exempt.
-- **Deny leaving the organization**, and deny using the root user in member accounts.
+- **Deny leaving the organization.** Member accounts have **no root credentials** (centralized root access management), so the root user cannot be used there.
 - Even a coding mistake cannot create resources or copy data to another Region.
 
 ### 4. Cost control
