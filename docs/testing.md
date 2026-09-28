@@ -38,4 +38,9 @@ Every feature PR adds integration tests for its own feature, and the **whole** s
 | `pnpm verify` | Lint, typecheck, unit and infrastructure tests |
 | `JD_OWNER=<you> JD_FULL=1 AWS_PROFILE=jobdeputy-dev-iad pnpm test:integration` | Integration tests against your personal stack; `JD_FULL=1` adds the queue-level tests |
 
-The dev deploy runs the full integration suite (`JD_FULL=1`) after every merge to `main`. Running it on every PR before merge is planned as the next task.
+The full suite (`JD_FULL=1`) runs automatically:
+
+- **On every PR, before merge** (required check **Integration**, T11): the PR's code is deployed to its own stack `jobdeputy-dev-pr<N>-iad`, tested, and deleted. PRs that change only Markdown pass without deploying. PRs from forks get no AWS access; a maintainer pushes the branch to this repo after review.
+- **After every merge to `main`**, against the shared `jobdeputy-dev-iad`.
+
+Leftover PR stacks are deleted when the PR closes, and a daily job deletes any older than 24 hours.

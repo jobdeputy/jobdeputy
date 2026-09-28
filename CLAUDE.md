@@ -67,5 +67,6 @@ Node 22 and pnpm (through corepack). Run from the repo root unless noted.
 | `JD_OWNER=<you> JD_FULL=1 AWS_PROFILE=jobdeputy-dev-iad pnpm test:integration` | Integration tests against your personal stack (`JD_FULL=1` adds the queue-level tests) |
 
 - The shared `dev-iad` stack deploys automatically from `main`. Never deploy it by hand.
+- Every PR runs the full integration suite on its own temporary stack (`jobdeputy-dev-pr<N>-iad`, required check **Integration**). A PR cannot merge unless it passes. See [docs/testing.md](docs/testing.md).
 - Guard tests in `infra/test/` enforce decisions 0004 and 0005 (Region isolation and cost). Never weaken them to make a build pass.
 - One-time AWS organization setup lives in `infra/bootstrap/` (maintainers only).
