@@ -63,6 +63,20 @@ export class CellStack extends Stack {
       testsClient: props.stage === 'dev',
     });
 
+    // User data tables (docs/data-model.md): keyed by userId, never shared across cells.
+    const userTable = (logicalId: string, name: string) =>
+      new Table(this, logicalId, {
+        tableName: `${id}-${name}`,
+        partitionKey: { name: 'userId', type: AttributeType.STRING },
+        sortKey: { name: 'sk', type: AttributeType.STRING },
+        billingMode: BillingMode.PAY_PER_REQUEST,
+        // Same-Region backups in prod only (0004); dev data is disposable.
+        pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: isProd },
+        removalPolicy,
+      });
+    const usersTable = userTable('UsersTable', 'users');
+    const preferencesTable = userTable('PreferencesTable', 'preferences');
+
     const pingTable = new Table(this, 'PingJobsTable', {
       tableName: `${id}-ping-jobs`,
       partitionKey: { name: 'id', type: AttributeType.STRING },
@@ -129,6 +143,27 @@ export class CellStack extends Stack {
     // Least privilege: read one user's attributes (the email) in this cell's pool only.
     auth.userPool.grant(me.fn, 'cognito-idp:AdminGetUser');
 
+    const profile = new AppFunction(this, 'ProfileApi', {
+      entry: 'apps/api/src/profile.ts',
+      timeout: Duration.seconds(10),
+      removalPolicy,
+      environment: {
+        USERS_TABLE_NAME: usersTable.tableName,
+        PREFERENCES_TABLE_NAME: preferencesTable.tableName,
+        USER_POOL_ID: auth.userPool.userPoolId,
+        CELL: props.cell,
+      },
+    });
+    usersTable.grant(profile.fn, 'dynamodb:GetItem', 'dynamodb:PutItem');
+    preferencesTable.grant(
+      profile.fn,
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+      'dynamodb:Query',
+      'dynamodb:DeleteItem',
+    );
+    auth.userPool.grant(profile.fn, 'cognito-idp:AdminGetUser');
+
     const httpApi = new HttpApi(this, 'HttpApi', {
       apiName: id,
       createDefaultStage: false,
@@ -152,6 +187,16 @@ export class CellStack extends Stack {
       methods: [HttpMethod.GET],
       integration: new HttpLambdaIntegration('MeIntegration', me.fn),
     });
+    const profileIntegration = new HttpLambdaIntegration('ProfileIntegration', profile.fn);
+    const profileRoutes: [string, HttpMethod[]][] = [
+      ['/me/profile', [HttpMethod.GET, HttpMethod.PUT]],
+      ['/me/preferences/search', [HttpMethod.GET, HttpMethod.PUT]],
+      ['/me/roles', [HttpMethod.GET, HttpMethod.POST]],
+      ['/me/roles/{roleId}', [HttpMethod.PUT, HttpMethod.DELETE]],
+    ];
+    for (const [path, methods] of profileRoutes) {
+      httpApi.addRoutes({ path, methods, integration: profileIntegration });
+    }
 
     new CfnOutput(this, 'ApiUrl', { value: stage.url });
     new CfnOutput(this, 'UserPoolId', { value: auth.userPool.userPoolId });

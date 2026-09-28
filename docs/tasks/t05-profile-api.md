@@ -1,7 +1,7 @@
 # T05: Sign-up, sign-in, and profile API
 
-- **Status:** awaiting-alignment
-- **Branch / PR:** part 1 `t05-auth`, [#14](https://github.com/jobdeputy/jobdeputy/pull/14) (merged); part 2 `t05-profile`
+- **Status:** in-progress
+- **Branch / PR:** part 1 `t05-auth`, [#14](https://github.com/jobdeputy/jobdeputy/pull/14) (merged); T05b `t05-profile` (in review); T05c to follow
 - **Depends on:** T04
 
 ## Goal
@@ -179,14 +179,16 @@ The text of the résumé is extracted in a worker, the same way as T04: S3 → s
 
 #### 6. Delivery: two PRs
 
-1. **2a:** profile, search settings, and roles (the `users` and `preferences` tables). Small, and no files.
-2. **2b:** résumé upload, scanning, and extraction (the `documents` table, bucket, GuardDuty, and worker).
+1. **T05b:** profile, search settings, and roles (the `users` and `preferences` tables). Small, and no files.
+2. **T05c:** résumé upload, scanning, and extraction (the `documents` table, bucket, GuardDuty, and worker).
+
+"Later" in this section means **product Phase 2** (automated applications), not a part of this task.
 
 Each PR carries its own unit and integration tests. Integration tests upload small synthetic PDF and DOCX files (never real résumés) and check that a fake PDF is rejected, an oversized upload is refused by S3, and another user cannot read or download the document.
 
 #### Open questions (part 2)
 
-1. **Two PRs** (2a profile and roles, then 2b résumés)?
+1. **Two PRs** (T05b profile and roles, then T05c résumés)?
 2. **Now vs later:** profile, search settings, and roles now; application details, work history, and education in Phase 2?
 3. **Limits:** PDF and DOCX only, 5 MB, 20 pages, at most 10 résumés and 10 roles?
 4. **GuardDuty malware scanning** (pay per use: free for 1,000 files a month, then about $0.0007 per résumé; $0 idle)? It is a new paid-per-use service, so it needs your OK under 0005.
@@ -202,6 +204,14 @@ Part 1, agreed with the maintainer on 2026-09-28 (all five recommendations):
 4. **SES for production email** is a release blocker ([#13](https://github.com/jobdeputy/jobdeputy/issues/13)).
 5. **Every route uses the JWT authorizer**, including ping. CI loses `execute-api:Invoke` and gains only four Cognito admin calls for test users.
 
+Part 2, agreed with the maintainer on 2026-09-28 (all five recommendations):
+
+1. Two PRs: **T05b** (profile, search settings, roles), then **T05c** (résumés).
+2. Profile, search settings, and roles now. Application details, work history, education, and certifications wait for product Phase 2.
+3. Limits: PDF and DOCX only, 5 MB, 20 pages, at most 10 résumés and 10 roles.
+4. **GuardDuty Malware Protection for S3** is approved as a pay-per-use service under [0005](../decisions/0005-pre-launch-cost-guardrails.md) ($0 idle; free for 1,000 objects and 1 GB a month).
+5. Normal PDFs and DOCX files need no OCR. Image-only PDFs end as "ready, no text found"; OCR may come later.
+
 ## Done when
 
 Part 1 (auth):
@@ -210,7 +220,12 @@ Part 1 (auth):
 - [x] Every API route requires a valid token; no token, invalid tokens, and another user's data are rejected (integration tests).
 - [x] CI no longer has `execute-api:Invoke`; its Cognito permissions are the four admin calls only.
 
-Part 2 (profile):
+T05b (profile, search settings, roles):
 
-- [ ] Profile endpoints are tested, including invalid input and oversized or unsupported files.
-- [ ] Users can access only their own profile.
+- [x] Profile, search settings, and role endpoints are tested, including invalid input and concurrent saves (409).
+- [x] Users can access only their own profile and roles (unit and integration tests).
+
+T05c (résumés):
+
+- [ ] Uploads are tested, including oversized, unsupported, and fake files, and a failed malware scan.
+- [ ] Users can access and download only their own documents.

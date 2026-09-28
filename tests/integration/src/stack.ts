@@ -95,7 +95,7 @@ export interface ApiResponse {
 /** Calls the API with a bearer token (or none). */
 export async function callApi(
   baseUrl: string,
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   path: string,
   token: string | undefined,
   body?: unknown,

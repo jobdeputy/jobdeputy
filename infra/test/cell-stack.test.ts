@@ -178,6 +178,44 @@ describe('least privilege (T04)', () => {
   it('lets GET /me only read users, and nothing else', () => {
     expect(actionsFor('MeApiFn')).toEqual(['cognito-idp:AdminGetUser']);
   });
+
+  it('gives the profile API only the calls it makes on its two tables', () => {
+    expect([...new Set(actionsFor('ProfileApiFn'))].sort()).toEqual([
+      'cognito-idp:AdminGetUser',
+      'dynamodb:DeleteItem',
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+      'dynamodb:Query',
+    ]);
+    // Query and DeleteItem (roles) only on preferences; users is get and put only.
+    const policy = Object.entries(t.findResources('AWS::IAM::Policy')).find(([id]) =>
+      id.startsWith('ProfileApiFn'),
+    )?.[1];
+    const statements = policy?.Properties.PolicyDocument.Statement as {
+      Action: string | string[];
+      Resource: unknown;
+    }[];
+    const users = statements.find((s) => JSON.stringify(s.Resource).includes('UsersTable'));
+    expect([users?.Action].flat().sort()).toEqual(['dynamodb:GetItem', 'dynamodb:PutItem']);
+  });
+
+  it('keys user tables by userId and sk, with backups only in prod', () => {
+    for (const name of ['jobdeputy-dev-iad-users', 'jobdeputy-dev-iad-preferences']) {
+      t.hasResourceProperties('AWS::DynamoDB::Table', {
+        TableName: name,
+        KeySchema: [
+          { AttributeName: 'userId', KeyType: 'HASH' },
+          { AttributeName: 'sk', KeyType: 'RANGE' },
+        ],
+        PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: false },
+      });
+    }
+    const prod = buildApp({ stage: 'prod', env: {} }).node.findChild('jobdeputy-prod-iad');
+    Template.fromStack(prod as never).hasResourceProperties('AWS::DynamoDB::Table', {
+      TableName: 'jobdeputy-prod-iad-users',
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true },
+    });
+  });
 });
 
 describe('HTTP API (T04)', () => {
@@ -189,7 +227,19 @@ describe('HTTP API (T04)', () => {
       Object.values(routes)
         .map((r) => r.Properties.RouteKey)
         .sort(),
-    ).toEqual(['GET /me', 'GET /ping-jobs/{id}', 'POST /ping-jobs']);
+    ).toEqual([
+      'DELETE /me/roles/{roleId}',
+      'GET /me',
+      'GET /me/preferences/search',
+      'GET /me/profile',
+      'GET /me/roles',
+      'GET /ping-jobs/{id}',
+      'POST /me/roles',
+      'POST /ping-jobs',
+      'PUT /me/preferences/search',
+      'PUT /me/profile',
+      'PUT /me/roles/{roleId}',
+    ]);
     for (const route of Object.values(routes)) {
       expect(route.Properties.AuthorizationType).toBe('JWT');
     }
