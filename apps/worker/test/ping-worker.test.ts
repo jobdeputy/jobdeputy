@@ -107,6 +107,7 @@ describe('ping worker', () => {
     expect(repo.state).toMatchObject({ status: 'failed', attempts: 3 });
     expect(repo.state.error).toContain('Forced failure');
     expect(repo.markFailed).toHaveBeenCalledTimes(1);
+    expect(d.delayRetry).toHaveBeenLastCalledWith(expect.anything(), 0);
   });
 
   it('records a timeout as a failure instead of hanging', async () => {

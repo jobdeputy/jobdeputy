@@ -58,6 +58,9 @@ export async function processRecord(record: SQSRecord, deps: RecordDeps): Promis
     if (receiveCount >= MAX_RECEIVES) {
       logger.error('Job failed on its last attempt', { jobId: id, receiveCount, reason });
       await deps.repo.markFailed(id, reason);
+      // Visible again at once, so SQS moves it to the dead-letter queue now
+      // instead of after the full visibility timeout.
+      await deps.delayRetry(record, 0).catch(() => undefined);
     } else {
       logger.warn('Attempt failed; will retry', { jobId: id, receiveCount, reason });
       await deps.repo.recordAttemptError(id, reason);

@@ -77,7 +77,9 @@ export class AsyncPipeline extends Construct {
       source: props.table.tableStreamArn,
       sourceParameters: {
         dynamoDbStreamParameters: {
-          startingPosition: 'LATEST',
+          // Not LATEST: records written while the Pipe is (re)starting would be lost.
+          // Replays are harmless because the filter and the worker skip finished items.
+          startingPosition: 'TRIM_HORIZON',
           batchSize: 1,
           maximumRetryAttempts: 2,
           deadLetterConfig: { arn: this.deadLetterQueue.queueArn },

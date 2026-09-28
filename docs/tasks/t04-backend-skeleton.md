@@ -1,6 +1,6 @@
 # T04: Serverless backend skeleton (API, async pipeline, and worker)
 
-- **Status:** in-progress
+- **Status:** in-review
 - **Branch / PR:** `t04-backend-skeleton`
 - **Depends on:** T03
 
@@ -39,7 +39,7 @@ Conventions:
 
 ### 2. Pipe and SQS settings
 
-- **Pipe source:** the table's stream, starting position `LATEST`, batch size 1 (each request is its own message), and a filter on `INSERT` with `status = queued`. Two retries, then the record goes to the dead-letter queue.
+- **Pipe source:** the table's stream, starting position `TRIM_HORIZON` (changed from `LATEST` during implementation: `LATEST` lost a request written while the Pipe was starting), batch size 1 (each request is its own message), and a filter on `INSERT` with `status = queued`. Two retries, then the record goes to the dead-letter queue.
 - **Pipe target:** the jobs queue. An input template sends only `{ "type", "id", "pk", "sk" }`, never the full item, so no user data sits in queue messages.
 - **Jobs queue:** SQS-managed encryption (free). Visibility timeout is 6 × the worker timeout, as AWS recommends. **3 receives, then the dead-letter queue.** This matches the "max 3" rule.
 - **Dead-letter queue:** one per cell, messages kept 14 days. The CloudWatch alarm "DLQ not empty" is within the free tier (10 alarms). Failed messages are redriven with the built-in SQS redrive button; no custom code.
@@ -116,6 +116,6 @@ Agreed with the maintainer on 2026-09-28:
 
 ## Done when
 
-- [ ] `POST /ping-jobs` returns a job ID immediately. The worker marks it `succeeded`, and a forced failure ends as `failed` with a reason after retries and lands in the dead-letter queue.
-- [ ] A duplicate SQS delivery does not repeat side effects (idempotency test).
-- [ ] The same stack synthesizes for every cell, and residency tests pass.
+- [x] `POST /ping-jobs` returns a job ID immediately. The worker marks it `succeeded`, and a forced failure ends as `failed` with a reason after retries and lands in the dead-letter queue.
+- [x] A duplicate SQS delivery does not repeat side effects (idempotency test).
+- [x] The same stack synthesizes for every cell, and residency tests pass.

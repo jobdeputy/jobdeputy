@@ -4,7 +4,7 @@ import { CfnFunction } from 'aws-cdk-lib/aws-lambda';
 import { LogGroup } from 'aws-cdk-lib/aws-logs';
 import { describe, expect, it } from 'vitest';
 import { MAX_RECEIVES as WORKER_MAX_RECEIVES } from '../../apps/worker/src/ping-worker.js';
-import { buildApp } from '../lib/build-app.js';
+import { buildApp, parseAlertEmails } from '../lib/build-app.js';
 import { MAX_RECEIVES } from '../lib/cell-stack.js';
 import { checkGuards } from '../lib/guards.js';
 
@@ -21,7 +21,7 @@ describe('async pipeline (T04)', () => {
     t.hasResourceProperties('AWS::Pipes::Pipe', {
       SourceParameters: {
         DynamoDBStreamParameters: {
-          StartingPosition: 'LATEST',
+          StartingPosition: 'TRIM_HORIZON',
           BatchSize: 1,
           MaximumRetryAttempts: 2,
           DeadLetterConfig: { Arn: Match.anyValue() },
@@ -72,12 +72,22 @@ describe('async pipeline (T04)', () => {
     });
   });
 
-  it('subscribes the alert email only when given through the environment', () => {
+  it('subscribes alert emails only when given through the environment', () => {
     t.resourceCountIs('AWS::SNS::Subscription', 0);
-    devTemplate({ JD_ALERT_EMAIL: 'alerts@example.com' }).hasResourceProperties(
-      'AWS::SNS::Subscription',
-      { Protocol: 'email', Endpoint: 'alerts@example.com' },
-    );
+    const withEmails = devTemplate({ JD_ALERT_EMAIL: 'a@example.com, b@example.com' });
+    withEmails.resourceCountIs('AWS::SNS::Subscription', 2);
+    withEmails.hasResourceProperties('AWS::SNS::Subscription', {
+      Protocol: 'email',
+      Endpoint: 'b@example.com',
+    });
+  });
+
+  it('rejects invalid or too many alert emails', () => {
+    expect(parseAlertEmails(undefined)).toEqual([]);
+    expect(parseAlertEmails('a@example.com,a@example.com')).toEqual(['a@example.com']);
+    expect(() => parseAlertEmails('not-an-email')).toThrow(/invalid/);
+    const six = Array.from({ length: 6 }, (_, i) => `u${i}@example.com`).join(',');
+    expect(() => parseAlertEmails(six)).toThrow(/at most 5/);
   });
 
   it('uses on-demand tables with expiry, and destroys them only outside prod', () => {

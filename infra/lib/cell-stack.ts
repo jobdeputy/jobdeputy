@@ -17,8 +17,8 @@ export interface CellStackProps extends StackProps {
   readonly cell: CellId;
   /** Set for personal developer stacks, for example "nava". */
   readonly owner?: string;
-  /** Receives alarm emails. Comes from JD_ALERT_EMAIL, never from the repository. */
-  readonly alertEmail?: string;
+  /** Receive alarm emails. Come from JD_ALERT_EMAIL (comma-separated), never from the repository. */
+  readonly alertEmails?: readonly string[];
 }
 
 const WORKER_TIMEOUT = Duration.seconds(30);
@@ -51,7 +51,9 @@ export class CellStack extends Stack {
 
     // Free until it sends (email notifications are free up to 1,000 a month).
     const alarmTopic = new Topic(this, 'Alarms', { topicName: `${id}-alarms` });
-    if (props.alertEmail) alarmTopic.addSubscription(new EmailSubscription(props.alertEmail));
+    for (const email of props.alertEmails ?? []) {
+      alarmTopic.addSubscription(new EmailSubscription(email));
+    }
 
     const pingTable = new Table(this, 'PingJobsTable', {
       tableName: `${id}-ping-jobs`,

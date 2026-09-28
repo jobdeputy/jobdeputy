@@ -35,7 +35,7 @@ export function buildApp(options: BuildAppOptions): App {
       stage,
       cell,
       ...(owner ? { owner } : {}),
-      ...(env.JD_ALERT_EMAIL ? { alertEmail: env.JD_ALERT_EMAIL } : {}),
+      alertEmails: parseAlertEmails(env.JD_ALERT_EMAIL),
       env: { region: CELLS[cell].region, ...(account ? { account } : {}) },
       // Decision 0004: never share values across Regions.
       crossRegionReferences: false,
@@ -48,4 +48,23 @@ export function stageFromContext(value: unknown): StageName {
   const stage = value ?? 'dev';
   if (!isStageName(stage)) throw new Error(`Unknown stage "${String(stage)}". Use dev or prod.`);
   return stage;
+}
+
+const EMAIL_PATTERN = /^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/;
+/** At most this many alarm recipients per cell (each must confirm by email). */
+export const MAX_ALERT_EMAILS = 5;
+
+/** Parses JD_ALERT_EMAIL: one address, or several separated by commas. */
+export function parseAlertEmails(value: string | undefined): string[] {
+  const emails = (value ?? '')
+    .split(',')
+    .map((e) => e.trim())
+    .filter(Boolean);
+  const invalid = emails.filter((e) => !EMAIL_PATTERN.test(e));
+  if (invalid.length > 0)
+    throw new Error(`JD_ALERT_EMAIL has ${invalid.length} invalid address(es).`);
+  if (emails.length > MAX_ALERT_EMAILS) {
+    throw new Error(`JD_ALERT_EMAIL allows at most ${MAX_ALERT_EMAILS} addresses.`);
+  }
+  return [...new Set(emails)];
 }
