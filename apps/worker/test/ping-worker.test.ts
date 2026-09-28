@@ -13,6 +13,7 @@ function job(over: Partial<PingJob> = {}): PingJob {
     status: 'running',
     attempts: 1,
     sideEffectCount: 0,
+    deliveries: 0,
     createdAt: 't',
     updatedAt: 't',
     schemaVersion: 1,
@@ -26,6 +27,9 @@ function memoryRepo(initial: PingJob) {
   const state = { ...initial, status: 'queued' as PingJob['status'], attempts: 0 };
   return {
     state,
+    recordDelivery: vi.fn(async () => {
+      state.deliveries += 1;
+    }),
     markRunning: vi.fn(async () => {
       if (state.status !== 'queued' && state.status !== 'running') return undefined;
       state.status = 'running';
@@ -83,7 +87,7 @@ describe('ping worker', () => {
     const d = deps(repo);
     await processRecord(record(1), d);
     await expect(processRecord(record(1), d)).resolves.toEqual({ outcome: 'skipped' });
-    expect(repo.state.sideEffectCount).toBe(1);
+    expect(repo.state).toMatchObject({ sideEffectCount: 1, deliveries: 2 });
   });
 
   it('records the error and backs off on early failures', async () => {

@@ -48,6 +48,18 @@ describe('PingRepository', () => {
     expect(cmd.input.ConditionExpression).toBe('attribute_exists(id) AND #status = :running');
   });
 
+  it('counts deliveries without failing for missing jobs', async () => {
+    const client = fakeClient(() => {
+      const e = new Error('no');
+      e.name = 'ConditionalCheckFailedException';
+      throw e;
+    });
+    await expect(new PingRepository(client, 'T').recordDelivery('x')).resolves.toBeUndefined();
+    const cmd = client.send.mock.calls[0]?.[0] as UpdateCommand;
+    expect(cmd.input.UpdateExpression).toContain('ADD deliveries :one');
+    expect(cmd.input.ExpressionAttributeNames).toBeUndefined();
+  });
+
   it('truncates long error reasons', async () => {
     const client = fakeClient(() => ({ Attributes: {} }));
     await new PingRepository(client, 'T').markFailed('x', 'e'.repeat(2000));

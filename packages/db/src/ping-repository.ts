@@ -10,6 +10,8 @@ export interface PingJob {
   status: 'queued' | 'running' | 'succeeded' | 'failed';
   attempts: number;
   sideEffectCount: number;
+  /** Every queue delivery, including duplicates and skips. Lets tests wait on a fact, not a sleep. */
+  deliveries: number;
   fail?: boolean;
   error?: string;
   createdAt: string;
@@ -36,6 +38,7 @@ export class PingRepository {
       status: 'queued',
       attempts: 0,
       sideEffectCount: 0,
+      deliveries: 0,
       ...(options.fail ? { fail: true } : {}),
       createdAt: at.toISOString(),
       updatedAt: at.toISOString(),
@@ -57,6 +60,23 @@ export class PingRepository {
       new GetCommand({ TableName: this.tableName, Key: { id }, ConsistentRead: true }),
     );
     return res.Item as PingJob | undefined;
+  }
+
+  /** Counts a delivery before any other check, so duplicates are visible too. */
+  async recordDelivery(id: string): Promise<void> {
+    try {
+      await this.client.send(
+        new UpdateCommand({
+          TableName: this.tableName,
+          Key: { id },
+          UpdateExpression: 'ADD deliveries :one SET updatedAt = :now',
+          ConditionExpression: 'attribute_exists(id)',
+          ExpressionAttributeValues: { ':one': 1, ':now': this.now().toISOString() },
+        }),
+      );
+    } catch (error) {
+      if (!isConditionFailure(error)) throw error;
+    }
   }
 
   /** queued|running → running, counting the attempt. Undefined if the job is already final or missing. */

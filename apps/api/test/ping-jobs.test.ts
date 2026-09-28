@@ -9,6 +9,7 @@ const JOB: PingJob = {
   status: 'queued',
   attempts: 0,
   sideEffectCount: 0,
+  deliveries: 0,
   createdAt: 't',
   updatedAt: 't',
   schemaVersion: 1,

@@ -15,6 +15,7 @@ JobDeputy discovers jobs from any URL a user gives, keeps the relevant ones, and
 | Task board and current status | [docs/tasks/README.md](docs/tasks/README.md) |
 | One task's goal, research, decision, done criteria | `docs/tasks/tNN-*.md` |
 | Tables, attributes, and S3 paths | [docs/data-model.md](docs/data-model.md) |
+| What to test where, and rules against flaky tests | [docs/testing.md](docs/testing.md) |
 | Agreed decisions (do not re-litigate) | [docs/decisions/](docs/decisions/README.md) |
 | Contribution and branch rules | [CONTRIBUTING.md](CONTRIBUTING.md) |
 

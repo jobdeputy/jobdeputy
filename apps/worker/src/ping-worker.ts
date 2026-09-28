@@ -18,7 +18,7 @@ export const SAFETY_MARGIN_MS = 5_000;
 
 type Repository = Pick<
   PingRepository,
-  'markRunning' | 'completeWithSideEffect' | 'recordAttemptError' | 'markFailed'
+  'recordDelivery' | 'markRunning' | 'completeWithSideEffect' | 'recordAttemptError' | 'markFailed'
 >;
 
 export type RunResult = { outcome: 'succeeded' | 'skipped' };
@@ -51,6 +51,8 @@ export async function processRecord(record: SQSRecord, deps: RecordDeps): Promis
   }
   const { id } = parsed.data;
   const receiveCount = Number(record.attributes.ApproximateReceiveCount);
+  // Outside the idempotent part on purpose: duplicates are counted too.
+  await deps.repo.recordDelivery(id);
   try {
     return await withDeadline(deps.run(parsed.data), deps.remainingMs() - SAFETY_MARGIN_MS);
   } catch (error) {

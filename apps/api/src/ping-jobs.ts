@@ -51,12 +51,22 @@ export async function route(event: APIGatewayProxyEventV2, deps: Deps): Promise<
       if (!id.success) return validationProblem(id.error, requestId);
       const job = await deps.repo.get(id.data);
       if (!job) return problem(404, 'Not found', { requestId });
-      const { id: jobId, status, attempts, sideEffectCount, error, createdAt, updatedAt } = job;
+      const {
+        id: jobId,
+        status,
+        attempts,
+        sideEffectCount,
+        deliveries,
+        error,
+        createdAt,
+        updatedAt,
+      } = job;
       return json(200, {
         id: jobId,
         status,
         attempts,
         sideEffectCount,
+        deliveries,
         ...(error ? { error } : {}),
         createdAt,
         updatedAt,

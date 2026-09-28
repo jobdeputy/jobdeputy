@@ -46,6 +46,7 @@ Use synthetic data only — no real résumés, credentials, or personal data.
 |---|---|---|
 | <!-- e.g. unreachable URL --> | <!-- e.g. job marked failed with reason, retried 3 times --> | <!-- yes: test name / no: why --> |
 
+- [ ] Tests follow [docs/testing.md](../docs/testing.md): thorough unit tests; integration tests only for deployed wiring, with no fixed sleeps.
 - [ ] Invalid input is rejected with a clear error.
 - [ ] External failures (network, timeouts, third-party errors) are handled and do not crash the worker.
 - [ ] Async jobs end in a clear final state (succeeded or failed with a reason) and retries are safe to repeat.
