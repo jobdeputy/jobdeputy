@@ -128,7 +128,7 @@ Key: `userId`, `sk`. Values are encrypted in the application before they are wri
 
 ## 14–15. Infrastructure
 
-- `ping-jobs` (key `id`): `status`, `attempts`, `sideEffectCount`, `deliveries` (every queue delivery, including duplicates), `fail?` (dev-only test flag), `error?`, `ttl` (7 days).
+- `ping-jobs` (key `id`): `userId` (owner; only the owner can read it), `status`, `attempts`, `sideEffectCount`, `deliveries` (every queue delivery, including duplicates), `fail?` (dev-only test flag), `error?`, `ttl` (7 days).
 - `idempotency` (key `id`): Powertools' own schema, with `expiration` as its time-to-live.
 
 ## S3 layout (one bucket per cell)
@@ -147,3 +147,4 @@ Everything under `users/<userId>/` goes with account deletion or export.
 |---|---|---|
 | 2026-09-28 | Initial schema for all 15 tables ([0006](decisions/0006-data-model.md)) | T04 |
 | 2026-09-28 | `ping-jobs`: add `deliveries`, so tests wait on a counted delivery instead of sleeping | T04 |
+| 2026-09-28 | `ping-jobs`: add `userId` (owner from the token); other users get 404 | T05 |

@@ -134,9 +134,14 @@ describe('CI/CD deploy role', () => {
             Resource: 'arn:aws:cloudformation:us-east-1:111111111111:stack/jobdeputy-dev-iad/*',
           },
           {
-            Action: 'execute-api:Invoke',
+            Action: [
+              'cognito-idp:AdminCreateUser',
+              'cognito-idp:AdminSetUserPassword',
+              'cognito-idp:AdminInitiateAuth',
+              'cognito-idp:AdminDeleteUser',
+            ],
             Effect: 'Allow',
-            Resource: 'arn:aws:execute-api:us-east-1:111111111111:*/*/*/*',
+            Resource: 'arn:aws:cognito-idp:us-east-1:111111111111:userpool/*',
           },
           {
             Action: 'sqs:SendMessage',

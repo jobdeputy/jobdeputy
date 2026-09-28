@@ -14,8 +14,14 @@ const NOW = new Date('2026-09-28T00:00:00.000Z');
 describe('PingRepository', () => {
   it('creates a queued job that expires after 7 days, never overwriting', async () => {
     const client = fakeClient(() => ({}));
-    const job = await new PingRepository(client, 'T', () => NOW).create();
-    expect(job).toMatchObject({ status: 'queued', attempts: 0, sideEffectCount: 0, type: 'ping' });
+    const job = await new PingRepository(client, 'T', () => NOW).create({ userId: 'u-1' });
+    expect(job).toMatchObject({
+      status: 'queued',
+      attempts: 0,
+      sideEffectCount: 0,
+      type: 'ping',
+      userId: 'u-1',
+    });
     expect(job.ttl).toBe(NOW.getTime() / 1000 + 7 * 86400);
     const cmd = client.send.mock.calls[0]?.[0] as PutCommand;
     expect(cmd).toBeInstanceOf(PutCommand);
