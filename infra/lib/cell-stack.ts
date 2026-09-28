@@ -91,7 +91,7 @@ export class CellStack extends Stack {
         STAGE: props.stage,
       },
     });
-    // DELIBERATE BREAK (T11 proof, reverted next commit): worker loses its write access.
+    pingTable.grant(worker.fn, 'dynamodb:UpdateItem');
     // What Powertools idempotency needs.
     idempotencyTable.grant(
       worker.fn,
