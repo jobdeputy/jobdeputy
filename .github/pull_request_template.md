@@ -74,6 +74,7 @@ Use synthetic data only — no real résumés, credentials, or personal data.
 - [ ] **Secrets:** no secrets, keys, or personal data in code, tests, logs, or screenshots.
 - [ ] **User credentials (BYOT):** not logged, not returned in API responses, not shared across users.
 - [ ] **Access control:** users can only read or change their own data.
+- [ ] **Data residency:** user data stays in the user's home Region. No cross-Region replication, references, or central user store ([0004](../docs/decisions/0004-regional-cells-and-data-residency.md)).
 - [ ] **Untrusted input:** URLs, uploaded files, and crawled content are validated. No SSRF, injection, or unsafe file handling.
 - [ ] **Dependencies:** new dependencies are necessary, maintained, and have no known critical vulnerabilities.
 - [ ] **No new threats**, or new threats are listed below with their mitigations.
