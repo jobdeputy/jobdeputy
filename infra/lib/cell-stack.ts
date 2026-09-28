@@ -1,3 +1,4 @@
+import { DERIVED_PREFIX, SCANNED_PREFIX } from '@jobdeputy/shared';
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps, Tags } from 'aws-cdk-lib';
 import { HttpApi, HttpMethod, HttpStage } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
@@ -11,6 +12,7 @@ import { CELLS, type CellId } from '../config/cells.js';
 import type { StageName } from '../config/stages.js';
 import { AsyncPipeline } from './constructs/async-pipeline.js';
 import { Auth } from './constructs/auth.js';
+import { Documents } from './constructs/documents.js';
 import { AppFunction } from './constructs/node-function.js';
 
 export interface CellStackProps extends StackProps {
@@ -64,11 +66,12 @@ export class CellStack extends Stack {
     });
 
     // User data tables (docs/data-model.md): keyed by userId, never shared across cells.
-    const userTable = (logicalId: string, name: string) =>
+    const userTable = (logicalId: string, name: string, sortKey = 'sk', ttl?: string) =>
       new Table(this, logicalId, {
         tableName: `${id}-${name}`,
         partitionKey: { name: 'userId', type: AttributeType.STRING },
-        sortKey: { name: 'sk', type: AttributeType.STRING },
+        sortKey: { name: sortKey, type: AttributeType.STRING },
+        ...(ttl ? { timeToLiveAttribute: ttl } : {}),
         billingMode: BillingMode.PAY_PER_REQUEST,
         // Same-Region backups in prod only (0004); dev data is disposable.
         pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: isProd },
@@ -76,6 +79,14 @@ export class CellStack extends Stack {
       });
     const usersTable = userTable('UsersTable', 'users');
     const preferencesTable = userTable('PreferencesTable', 'preferences');
+    // Pending uploads that never arrive expire (ttl).
+    const documentsTable = userTable('DocumentsTable', 'documents', 'documentId', 'ttl');
+    const documents = new Documents(this, 'Documents', {
+      namePrefix: id,
+      table: documentsTable,
+      removalPolicy,
+      alarmTopic,
+    });
 
     const pingTable = new Table(this, 'PingJobsTable', {
       tableName: `${id}-ping-jobs`,
@@ -164,6 +175,30 @@ export class CellStack extends Stack {
     );
     auth.userPool.grant(profile.fn, 'cognito-idp:AdminGetUser');
 
+    const documentsApi = new AppFunction(this, 'DocumentsApi', {
+      entry: 'apps/api/src/documents.ts',
+      timeout: Duration.seconds(10),
+      removalPolicy,
+      environment: {
+        DOCUMENTS_TABLE_NAME: documentsTable.tableName,
+        DOCUMENTS_BUCKET_NAME: documents.bucket.bucketName,
+      },
+    });
+    documentsTable.grant(
+      documentsApi.fn,
+      'dynamodb:Query',
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+      'dynamodb:UpdateItem',
+      'dynamodb:DeleteItem',
+    );
+    // Presigned POST (upload) and GET (download) of uploads only; deletes uploads and derived files.
+    documents.bucket.grantPut(documentsApi.fn, `${SCANNED_PREFIX}*`);
+    documents.bucket.grantRead(documentsApi.fn, `${SCANNED_PREFIX}*`);
+    documents.bucket.grantDelete(documentsApi.fn, `${SCANNED_PREFIX}*`);
+    documents.bucket.grantDelete(documentsApi.fn, `${DERIVED_PREFIX}*`);
+    if (documentsApi.fn.role) documents.denyUnscannedDownloads(documentsApi.fn.role);
+
     const httpApi = new HttpApi(this, 'HttpApi', {
       apiName: id,
       createDefaultStage: false,
@@ -197,9 +232,24 @@ export class CellStack extends Stack {
     for (const [path, methods] of profileRoutes) {
       httpApi.addRoutes({ path, methods, integration: profileIntegration });
     }
+    const documentsIntegration = new HttpLambdaIntegration('DocumentsIntegration', documentsApi.fn);
+    httpApi.addRoutes({
+      path: '/me/documents',
+      methods: [HttpMethod.GET, HttpMethod.POST],
+      integration: documentsIntegration,
+    });
+    httpApi.addRoutes({
+      path: '/me/documents/{documentId}',
+      methods: [HttpMethod.GET, HttpMethod.PUT, HttpMethod.DELETE],
+      integration: documentsIntegration,
+    });
 
     new CfnOutput(this, 'ApiUrl', { value: stage.url });
     new CfnOutput(this, 'UserPoolId', { value: auth.userPool.userPoolId });
+    new CfnOutput(this, 'DocumentsBucketName', { value: documents.bucket.bucketName });
+    new CfnOutput(this, 'MalwareProtectionPlanId', {
+      value: documents.malwarePlan.attrMalwareProtectionPlanId,
+    });
     new CfnOutput(this, 'WebClientId', { value: auth.webClient.userPoolClientId });
     if (auth.testsClient) {
       new CfnOutput(this, 'TestsClientId', { value: auth.testsClient.userPoolClientId });

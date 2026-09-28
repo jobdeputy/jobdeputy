@@ -1,7 +1,7 @@
 # T05: Sign-up, sign-in, and profile API
 
-- **Status:** in-progress
-- **Branch / PR:** part 1 `t05-auth`, [#14](https://github.com/jobdeputy/jobdeputy/pull/14) (merged); T05b `t05-profile` (in review); T05c to follow
+- **Status:** in-review
+- **Branch / PR:** part 1 `t05-auth`, [#14](https://github.com/jobdeputy/jobdeputy/pull/14) (merged); T05b `t05-profile` (merged); T05c `t05-documents` (in review)
 - **Depends on:** T04
 
 ## Goal
@@ -217,6 +217,14 @@ Agreed during T05b review (2026-09-28):
 - **Separate endpoints** for profile, search settings, and each role (not one page-wide endpoint): each item keeps its own version, so edits in different tabs do not conflict; role IDs stay stable for jobs and scores (T08); storage maps one-to-one to items with no multi-table transaction on every save. A combined read-only endpoint is reconsidered in T09 if the UI needs it.
 - **Account deletion** (`DELETE /me`) becomes its own ticket ([#17](https://github.com/jobdeputy/jobdeputy/issues/17)) after T05c; test clean-up will use it.
 
+Implementation notes for T05c (2026-09-28):
+
+- Statuses are `pending → processing → ready`, or `rejected` / `failed`. The research's separate "scanning" state was dropped: nothing observable happens between the upload and the scan result, so `pending` covers both.
+- GuardDuty turns on the bucket's EventBridge notifications itself; CDK configures none (no second writer).
+- A threat result always wins: the file is deleted and the document rejected, whatever its status. A re-upload (new ETag) is processed again. Files that could not be scanned are never kept.
+- The API role cannot read an `original` unless GuardDuty tagged it `NO_THREATS_FOUND` (bucket policy).
+- Uploads live under `users/` (scanned); files we produce, such as the extracted text, live under `derived/users/` (not scanned), so each upload is scanned exactly once. The original is kept for download, applications (product Phase 2), and tailoring; the text is kept so matching (T08) does not re-parse files.
+
 ## Done when
 
 Part 1 (auth):
@@ -232,5 +240,5 @@ T05b (profile, search settings, roles):
 
 T05c (résumés):
 
-- [ ] Uploads are tested, including oversized, unsupported, and fake files, and a failed malware scan.
-- [ ] Users can access and download only their own documents.
+- [x] Uploads are tested, including oversized, unsupported, and fake files, and a failed malware scan (EICAR, rejected by GuardDuty).
+- [x] Users can access and download only their own documents.

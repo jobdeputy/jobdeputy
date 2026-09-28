@@ -1,4 +1,5 @@
 export * from './client.js';
+export * from './document-repository.js';
 export * from './ping-repository.js';
 export * from './preferences-repository.js';
 export * from './profile-repository.js';

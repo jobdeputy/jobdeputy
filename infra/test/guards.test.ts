@@ -144,6 +144,11 @@ describe('CI/CD deploy role', () => {
             Resource: 'arn:aws:cognito-idp:us-east-1:111111111111:userpool/*',
           },
           {
+            Action: 'guardduty:GetMalwareProtectionPlan',
+            Effect: 'Allow',
+            Resource: 'arn:aws:guardduty:us-east-1:111111111111:malware-protection-plan/*',
+          },
+          {
             Action: 'sqs:SendMessage',
             Effect: 'Allow',
             Resource: 'arn:aws:sqs:us-east-1:111111111111:jobdeputy-dev-iad-*',
