@@ -24,6 +24,10 @@
 
 `main` is protected: no direct pushes and no force pushes.
 
+## Integration tests on PRs
+
+Every PR must pass the **Integration** check: the PR's code is deployed to its own temporary AWS stack, the full integration suite runs, and the stack is deleted ([docs/testing.md](docs/testing.md)). PRs from forks get no AWS access, so the check fails for them; after reviewing the code, a maintainer pushes the branch to this repository to run it.
+
 ## Keeping a branch current
 
 Rebase onto `main` instead of merging `main` into your branch:

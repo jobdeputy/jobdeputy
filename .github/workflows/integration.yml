@@ -1,0 +1,90 @@
+name: Integration
+
+# T11: every PR deploys its own stack from its code, runs the full integration
+# suite, and deletes the stack. Required check, so a PR cannot merge if any
+# feature (new or old) is broken. See docs/testing.md.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  id-token: write # GitHub OIDC -> AWS, no stored keys
+
+concurrency:
+  # One run per PR. Never cancel: stopping mid-deploy leaves a stack stuck.
+  group: integration-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  integration:
+    name: Integration
+    runs-on: ubuntu-latest
+    environment: pr
+    timeout-minutes: 45
+    env:
+      STACK: jobdeputy-dev-pr${{ github.event.pull_request.number }}-iad
+      OWNER: pr${{ github.event.pull_request.number }}
+      AWS_REGION: us-east-1
+    steps:
+      - name: Refuse PRs from forks
+        if: github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "::error::PRs from forks get no AWS access. A maintainer can push this branch to jobdeputy/jobdeputy after review to run the integration tests."
+          exit 1
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detect docs-only changes
+        id: changes
+        run: |
+          files=$(git diff --name-only "${{ github.event.pull_request.base.sha }}" HEAD)
+          echo "$files"
+          if echo "$files" | grep -qvE '\.md$'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+            echo "Only Markdown changed: no deploy needed."
+          fi
+
+      - uses: pnpm/action-setup@v6
+        if: steps.changes.outputs.code == 'true'
+      - uses: actions/setup-node@v7
+        if: steps.changes.outputs.code == 'true'
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - if: steps.changes.outputs.code == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        if: steps.changes.outputs.code == 'true'
+        with:
+          role-to-assume: ${{ secrets.AWS_PR_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Deploy the PR stack
+        if: steps.changes.outputs.code == 'true'
+        working-directory: infra
+        env:
+          JD_ACCOUNT_DEV_IAD: ${{ secrets.JD_ACCOUNT_DEV_IAD }}
+        run: |
+          exec_role="arn:aws:iam::${JD_ACCOUNT_DEV_IAD}:role/cdk-hnb659fds-cfn-exec-role-${JD_ACCOUNT_DEV_IAD}-us-east-1"
+          pnpm cdk deploy "$STACK" -c stage=dev -c owner="$OWNER" -c cliCredentials=true \
+            --role-arn "$exec_role" --require-approval never
+
+      - name: Integration tests (full suite)
+        if: steps.changes.outputs.code == 'true'
+        env:
+          JD_STACK: ${{ env.STACK }}
+          JD_FULL: '1'
+        run: pnpm test:integration
+
+      - name: Delete the PR stack
+        if: always() && steps.changes.outputs.code == 'true'
+        run: |
+          aws cloudformation delete-stack --stack-name "$STACK"
+          aws cloudformation wait stack-delete-complete --stack-name "$STACK"

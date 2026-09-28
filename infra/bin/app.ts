@@ -7,8 +7,9 @@ import { CicdStack } from '../lib/cicd-stack.js';
 const app = new App();
 const stage = stageFromContext(app.node.tryGetContext('stage'));
 const owner = app.node.tryGetContext('owner') as string | undefined;
+const cliCredentials = String(app.node.tryGetContext('cliCredentials')) === 'true';
 
-buildApp({ app, stage, ...(owner ? { owner } : {}) });
+buildApp({ app, stage, cliCredentials, ...(owner ? { owner } : {}) });
 
 // Deployed once per workload account by an admin: cdk deploy -c cicd=true
 if (app.node.tryGetContext('cicd') === 'true' || app.node.tryGetContext('cicd') === true) {
@@ -17,5 +18,7 @@ if (app.node.tryGetContext('cicd') === 'true' || app.node.tryGetContext('cicd') 
     subjectPrefix: GITHUB_OIDC_SUBJECT_PREFIX,
     githubEnvironment: stage,
     testedStackName: `jobdeputy-${stage}-iad`,
+    // PR integration runs exist only in dev (T11).
+    ...(stage === 'dev' ? { prEnvironment: 'pr', prStackPrefix: 'jobdeputy-dev-pr' } : {}),
   });
 }

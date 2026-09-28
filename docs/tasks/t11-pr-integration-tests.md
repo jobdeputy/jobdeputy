@@ -1,6 +1,6 @@
 # T11: Integration tests on every PR (before merge)
 
-- **Status:** awaiting-alignment
+- **Status:** in-progress
 - **Depends on:** T04
 - **Branch / PR:** `t11-pr-integration-tests`
 
@@ -63,7 +63,12 @@ With both options, what a stack *contains* is still created by the CDK execution
 
 ## Decision
 
-Pending.
+Agreed with the maintainer on 2026-09-28:
+
+1. **Option B:** the PR role can create, change, and delete only `jobdeputy-dev-pr*` stacks, enforced by IAM. Its test permissions are limited to those stacks too.
+   - Implementation finding: the CDK CLI does **not** fall back to plain credentials when it cannot assume its bootstrap roles. PR stacks therefore use CDK's `CliCredentialsStackSynthesizer`: the PR role makes the CloudFormation calls itself (limited by name) and passes the CDK execution role to CloudFormation with `--role-arn`. Other stacks keep the default synthesizer.
+2. Docs-only (Markdown-only) PRs pass the check without deploying.
+3. A daily backstop deletes `jobdeputy-dev-pr*` stacks older than 24 hours.
 
 ## Done when
 
