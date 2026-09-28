@@ -210,13 +210,17 @@ Key: `userId`, `sk`. Values are encrypted in the application before they are wri
 ## S3 layout (one bucket per cell)
 
 ```text
-users/<userId>/documents/<documentId>/original     the uploaded file (PDF or DOCX, at most 5 MB)
-users/<userId>/documents/<documentId>/text.txt     its extracted text (at most 200,000 characters)
+users/<userId>/documents/<documentId>/original             the uploaded file (PDF or DOCX, at most 5 MB)
+derived/users/<userId>/documents/<documentId>/text.txt     its extracted text (at most 200,000 characters)
 users/<userId>/applications/<applicationId>/...    screenshots and confirmations
 users/<userId>/snapshots/<jobId>/...               page snapshots (deleted after 30 days)
 ```
 
-Everything under `users/<userId>/` goes with account deletion or export. GuardDuty scans every new object under `users/` and tags it `GuardDutyMalwareScanStatus`; the API can only read an `original` tagged `NO_THREATS_FOUND` (bucket policy). The bucket is private, S3-encrypted, HTTPS-only, and never replicated.
+Everything under `users/<userId>/` and `derived/users/<userId>/` goes with account deletion or export.
+
+- **`users/`** holds what users upload. GuardDuty scans every new object there and tags it `GuardDutyMalwareScanStatus`; the API can only read an `original` tagged `NO_THREATS_FOUND` (bucket policy).
+- **`derived/users/`** holds files we produce from clean uploads (for example extracted text). It is not scanned, so each upload is scanned exactly once. Only the worker can write there.
+- The prefixes and key format are defined once, in `packages/shared` (`documentKeys`). The bucket is private, S3-encrypted, HTTPS-only, and never replicated.
 
 ## Change log
 
@@ -227,4 +231,5 @@ Everything under `users/<userId>/` goes with account deletion or export. GuardDu
 | 2026-09-28 | `ping-jobs`: add `userId` (owner from the token); other users get 404 | T05 |
 | 2026-09-28 | `users` `PROFILE`, `preferences` `SEARCH` and `ROLE#`: add `version`; `ROLE#` also stores `roleId`. `users` and `preferences` tables built. | T05b |
 | 2026-09-28 | Documented the physical schema (keys, settings, access patterns, examples) of built tables; an infra test checks it lists every deployed table | T05b |
+| 2026-09-28 | Extracted text moved to `derived/users/…/text.txt`, outside the scanned prefix: one malware scan per upload instead of two | T05c |
 | 2026-09-28 | `documents` table and file bucket built: statuses `pending`/`processing`/`ready`/`rejected`/`failed`, `format`, `eTag`, `error`, `ttl`, and `parsed` fields; S3 `original` and `text.txt` | T05c |

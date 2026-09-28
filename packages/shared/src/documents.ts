@@ -22,6 +22,21 @@ export type DocumentFormat = (typeof DOCUMENT_TYPES)[DocumentContentType]['forma
  */
 export type DocumentStatus = 'pending' | 'processing' | 'ready' | 'rejected' | 'failed';
 
+/**
+ * S3 layout (docs/data-model.md). GuardDuty scans only SCANNED_PREFIX, where user
+ * uploads land. Files we produce ourselves (for example extracted text) go under
+ * DERIVED_PREFIX, so they are never scanned a second time.
+ */
+export const SCANNED_PREFIX = 'users/';
+export const DERIVED_PREFIX = 'derived/users/';
+
+export function documentKeys(userId: string, documentId: string) {
+  return {
+    original: `${SCANNED_PREFIX}${userId}/documents/${documentId}/original`,
+    text: `${DERIVED_PREFIX}${userId}/documents/${documentId}/text.txt`,
+  };
+}
+
 /** ULIDs, as for roles (docs/data-model.md). */
 export const ulidId = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/, 'Invalid ID');
 export const documentId = ulidId;

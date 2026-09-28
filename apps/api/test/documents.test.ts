@@ -200,7 +200,7 @@ describe('changing documents', () => {
     expect((await route(event('DELETE /me/documents/{documentId}', path), d)).statusCode).toBe(204);
     expect(d.deleteFiles).toHaveBeenCalledWith([
       `users/user-a/documents/${ID}/original`,
-      `users/user-a/documents/${ID}/text.txt`,
+      `derived/users/user-a/documents/${ID}/text.txt`,
     ]);
     d.repo.delete.mockResolvedValueOnce(undefined);
     expect((await route(event('DELETE /me/documents/{documentId}', path), d)).statusCode).toBe(404);

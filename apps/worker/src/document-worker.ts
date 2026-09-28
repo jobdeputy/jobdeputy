@@ -6,7 +6,7 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { type Document, DocumentRepository, documentClient } from '@jobdeputy/db';
-import { createLogger } from '@jobdeputy/shared';
+import { createLogger, documentKeys } from '@jobdeputy/shared';
 import type { Context, SQSBatchResponse, SQSEvent, SQSRecord } from 'aws-lambda';
 import { z } from 'zod';
 import { withDeadline } from './deadline.js';
@@ -50,8 +50,6 @@ const scanResultEvent = z.object({
 
 const ORIGINAL_KEY = /^users\/([0-9a-f-]{36})\/documents\/([0-9A-HJKMNP-TV-Z]{26})\/original$/;
 
-export const textKeyFor = (originalKey: string) => originalKey.replace(/\/original$/, '/text.txt');
-
 export interface Storage {
   /** The file's bytes, or undefined if it changed (ETag mismatch) or is gone. */
   get(key: string, eTag: string): Promise<Uint8Array | undefined>;
@@ -91,7 +89,8 @@ export async function handleScanResult(body: unknown, deps: DocumentDeps): Promi
   // Our own extracted text and GuardDuty's validation object are scanned too; nothing to do.
   if (!match) return 'ignored';
   const [, userId, documentId] = match as unknown as [string, string, string];
-  const keys = [objectKey, textKeyFor(objectKey)];
+  const { text: textKey } = documentKeys(userId, documentId);
+  const keys = [objectKey, textKey];
   const ctx = { userId, documentId, scan: status };
 
   const doc = await deps.repo.get(userId, documentId);
@@ -144,7 +143,6 @@ export async function handleScanResult(body: unknown, deps: DocumentDeps): Promi
     throw error;
   }
 
-  const textKey = textKeyFor(objectKey);
   await deps.storage.putText(textKey, extracted.text);
   const ready = await deps.repo.markReady(userId, documentId, eTag, {
     textS3Key: textKey,

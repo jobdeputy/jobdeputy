@@ -1,3 +1,4 @@
+import { DERIVED_PREFIX, SCANNED_PREFIX } from '@jobdeputy/shared';
 import { Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import type { Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Rule } from 'aws-cdk-lib/aws-events';
@@ -20,8 +21,6 @@ export interface DocumentsProps {
 const WORKER_TIMEOUT = Duration.seconds(60);
 /** Matches the worker's MAX_RECEIVES: 3 tries, then the dead-letter queue. */
 export const DOCUMENT_MAX_RECEIVES = 3;
-/** The prefix GuardDuty scans; every user file lives under it (docs/data-model.md). */
-const SCANNED_PREFIX = 'users/';
 
 /**
  * Résumé storage (T05c): a private per-cell bucket, GuardDuty malware scanning of
@@ -119,9 +118,11 @@ export class Documents extends Construct {
       },
     });
     props.table.grant(this.worker.fn, 'dynamodb:GetItem', 'dynamodb:UpdateItem');
-    this.bucket.grantRead(this.worker.fn, 'users/*');
-    this.bucket.grantPut(this.worker.fn, 'users/*');
-    this.bucket.grantDelete(this.worker.fn, 'users/*');
+    // Reads uploads; writes only derived files (outside the scanned prefix); deletes both.
+    this.bucket.grantRead(this.worker.fn, `${SCANNED_PREFIX}*`);
+    this.bucket.grantPut(this.worker.fn, `${DERIVED_PREFIX}*`);
+    this.bucket.grantDelete(this.worker.fn, `${SCANNED_PREFIX}*`);
+    this.bucket.grantDelete(this.worker.fn, `${DERIVED_PREFIX}*`);
 
     const { queue, deadLetterQueue } = addQueueWorker(this, {
       queueName: `${props.namePrefix}-document-scans`,

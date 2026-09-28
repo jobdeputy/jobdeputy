@@ -1,4 +1,5 @@
 import type { Document } from '@jobdeputy/db';
+import { documentKeys } from '@jobdeputy/shared';
 import { makeDocx, makePdf } from '@jobdeputy/test-fixtures';
 import type { SQSRecord } from 'aws-lambda';
 import { strToU8 } from 'fflate';
@@ -8,13 +9,13 @@ import {
   handleScanResult,
   MESSAGES,
   processRecord,
-  textKeyFor,
 } from '../src/document-worker.js';
 import { extractDocumentText } from '../src/extract.js';
 
 const USER = '14e85498-1111-2222-3333-444455556666';
 const DOC = '01J8ZQ4Y3N5W6X7Y8Z9A0B1C2D';
 const KEY = `users/${USER}/documents/${DOC}/original`;
+const TEXT_KEY = documentKeys(USER, DOC).text;
 
 function scan(status: string, over: { key?: string; eTag?: string } = {}) {
   return {
@@ -85,7 +86,13 @@ function world(
 }
 
 describe('document worker', () => {
-  it('extracts a clean PDF and stores its text next to the file', async () => {
+  it('stores the text outside the scanned prefix, so it is never scanned again', () => {
+    expect(KEY.startsWith('users/')).toBe(true);
+    expect(TEXT_KEY).toBe(`derived/users/${USER}/documents/${DOC}/text.txt`);
+    expect(TEXT_KEY.startsWith('users/')).toBe(false);
+  });
+
+  it('extracts a clean PDF and stores its text', async () => {
     const w = world(makePdf([['Ada Lovelace', 'Engineer']]));
     await expect(handleScanResult(scan('NO_THREATS_FOUND'), w.deps)).resolves.toBe('ready');
     expect(w.doc()).toMatchObject({
@@ -93,13 +100,13 @@ describe('document worker', () => {
       eTag: 'e1',
       parsed: { pageCount: 1, noText: false },
     });
-    expect(String(w.objects.get(textKeyFor(KEY))?.bytes)).toContain('Ada Lovelace');
+    expect(String(w.objects.get(TEXT_KEY)?.bytes)).toContain('Ada Lovelace');
   });
 
   it('extracts a clean DOCX', async () => {
     const w = world(makeDocx(['TypeScript']), 'docx');
     await expect(handleScanResult(scan('NO_THREATS_FOUND'), w.deps)).resolves.toBe('ready');
-    expect(String(w.objects.get(textKeyFor(KEY))?.bytes)).toContain('TypeScript');
+    expect(String(w.objects.get(TEXT_KEY)?.bytes)).toContain('TypeScript');
   });
 
   it('deletes infected files and rejects the document, even if it was ready', async () => {
@@ -156,6 +163,7 @@ describe('document worker', () => {
 
   it.each([
     'users/x/documents/y/text.txt',
+    `derived/users/${USER}/documents/${DOC}/text.txt`,
     'malware-protection-resource-validation-object',
     `users/${USER}/documents/${DOC}/text.txt`,
     `users/../documents/${DOC}/original`,

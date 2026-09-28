@@ -14,6 +14,7 @@ import {
   DOCUMENT_TYPES,
   DOWNLOAD_URL_SECONDS,
   documentId as documentIdSchema,
+  documentKeys,
   type HttpResponse,
   json,
   MAX_DOCUMENTS,
@@ -120,7 +121,6 @@ function view(d: Document) {
   };
 }
 
-const textKeyOf = (d: Document) => d.s3Key.replace(/\/original$/, '/text.txt');
 const titleOf = (fileName: string) => fileName.replace(/\.(pdf|docx)$/i, '');
 
 type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
@@ -151,7 +151,7 @@ export async function route(event: Event, deps: DocumentsDeps): Promise<HttpResp
           });
         }
         const documentId = deps.newId();
-        const s3Key = `users/${userId}/documents/${documentId}/original`;
+        const s3Key = documentKeys(userId, documentId).original;
         const doc = await deps.repo.create({
           userId,
           documentId,
@@ -209,7 +209,7 @@ export async function route(event: Event, deps: DocumentsDeps): Promise<HttpResp
         if (!parsed.success) return validationProblem(parsed.error, requestId);
         const doc = await deps.repo.delete(userId, parsed.data);
         if (!doc) return notFound();
-        await deps.deleteFiles([doc.s3Key, textKeyOf(doc)]);
+        await deps.deleteFiles([doc.s3Key, documentKeys(userId, doc.documentId).text]);
         return { statusCode: 204, headers: {}, body: '' };
       }
       default:

@@ -124,11 +124,19 @@ describe('documents (T05c)', () => {
       'dynamodb:GetItem',
       'dynamodb:UpdateItem',
     ]);
-    for (const s of [...api, ...worker]) {
-      if ([s.Action].flat().some((a) => a.startsWith('s3:'))) {
-        expect(JSON.stringify(s.Resource)).toContain('/users/*');
-      }
-    }
+    // S3: each role only on the prefixes it uses. The worker writes only derived files,
+    // which GuardDuty does not scan, so each upload is scanned exactly once.
+    const s3Scope = (statements: Statement[], action: string) =>
+      statements
+        .filter((x) => [x.Action].flat().includes(action))
+        .map((x) => JSON.stringify(x.Resource).match(/\/(derived\/users|users)\/\*/)?.[1])
+        .sort();
+    expect(s3Scope(worker, 's3:GetObject*')).toEqual(['users']);
+    expect(s3Scope(worker, 's3:PutObject')).toEqual(['derived/users']);
+    expect(s3Scope(worker, 's3:DeleteObject*')).toEqual(['derived/users', 'users']);
+    expect(s3Scope(api, 's3:PutObject')).toEqual(['users']);
+    expect(s3Scope(api, 's3:GetObject*')).toEqual(['users']);
+    expect(s3Scope(api, 's3:DeleteObject*')).toEqual(['derived/users', 'users']);
   });
 
   it('keeps prod files and pools, and deletes dev files with the stack', () => {

@@ -1,3 +1,4 @@
+import { DERIVED_PREFIX, SCANNED_PREFIX } from '@jobdeputy/shared';
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps, Tags } from 'aws-cdk-lib';
 import { HttpApi, HttpMethod, HttpStage } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
@@ -191,10 +192,11 @@ export class CellStack extends Stack {
       'dynamodb:UpdateItem',
       'dynamodb:DeleteItem',
     );
-    // Presigned POST (upload), presigned GET (download), and delete: user files only.
-    documents.bucket.grantPut(documentsApi.fn, 'users/*');
-    documents.bucket.grantRead(documentsApi.fn, 'users/*');
-    documents.bucket.grantDelete(documentsApi.fn, 'users/*');
+    // Presigned POST (upload) and GET (download) of uploads only; deletes uploads and derived files.
+    documents.bucket.grantPut(documentsApi.fn, `${SCANNED_PREFIX}*`);
+    documents.bucket.grantRead(documentsApi.fn, `${SCANNED_PREFIX}*`);
+    documents.bucket.grantDelete(documentsApi.fn, `${SCANNED_PREFIX}*`);
+    documents.bucket.grantDelete(documentsApi.fn, `${DERIVED_PREFIX}*`);
     if (documentsApi.fn.role) documents.denyUnscannedDownloads(documentsApi.fn.role);
 
     const httpApi = new HttpApi(this, 'HttpApi', {

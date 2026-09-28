@@ -223,7 +223,7 @@ Implementation notes for T05c (2026-09-28):
 - GuardDuty turns on the bucket's EventBridge notifications itself; CDK configures none (no second writer).
 - A threat result always wins: the file is deleted and the document rejected, whatever its status. A re-upload (new ETag) is processed again. Files that could not be scanned are never kept.
 - The API role cannot read an `original` unless GuardDuty tagged it `NO_THREATS_FOUND` (bucket policy).
-- The extracted `text.txt` is under `users/`, so GuardDuty scans it too (about 2 scans per upload, within the free tier); the worker ignores those results.
+- Uploads live under `users/` (scanned); files we produce, such as the extracted text, live under `derived/users/` (not scanned), so each upload is scanned exactly once. The original is kept for download, applications (product Phase 2), and tailoring; the text is kept so matching (T08) does not re-parse files.
 
 ## Done when
 
