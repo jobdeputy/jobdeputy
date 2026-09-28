@@ -40,5 +40,6 @@ jobs:
       - name: Integration tests against dev-iad
         env:
           JD_STACK: jobdeputy-dev-iad
+          JD_FULL: '1'
           AWS_REGION: us-east-1
         run: pnpm test:integration

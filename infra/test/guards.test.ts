@@ -137,6 +137,11 @@ describe('CI/CD deploy role', () => {
             Effect: 'Allow',
             Resource: 'arn:aws:execute-api:us-east-1:111111111111:*/*/*/*',
           },
+          {
+            Action: ['sqs:SendMessage', 'sqs:ReceiveMessage', 'sqs:DeleteMessage'],
+            Effect: 'Allow',
+            Resource: 'arn:aws:sqs:us-east-1:111111111111:jobdeputy-dev-*',
+          },
         ],
       },
     });

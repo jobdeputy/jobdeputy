@@ -65,6 +65,16 @@ export class CicdStack extends Stack {
       }),
     );
 
+    // Queue-level integration tests (JD_FULL=1): send a duplicate, read the dead-letter queue.
+    role.addToPolicy(
+      new PolicyStatement({
+        actions: ['sqs:SendMessage', 'sqs:ReceiveMessage', 'sqs:DeleteMessage'],
+        resources: [
+          `arn:aws:sqs:${this.region}:${this.account}:jobdeputy-${props.githubEnvironment}-*`,
+        ],
+      }),
+    );
+
     new CfnOutput(this, 'DeployRoleArn', { value: role.roleArn });
   }
 }

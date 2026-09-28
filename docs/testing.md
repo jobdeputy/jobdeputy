@@ -38,4 +38,4 @@ Every feature PR adds integration tests for its own feature, and the **whole** s
 | `pnpm verify` | Lint, typecheck, unit and infrastructure tests |
 | `JD_OWNER=<you> JD_FULL=1 AWS_PROFILE=jobdeputy-dev-iad pnpm test:integration` | Integration tests against your personal stack; `JD_FULL=1` adds the queue-level tests |
 
-The dev deploy runs the integration suite after every merge to `main`. Running it on every PR before merge is planned as the next task.
+The dev deploy runs the full integration suite (`JD_FULL=1`) after every merge to `main`. Running it on every PR before merge is planned as the next task.
