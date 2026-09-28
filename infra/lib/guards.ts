@@ -19,6 +19,9 @@ export const FORBIDDEN_RESOURCE_TYPES: readonly string[] = [
   'AWS::SecretsManager::Secret',
 ];
 
+/** Decision 0005: logs are kept 14 days before launch. */
+export const MAX_LOG_RETENTION_DAYS = 14;
+
 export interface GuardViolation {
   readonly stack: string;
   readonly message: string;
@@ -59,6 +62,26 @@ export function checkGuards(app: App): GuardViolation[] {
       }
       if (resource.Type === 'AWS::DynamoDB::Table' && props.BillingMode !== 'PAY_PER_REQUEST') {
         violations.push({ stack, message: `${logicalId}: DynamoDB must be on-demand.` });
+      }
+      if (resource.Type === 'AWS::Lambda::Function' && 'ReservedConcurrentExecutions' in props) {
+        // Accounts start with a 10-execution limit, all of which must stay unreserved.
+        // Cap SQS workers with the event source's maximum concurrency instead.
+        violations.push({
+          stack,
+          message: `${logicalId}: reserved concurrency is not allowed; use SQS maximum concurrency.`,
+        });
+      }
+      if (
+        resource.Type === 'AWS::Logs::LogGroup' &&
+        !(
+          typeof props.RetentionInDays === 'number' &&
+          props.RetentionInDays <= MAX_LOG_RETENTION_DAYS
+        )
+      ) {
+        violations.push({
+          stack,
+          message: `${logicalId}: log retention must be set to at most ${MAX_LOG_RETENTION_DAYS} days.`,
+        });
       }
       if (resource.Type === 'AWS::Lambda::Alias' && 'ProvisionedConcurrencyConfig' in props) {
         violations.push({

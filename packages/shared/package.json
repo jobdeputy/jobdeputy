@@ -1,0 +1,16 @@
+{
+  "name": "@jobdeputy/shared",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aws-lambda-powertools/logger": "2.35.0",
+    "zod": "4.6.5"
+  }
+}

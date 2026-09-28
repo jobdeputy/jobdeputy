@@ -35,4 +35,11 @@ jobs:
         working-directory: infra
         env:
           JD_ACCOUNT_DEV_IAD: ${{ secrets.JD_ACCOUNT_DEV_IAD }}
+          JD_ALERT_EMAIL: ${{ secrets.JD_ALERT_EMAIL }}
         run: pnpm cdk deploy --all -c stage=dev --require-approval never
+      - name: Integration tests against dev-iad
+        env:
+          JD_STACK: jobdeputy-dev-iad
+          JD_FULL: '1'
+          AWS_REGION: us-east-1
+        run: pnpm test:integration

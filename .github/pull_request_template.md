@@ -46,6 +46,7 @@ Use synthetic data only — no real résumés, credentials, or personal data.
 |---|---|---|
 | <!-- e.g. unreachable URL --> | <!-- e.g. job marked failed with reason, retried 3 times --> | <!-- yes: test name / no: why --> |
 
+- [ ] Tests follow [docs/testing.md](../docs/testing.md): thorough unit tests; integration tests only for deployed wiring, with no fixed sleeps.
 - [ ] Invalid input is rejected with a clear error.
 - [ ] External failures (network, timeouts, third-party errors) are handled and do not crash the worker.
 - [ ] Async jobs end in a clear final state (succeeded or failed with a reason) and retries are safe to repeat.
@@ -66,6 +67,14 @@ Use synthetic data only — no real résumés, credentials, or personal data.
 - [ ] **Tested:** a test forces the model or stub to never finish and proves the loop stops at 3 and returns the best result.
 
 **Calls per job (worst case):** <!-- e.g. "1 extraction call + up to 3 repair iterations = 4 max" -->
+
+## Data schema
+
+- [ ] **Not applicable:** no table, attribute, item kind, or S3 path changed.
+- [ ] [docs/data-model.md](../docs/data-model.md) is updated, with a change-log line.
+- [ ] Renamed or removed attributes bump `schemaVersion`, and old items still read correctly.
+- [ ] New tables or key changes have a decision record.
+- [ ] No forbidden data (government ID numbers, bank or card details); secrets and sensitive data only in `vault`.
 
 ## Security review
 

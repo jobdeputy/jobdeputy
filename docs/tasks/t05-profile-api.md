@@ -1,11 +1,14 @@
-# T05: Profile API (details, résumé, target roles)
+# T05: Sign-up, sign-in, and profile API
 
 - **Status:** planned
 - **Depends on:** T04
 
 ## Goal
 
-A user can create and update a profile with basic details, a résumé, and target roles.
+Built in this order, as separate PRs:
+
+1. **Auth and registration first:** a user signs up and signs in with Cognito, choosing their home Region at signup. The API switches from IAM authorization (T04) to the Cognito JWT authorizer.
+2. **Profile:** the user creates and updates a profile with basic details, résumés, and target roles, stored in the `users`, `preferences`, and `documents` tables ([data model](../data-model.md)).
 
 ## Scope
 
@@ -13,6 +16,8 @@ A user can create and update a profile with basic details, a résumé, and targe
 - Out: AI-based résumé understanding (later, with BYOT).
 
 ## Research
+
+Carry-over from T04 (least privilege): once routes use the Cognito JWT authorizer, integration tests should call them as a test user, and the CI role's `execute-api:Invoke` (account-wide, because API IDs are generated at deploy time) should be removed or reduced to the IAM-only routes that remain.
 
 To do. Storage is decided (S3 with presigned URLs, [0003](../decisions/0003-serverless-aws-stack.md)). Research how login finds the user's Region without a global directory, safe upload limits and file types, malware and content risks of uploaded files, and a PDF/DOCX text extraction approach inside Lambda.
 

@@ -93,7 +93,7 @@ describe('guards catch violations', () => {
 });
 
 describe('CI/CD deploy role', () => {
-  it('trusts only the given repo and GitHub environment, and only CDK roles', async () => {
+  it('trusts only the given repo and environment; deploys via CDK roles and runs integration tests', async () => {
     const { Template } = await import('aws-cdk-lib/assertions');
     const { CicdStack } = await import('../lib/cicd-stack.js');
     const app = new App();
@@ -101,6 +101,7 @@ describe('CI/CD deploy role', () => {
       env: { region: 'us-east-1', account: '111111111111' },
       subjectPrefix: 'repo:jobdeputy@334723288/jobdeputy@1391498158',
       githubEnvironment: 'dev',
+      testedStackName: 'jobdeputy-dev-iad',
     });
     const t = Template.fromStack(stack);
     t.hasResourceProperties('AWS::IAM::Role', {
@@ -126,6 +127,26 @@ describe('CI/CD deploy role', () => {
             Action: 'sts:AssumeRole',
             Effect: 'Allow',
             Resource: 'arn:aws:iam::111111111111:role/cdk-hnb659fds-*-111111111111-us-east-1',
+          },
+          {
+            Action: 'cloudformation:DescribeStacks',
+            Effect: 'Allow',
+            Resource: 'arn:aws:cloudformation:us-east-1:111111111111:stack/jobdeputy-dev-iad/*',
+          },
+          {
+            Action: 'execute-api:Invoke',
+            Effect: 'Allow',
+            Resource: 'arn:aws:execute-api:us-east-1:111111111111:*/*/*/*',
+          },
+          {
+            Action: 'sqs:SendMessage',
+            Effect: 'Allow',
+            Resource: 'arn:aws:sqs:us-east-1:111111111111:jobdeputy-dev-iad-*',
+          },
+          {
+            Action: ['sqs:ReceiveMessage', 'sqs:DeleteMessage'],
+            Effect: 'Allow',
+            Resource: 'arn:aws:sqs:us-east-1:111111111111:jobdeputy-dev-iad-*-dlq',
           },
         ],
       },
