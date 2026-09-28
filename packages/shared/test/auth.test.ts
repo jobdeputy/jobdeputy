@@ -7,10 +7,20 @@ const withClaims = (claims?: Record<string, unknown>) => ({
 
 describe('callerFromEvent', () => {
   it('reads the user from verified access-token claims', () => {
-    expect(callerFromEvent(withClaims({ sub: 'u-1', username: 'name-1' }))).toEqual({
+    expect(callerFromEvent(withClaims({ sub: 'u-1', username: 'name-1' }))).toStrictEqual({
       userId: 'u-1',
       username: 'name-1',
     });
+  });
+
+  it('reads auth_time (sent as a string by HTTP API) and ignores bad values', () => {
+    expect(
+      callerFromEvent(withClaims({ sub: 'u', username: 'n', auth_time: '1790000000' }))?.authTime,
+    ).toBe(1790000000);
+    expect(
+      callerFromEvent(withClaims({ sub: 'u', username: 'n', auth_time: 'x' })),
+    ).not.toHaveProperty('authTime');
+    expect(callerFromEvent(withClaims({ sub: 'u', username: 'n' }))).not.toHaveProperty('authTime');
   });
 
   it('accepts the ID-token username claim', () => {

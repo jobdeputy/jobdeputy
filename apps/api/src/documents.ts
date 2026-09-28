@@ -2,6 +2,7 @@ import { DeleteObjectsCommand, GetObjectCommand, S3Client } from '@aws-sdk/clien
 import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
+  AccountRepository,
   type Document,
   DocumentRepository,
   documentClient,
@@ -27,6 +28,7 @@ import {
 } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, Context } from 'aws-lambda';
 import { ulid } from 'ulid';
+import { refuseWritesWhileDeleting } from './account-guard.js';
 
 const logger = createLogger('api-documents');
 
@@ -43,6 +45,7 @@ export interface DocumentsDeps {
   presignDownload: (key: string, fileName: string) => Promise<string>;
   deleteFiles: (keys: string[]) => Promise<void>;
   newId: () => string;
+  isBeingDeleted: (userId: string) => Promise<boolean>;
 }
 
 function s3Deps(
@@ -84,13 +87,17 @@ function s3Deps(
 }
 
 function defaultDeps(): DocumentsDeps {
-  const { DOCUMENTS_TABLE_NAME, DOCUMENTS_BUCKET_NAME } = process.env;
-  if (!DOCUMENTS_TABLE_NAME || !DOCUMENTS_BUCKET_NAME)
+  const { DOCUMENTS_TABLE_NAME, DOCUMENTS_BUCKET_NAME, USERS_TABLE_NAME } = process.env;
+  if (!DOCUMENTS_TABLE_NAME || !DOCUMENTS_BUCKET_NAME || !USERS_TABLE_NAME) {
     throw new Error('Table and bucket names must be set');
+  }
+  const client = documentClient();
+  const account = new AccountRepository(client, USERS_TABLE_NAME);
   return {
-    repo: new DocumentRepository(documentClient(), DOCUMENTS_TABLE_NAME),
+    repo: new DocumentRepository(client, DOCUMENTS_TABLE_NAME),
     ...s3Deps(DOCUMENTS_BUCKET_NAME),
     newId: ulid,
+    isBeingDeleted: (userId) => account.isBeingDeleted(userId),
   };
 }
 
@@ -131,6 +138,13 @@ export async function route(event: Event, deps: DocumentsDeps): Promise<HttpResp
   const caller = callerFromEvent(event);
   if (!caller) return problem(401, 'Unauthorized', { requestId });
   const { userId } = caller;
+  const blocked = await refuseWritesWhileDeleting(
+    event.routeKey,
+    userId,
+    deps.isBeingDeleted,
+    requestId,
+  );
+  if (blocked) return blocked;
   const notFound = () => problem(404, 'Not found', { requestId });
 
   const raw = () => parseJsonBody(event.body, event.isBase64Encoded);

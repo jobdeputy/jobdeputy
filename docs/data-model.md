@@ -24,7 +24,7 @@ What is deployed today, per cell. Every table is DynamoDB on-demand (`PAY_PER_RE
 
 | Table | Partition key | Sort key | Stream | Time to live | Backups (PITR) | On stack deletion | Built in |
 |---|---|---|---|---|---|---|---|
-| `<stack>-users` | `userId` (S) | `sk` (S) | — | — | prod only | dev: deleted; prod: kept | T05b |
+| `<stack>-users` | `userId` (S) | `sk` (S) | `NEW_IMAGE` → Pipe (only `DELETION` inserts) → queue | `ttl` (`DELETION` items only) | prod only | dev: deleted; prod: kept | T05b, stream T12 |
 | `<stack>-preferences` | `userId` (S) | `sk` (S) | — | — | prod only | dev: deleted; prod: kept | T05b |
 | `<stack>-documents` | `userId` (S) | `documentId` (S) | — | `ttl` (pending uploads only) | prod only | dev: deleted; prod: kept | T05c |
 | `<stack>-ping-jobs` | `id` (S) | — | `NEW_IMAGE` → Pipe → queue | `ttl` | — | dev: deleted; prod: kept | T04 |
@@ -38,6 +38,9 @@ Every user-table call is keyed by the caller's `userId` from the token; no reque
 |---|---|---|---|
 | `users` | `GetItem` (consistent) | `userId`, `sk = PROFILE` | `GET` and `PUT /me/profile` |
 | `users` | `PutItem` with `attribute_not_exists(userId)` or `version = :expected` | `userId`, `sk = PROFILE` | `PUT /me/profile` |
+| `users` | `PutItem` with `attribute_not_exists(userId)` | `userId`, `sk = DELETION` | `DELETE /me` (T12) |
+| `users` | `GetItem` | `userId`, `sk = DELETION` | every write route: refused with 410 while it exists; `GET /me` |
+| every user table | `Query` (keys only) + `BatchWriteItem` deletes, paged | `userId` | deletion worker: erases everything but the `DELETION` item |
 | `preferences` | `GetItem` / conditional `PutItem` | `userId`, `sk = SEARCH` | `/me/preferences/search` |
 | `preferences` | `Query` `begins_with(sk, "ROLE#")` (consistent) | `userId` | `GET /me/roles`; role count before `POST` |
 | `preferences` | `GetItem` / conditional `PutItem` | `userId`, `sk = ROLE#<roleId>` | `POST`, `PUT /me/roles/{roleId}` |
@@ -101,6 +104,7 @@ Synthetic data. `version`, `createdAt`, `updatedAt`, and `schemaVersion` are on 
 | `EXPERIENCE#<id>` | `company`, `companyId?`, `title`, `employmentType?`, `location?`, `startDate` (yyyy-mm), `endDate?` (absent while current), `description?`, `highlights L`, `skills L` |
 | `EDUCATION#<id>` | `school`, `degree`, `field?`, `startDate?`, `endDate?`, `grade?`, `highlights L` |
 | `CERTIFICATION#<id>` | `name`, `issuer`, `issuedOn?`, `expiresOn?`, `credentialUrl?` |
+| `DELETION` | The account-deletion request (T12): `username` (Cognito), `status` (`queued` → `deleting` → `done`), `requestedAt`, `ttl` (2 hours after the request). No personal details. While it exists, every write from this user is refused; it outlives any access token, then expires. |
 
 Work history and education are prefilled from the parsed résumé, and the user edits them. Application forms (for example Workday's employment history) are filled from these items.
 
@@ -231,5 +235,6 @@ Everything under `users/<userId>/` and `derived/users/<userId>/` goes with accou
 | 2026-09-28 | `ping-jobs`: add `userId` (owner from the token); other users get 404 | T05 |
 | 2026-09-28 | `users` `PROFILE`, `preferences` `SEARCH` and `ROLE#`: add `version`; `ROLE#` also stores `roleId`. `users` and `preferences` tables built. | T05b |
 | 2026-09-28 | Documented the physical schema (keys, settings, access patterns, examples) of built tables; an infra test checks it lists every deployed table | T05b |
+| 2026-09-28 | `users`: `DELETION` item, stream (filtered to `DELETION` inserts), and `ttl`; account deletion erases every table keyed by `userId` and both S3 prefixes (an infra test enforces coverage) | T12 |
 | 2026-09-28 | Extracted text moved to `derived/users/…/text.txt`, outside the scanned prefix: one malware scan per upload instead of two | T05c |
 | 2026-09-28 | `documents` table and file bucket built: statuses `pending`/`processing`/`ready`/`rejected`/`failed`, `format`, `eTag`, `error`, `ttl`, and `parsed` fields; S3 `original` and `text.txt` | T05c |

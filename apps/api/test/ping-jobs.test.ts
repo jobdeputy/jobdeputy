@@ -38,7 +38,11 @@ function event(
 function deps(
   stage = 'dev',
 ): Deps & { repo: { create: ReturnType<typeof vi.fn>; get: ReturnType<typeof vi.fn> } } {
-  return { stage, repo: { create: vi.fn(async () => JOB), get: vi.fn(async () => JOB) } };
+  return {
+    stage,
+    isBeingDeleted: vi.fn(async () => false),
+    repo: { create: vi.fn(async () => JOB), get: vi.fn(async () => JOB) },
+  };
 }
 
 describe('POST /ping-jobs', () => {
@@ -93,6 +97,20 @@ describe('GET /ping-jobs/{id}', () => {
     d.repo.get.mockResolvedValueOnce(undefined);
     const res = await route(event('GET /ping-jobs/{id}', { pathParameters: { id: JOB.id } }), d);
     expect(res.statusCode).toBe(404);
+  });
+});
+
+describe('account deletion (T12)', () => {
+  it('refuses new jobs while the account is being deleted, but still reads', async () => {
+    const d = deps();
+    d.isBeingDeleted = vi.fn(async () => true);
+    const res = await route(event('POST /ping-jobs'), d);
+    expect(res.statusCode).toBe(410);
+    expect(JSON.parse(res.body).code).toBe('account-deleted');
+    expect(d.repo.create).not.toHaveBeenCalled();
+    expect(
+      (await route(event('GET /ping-jobs/{id}', { pathParameters: { id: JOB.id } }), d)).statusCode,
+    ).toBe(200);
   });
 });
 

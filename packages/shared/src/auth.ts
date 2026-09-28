@@ -7,6 +7,8 @@ export interface Caller {
   userId: string;
   /** Cognito username (for pools with email sign-in, a generated ID). */
   username: string;
+  /** When the user last actually signed in (seconds since epoch); refreshing a session keeps it. */
+  authTime?: number;
 }
 
 interface EventWithClaims {
@@ -20,5 +22,18 @@ export function callerFromEvent(event: EventWithClaims): Caller | undefined {
   if (typeof userId !== 'string' || userId === '' || typeof username !== 'string') {
     return undefined;
   }
-  return { userId, username };
+  // HTTP API passes claims as strings.
+  const authTime = Number(claims?.auth_time);
+  return { userId, username, ...(Number.isFinite(authTime) && authTime > 0 ? { authTime } : {}) };
 }
+
+/** T12: deleting an account needs a typed confirmation and a recent real sign-in. */
+export const DELETE_CONFIRMATION = 'delete my account';
+export const REAUTH_WINDOW_SECONDS = 15 * 60;
+
+export const ACCOUNT_DELETION_NOTICE =
+  'Your account is being deleted. This is permanent. You are signed out on all devices now, your profile, roles, and résumés are deleted immediately, and a final check runs within 15 minutes.';
+
+/** The message returned for any change attempted while an account is being deleted. */
+export const ACCOUNT_DELETED_DETAIL =
+  'This account is being deleted, so it can no longer be changed.';

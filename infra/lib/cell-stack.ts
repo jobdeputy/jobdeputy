@@ -4,6 +4,7 @@ import { HttpApi, HttpMethod, HttpStage } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import { AttributeType, BillingMode, StreamViewType, Table } from 'aws-cdk-lib/aws-dynamodb';
+import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Topic } from 'aws-cdk-lib/aws-sns';
 import { EmailSubscription } from 'aws-cdk-lib/aws-sns-subscriptions';
 import { StringParameter } from 'aws-cdk-lib/aws-ssm';
@@ -66,8 +67,15 @@ export class CellStack extends Stack {
     });
 
     // User data tables (docs/data-model.md): keyed by userId, never shared across cells.
-    const userTable = (logicalId: string, name: string, sortKey = 'sk', ttl?: string) =>
+    const userTable = (
+      logicalId: string,
+      name: string,
+      sortKey = 'sk',
+      ttl?: string,
+      stream = false,
+    ) =>
       new Table(this, logicalId, {
+        ...(stream ? { stream: StreamViewType.NEW_IMAGE } : {}),
         tableName: `${id}-${name}`,
         partitionKey: { name: 'userId', type: AttributeType.STRING },
         sortKey: { name: sortKey, type: AttributeType.STRING },
@@ -77,10 +85,20 @@ export class CellStack extends Stack {
         pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: isProd },
         removalPolicy,
       });
-    const usersTable = userTable('UsersTable', 'users');
+    // Stream: a DELETION item starts the account-deletion worker (T12); ttl expires that item.
+    const usersTable = userTable('UsersTable', 'users', 'sk', 'ttl', true);
     const preferencesTable = userTable('PreferencesTable', 'preferences');
     // Pending uploads that never arrive expire (ttl).
     const documentsTable = userTable('DocumentsTable', 'documents', 'documentId', 'ttl');
+    /**
+     * Every table keyed by userId. Account deletion erases all of them; an infra test
+     * fails if a table keyed by userId is missing here (T12).
+     */
+    const userTables = [
+      { table: usersTable, sortKey: 'sk' },
+      { table: preferencesTable, sortKey: 'sk' },
+      { table: documentsTable, sortKey: 'documentId' },
+    ];
     const documents = new Documents(this, 'Documents', {
       namePrefix: id,
       table: documentsTable,
@@ -109,8 +127,13 @@ export class CellStack extends Stack {
       entry: 'apps/api/src/ping-jobs.ts',
       timeout: Duration.seconds(10),
       removalPolicy,
-      environment: { PING_TABLE_NAME: pingTable.tableName, STAGE: props.stage },
+      environment: {
+        PING_TABLE_NAME: pingTable.tableName,
+        STAGE: props.stage,
+        USERS_TABLE_NAME: usersTable.tableName,
+      },
     });
+    usersTable.grant(api.fn, 'dynamodb:GetItem');
     // Least privilege: only the calls each function makes.
     pingTable.grant(api.fn, 'dynamodb:PutItem', 'dynamodb:GetItem');
 
@@ -149,10 +172,63 @@ export class CellStack extends Stack {
       entry: 'apps/api/src/me.ts',
       timeout: Duration.seconds(10),
       removalPolicy,
-      environment: { USER_POOL_ID: auth.userPool.userPoolId, CELL: props.cell },
+      environment: {
+        USER_POOL_ID: auth.userPool.userPoolId,
+        CELL: props.cell,
+        USERS_TABLE_NAME: usersTable.tableName,
+      },
     });
-    // Least privilege: read one user's attributes (the email) in this cell's pool only.
+    // Least privilege: read one user's attributes (the email) in this cell's pool only,
+    // and record or check a deletion request (T12).
     auth.userPool.grant(me.fn, 'cognito-idp:AdminGetUser');
+    usersTable.grant(me.fn, 'dynamodb:GetItem', 'dynamodb:PutItem');
+
+    const deletionWorker = new AppFunction(this, 'DeletionWorker', {
+      entry: 'apps/worker/src/deletion-worker.ts',
+      timeout: Duration.seconds(120),
+      removalPolicy,
+      environment: {
+        USERS_TABLE_NAME: usersTable.tableName,
+        USER_TABLES: Stack.of(this).toJsonString(
+          userTables.map(({ table, sortKey }) => ({ name: table.tableName, sortKey })),
+        ),
+        DOCUMENTS_BUCKET_NAME: documents.bucket.bucketName,
+        USER_POOL_ID: auth.userPool.userPoolId,
+      },
+    });
+    for (const { table } of userTables) {
+      table.grant(deletionWorker.fn, 'dynamodb:Query', 'dynamodb:BatchWriteItem');
+    }
+    usersTable.grant(deletionWorker.fn, 'dynamodb:GetItem', 'dynamodb:UpdateItem');
+    auth.userPool.grant(
+      deletionWorker.fn,
+      'cognito-idp:AdminUserGlobalSignOut',
+      'cognito-idp:AdminDeleteUser',
+    );
+    // List only under the two user prefixes; delete only there.
+    deletionWorker.fn.addToRolePolicy(
+      new PolicyStatement({
+        actions: ['s3:ListBucket'],
+        resources: [documents.bucket.bucketArn],
+        conditions: { StringLike: { 's3:prefix': [`${SCANNED_PREFIX}*`, `${DERIVED_PREFIX}*`] } },
+      }),
+    );
+    documents.bucket.grantDelete(deletionWorker.fn, `${SCANNED_PREFIX}*`);
+    documents.bucket.grantDelete(deletionWorker.fn, `${DERIVED_PREFIX}*`);
+    const deletionPipeline = new AsyncPipeline(this, 'DeletionPipeline', {
+      table: usersTable,
+      idAttribute: 'userId',
+      newImageFilter: { sk: { S: ['DELETION'] } },
+      worker: deletionWorker.fn,
+      workerTimeout: Duration.seconds(120),
+      maxReceives: 3,
+      maxConcurrency: 2,
+      alarmTopic,
+      queueName: `${id}-account-deletions`,
+    });
+    // The worker schedules its one final sweep on its own queue.
+    deletionWorker.fn.addEnvironment('QUEUE_URL', deletionPipeline.queue.queueUrl);
+    deletionPipeline.queue.grantSendMessages(deletionWorker.fn);
 
     const profile = new AppFunction(this, 'ProfileApi', {
       entry: 'apps/api/src/profile.ts',
@@ -182,8 +258,10 @@ export class CellStack extends Stack {
       environment: {
         DOCUMENTS_TABLE_NAME: documentsTable.tableName,
         DOCUMENTS_BUCKET_NAME: documents.bucket.bucketName,
+        USERS_TABLE_NAME: usersTable.tableName,
       },
     });
+    usersTable.grant(documentsApi.fn, 'dynamodb:GetItem');
     documentsTable.grant(
       documentsApi.fn,
       'dynamodb:Query',
@@ -219,7 +297,7 @@ export class CellStack extends Stack {
     httpApi.addRoutes({ path: '/ping-jobs/{id}', methods: [HttpMethod.GET], integration });
     httpApi.addRoutes({
       path: '/me',
-      methods: [HttpMethod.GET],
+      methods: [HttpMethod.GET, HttpMethod.DELETE],
       integration: new HttpLambdaIntegration('MeIntegration', me.fn),
     });
     const profileIntegration = new HttpLambdaIntegration('ProfileIntegration', profile.fn);

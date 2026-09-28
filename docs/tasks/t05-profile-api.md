@@ -1,7 +1,7 @@
 # T05: Sign-up, sign-in, and profile API
 
-- **Status:** in-review
-- **Branch / PR:** part 1 `t05-auth`, [#14](https://github.com/jobdeputy/jobdeputy/pull/14) (merged); T05b `t05-profile` (merged); T05c `t05-documents` (in review)
+- **Status:** done
+- **Branch / PR:** part 1 `t05-auth`, [#14](https://github.com/jobdeputy/jobdeputy/pull/14) (merged); T05b `t05-profile` (merged); T05c `t05-documents` (merged)
 - **Depends on:** T04
 
 ## Goal

@@ -7,6 +7,7 @@ import {
   AdminSetUserPasswordCommand,
   CognitoIdentityProviderClient,
 } from '@aws-sdk/client-cognito-identity-provider';
+import { GetMalwareProtectionPlanCommand, GuardDutyClient } from '@aws-sdk/client-guardduty';
 
 /**
  * Finds the stack under test by name:
@@ -31,6 +32,12 @@ export async function stackOutputs(): Promise<Record<string, string>> {
 export interface TestUser {
   email: string;
   accessToken: string;
+  /** Signs in again (a fresh auth_time), for example before deleting the account. */
+  signIn: () => Promise<string>;
+  /**
+   * Deletes the account through `DELETE /me`, so all its data goes (T12). Falls back
+   * to deleting the Cognito user directly, so a broken deletion never leaves a user behind.
+   */
   delete: () => Promise<void>;
 }
 
@@ -56,8 +63,36 @@ export async function createTestUser(outputs: Record<string, string>): Promise<T
       ],
     }),
   );
-  const remove = async () => {
-    await cognito.send(new AdminDeleteUserCommand({ UserPoolId, Username: email }));
+  const adminDelete = async () => {
+    await cognito
+      .send(new AdminDeleteUserCommand({ UserPoolId, Username: email }))
+      .catch((error: Error) => {
+        if (error.name !== 'UserNotFoundException') throw error;
+      });
+  };
+  const signIn = async () => {
+    const auth = await cognito.send(
+      new AdminInitiateAuthCommand({
+        UserPoolId,
+        ClientId,
+        AuthFlow: 'ADMIN_USER_PASSWORD_AUTH',
+        AuthParameters: { USERNAME: email, PASSWORD: password },
+      }),
+    );
+    const token = auth.AuthenticationResult?.AccessToken;
+    if (!token) throw new Error('Sign-in returned no access token');
+    return token;
+  };
+  const deleteAccount = async () => {
+    try {
+      const res = await callApi(outputs.ApiUrl ?? '', 'DELETE', 'me', await signIn(), {
+        confirm: 'delete my account',
+      });
+      if (res.status === 202) return;
+    } catch {
+      // Already deleted, or the API is unavailable: fall through.
+    }
+    await adminDelete();
   };
   try {
     await cognito.send(
@@ -68,21 +103,50 @@ export async function createTestUser(outputs: Record<string, string>): Promise<T
         Permanent: true,
       }),
     );
-    const auth = await cognito.send(
-      new AdminInitiateAuthCommand({
-        UserPoolId,
-        ClientId,
-        AuthFlow: 'ADMIN_USER_PASSWORD_AUTH',
-        AuthParameters: { USERNAME: email, PASSWORD: password },
-      }),
-    );
-    const accessToken = auth.AuthenticationResult?.AccessToken;
-    if (!accessToken) throw new Error('Sign-in returned no access token');
-    return { email, accessToken, delete: remove };
+    return { email, accessToken: await signIn(), signIn, delete: deleteAccount };
   } catch (error) {
-    await remove();
+    await adminDelete();
     throw error;
   }
+}
+
+/** Files uploaded before a new stack's GuardDuty plan is ACTIVE are never scanned. */
+export async function waitForMalwareScanning(outputs: Record<string, string>): Promise<void> {
+  const guardduty = new GuardDutyClient({ region });
+  await waitFor(
+    async () => {
+      const plan = await guardduty.send(
+        new GetMalwareProtectionPlanCommand({
+          MalwareProtectionPlanId: outputs.MalwareProtectionPlanId,
+        }),
+      );
+      return plan.Status === 'ACTIVE' ? true : undefined;
+    },
+    { timeoutMs: 300_000, intervalMs: 5_000 },
+  );
+}
+
+/** Starts a résumé upload and posts the file with the presigned form. */
+export async function uploadDocument(
+  api: string,
+  user: TestUser,
+  fileName: string,
+  contentType: string,
+  bytes: Uint8Array,
+  formType = contentType,
+): Promise<{ documentId: string; s3Status: number }> {
+  const started = await callApi(api, 'POST', 'me/documents', user.accessToken, {
+    fileName,
+    contentType,
+  });
+  if (started.status !== 201) throw new Error(`Upload start failed: ${started.status}`);
+  const form = new FormData();
+  for (const [k, v] of Object.entries(started.body.upload.fields as Record<string, string>)) {
+    form.append(k, k === 'Content-Type' ? formType : v);
+  }
+  form.append('file', new Blob([bytes], { type: formType }), fileName);
+  const s3 = await fetch(started.body.upload.url, { method: 'POST', body: form });
+  return { documentId: started.body.document.documentId as string, s3Status: s3.status };
 }
 
 export interface ApiResponse {

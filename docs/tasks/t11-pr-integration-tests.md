@@ -1,6 +1,6 @@
 # T11: Integration tests on every PR (before merge)
 
-- **Status:** in-review
+- **Status:** done
 - **Depends on:** T04
 - **Branch / PR:** `t11-pr-integration-tests`
 
