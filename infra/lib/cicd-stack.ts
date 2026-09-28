@@ -49,6 +49,22 @@ export class CicdStack extends Stack {
       }),
     );
 
+    // Post-deploy integration tests: find the stack's outputs and call its IAM-protected API.
+    role.addToPolicy(
+      new PolicyStatement({
+        actions: ['cloudformation:DescribeStacks'],
+        resources: [
+          `arn:aws:cloudformation:${this.region}:${this.account}:stack/jobdeputy-${props.githubEnvironment}-*/*`,
+        ],
+      }),
+    );
+    role.addToPolicy(
+      new PolicyStatement({
+        actions: ['execute-api:Invoke'],
+        resources: [`arn:aws:execute-api:${this.region}:${this.account}:*/*/*/*`],
+      }),
+    );
+
     new CfnOutput(this, 'DeployRoleArn', { value: role.roleArn });
   }
 }

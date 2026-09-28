@@ -7,7 +7,7 @@ export interface BuildAppOptions {
   readonly stage: StageName;
   /** Personal dev stack owner; only allowed with the dev stage. */
   readonly owner?: string;
-  /** Source of account IDs; defaults to process.env. */
+  /** Source of account IDs and JD_ALERT_EMAIL; defaults to process.env. */
   readonly env?: Record<string, string | undefined>;
   readonly appProps?: AppProps;
   /** Existing app to add stacks to (the CLI entry point passes its own). */
@@ -35,6 +35,7 @@ export function buildApp(options: BuildAppOptions): App {
       stage,
       cell,
       ...(owner ? { owner } : {}),
+      ...(env.JD_ALERT_EMAIL ? { alertEmail: env.JD_ALERT_EMAIL } : {}),
       env: { region: CELLS[cell].region, ...(account ? { account } : {}) },
       // Decision 0004: never share values across Regions.
       crossRegionReferences: false,

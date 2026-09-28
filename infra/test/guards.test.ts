@@ -93,7 +93,7 @@ describe('guards catch violations', () => {
 });
 
 describe('CI/CD deploy role', () => {
-  it('trusts only the given repo and GitHub environment, and only CDK roles', async () => {
+  it('trusts only the given repo and environment; deploys via CDK roles and runs integration tests', async () => {
     const { Template } = await import('aws-cdk-lib/assertions');
     const { CicdStack } = await import('../lib/cicd-stack.js');
     const app = new App();
@@ -126,6 +126,16 @@ describe('CI/CD deploy role', () => {
             Action: 'sts:AssumeRole',
             Effect: 'Allow',
             Resource: 'arn:aws:iam::111111111111:role/cdk-hnb659fds-*-111111111111-us-east-1',
+          },
+          {
+            Action: 'cloudformation:DescribeStacks',
+            Effect: 'Allow',
+            Resource: 'arn:aws:cloudformation:us-east-1:111111111111:stack/jobdeputy-dev-*/*',
+          },
+          {
+            Action: 'execute-api:Invoke',
+            Effect: 'Allow',
+            Resource: 'arn:aws:execute-api:us-east-1:111111111111:*/*/*/*',
           },
         ],
       },

@@ -1,0 +1,17 @@
+{
+  "name": "@jobdeputy/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@jobdeputy/db": "workspace:*",
+    "@jobdeputy/shared": "workspace:*",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.163"
+  }
+}

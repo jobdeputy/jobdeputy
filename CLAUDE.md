@@ -63,6 +63,7 @@ Node 22 and pnpm (through corepack). Run from the repo root unless noted.
 | `pnpm synth` | Synthesize all dev and prod cells (no AWS access needed) |
 | `cd infra && pnpm cdk deploy -c stage=dev -c owner=<you> --profile jobdeputy-dev-iad` | Deploy your personal dev stack |
 | `cd infra && pnpm cdk destroy -c stage=dev -c owner=<you> --profile jobdeputy-dev-iad` | Remove your personal dev stack |
+| `JD_OWNER=<you> JD_FULL=1 AWS_PROFILE=jobdeputy-dev-iad pnpm test:integration` | Integration tests against your personal stack (`JD_FULL=1` adds the queue-level tests) |
 
 - The shared `dev-iad` stack deploys automatically from `main`. Never deploy it by hand.
 - Guard tests in `infra/test/` enforce decisions 0004 and 0005 (Region isolation and cost). Never weaken them to make a build pass.
