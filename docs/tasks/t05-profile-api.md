@@ -212,6 +212,11 @@ Part 2, agreed with the maintainer on 2026-09-28 (all five recommendations):
 4. **GuardDuty Malware Protection for S3** is approved as a pay-per-use service under [0005](../decisions/0005-pre-launch-cost-guardrails.md) ($0 idle; free for 1,000 objects and 1 GB a month).
 5. Normal PDFs and DOCX files need no OCR. Image-only PDFs end as "ready, no text found"; OCR may come later.
 
+Agreed during T05b review (2026-09-28):
+
+- **Separate endpoints** for profile, search settings, and each role (not one page-wide endpoint): each item keeps its own version, so edits in different tabs do not conflict; role IDs stay stable for jobs and scores (T08); storage maps one-to-one to items with no multi-table transaction on every save. A combined read-only endpoint is reconsidered in T09 if the UI needs it.
+- **Account deletion** (`DELETE /me`) becomes its own ticket ([#17](https://github.com/jobdeputy/jobdeputy/issues/17)) after T05c; test clean-up will use it.
+
 ## Done when
 
 Part 1 (auth):
