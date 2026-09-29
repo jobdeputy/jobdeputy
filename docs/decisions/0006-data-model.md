@@ -1,6 +1,6 @@
 # 0006: Data model (tables, keys, and schemas)
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by [0007](0007-crawler.md) (`sourceId` is a URL hash; `events` renamed `audit`, built in T06)
 - **Date:** 2026-09-28
 - **Task:** t04
 
@@ -48,7 +48,7 @@ Constraints: DynamoDB on-demand ([0003](0003-serverless-aws-stack.md)), one set 
 | 4 | `sources` | `userId`, `sourceId` | Pages the user saved | No | T06 |
 | 5 | `crawls` | `userId`, `crawlId` | Each crawl run | **Yes** | T06 |
 | 6 | `usage` | `userId`, `sk` | Counters: company limits, daily and monthly usage | No | T06 |
-| 7 | `events` | `userId`, `eventId` | Audit trail | No | T06 |
+| 7 | `audit` (was `events`, [0007](0007-crawler.md)) | `userId`, `auditId` | Audit trail | No | T06 |
 | 8 | `jobs` | `userId`, `jobId` | Jobs found for the user, with relevance and status | No | T07, T08 |
 | 9 | `companies` | `companyId` | Shared company list (public, per cell) | No | T07 |
 | 10 | `company-aliases` | `alias` | Name or domain → company | No | T07 |
@@ -74,7 +74,7 @@ Every table's attributes and the S3 layout are documented in the living referenc
 | Recurring screening questions | Answered from `answers`. New questions are suggested by the LLM and used only once approved, unless the user's settings allow otherwise. |
 | Questions asking for government IDs or bank details | The form is never auto-filled; the application moves to `needs_input`. |
 | Duplicate company entries | They are merged with `mergedInto`, so no references break. |
-| Traceability | Every application step is an item with an optional screenshot, and every notable action is an `events` item. |
+| Traceability | Every application step is an item with an optional screenshot, and every notable action is an `audit` item. |
 | Listing jobs by status, score, or company | The user's jobs are queried and filtered in the Lambda (hundreds of items). A global secondary index can be added later without a migration. |
 
 ## Future (not built now)
