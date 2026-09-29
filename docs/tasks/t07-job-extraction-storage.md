@@ -19,7 +19,7 @@ Each ships as its own PR that can be tested on its own.
 | ID | What | Status |
 |---|---|---|
 | [T07a](t07a-job-readers.md) | Job readers: board detection, the four board feeds, schema.org, one normalized job. Pure code, nothing deployed. | done |
-| [T07b](t07b-jobs-storage.md) | `jobs` table, saving without duplicates, links to sources and crawls, `GET /me/jobs`, audit, test-site pages | planned |
+| [T07b](t07b-jobs-storage.md) | `jobs` table, saving without duplicates, links to sources and crawls, `GET /me/jobs`, audit, test-site pages | in-review |
 | [T07c](t07c-paging-and-closed-jobs.md) | Paging within one crawl, per-crawl limits and `partial`, `closedAt` | planned |
 | [T07d](t07d-llm-extraction.md) | LLM extraction for pages without structured data ([#41](https://github.com/jobdeputy/jobdeputy/issues/41)) | planned (own decision first) |
 

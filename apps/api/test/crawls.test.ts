@@ -620,9 +620,19 @@ describe('dev test site', () => {
     expect((await visit('shell')).body).toContain('id="root"');
     expect((await visit('blocked')).statusCode).toBe(403);
     expect((await visit('unavailable')).statusCode).toBe(503);
+    // T07b: the JSON-LD block is valid JSON with two postings, and cannot end the script early.
+    const schemaOrg = (await visit('jobs-schema-org')).body as string;
+    const block = /<script type="application\/ld\+json">(.*?)<\/script>/s.exec(schemaOrg)?.[1];
+    const postings = JSON.parse(block ?? 'null');
+    expect(postings.map((p: { title: string }) => p.title)).toEqual([
+      'Backend Engineer',
+      'Data Engineer',
+    ]);
+    expect(block).not.toContain('</');
     expect(Object.keys(PAGES).sort()).toEqual([
       'blocked',
       'jobs',
+      'jobs-schema-org',
       'login',
       'redirect-metadata',
       'shell',

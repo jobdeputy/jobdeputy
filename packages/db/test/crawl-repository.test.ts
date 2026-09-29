@@ -334,6 +334,48 @@ describe('CrawlRepository.finish', () => {
     });
   });
 
+  it('records what the crawl read on the crawl, and the board on the source (T07b)', async () => {
+    const { c, send } = client();
+    const stats = { jobsFound: 3, jobsNew: 2, jobsUpdated: 1 };
+    const extraction = {
+      outcome: 'read' as const,
+      method: 'ats_feed' as const,
+      board: 'lever:acme',
+      skipped: 0,
+    };
+    await repo(c).finish(
+      crawl,
+      {
+        status: 'succeeded',
+        result,
+        stats,
+        extraction,
+        source: { kind: 'ats_board', ats: 'lever', lastFound: 3 },
+      },
+      audit('crawl.succeeded'),
+    );
+    const update = sent<TransactWriteCommand>(send, 0).input.TransactItems?.[0]?.Update;
+    expect(update?.UpdateExpression).toContain('#stats = :stats, #extraction = :extraction');
+    expect(update?.ExpressionAttributeNames).toMatchObject({
+      '#stats': 'stats',
+      '#extraction': 'extraction',
+    });
+    expect(update?.ExpressionAttributeValues).toMatchObject({
+      ':stats': stats,
+      ':extraction': extraction,
+    });
+    expect(sent<UpdateCommand>(send, 1).input).toMatchObject({
+      UpdateExpression:
+        'SET lastCrawledAt = :now, updatedAt = :now, #kind = :kind, #stats = :stats, ats = :ats REMOVE activeCrawlId',
+      ExpressionAttributeNames: { '#kind': 'kind', '#stats': 'stats' },
+      ExpressionAttributeValues: {
+        ':kind': 'ats_board',
+        ':ats': 'lever',
+        ':stats': { lastFound: 3 },
+      },
+    });
+  });
+
   it('fails with a trimmed error', async () => {
     const { c, send } = client();
     await repo(c).finish(
@@ -419,7 +461,19 @@ describe('reads', () => {
 describe('DynamoDB reserved words', () => {
   // Found on a real table: `result` is reserved, and a mocked client cannot tell. Every
   // expression the repository sends is checked for these words used without a placeholder.
-  const RESERVED = ['result', 'error', 'status', 'type', 'url', 'kind', 'name', 'source', 'ttl'];
+  const RESERVED = [
+    'result',
+    'error',
+    'status',
+    'type',
+    'url',
+    'kind',
+    'name',
+    'source',
+    'ttl',
+    'stats',
+    'extraction',
+  ];
 
   it('are never used bare in any expression', async () => {
     const { c, send } = client(() => ({ Attributes: {} }));
@@ -446,6 +500,17 @@ describe('DynamoDB reserved words', () => {
       s3Key: 'k',
     };
     await r.finish(crawl, { status: 'succeeded', result }, audit('crawl.succeeded'));
+    await r.finish(
+      crawl,
+      {
+        status: 'succeeded',
+        result,
+        stats: { jobsFound: 1, jobsNew: 1, jobsUpdated: 0 },
+        extraction: { outcome: 'read', method: 'ats_feed', board: 'lever:acme', skipped: 0 },
+        source: { kind: 'ats_board', ats: 'lever', lastFound: 1 },
+      },
+      audit('crawl.succeeded'),
+    );
     await r.finish(
       crawl,
       { status: 'failed', error: { code: 'blocked', message: 'x' } },

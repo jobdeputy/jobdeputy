@@ -13,7 +13,12 @@ export interface Source {
   type: 'source';
   url: string;
   normalizedUrl: string;
-  kind: 'unknown';
+  /** `ats_board` once a crawl read it as a job board (T07b); otherwise `unknown`. */
+  kind: 'unknown' | 'ats_board';
+  /** The job board, for example `greenhouse` (T07b). */
+  ats?: string;
+  /** From the last successful crawl (T07b). */
+  stats?: { lastFound: number };
   companyConfirmed: boolean;
   active: boolean;
   schedule: { type: 'manual' };
@@ -40,6 +45,9 @@ export interface Crawl {
   startedAt?: string;
   finishedAt?: string;
   result?: CrawlResult;
+  /** T07b: what the crawl read and saved. */
+  stats?: CrawlStats;
+  extraction?: CrawlExtraction;
   error?: CrawlError;
   /** The last retriable failure, while a retry is pending. */
   lastError?: CrawlError;
@@ -55,6 +63,32 @@ export interface CrawlResult {
   contentType: string;
   bytes: number;
   s3Key: string;
+}
+
+export interface CrawlStats {
+  jobsFound: number;
+  jobsNew: number;
+  jobsUpdated: number;
+}
+
+/** How jobs were read (0008). */
+export interface CrawlExtraction {
+  /** `read`: a job board or schema.org data was read (possibly with no jobs). */
+  outcome: 'read' | 'no_readable_jobs';
+  method?: 'ats_feed' | 'schema_org';
+  /** The board read, for example `greenhouse:acme`. */
+  board?: string;
+  /** Listings without a title or a usable link. */
+  skipped: number;
+  /** Set when the crawl stopped at a limit and saved only part of what it read. */
+  partial?: { reason: 'max_jobs' };
+}
+
+/** What a successful crawl learned about its source (T07b). */
+export interface SourceUpdate {
+  kind: Source['kind'];
+  ats?: string;
+  lastFound: number;
 }
 
 export interface CrawlError {
@@ -99,7 +133,13 @@ export interface CrawlTables {
 export const USAGE_DAY_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 export type FinishOutcome =
-  | { status: 'succeeded'; result: CrawlResult }
+  | {
+      status: 'succeeded';
+      result: CrawlResult;
+      stats?: CrawlStats;
+      extraction?: CrawlExtraction;
+      source?: SourceUpdate;
+    }
   | { status: 'failed'; error: CrawlError };
 
 export class CrawlRepository {
@@ -369,6 +409,19 @@ export class CrawlRepository {
     const now = at.toISOString();
     // Both `result` and `error` are DynamoDB reserved words: always use placeholders.
     const field = outcome.status === 'succeeded' ? '#result' : '#error';
+    const extra =
+      outcome.status === 'succeeded'
+        ? {
+            ...(outcome.stats ? { ':stats': outcome.stats } : {}),
+            ...(outcome.extraction ? { ':extraction': outcome.extraction } : {}),
+          }
+        : {};
+    const extraSet = Object.keys(extra)
+      .map((placeholder) => `, #${placeholder.slice(1)} = ${placeholder}`)
+      .join('');
+    const extraNames = Object.fromEntries(
+      Object.keys(extra).map((placeholder) => [`#${placeholder.slice(1)}`, placeholder.slice(1)]),
+    );
     try {
       await transactWrite(this.client, {
         TransactItems: [
@@ -376,11 +429,12 @@ export class CrawlRepository {
             Update: {
               TableName: this.tables.crawls,
               Key: { userId, crawlId },
-              UpdateExpression: `SET #status = :status, ${field} = :outcome, finishedAt = :now, updatedAt = :now REMOVE lastError`,
+              UpdateExpression: `SET #status = :status, ${field} = :outcome${extraSet}, finishedAt = :now, updatedAt = :now REMOVE lastError`,
               ConditionExpression: '#status IN (:queued, :running)',
               ExpressionAttributeNames: {
                 '#status': 'status',
                 ...(outcome.status === 'failed' ? { '#error': 'error' } : { '#result': 'result' }),
+                ...extraNames,
               },
               ExpressionAttributeValues: {
                 ':status': outcome.status,
@@ -389,6 +443,7 @@ export class CrawlRepository {
                 ':queued': 'queued',
                 ':running': 'running',
                 ':now': now,
+                ...extra,
               },
             },
           },
@@ -409,14 +464,26 @@ export class CrawlRepository {
     // Separate on purpose: if this page has moved on to a newer crawl, the condition
     // fails and nothing changes. If it never runs, the next submit sees a finished
     // active crawl and replaces it.
+    const learned = outcome.status === 'succeeded' ? outcome.source : undefined;
     try {
       await this.client.send(
         new UpdateCommand({
           TableName: this.tables.sources,
           Key: { userId, sourceId },
-          UpdateExpression: 'SET lastCrawledAt = :now, updatedAt = :now REMOVE activeCrawlId',
+          UpdateExpression: `SET lastCrawledAt = :now, updatedAt = :now${learned ? `, #kind = :kind, #stats = :stats${learned.ats ? ', ats = :ats' : ''}` : ''} REMOVE activeCrawlId`,
           ConditionExpression: 'activeCrawlId = :crawlId',
-          ExpressionAttributeValues: { ':now': now, ':crawlId': crawlId },
+          ...(learned ? { ExpressionAttributeNames: { '#kind': 'kind', '#stats': 'stats' } } : {}),
+          ExpressionAttributeValues: {
+            ':now': now,
+            ':crawlId': crawlId,
+            ...(learned
+              ? {
+                  ':kind': learned.kind,
+                  ':stats': { lastFound: learned.lastFound },
+                  ...(learned.ats ? { ':ats': learned.ats } : {}),
+                }
+              : {}),
+          },
         }),
       );
     } catch (error) {

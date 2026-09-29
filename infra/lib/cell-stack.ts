@@ -36,8 +36,11 @@ export interface CellStackProps extends StackProps {
 }
 
 const WORKER_TIMEOUT = Duration.seconds(30);
-/** A fetch takes at most 20 s (0007); the rest is headroom for S3 and DynamoDB. */
-const CRAWL_WORKER_TIMEOUT = Duration.seconds(60);
+/**
+ * A fetch takes at most 20 s (0007); a crawl can make several (a page, then its job
+ * board's feed; T07c adds feed pages within 150 s), then saves up to 500 jobs (0008).
+ */
+const CRAWL_WORKER_TIMEOUT = Duration.seconds(180);
 /** T04 decision: 3 tries, then the dead-letter queue. Must match the worker's MAX_RECEIVES. */
 export const MAX_RECEIVES = 3;
 
@@ -124,6 +127,8 @@ export class CellStack extends Stack {
     const auditTable = userTable('AuditTable', 'audit', 'auditId', 'ttl');
     // T06c: counters (DAY# items expire after a week).
     const usageTable = userTable('UsageTable', 'usage', 'sk', 'ttl');
+    // T07b (0008): jobs found for the user, one item per posting.
+    const jobsTable = userTable('JobsTable', 'jobs', 'jobId');
     /**
      * Every table keyed by userId. Account deletion erases all of them; an infra test
      * fails if a table keyed by userId is missing here (T12).
@@ -136,6 +141,7 @@ export class CellStack extends Stack {
       { table: crawlsTable, sortKey: 'crawlId' },
       { table: auditTable, sortKey: 'auditId' },
       { table: usageTable, sortKey: 'sk' },
+      { table: jobsTable, sortKey: 'jobId' },
     ];
     const documents = new Documents(this, 'Documents', {
       namePrefix: id,
@@ -434,8 +440,14 @@ export class CellStack extends Stack {
       entry: 'apps/worker/src/crawl-worker.ts',
       timeout: CRAWL_WORKER_TIMEOUT,
       removalPolicy,
-      environment: { ...crawlTablesEnv, DOCUMENTS_BUCKET_NAME: documents.bucket.bucketName },
+      environment: {
+        ...crawlTablesEnv,
+        JOBS_TABLE_NAME: jobsTable.tableName,
+        DOCUMENTS_BUCKET_NAME: documents.bucket.bucketName,
+      },
     });
+    // T07b: creates or updates each job it read (one idempotent update per job).
+    jobsTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem');
     usersTable.grant(crawlWorker.fn, 'dynamodb:GetItem');
     crawlsTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem');
     // Frees the crawl's active slot when it ends (same transaction).
@@ -471,6 +483,15 @@ export class CellStack extends Stack {
     });
     // Read-only: audit entries are never changed through the API.
     auditTable.grant(auditApi.fn, 'dynamodb:Query');
+
+    const jobsApi = new AppFunction(this, 'JobsApi', {
+      entry: 'apps/api/src/jobs.ts',
+      timeout: Duration.seconds(10),
+      removalPolicy,
+      environment: { JOBS_TABLE_NAME: jobsTable.tableName },
+    });
+    // Read-only for now: the user's own changes to jobs come with the interface (T09).
+    jobsTable.grant(jobsApi.fn, 'dynamodb:Query', 'dynamodb:GetItem');
 
     const httpApi = new HttpApi(this, 'HttpApi', {
       apiName: id,
@@ -547,6 +568,18 @@ export class CellStack extends Stack {
       path: '/me/audit',
       methods: [HttpMethod.GET],
       integration: new HttpLambdaIntegration('AuditIntegration', auditApi.fn),
+    });
+
+    const jobsIntegration = new HttpLambdaIntegration('JobsIntegration', jobsApi.fn);
+    httpApi.addRoutes({
+      path: '/me/jobs',
+      methods: [HttpMethod.GET],
+      integration: jobsIntegration,
+    });
+    httpApi.addRoutes({
+      path: '/me/jobs/{jobId}',
+      methods: [HttpMethod.GET],
+      integration: jobsIntegration,
     });
 
     if (props.stage === 'dev') {

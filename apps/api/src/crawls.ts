@@ -148,6 +148,9 @@ export function crawlView(c: Crawl) {
           },
         }
       : {}),
+    // T07b: what the crawl read and saved.
+    ...(c.stats ? { stats: c.stats } : {}),
+    ...(c.extraction ? { extraction: c.extraction } : {}),
     createdAt: c.createdAt,
     ...(c.startedAt ? { startedAt: c.startedAt } : {}),
     ...(c.finishedAt ? { finishedAt: c.finishedAt } : {}),

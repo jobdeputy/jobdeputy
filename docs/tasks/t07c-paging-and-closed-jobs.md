@@ -11,7 +11,7 @@ One crawl reads a whole board within fixed limits, and jobs that disappear from 
 
 - In:
   - Following a feed's next page (Lever, Workday) within one crawl, reusing the fetcher and its robots.txt memory.
-  - Limits per crawl: at most 10 requests after the first, 500 jobs, 1 second between requests to one host; the crawl worker's time limit goes from 60 to 180 seconds, with 150 seconds for the crawl.
+  - Limits per crawl: at most 10 requests after the first, 1 second between requests to one host, 150 seconds for the crawl. (The 500-job limit and the 180-second worker came with T07b.)
   - A crawl that hits a limit is `succeeded` with `partial: true` and the reason.
   - `closedAt` for jobs of the same source that a complete crawl no longer lists; a partial crawl never closes a job; a job seen again is reopened.
   - Retries: a failure on a later page keeps what the earlier pages found and ends the crawl as partial (no whole-crawl retry that would fetch everything again).

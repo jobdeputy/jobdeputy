@@ -23,8 +23,44 @@ const jobs = Array.from(
     `<li><a href="/test-site/jobs/${i + 1}">Software Engineer ${i + 1}</a> · Pune, India · Full time · Posted 2026-09-2${i}</li>`,
 ).join('\n');
 
+/** Two postings described with schema.org data (T07b), as search engines ask sites to. */
+const postings = JSON.stringify([
+  {
+    '@context': 'https://schema.org',
+    '@type': 'JobPosting',
+    title: 'Backend Engineer',
+    description:
+      '<p>Build the APIs of Example Test Co.</p><ul><li>TypeScript</li><li>AWS</li></ul>',
+    identifier: { '@type': 'PropertyValue', name: 'Example Test Co', value: 'BE-1' },
+    datePosted: '2026-09-20',
+    employmentType: 'FULL_TIME',
+    hiringOrganization: { '@type': 'Organization', name: 'Example Test Co' },
+    jobLocation: {
+      '@type': 'Place',
+      address: { '@type': 'PostalAddress', addressLocality: 'Pune', addressCountry: 'IN' },
+    },
+    url: '/test-site/jobs-schema-org/backend-engineer',
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'JobPosting',
+    title: 'Data Engineer',
+    description: 'Move data around. Synthetic posting for integration tests.',
+    datePosted: '2026-09-22',
+    jobLocationType: 'TELECOMMUTE',
+    hiringOrganization: { '@type': 'Organization', name: 'Example Test Co' },
+    url: '/test-site/jobs-schema-org/data-engineer',
+  },
+]).replaceAll('</', '<\\/');
+
 export const PAGES: Record<string, () => HttpResponse> = {
-  /** A normal careers page. */
+  /** A careers page with schema.org job data: two jobs to read (T07b). */
+  'jobs-schema-org': () =>
+    html(
+      200,
+      `<!doctype html><html lang="en"><head><title>Careers at Example Test Co</title><script type="application/ld+json">${postings}</script></head><body><h1>Open roles</h1><p>Synthetic test page for JobDeputy's integration tests.</p></body></html>`,
+    ),
+  /** A normal careers page, with jobs only as plain HTML: nothing we can read yet (0008). */
   jobs: () =>
     html(
       200,

@@ -1,4 +1,13 @@
-import type { Crawl, CrawlError, CrawlResult, FinishOutcome } from '@jobdeputy/db';
+import type {
+  Crawl,
+  CrawlError,
+  CrawlExtraction,
+  CrawlResult,
+  CrawlStats,
+  FinishOutcome,
+  JobPosting,
+  SourceUpdate,
+} from '@jobdeputy/db';
 import { CRAWL_ERRORS, crawlKeys } from '@jobdeputy/shared';
 import type { SQSRecord } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
@@ -11,10 +20,12 @@ import {
   RetryLaterError,
 } from '../src/crawl-worker.js';
 import { FetchError, type FetchedPage } from '../src/fetch/fetcher.js';
+import type { FetchFn } from '../src/jobs/crawl-jobs.js';
 
 const USER = '0f8fad5b-d9cb-469f-a165-70867728950e';
 const CRAWL = '01J8ZQ4Y3N5W6X7Y8Z9A0B1C2D';
 const URL_ = 'https://jobs.example.com/careers';
+const NOW = new Date('2026-09-29T12:00:00Z');
 
 function record(receiveCount = 1, body: unknown = { userId: USER, crawlId: CRAWL }): SQSRecord {
   return {
@@ -41,17 +52,22 @@ function page(over: Partial<FetchedPage> = {}): FetchedPage {
 }
 
 /** An in-memory crawl with the same transition rules as the DynamoDB repository. */
-function setup(fetchPage: CrawlWorkerDeps['fetchPage'] = async () => page()) {
+function setup(fetchImpl: FetchFn = async () => page()) {
   const state: {
     status: Crawl['status'];
     attempts: number;
     result?: CrawlResult;
+    stats?: CrawlStats;
+    extraction?: CrawlExtraction;
+    source?: SourceUpdate;
     error?: CrawlError;
     lastError?: CrawlError;
     audit: string[];
+    auditDetail?: unknown;
   } = { status: 'queued', attempts: 0, audit: [] };
   const crawl = (): Crawl =>
     ({ userId: USER, crawlId: CRAWL, sourceId: 'S1', url: URL_, ...state }) as unknown as Crawl;
+  const fetch = vi.fn(fetchImpl);
   const deps = {
     repo: {
       start: vi.fn(async () => {
@@ -66,29 +82,40 @@ function setup(fetchPage: CrawlWorkerDeps['fetchPage'] = async () => page()) {
       finish: vi.fn(async (_c: unknown, outcome: FinishOutcome, audit: { name: string }) => {
         if (state.status !== 'queued' && state.status !== 'running') return false;
         state.status = outcome.status;
-        if (outcome.status === 'succeeded') state.result = outcome.result;
-        else state.error = outcome.error;
+        if (outcome.status === 'succeeded') {
+          state.result = outcome.result;
+          if (outcome.stats) state.stats = outcome.stats;
+          if (outcome.extraction) state.extraction = outcome.extraction;
+          if (outcome.source) state.source = outcome.source;
+        } else state.error = outcome.error;
         delete state.lastError;
         state.audit.push(audit.name);
+        state.auditDetail = (audit as { detail?: unknown }).detail;
         return true;
       }),
     },
     isBeingDeleted: vi.fn(async () => false),
-    fetchPage: vi.fn(fetchPage),
+    newFetcher: vi.fn(() => fetch),
     storePage: vi.fn(async () => undefined),
+    saveJobs: vi.fn(async (_u: string, jobs: JobPosting[]) => ({
+      found: jobs.length,
+      created: jobs.length,
+      updated: 0,
+    })),
+    now: () => NOW,
     delayRetry: vi.fn(async () => undefined),
     newId: () => '01J8ZQ4Y3N5W6X7Y8Z9A0B1C2E',
     remainingMs: () => 60_000,
   } satisfies CrawlWorkerDeps;
-  return { state, deps };
+  return { state, deps, fetch };
 }
 
 describe('crawl worker: success', () => {
   it('fetches the page, stores it under the crawl, and records success with an audit entry', async () => {
-    const { state, deps } = setup();
+    const { state, deps, fetch } = setup();
     expect(await processRecord(record(), deps)).toBe('succeeded');
     const key = crawlKeys(USER, CRAWL).page;
-    expect(deps.fetchPage).toHaveBeenCalledWith(URL_);
+    expect(fetch).toHaveBeenCalledWith(URL_);
     expect(deps.storePage).toHaveBeenCalledWith(key, expect.objectContaining({ status: 200 }));
     expect(state).toMatchObject({
       status: 'succeeded',
@@ -108,10 +135,10 @@ describe('crawl worker: success', () => {
   });
 
   it('does nothing for a duplicate delivery of a finished crawl', async () => {
-    const { state, deps } = setup();
+    const { state, deps, fetch } = setup();
     await processRecord(record(), deps);
     expect(await processRecord(record(), deps)).toBe('skipped');
-    expect(deps.fetchPage).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledTimes(1);
     expect(state.audit).toEqual(['crawl.succeeded']);
   });
 
@@ -260,5 +287,73 @@ describe('crawl worker: our own failures', () => {
       'Malformed',
     );
     expect(deps.repo.start).not.toHaveBeenCalled();
+  });
+});
+
+describe('crawl worker: jobs (T07b)', () => {
+  const schemaOrgPage = () =>
+    page({
+      body: new TextEncoder().encode(
+        '<html><head><script type="application/ld+json">[{"@type":"JobPosting","title":"Engineer","url":"/jobs/1"},{"@type":"JobPosting","title":"Designer","url":"/jobs/2"}]</script></head><body>Careers</body></html>',
+      ),
+    });
+
+  it('saves the jobs read, and records the counts on the crawl, the source, and the audit entry', async () => {
+    const { state, deps } = setup(async () => schemaOrgPage());
+    deps.saveJobs.mockResolvedValueOnce({ found: 2, created: 1, updated: 1 });
+    expect(await processRecord(record(), deps)).toBe('succeeded');
+    expect(deps.saveJobs).toHaveBeenCalledWith(
+      USER,
+      [
+        expect.objectContaining({ title: 'Engineer', jobUrl: 'https://jobs.example.com/jobs/1' }),
+        expect.objectContaining({ title: 'Designer' }),
+      ],
+      { sourceId: 'S1', crawlId: CRAWL },
+    );
+    expect(state).toMatchObject({
+      status: 'succeeded',
+      stats: { jobsFound: 2, jobsNew: 1, jobsUpdated: 1 },
+      extraction: { outcome: 'read', method: 'schema_org', skipped: 0 },
+      source: { kind: 'unknown', lastFound: 2 },
+      audit: ['crawl.succeeded'],
+      auditDetail: expect.objectContaining({ jobsFound: 2, jobsNew: 1 }),
+    });
+  });
+
+  it('a page with nothing readable still succeeds, with 0 jobs and the note', async () => {
+    const { state, deps } = setup();
+    expect(await processRecord(record(), deps)).toBe('succeeded');
+    expect(deps.saveJobs).toHaveBeenCalledWith(USER, [], expect.anything());
+    expect(state).toMatchObject({
+      stats: { jobsFound: 0, jobsNew: 0, jobsUpdated: 0 },
+      extraction: { outcome: 'no_readable_jobs', skipped: 0 },
+    });
+  });
+
+  it('a job board records its kind on the source', async () => {
+    const api = 'https://api.lever.co/v0/postings/acme?mode=json&limit=50&skip=0';
+    const { state, deps, fetch } = setup(async () =>
+      page({ url: api, contentType: 'application/json', body: new TextEncoder().encode('[]') }),
+    );
+    const crawlOf = deps.repo.start.getMockImplementation();
+    deps.repo.start.mockImplementation(async (...args) => {
+      const crawl = await crawlOf?.(...args);
+      return crawl && { ...crawl, url: 'https://jobs.lever.co/acme' };
+    });
+    expect(await processRecord(record(), deps)).toBe('succeeded');
+    expect(fetch).toHaveBeenCalledWith(api, {});
+    expect(state.source).toEqual({ kind: 'ats_board', ats: 'lever', lastFound: 0 });
+    expect(state.extraction).toMatchObject({ method: 'ats_feed', board: 'lever:acme' });
+  });
+
+  it('a failed save is our failure: retried, and saving again is safe', async () => {
+    const { state, deps } = setup(async () => schemaOrgPage());
+    deps.saveJobs.mockRejectedValueOnce(new Error('DynamoDB is down'));
+    await expect(processRecord(record(1), deps)).rejects.toBeInstanceOf(RetryLaterError);
+    expect(state.status).toBe('running');
+    expect(await processRecord(record(2), deps)).toBe('succeeded');
+    // The same jobs again: the repository updates the same items (idempotent).
+    expect(deps.saveJobs).toHaveBeenCalledTimes(2);
+    expect(deps.saveJobs.mock.calls[0]?.[1]).toEqual(deps.saveJobs.mock.calls[1]?.[1]);
   });
 });
