@@ -170,6 +170,19 @@ export class CicdStack extends Stack {
       testUserStatement(region, account),
       malwarePlanStatusStatement(region, account),
       new PolicyStatement({ actions: ['sqs:SendMessage'], resources: [sqsArn(`${prefix}*`)] }),
+      // T14 (scripts/cleanup-log-groups.sh): log groups CDK's bucket helper leaves behind.
+      new PolicyStatement({
+        actions: ['logs:DescribeLogGroups'],
+        resources: [`arn:aws:logs:${region}:${account}:log-group:*`],
+      }),
+      new PolicyStatement({
+        actions: ['logs:DeleteLogGroup'],
+        resources: [`arn:aws:logs:${region}:${account}:log-group:/aws/lambda/${prefix}*`],
+      }),
+      new PolicyStatement({
+        actions: ['logs:PutRetentionPolicy'],
+        resources: [`arn:aws:logs:${region}:${account}:log-group:/aws/lambda/jobdeputy-dev-*`],
+      }),
       new PolicyStatement({
         actions: ['sqs:ReceiveMessage', 'sqs:DeleteMessage'],
         resources: [sqsArn(`${prefix}*-dlq`)],

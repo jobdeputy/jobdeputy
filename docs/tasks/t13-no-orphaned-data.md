@@ -1,8 +1,8 @@
 # T13: No orphaned user data
 
-- **Status:** in-review
+- **Status:** done
 - **Depends on:** T12
-- **Branch / PR:** `t13-no-orphaned-data`
+- **Branch / PR:** `t13-no-orphaned-data`, [#20](https://github.com/jobdeputy/jobdeputy/pull/20) (merged)
 
 ## Goal
 
@@ -39,8 +39,8 @@ Agreed with the maintainer on 2026-09-28: all three fixes, before T06. Extended 
 
 - [x] A failed `DELETE /me` in test clean-up fails the run (unit-tested helper behaviour).
 - [x] The reaper requests deletion for old test logins and for orphaned data, and nothing else (unit tests), and exists only in dev stacks (infra test).
-- [ ] Proven on the personal stack: an orphaned account and an old test login are found by the reaper and fully erased by the deletion pipeline.
+- [x] Proven on the personal stack: a real orphan (login deleted, data left behind) was found by the reaper and fully erased by the deletion pipeline; the first run also erased 7 older pre-T12 orphans, and after a full test run the reaper finds 0. (The "test login older than a day" path is unit-tested; a login cannot be aged on demand.)
 - [x] The runbook documents how to delete an account safely, including by an operator.
-- [ ] Alarms for API 5xx and the reaper, and the alarm runbook; proven by a reaper alarm on real AWS. (Runbook done; the reaper's error on leftovers is proven on the personal stack. The alarm exists only on the shared stack, so it is proven after merge.)
-- [ ] Nightly integration run with a failure email. (Proven after merge: GitHub can only schedule or manually start workflows from `main`.)
+- [x] Alarms for API 5xx and the reaper, and the alarm runbook; proven on 2026-09-29 after merge: a probe orphan on the shared dev stack made the reaper alarm fire, and the maintainer received the email.
+- [x] Nightly integration run with a failure email; proven on 2026-09-29 after merge: a manual Nightly run passed 17/17, and the deploy role may publish only to the shared alert topic (IAM policy simulator).
 - [x] Reserved domains refused at sign-up (integration test), and the reaper limited to the test group (unit tests).

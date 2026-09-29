@@ -86,6 +86,17 @@ describe('PR integration role (T11)', () => {
           StringEquals: { 'iam:PassedToService': 'cloudformation.amazonaws.com' },
         });
       }
+      if (list.includes('logs:DeleteLogGroup')) {
+        // Only log groups of PR stacks can be deleted.
+        expect(s.Resource).toBe(
+          'arn:aws:logs:us-east-1:111111111111:log-group:/aws/lambda/jobdeputy-dev-pr*',
+        );
+      }
+      if (list.includes('logs:PutRetentionPolicy')) {
+        expect(s.Resource).toBe(
+          'arn:aws:logs:us-east-1:111111111111:log-group:/aws/lambda/jobdeputy-dev-*',
+        );
+      }
       if (list.some((a) => a.startsWith('sqs:'))) {
         expect(String(s.Resource)).toMatch(/:jobdeputy-dev-pr\*(-dlq)?$/);
       }
