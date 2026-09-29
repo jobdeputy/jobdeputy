@@ -227,7 +227,7 @@ Key: `userId`, `sk`. One application and its steps share a prefix, so `begins_wi
 
 ## 13. `vault`: encrypted secrets (Future)
 
-Key: `userId`, `sk`. Values are encrypted in the application before they are written. The encryption design (KMS, which needs a cost exception under [0005](0005-pre-launch-cost-guardrails.md)) is decided when this table is built.
+Key: `userId`, `sk`. Values are encrypted in the application before they are written. The encryption design (KMS, which needs a cost exception under [0005](decisions/0005-pre-launch-cost-guardrails.md)) is decided when this table is built.
 
 | `sk` | Attributes |
 |---|---|
