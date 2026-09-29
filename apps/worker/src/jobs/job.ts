@@ -333,7 +333,11 @@ export function finalizeJobs(
   return { jobs: [...byId.values()], skipped };
 }
 
-/** Changes when what the user would read changes (T07b stores it; a change means re-score). */
+/**
+ * Changes when what the user reads changes (a change means re-score). The description
+ * has its own hash: a board's list has none, and must not look like a change to a job
+ * whose description was fetched later (T08).
+ */
 export function contentHash(job: ExtractedJob): string {
   const content = [
     job.title,
@@ -342,8 +346,11 @@ export function contentHash(job: ExtractedJob): string {
     job.workplace ?? '',
     job.employmentType ?? '',
     job.salary ? JSON.stringify(job.salary) : '',
-    job.description ?? '',
     job.applyUrl ?? '',
   ].join('\n');
   return createHash('sha256').update(content).digest('hex').slice(0, 32);
+}
+
+export function descriptionHash(description: string): string {
+  return createHash('sha256').update(description).digest('hex').slice(0, 32);
 }

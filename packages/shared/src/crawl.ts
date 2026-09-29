@@ -21,6 +21,7 @@ export const CRAWL_ERRORS = {
   unsupported_content: 'This is not a web page (for example a PDF or an image).',
   too_large: 'The page is too large.',
   needs_browser: 'This page only shows its content with JavaScript, which we cannot run yet.',
+  unreadable_feed: "We could not read this job board's listing. Its format may have changed.",
   tls_error: "The site's secure connection is broken (for example an expired certificate).",
   timeout: 'The site took too long to answer.',
   unreachable: 'The site could not be reached.',
@@ -127,6 +128,15 @@ export const crawlId = ulidId;
 export const pageQuery = z.strictObject({
   limit: z.coerce.number().int().min(1).max(50).default(20),
   cursor: ulidId.optional(),
+});
+
+/** T07b: a job's key (a hash, 0008). */
+export const jobId = z.string().regex(/^[0-9a-f]{32}$/, 'Not a job ID');
+
+/** Paging for jobs, in key order: `?limit=20&cursor=<jobId of the last job seen>`. */
+export const jobsPageQuery = z.strictObject({
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  cursor: jobId.optional(),
 });
 
 /** Queue message from the crawls Pipe: the crawl's key only. */

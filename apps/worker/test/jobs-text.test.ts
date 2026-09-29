@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   contentHash,
   countryCode,
+  descriptionHash,
   employmentTypeFrom,
   finalizeJob,
   finalizeJobs,
@@ -200,15 +201,13 @@ describe('finalizeJob', () => {
     expect(skipped).toBe(1);
   });
 
-  it('contentHash changes with what the user reads, not with where it was found', () => {
+  it('contentHash changes with what the user reads, not with where it was found or the description', () => {
     const a = finalizeJob({ ...raw, descriptionText: 'Build.' }, context);
-    const b = finalizeJob(
-      { ...raw, descriptionText: 'Build.' },
-      { ...context, method: 'schema_org' },
-    );
-    const c = finalizeJob({ ...raw, descriptionText: 'Build more.' }, context);
+    const b = finalizeJob(raw, { ...context, method: 'schema_org' });
+    const c = finalizeJob({ ...raw, title: 'Senior Engineer' }, context);
     if (!a || !b || !c) throw new Error('expected jobs');
     expect(contentHash(a)).toBe(contentHash(b));
     expect(contentHash(a)).not.toBe(contentHash(c));
+    expect(descriptionHash('Build.')).not.toBe(descriptionHash('Build more.'));
   });
 });

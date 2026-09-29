@@ -31,6 +31,7 @@ What is deployed today, per cell. Every table is DynamoDB on-demand (`PAY_PER_RE
 | `<stack>-crawls` | `userId` (S) | `crawlId` (S) | `NEW_IMAGE` → Pipe (only `queued` inserts; sends `userId` and `crawlId`) → queue | `ttl` (180 days) | prod only | dev: deleted; prod: kept | T06b |
 | `<stack>-audit` | `userId` (S) | `auditId` (S) | — | `ttl` (1 year) | prod only | dev: deleted; prod: kept | T06b |
 | `<stack>-usage` | `userId` (S) | `sk` (S) | — | `ttl` (`DAY#` items only: 7 days) | prod only | dev: deleted; prod: kept | T06c |
+| `<stack>-jobs` | `userId` (S) | `jobId` (S) | — | — | prod only | dev: deleted; prod: kept | T07b |
 | `<stack>-ping-jobs` | `id` (S) | — | `NEW_IMAGE` → Pipe → queue | `ttl` (1 day) | — | **dev stacks only** (deleted with the stack) | T04 |
 | `<stack>-idempotency` | `id` (S) | — | — | `expiration` | — | **dev stacks only** (used by the ping worker only) | T04 |
 
@@ -64,7 +65,10 @@ Every `TransactWriteItems` goes through `transactWrite` (`packages/db/src/transa
 | `crawls` | `Query`, newest first, `Limit`, `ExclusiveStartKey` | `userId` | `GET /me/crawls` (paged) |
 | `crawls` | `UpdateItem` with `#status IN (queued, running)` | `userId`, `crawlId` | crawl worker: claim an attempt; note a retriable error (`= running`) |
 | `crawls` + `audit` | `TransactWriteItems`: `UpdateItem` crawl with `#status IN (queued, running)` → `succeeded`/`failed`, `PutItem` audit entry | `userId`, `crawlId` / `auditId` | crawl worker; `POST /me/crawls` ending a stale crawl |
-| `sources` | `UpdateItem` with `activeCrawlId = :crawlId` (`REMOVE activeCrawlId`) | `userId`, `sourceId` | crawl worker, after a crawl ends |
+| `sources` | `UpdateItem` with `activeCrawlId = :crawlId` (`REMOVE activeCrawlId`; after a success also `kind`, `ats`, `stats`) | `userId`, `sourceId` | crawl worker, after a crawl ends |
+| `jobs` | `UpdateItem` per job, no condition (idempotent): posting fields `SET`; first-seen and the user's own fields `if_not_exists`; `ADD sourceIds`; `REMOVE closedAt`; `ReturnValues: UPDATED_OLD` to count new and changed jobs. At most 10 at a time, 500 per crawl. | `userId`, `jobId` | crawl worker (T07b) |
+| `jobs` | `Query`, key order, `Limit`, `ExclusiveStartKey` | `userId` | `GET /me/jobs` (paged) |
+| `jobs` | `GetItem` | `userId`, `jobId` | `GET /me/jobs/{jobId}` |
 | `audit` | `Query`, newest first, `Limit`, `ExclusiveStartKey` | `userId` | `GET /me/audit` (paged) |
 | `ping-jobs` | `PutItem` / `GetItem` / conditional `UpdateItem` | `id` | ping API and worker |
 | `idempotency` | Powertools reads and writes | `id` | ping worker |
@@ -150,13 +154,13 @@ Key: `userId`, `documentId` (ULID).
 
 Key: `userId`, `sourceId` (the first 32 hex characters of SHA-256 of `normalizedUrl`, [0007](decisions/0007-crawler.md): the same page cannot be saved twice by one user).
 
-`url` (as submitted), `normalizedUrl` (lowercase host, no fragment or tracking parameters), `label?`, `kind` (`company_careers`, `ats_board`, `aggregator`, `linkedin_search`, or `unknown`; `unknown` until T07), `ats?` (`greenhouse`, `lever`, `workday`, `ashby`, …), `companyHint?` (`companyId`, for single-company pages), `companyConfirmed B`, `active B`, `schedule {type}` (`manual` now; `daily` later), `lastCrawlId?`, `lastCrawledAt?`, `activeCrawlId?` (T06b: set while a crawl of this page is queued or running, so a second submit returns it; replaced if that crawl is finished, missing, or older than 15 minutes), `stats {lastFound, totalJobs}` (T07).
+`url` (as submitted), `normalizedUrl` (lowercase host, no fragment or tracking parameters), `label?`, `kind` (`ats_board` once a crawl read it as a job board, T07b; otherwise `unknown`; `company_careers`, `aggregator`, and `linkedin_search` later), `ats?` (`greenhouse`, `lever`, `ashby`, or `workday`; set by the crawl worker, T07b), `companyHint?` (`companyId`, for single-company pages), `companyConfirmed B`, `active B`, `schedule {type}` (`manual` now; `daily` later), `lastCrawlId?`, `lastCrawledAt?`, `activeCrawlId?` (T06b: set while a crawl of this page is queued or running, so a second submit returns it; replaced if that crawl is finished, missing, or older than 15 minutes), `stats? {lastFound}` (T07b: jobs read by the last successful crawl; `totalJobs` later).
 
 ## 5. `crawls`: crawl runs (stream → crawl worker)
 
 Key: `userId`, `crawlId` (ULID).
 
-`sourceId`, `url` (the normalized URL at crawl time), `trigger` (`user`, `schedule`, or `redrive`), `status` (`queued`, `running`, `succeeded`, `failed`, or `cancelled`), `attempts N`, `startedAt?`, `finishedAt?`, `result? {finalUrl, httpStatus, contentType, bytes, s3Key}` (T06b: the fetched page; `s3Key` is never shown by the API), `stats {pagesFetched, jobsFound, jobsNew, jobsUpdated, jobsRelevant, jobsOverLimit, jobsClosed}` (T07), `error? {code, message}` (`code` from `CRAWL_ERRORS` in `packages/shared`), `lastError? {code, message}` (T06b: the latest retriable failure while a retry is pending), `llm {provider (byot or platform), model, calls, inputTokens, outputTokens}` (T07), `ttl` (180 days).
+`sourceId`, `url` (the normalized URL at crawl time), `trigger` (`user`, `schedule`, or `redrive`), `status` (`queued`, `running`, `succeeded`, `failed`, or `cancelled`), `attempts N`, `startedAt?`, `finishedAt?`, `result? {finalUrl, httpStatus, contentType, bytes, s3Key}` (T06b: the fetched page; `s3Key` is never shown by the API), `stats? {jobsFound, jobsNew, jobsUpdated}` (T07b; `pagesFetched`, `jobsClosed` with T07c, `jobsRelevant`, `jobsOverLimit` later), `extraction? {outcome, method?, board?, skipped N, partial? {reason}}` (`outcome` `read` or `no_readable_jobs`; `method` `ats_feed` or `schema_org`; `board` for example `greenhouse:acme`; `reason` `max_jobs`) (T07b; only on `succeeded`), `error? {code, message}` (`code` from `CRAWL_ERRORS` in `packages/shared`), `lastError? {code, message}` (T06b: the latest retriable failure while a retry is pending), `llm {provider (byot or platform), model, calls, inputTokens, outputTokens}` (T07d), `ttl` (180 days).
 
 ## 6. `usage`: counters
 
@@ -197,9 +201,9 @@ Key: `userId`, `jobId`. One shape for every job, whatever it was read from (a jo
 
 So the same job is stored once per user, and a re-crawl updates it.
 
-**Required** means every saved job has it: a listing without a title or a usable link is skipped and counted, never saved. **Optional** attributes are absent (not `null`) until known. Later tasks only add attributes; they never change a required one.
+**A re-crawl sets what it read and never removes a posting field it did not read**: a board's list can carry less than the posting itself (no description, "3 Locations"), so a missing field is not evidence it went away. **Required** means every saved job has it: a listing without a title or a usable link is skipped and counted, never saved. **Optional** attributes are absent (not `null`) until known. Later tasks only add attributes; they never change a required one.
 
-### Posting: read from the site (T07b)
+### Posting: read from the site (built in T07b)
 
 | Attribute | Type | Required | Notes |
 |---|---|---|---|
@@ -208,7 +212,7 @@ So the same job is stored once per user, and a re-crawl updates it.
 | `jobUrl` | S | yes | The posting's page; `http(s)` only, passing the crawl URL rules (no private addresses, credentials, or LinkedIn) |
 | `companyKey` | S | yes | Who is hiring, until the shared company list exists ([#40](https://github.com/jobdeputy/jobdeputy/issues/40)): `greenhouse:acme`, `lever:acme`, `ashby:acme`, `workday:<host>/<site>`, or `site:<domain>`. Lowercase. |
 | `locations` | L | yes, may be empty | `{text, city?, region?, country?}`: `text` as the site wrote it; the parts only when the site gives them; `country` only as an ISO 3166 alpha-2 code. At most 20. Empty when the list only says "3 Locations". |
-| `contentHash` | S | yes | Hash of what the user reads (title, company, places, workplace, type, salary, description, apply link); a change means re-score |
+| `contentHash` | S | yes | Hash of what the user reads except the description (title, company, places, workplace, type, salary, apply link); a change, or a new `descriptionHash`, means re-score |
 | `companyName` | S | no | As the site wrote it, at most 200 characters. Lever, Ashby, and Workday lists do not give it; the app then shows the board. |
 | `companyId` | S | no | Resolved from `companyKey` once `companies` exists ([#40](https://github.com/jobdeputy/jobdeputy/issues/40)) |
 | `applyUrl` | S | no | Only when it differs from `jobUrl`; same rules |
@@ -218,14 +222,15 @@ So the same job is stored once per user, and a re-crawl updates it.
 | `employmentType` | S | no | `full_time`, `part_time`, `contract`, `internship`, or `temporary` |
 | `salary` | M | no | A range, unlike the single-amount money convention: `{min?, max?, currency, period}`, at least one amount; `currency` ISO 4217; `period` `year`, `month`, `week`, `day`, or `hour`. Never converted. |
 | `description` | S | no | Plain text (never HTML), at most 32,000 characters. Absent when the list has none (Greenhouse, Workday): fetched later for relevant jobs only (T08). |
-| `descriptionTruncated` | B | no | Present (`true`) only when the description was cut |
+| `descriptionTruncated` | B | no | Set with the description: `true` when it was cut |
+| `descriptionHash` | S | no | Hash of the description, set with it. Kept apart from `contentHash` because a board's list has no description: re-crawling it must not look like a change to a job whose description was fetched later. |
 | `postedAt` | S | no | ISO 8601; absent when unknown or implausible (Workday's "30+ days ago") |
 
 ### Discovery: where and when it was found (T07b, T07c)
 
 | Attribute | Type | Required | Notes |
 |---|---|---|---|
-| `sourceIds` | L | yes | Every saved page that listed it |
+| `sourceIds` | SS | yes | Every saved page that listed it (a string set, so saving again adds nothing) |
 | `firstCrawlId`, `lastCrawlId` | S | yes | |
 | `firstSeenAt`, `lastSeenAt` | S | yes | |
 | `extraction` | M | yes | `{method, version}`: `ats_feed` or `schema_org` now; `llm` later ([T07d](https://github.com/jobdeputy/jobdeputy/issues/41)) |
@@ -356,3 +361,4 @@ Everything under `users/<userId>/` and `derived/users/<userId>/` goes with accou
 | 2026-09-29 | `usage` `ROLES` and `DOCUMENTS` counters (exact caps under concurrent creates; one default document) | fix after T06d |
 | 2026-09-29 | `ping-jobs` and `idempotency`: dev stacks only; `ping-jobs` items expire after 1 day (were 7), because they hold a user ID that account deletion does not reach | deep check |
 | 2026-09-29 | `jobs` layout: required and optional attributes, `dedupeKey` rules, `companyKey`, `locations` items `{text, city?, region?, country?}`, `salary` as a range, `description` as plain text (32,000 characters), `descriptionTruncated`; groups for relevance, résumé match, and generated materials; `companies` deferred ([0008](decisions/0008-job-extraction.md)); design only, table not built yet | docs |
+| 2026-09-29 | `jobs` table built (T07b): `sourceIds` is a string set; `descriptionHash` added and `contentHash` no longer covers the description; `descriptionTruncated` set with every description; a re-crawl never removes a posting field. `crawls`: `stats {jobsFound, jobsNew, jobsUpdated}` and `extraction`. `sources`: `kind` `ats_board`, `ats`, `stats {lastFound}`. | T07b |

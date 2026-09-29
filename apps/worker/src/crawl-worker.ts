@@ -7,6 +7,10 @@ import {
   type CrawlError,
   CrawlRepository,
   documentClient,
+  type JobPosting,
+  JobRepository,
+  type SaveContext,
+  type SaveStats,
 } from '@jobdeputy/db';
 import {
   CRAWL_ERRORS,
@@ -18,8 +22,8 @@ import {
 import type { Context, SQSBatchResponse, SQSEvent, SQSRecord } from 'aws-lambda';
 import { ulid } from 'ulid';
 import { withDeadline } from './deadline.js';
-import { looksLikeJavaScriptShell } from './fetch/detect.js';
-import { createFetcher, decodeBody, FetchError, type FetchedPage } from './fetch/fetcher.js';
+import { createFetcher, FetchError, type FetchedPage } from './fetch/fetcher.js';
+import { type FetchFn, readJobs } from './jobs/crawl-jobs.js';
 
 const logger = createLogger('crawl-worker');
 
@@ -33,9 +37,12 @@ export const SAFETY_MARGIN_MS = 5_000;
 export interface CrawlWorkerDeps {
   repo: Pick<CrawlRepository, 'start' | 'recordRetry' | 'finish'>;
   isBeingDeleted: (userId: string) => Promise<boolean>;
-  /** One fetch with a fresh fetcher (its robots.txt memory lasts one crawl). */
-  fetchPage: (url: string) => Promise<FetchedPage>;
+  /** A fresh fetcher for one crawl attempt (its robots.txt memory lasts that attempt). */
+  newFetcher: () => FetchFn;
   storePage: (key: string, page: FetchedPage) => Promise<void>;
+  /** T07b: creates or updates the jobs (idempotent, so a retried crawl is safe). */
+  saveJobs: (userId: string, jobs: JobPosting[], context: SaveContext) => Promise<SaveStats>;
+  now: () => Date;
   delayRetry: (record: SQSRecord, seconds: number) => Promise<void>;
   newId: () => string;
   remainingMs: () => number;
@@ -56,9 +63,6 @@ export function crawlErrorFrom(error: FetchError): CrawlError {
     message: error.message === base ? base : `${base} (${error.message})`,
   };
 }
-
-const isHtml = (page: FetchedPage) =>
-  page.contentType === 'text/html' || page.contentType === 'application/xhtml+xml';
 
 export async function processRecord(
   record: SQSRecord,
@@ -117,15 +121,20 @@ export async function processRecord(
   };
 
   try {
-    const page = await withDeadline(
-      deps.fetchPage(crawl.url),
+    const { page, jobs, extraction, board } = await withDeadline(
+      (async () => {
+        const reading = await readJobs(crawl.url, deps.newFetcher(), deps.now());
+        await deps.storePage(crawlKeys(userId, crawlId).page, reading.page);
+        return reading;
+      })(),
       deps.remainingMs() - SAFETY_MARGIN_MS,
     );
-    if (isHtml(page) && looksLikeJavaScriptShell(decodeBody(page))) {
-      return await fail({ code: 'needs_browser', message: CRAWL_ERRORS.needs_browser });
-    }
     const key = crawlKeys(userId, crawlId).page;
-    await deps.storePage(key, page);
+    const saved = await withDeadline(
+      deps.saveJobs(userId, jobs, { sourceId: crawl.sourceId, crawlId }),
+      deps.remainingMs() - SAFETY_MARGIN_MS,
+    );
+    const stats = { jobsFound: saved.found, jobsNew: saved.created, jobsUpdated: saved.updated };
     await deps.repo.finish(
       crawl,
       {
@@ -137,13 +146,30 @@ export async function processRecord(
           bytes: page.body.byteLength,
           s3Key: key,
         },
+        stats,
+        extraction,
+        source: {
+          kind: board ? 'ats_board' : 'unknown',
+          ...(board ? { ats: board.ats } : {}),
+          lastFound: saved.found,
+        },
       },
-      audit('crawl.succeeded', `Crawl succeeded: ${host}`, { bytes: page.body.byteLength }),
+      audit('crawl.succeeded', `Crawl succeeded: ${host}, ${saved.found} jobs`, {
+        bytes: page.body.byteLength,
+        jobsFound: saved.found,
+        jobsNew: saved.created,
+      }),
     );
     logger.info('Crawl succeeded', {
       crawlId,
       bytes: page.body.byteLength,
       attempts: crawl.attempts,
+      ...stats,
+      outcome: extraction.outcome,
+      method: extraction.method,
+      board: extraction.board,
+      skipped: extraction.skipped,
+      partial: extraction.partial?.reason,
     });
     return 'succeeded';
   } catch (error) {
@@ -153,6 +179,9 @@ export async function processRecord(
 
     if (error instanceof FetchError) {
       const crawlError = crawlErrorFrom(error);
+      // A board's format changed under us: worth a look, not an alarm.
+      if (error.code === 'unreadable_feed')
+        logger.error('Job board feed unreadable', { crawlId, reason: error.message });
       // Expected outcomes of crawling the web: recorded on the crawl, never dead-lettered.
       if (!error.retriable || lastAttempt) return await fail(crawlError);
       await deps.repo.recordRetry(userId, crawlId, crawlError);
@@ -193,6 +222,7 @@ function defaultDeps(): CrawlWorkerDeps {
     SOURCES_TABLE_NAME,
     AUDIT_TABLE_NAME,
     USERS_TABLE_NAME,
+    JOBS_TABLE_NAME,
     DOCUMENTS_BUCKET_NAME,
   } = process.env;
   if (
@@ -200,12 +230,14 @@ function defaultDeps(): CrawlWorkerDeps {
     !SOURCES_TABLE_NAME ||
     !AUDIT_TABLE_NAME ||
     !USERS_TABLE_NAME ||
+    !JOBS_TABLE_NAME ||
     !DOCUMENTS_BUCKET_NAME
   ) {
     throw new Error('Table and bucket names must be set');
   }
   const client = documentClient();
   const account = new AccountRepository(client, USERS_TABLE_NAME);
+  const jobs = new JobRepository(client, JOBS_TABLE_NAME);
   const s3 = new S3Client({});
   const sqs = new SQSClient({});
   return {
@@ -217,7 +249,12 @@ function defaultDeps(): CrawlWorkerDeps {
       usage: process.env.USAGE_TABLE_NAME ?? '',
     }),
     isBeingDeleted: (userId) => account.isBeingDeleted(userId),
-    fetchPage: (url) => createFetcher().fetch(url),
+    newFetcher: () => {
+      const fetcher = createFetcher();
+      return (url, options) => fetcher.fetch(url, options);
+    },
+    saveJobs: (userId, found, context) => jobs.save(userId, found, context),
+    now: () => new Date(),
     storePage: async (key, page) => {
       await s3.send(
         new PutObjectCommand({

@@ -1,0 +1,177 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it, vi } from 'vitest';
+import { FetchError, type FetchedPage } from '../src/fetch/fetcher.js';
+import {
+  EXTRACTION_VERSION,
+  type FetchFn,
+  MAX_JOBS_PER_CRAWL,
+  readJobs,
+} from '../src/jobs/crawl-jobs.js';
+
+const NOW = new Date('2026-09-29T12:00:00Z');
+const fixture = (name: string) =>
+  readFileSync(new URL(`./fixtures/jobs/${name}`, import.meta.url), 'utf8');
+
+function response(url: string, body: string, contentType = 'text/html'): FetchedPage {
+  return {
+    url,
+    status: 200,
+    contentType,
+    charset: 'utf-8',
+    body: new TextEncoder().encode(body),
+    redirects: [],
+  };
+}
+
+/** A fetch that serves fixed responses by URL and fails on anything else. */
+function serve(pages: Record<string, FetchedPage>) {
+  return vi.fn<FetchFn>(async (url) => {
+    const page = pages[url];
+    if (!page) throw new FetchError('not_found', false, url);
+    return page;
+  });
+}
+
+const GREENHOUSE_API = 'https://boards-api.greenhouse.io/v1/boards/acme/jobs';
+
+describe('readJobs', () => {
+  it('a job-board link reads the feed without fetching the page', async () => {
+    const feed = response(GREENHOUSE_API, fixture('greenhouse-list.json'), 'application/json');
+    const fetch = serve({ [GREENHOUSE_API]: feed });
+    const reading = await readJobs('https://job-boards.greenhouse.io/acme', fetch, NOW);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledWith(GREENHOUSE_API, {});
+    expect(reading.page).toBe(feed);
+    expect(reading.board).toEqual({ ats: 'greenhouse', slug: 'acme' });
+    expect(reading.extraction).toEqual({
+      outcome: 'read',
+      method: 'ats_feed',
+      board: 'greenhouse:acme',
+      skipped: 2,
+    });
+    expect(reading.jobs).toHaveLength(2);
+    expect(reading.jobs[0]).toMatchObject({
+      title: 'Backend Engineer',
+      extraction: { method: 'ats_feed', version: EXTRACTION_VERSION },
+    });
+    expect(reading.jobs[0]?.contentHash).toMatch(/^[0-9a-f]{32}$/);
+    // The list has no descriptions: nothing to hash, nothing to overwrite.
+    expect(reading.jobs[0]).not.toHaveProperty('descriptionHash');
+    expect(reading.jobs[0]).not.toHaveProperty('method');
+  });
+
+  it("Workday's list is a JSON POST", async () => {
+    const api = 'https://acme.wd5.myworkdayjobs.com/wday/cxs/acme/External/jobs';
+    const fetch = serve({ [api]: response(api, fixture('workday-list.json'), 'application/json') });
+    const reading = await readJobs('https://acme.wd5.myworkdayjobs.com/en-US/External', fetch, NOW);
+    expect(fetch).toHaveBeenCalledWith(api, {
+      json: { appliedFacets: {}, limit: 20, offset: 0, searchText: '' },
+    });
+    expect(reading.jobs).toHaveLength(3);
+  });
+
+  it('a careers page embedding a board: the page, then the board (two requests)', async () => {
+    const pageUrl = 'https://acme.example/careers';
+    const html =
+      '<html><body><h1>Careers</h1><div id="grnhse_app"></div><script src="https://boards.greenhouse.io/embed/job_board/js?for=acme"></script></body></html>';
+    const fetch = serve({
+      [pageUrl]: response(pageUrl, html),
+      [GREENHOUSE_API]: response(
+        GREENHOUSE_API,
+        fixture('greenhouse-list.json'),
+        'application/json',
+      ),
+    });
+    const reading = await readJobs(pageUrl, fetch, NOW);
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([pageUrl, GREENHOUSE_API]);
+    // The page is what is stored; the jobs come from the board.
+    expect(reading.page.url).toBe(pageUrl);
+    expect(reading.extraction.board).toBe('greenhouse:acme');
+    expect(reading.jobs).toHaveLength(2);
+  });
+
+  it('a script-built page that embeds a board is read, not failed as needs_browser', async () => {
+    const pageUrl = 'https://acme.example/careers';
+    const shell =
+      '<html><head><script src="https://boards.greenhouse.io/embed/job_board/js?for=acme"></script></head><body><div id="root"></div></body></html>';
+    const fetch = serve({
+      [pageUrl]: response(pageUrl, shell),
+      [GREENHOUSE_API]: response(
+        GREENHOUSE_API,
+        fixture('greenhouse-list.json'),
+        'application/json',
+      ),
+    });
+    expect((await readJobs(pageUrl, fetch, NOW)).jobs).toHaveLength(2);
+  });
+
+  it('a page with schema.org jobs', async () => {
+    const pageUrl = 'https://acme.example/careers';
+    const fetch = serve({ [pageUrl]: response(pageUrl, fixture('schema-org-page.html')) });
+    const reading = await readJobs(pageUrl, fetch, NOW);
+    expect(reading.extraction).toEqual({ outcome: 'read', method: 'schema_org', skipped: 0 });
+    expect(reading.board).toBeUndefined();
+    expect(reading.jobs.map((j) => j.title)).toEqual([
+      'Site Reliability Engineer',
+      'Remote Writer',
+    ]);
+    expect(reading.jobs[0]).toMatchObject({ descriptionTruncated: false });
+    expect(reading.jobs[0]?.descriptionHash).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it('a page with nothing readable: no jobs, and a note saying so', async () => {
+    const pageUrl = 'https://acme.example/careers';
+    const fetch = serve({
+      [pageUrl]: response(pageUrl, '<html><body><ul><li>Engineer, Pune</li></ul></body></html>'),
+    });
+    expect(await readJobs(pageUrl, fetch, NOW)).toMatchObject({
+      jobs: [],
+      extraction: { outcome: 'no_readable_jobs', skipped: 0 },
+    });
+  });
+
+  it('a script-built page with nothing readable fails as needs_browser', async () => {
+    const pageUrl = 'https://acme.example/careers';
+    const shell =
+      '<html><head><script src="/a.js"></script></head><body><div id="root"></div></body></html>';
+    const fetch = serve({ [pageUrl]: response(pageUrl, shell) });
+    await expect(readJobs(pageUrl, fetch, NOW)).rejects.toMatchObject({
+      code: 'needs_browser',
+      retriable: false,
+    });
+  });
+
+  it('a feed in an unknown format fails as unreadable_feed, not retried', async () => {
+    const fetch = serve({
+      [GREENHOUSE_API]: response(GREENHOUSE_API, '{"postings":[]}', 'application/json'),
+    });
+    await expect(readJobs('https://boards.greenhouse.io/acme', fetch, NOW)).rejects.toMatchObject({
+      code: 'unreadable_feed',
+      retriable: false,
+    });
+  });
+
+  it('failures of the feed request are the crawl failures (robots.txt, blocks, retries)', async () => {
+    const fetch = vi.fn<FetchFn>(async () => {
+      throw new FetchError('http_error', true, 'HTTP 503');
+    });
+    await expect(readJobs('https://jobs.lever.co/acme', fetch, NOW)).rejects.toMatchObject({
+      code: 'http_error',
+      retriable: true,
+    });
+  });
+
+  it(`saves at most ${MAX_JOBS_PER_CRAWL} jobs, and says the crawl was partial`, async () => {
+    const jobs = Array.from({ length: MAX_JOBS_PER_CRAWL + 20 }, (_, i) => ({
+      id: i + 1,
+      title: `Role ${i}`,
+      absolute_url: `https://job-boards.greenhouse.io/acme/jobs/${i + 1}`,
+    }));
+    const fetch = serve({
+      [GREENHOUSE_API]: response(GREENHOUSE_API, JSON.stringify({ jobs }), 'application/json'),
+    });
+    const reading = await readJobs('https://boards.greenhouse.io/acme', fetch, NOW);
+    expect(reading.jobs).toHaveLength(MAX_JOBS_PER_CRAWL);
+    expect(reading.extraction.partial).toEqual({ reason: 'max_jobs' });
+  });
+});

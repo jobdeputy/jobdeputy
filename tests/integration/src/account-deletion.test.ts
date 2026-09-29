@@ -11,7 +11,7 @@ import {
 } from './stack.js';
 
 /**
- * Deployed wiring of T12 (crawls and the audit history since T06b): DELETE /me → DELETION item → stream → Pipe → queue → worker,
+ * Deployed wiring of T12 (crawls and the audit history since T06b, jobs since T07b): DELETE /me → DELETION item → stream → Pipe → queue → worker,
  * which erases every table and file and the login. Confirmation, re-authentication,
  * and paging rules are unit-tested. See docs/testing.md.
  */
@@ -32,7 +32,7 @@ afterAll(async () => {
 });
 
 describe('delete my account (deployed)', () => {
-  it('erases the profile, roles, résumés, crawls, and audit history, blocks further changes, and removes the login', async () => {
+  it('erases the profile, roles, résumés, crawls, jobs, and audit history, blocks further changes, and removes the login', async () => {
     const token = user.accessToken;
     await callApi(api, 'PUT', 'me/profile', token, {
       version: 0,
@@ -48,7 +48,7 @@ describe('delete my account (deployed)', () => {
       makePdf([['Delete me']]),
     );
     const crawl = await callApi(api, 'POST', 'me/crawls', token, {
-      url: new URL('test-site/jobs', testSite).href,
+      url: new URL('test-site/jobs-schema-org', testSite).href,
     });
     expect(crawl.status).toBe(202);
     await waitFor(
@@ -64,6 +64,9 @@ describe('delete my account (deployed)', () => {
       { timeoutMs: 300_000, intervalMs: 3_000 },
     );
 
+    // Something to erase in the jobs table.
+    expect((await callApi(api, 'GET', 'me/jobs', token)).body.jobs).toHaveLength(2);
+
     const res = await callApi(api, 'DELETE', 'me', await user.signIn(), {
       confirm: 'delete my account',
     });
@@ -77,19 +80,21 @@ describe('delete my account (deployed)', () => {
     // The worker finishes in the background: the login and all data are gone.
     await waitFor(
       async () => {
-        const [profile, roles, docs, crawls, audit] = await Promise.all([
+        const [profile, roles, docs, crawls, audit, jobs] = await Promise.all([
           callApi(api, 'GET', 'me/profile', token),
           callApi(api, 'GET', 'me/roles', token),
           callApi(api, 'GET', 'me/documents', token),
           callApi(api, 'GET', 'me/crawls', token),
           callApi(api, 'GET', 'me/audit', token),
+          callApi(api, 'GET', 'me/jobs', token),
         ]);
         const erased =
           profile.body.version === 0 &&
           roles.body.roles?.length === 0 &&
           docs.body.documents?.length === 0 &&
           crawls.body.crawls?.length === 0 &&
-          audit.body.entries?.length === 0;
+          audit.body.entries?.length === 0 &&
+          jobs.body.jobs?.length === 0;
         return erased ? true : undefined;
       },
       { timeoutMs: 120_000, intervalMs: 3_000 },

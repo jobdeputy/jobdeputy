@@ -84,12 +84,12 @@ describe('crawl pipeline (T06b)', () => {
     expect(WORKER_MAX_RECEIVES).toBe(MAX_RECEIVES);
     t.hasResourceProperties('AWS::SQS::Queue', {
       QueueName: 'jobdeputy-dev-iad-crawls',
-      // 6 × the 60 s worker timeout.
-      VisibilityTimeout: 360,
+      // 6 × the 180 s worker timeout (T07b: a page, then its job board's feed).
+      VisibilityTimeout: 1080,
       RedrivePolicy: { maxReceiveCount: 3, deadLetterTargetArn: Match.anyValue() },
     });
     t.hasResourceProperties('AWS::Lambda::Function', {
-      Timeout: 60,
+      Timeout: 180,
       MemorySize: 256,
       Environment: { Variables: Match.objectLike({ CRAWLS_TABLE_NAME: Match.anyValue() }) },
     });
@@ -101,6 +101,8 @@ describe('crawl pipeline (T06b)', () => {
     expect(actionsOn(worker, 'SourcesTable')).toEqual(['dynamodb:UpdateItem']);
     expect(actionsOn(worker, 'AuditTable')).toEqual(['dynamodb:PutItem']);
     expect(actionsOn(worker, 'UsersTable')).toEqual(['dynamodb:GetItem']);
+    // T07b: one update per job; never a read, a delete, or a scan.
+    expect(actionsOn(worker, 'JobsTable')).toEqual(['dynamodb:UpdateItem']);
     const s3 = worker.filter((s) => [s.Action].flat().some((a) => a.startsWith('s3:')));
     expect(s3.flatMap((s) => [s.Action].flat()).sort()).toEqual([
       's3:PutObject',
@@ -120,6 +122,17 @@ describe('crawl pipeline (T06b)', () => {
     expect(actionsOn(api, 'SourcesTable')).toEqual(['dynamodb:GetItem', 'dynamodb:UpdateItem']);
     expect(actionsOn(api, 'AuditTable')).toEqual(['dynamodb:PutItem']);
     expect(api.flatMap((s) => [s.Action].flat()).some((a) => a.startsWith('s3:'))).toBe(false);
+  });
+
+  it('lets the jobs API only read the jobs table (T07b)', () => {
+    const jobs = statementsFor('JobsApiFn');
+    const dynamo = jobs.filter((s) => [s.Action].flat().some((a) => a.startsWith('dynamodb:')));
+    expect(dynamo.flatMap((s) => [s.Action].flat()).sort()).toEqual([
+      'dynamodb:GetItem',
+      'dynamodb:Query',
+    ]);
+    expect(actionsOn(jobs, 'JobsTable')).toEqual(['dynamodb:GetItem', 'dynamodb:Query']);
+    expect(jobs.flatMap((s) => [s.Action].flat()).some((a) => a.startsWith('s3:'))).toBe(false);
   });
 
   it('lets the audit API only read the audit table', () => {
