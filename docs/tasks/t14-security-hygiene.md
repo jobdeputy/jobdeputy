@@ -1,8 +1,8 @@
 # T14: Security and hygiene
 
-- **Status:** in-review
+- **Status:** done
 - **Depends on:** T13
-- **Branch / PR:** `t14-security-hygiene`
+- **Branch / PR:** `t14-security-hygiene`, [#25](https://github.com/jobdeputy/jobdeputy/pull/25) (merged); follow-up [#27](https://github.com/jobdeputy/jobdeputy/pull/27) (Dependabot PRs need a maintainer's `safe-to-test` label)
 
 ## Goal
 
@@ -30,6 +30,6 @@ Agreed with the maintainer on 2026-09-29: do A–E now as T14, one PR, then star
 
 - [x] Dependabot alerts and security updates on; npm in Dependabot; `pnpm audit` in CI.
 - [x] All actions pinned to commits; the gitleaks image pinned by digest.
-- [ ] After merge: allowed actions restricted and SHA pinning required (repository settings), with a passing run as proof.
+- [x] After merge (2026-09-29): only GitHub-owned, verified, and listed actions allowed, and full-SHA pinning required (repository settings). Proof: Nightly passed 17/17 and the daily clean-up passed under the new rules.
 - [x] Leftover log groups cleaned (4 deleted, 2 given retention, 0 without retention left in dev); workflows keep it that way.
 - [x] Organization Access Analyzer active, with its findings reviewed: the first scan (119 resources) found 4, all intended (the two GitHub OIDC roles, limited to this repository by tested trust policies, and the two IAM Identity Center admin roles). Archive rules that match both the principal and the role-name pattern archive them, so **0 findings are active** and any new one stands out.
