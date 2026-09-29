@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { GetCommand, TransactWriteCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { type CrawlErrorCode, type CrawlStatus, utcDay, utcMonth } from '@jobdeputy/shared';
 import { type AuditInput, auditItem, type Page, queryNewestFirst } from './audit-repository.js';
 import { cancelledAt, isConditionFailure } from './client.js';
+import { transactWrite } from './transact.js';
 
 /** `sources` (docs/data-model.md): a page the user saved. Keys: `userId`, `sourceId`. */
 export interface Source {
@@ -69,6 +70,14 @@ export class ActiveCrawlError extends Error {
   override name = 'ActiveCrawlError';
 }
 
+/** The user already has the most crawls allowed in progress at one time. */
+export class TooManyActiveCrawlsError extends Error {
+  override name = 'TooManyActiveCrawlsError';
+}
+
+/** The `usage` item holding the IDs of the user's queued or running crawls. */
+export const ACTIVE_SK = 'ACTIVE';
+
 /** Today's crawls have reached the user's daily limit (T06c). */
 export class DailyLimitError extends Error {
   override name = 'DailyLimitError';
@@ -104,8 +113,9 @@ export class CrawlRepository {
    * Saves the source, queues the crawl, records `crawl.requested`, and counts it for
    * today and this month, in one transaction. Throws ActiveCrawlError if the page
    * already has an active crawl (unless it is `replacing` that stale or finished crawl),
-   * and DailyLimitError if today's count has reached `dailyLimit`. Exact even when two
-   * submits race: the day counter's condition decides.
+   * DailyLimitError if today's count has reached `dailyLimit`, and
+   * TooManyActiveCrawlsError if `maxActive` crawls are already queued or running. Exact
+   * even when submits race: the counters' conditions decide (and conflicts are retried).
    */
   async request(input: {
     userId: string;
@@ -115,6 +125,7 @@ export class CrawlRepository {
     normalizedUrl: string;
     audit: Omit<AuditInput, 'userId'>;
     dailyLimit: number;
+    maxActive: number;
     replacing?: string;
   }): Promise<Crawl> {
     const at = this.now();
@@ -134,95 +145,113 @@ export class CrawlRepository {
       schemaVersion: 1,
     };
     try {
-      await this.client.send(
-        new TransactWriteCommand({
-          TransactItems: [
-            {
-              Update: {
-                TableName: this.tables.sources,
-                Key: { userId: input.userId, sourceId: input.sourceId },
-                UpdateExpression: [
-                  'SET #type = :source, #url = :url, normalizedUrl = :normalized',
-                  '#kind = if_not_exists(#kind, :unknown)',
-                  'companyConfirmed = if_not_exists(companyConfirmed, :false)',
-                  'active = :true, schedule = if_not_exists(schedule, :manual)',
-                  'lastCrawlId = :crawlId, activeCrawlId = :crawlId',
-                  'createdAt = if_not_exists(createdAt, :now), updatedAt = :now, schemaVersion = :one',
-                ].join(', '),
-                ConditionExpression:
-                  input.replacing === undefined
-                    ? 'attribute_not_exists(activeCrawlId)'
-                    : 'attribute_not_exists(activeCrawlId) OR activeCrawlId = :replacing',
-                ExpressionAttributeNames: { '#type': 'type', '#url': 'url', '#kind': 'kind' },
-                ExpressionAttributeValues: {
-                  ':source': 'source',
-                  ':url': input.url,
-                  ':normalized': input.normalizedUrl,
-                  ':unknown': 'unknown',
-                  ':false': false,
-                  ':true': true,
-                  ':manual': { type: 'manual' },
-                  ':crawlId': input.crawlId,
-                  ':now': now,
-                  ':one': 1,
-                  ...(input.replacing !== undefined ? { ':replacing': input.replacing } : {}),
-                },
+      await transactWrite(this.client, {
+        TransactItems: [
+          {
+            Update: {
+              TableName: this.tables.sources,
+              Key: { userId: input.userId, sourceId: input.sourceId },
+              UpdateExpression: [
+                'SET #type = :source, #url = :url, normalizedUrl = :normalized',
+                '#kind = if_not_exists(#kind, :unknown)',
+                'companyConfirmed = if_not_exists(companyConfirmed, :false)',
+                'active = :true, schedule = if_not_exists(schedule, :manual)',
+                'lastCrawlId = :crawlId, activeCrawlId = :crawlId',
+                'createdAt = if_not_exists(createdAt, :now), updatedAt = :now, schemaVersion = :one',
+              ].join(', '),
+              ConditionExpression:
+                input.replacing === undefined
+                  ? 'attribute_not_exists(activeCrawlId)'
+                  : 'attribute_not_exists(activeCrawlId) OR activeCrawlId = :replacing',
+              ExpressionAttributeNames: { '#type': 'type', '#url': 'url', '#kind': 'kind' },
+              ExpressionAttributeValues: {
+                ':source': 'source',
+                ':url': input.url,
+                ':normalized': input.normalizedUrl,
+                ':unknown': 'unknown',
+                ':false': false,
+                ':true': true,
+                ':manual': { type: 'manual' },
+                ':crawlId': input.crawlId,
+                ':now': now,
+                ':one': 1,
+                ...(input.replacing !== undefined ? { ':replacing': input.replacing } : {}),
               },
             },
-            {
-              Put: {
-                TableName: this.tables.crawls,
-                Item: crawl,
-                ConditionExpression: 'attribute_not_exists(userId)',
+          },
+          {
+            Put: {
+              TableName: this.tables.crawls,
+              Item: crawl,
+              ConditionExpression: 'attribute_not_exists(userId)',
+            },
+          },
+          {
+            Put: {
+              TableName: this.tables.audit,
+              Item: auditItem({ ...input.audit, userId: input.userId }, at),
+              ConditionExpression: 'attribute_not_exists(userId)',
+            },
+          },
+          {
+            Update: {
+              TableName: this.tables.usage,
+              Key: { userId: input.userId, sk: `DAY#${utcDay(at)}` },
+              UpdateExpression:
+                'SET crawls = if_not_exists(crawls, :zero) + :one, #type = :day, #ttl = :ttl, createdAt = if_not_exists(createdAt, :now), updatedAt = :now, schemaVersion = :one',
+              ConditionExpression: 'attribute_not_exists(crawls) OR crawls < :limit',
+              ExpressionAttributeNames: { '#type': 'type', '#ttl': 'ttl' },
+              ExpressionAttributeValues: {
+                ':zero': 0,
+                ':one': 1,
+                ':day': 'usage_day',
+                ':ttl': Math.floor(at.getTime() / 1000) + USAGE_DAY_TTL_SECONDS,
+                ':now': now,
+                ':limit': input.dailyLimit,
               },
             },
-            {
-              Put: {
-                TableName: this.tables.audit,
-                Item: auditItem({ ...input.audit, userId: input.userId }, at),
-                ConditionExpression: 'attribute_not_exists(userId)',
+          },
+          {
+            Update: {
+              TableName: this.tables.usage,
+              Key: { userId: input.userId, sk: `MONTH#${utcMonth(at)}` },
+              UpdateExpression:
+                'SET crawls = if_not_exists(crawls, :zero) + :one, #type = :month, createdAt = if_not_exists(createdAt, :now), updatedAt = :now, schemaVersion = :one',
+              ExpressionAttributeNames: { '#type': 'type' },
+              ExpressionAttributeValues: {
+                ':zero': 0,
+                ':one': 1,
+                ':month': 'usage_month',
+                ':now': now,
               },
             },
-            {
-              Update: {
-                TableName: this.tables.usage,
-                Key: { userId: input.userId, sk: `DAY#${utcDay(at)}` },
-                UpdateExpression:
-                  'SET crawls = if_not_exists(crawls, :zero) + :one, #type = :day, #ttl = :ttl, createdAt = if_not_exists(createdAt, :now), updatedAt = :now, schemaVersion = :one',
-                ConditionExpression: 'attribute_not_exists(crawls) OR crawls < :limit',
-                ExpressionAttributeNames: { '#type': 'type', '#ttl': 'ttl' },
-                ExpressionAttributeValues: {
-                  ':zero': 0,
-                  ':one': 1,
-                  ':day': 'usage_day',
-                  ':ttl': Math.floor(at.getTime() / 1000) + USAGE_DAY_TTL_SECONDS,
-                  ':now': now,
-                  ':limit': input.dailyLimit,
-                },
+          },
+          {
+            Update: {
+              TableName: this.tables.usage,
+              Key: { userId: input.userId, sk: ACTIVE_SK },
+              // A string set: adding and removing the same ID is idempotent.
+              UpdateExpression:
+                'ADD crawlIds :id SET #type = :active, createdAt = if_not_exists(createdAt, :now), updatedAt = :now, schemaVersion = :one',
+              ConditionExpression: 'attribute_not_exists(crawlIds) OR size(crawlIds) < :maxActive',
+              ExpressionAttributeNames: { '#type': 'type' },
+              ExpressionAttributeValues: {
+                ':id': new Set([input.crawlId]),
+                ':active': 'usage_active',
+                ':now': now,
+                ':one': 1,
+                ':maxActive': input.maxActive,
               },
             },
-            {
-              Update: {
-                TableName: this.tables.usage,
-                Key: { userId: input.userId, sk: `MONTH#${utcMonth(at)}` },
-                UpdateExpression:
-                  'SET crawls = if_not_exists(crawls, :zero) + :one, #type = :month, createdAt = if_not_exists(createdAt, :now), updatedAt = :now, schemaVersion = :one',
-                ExpressionAttributeNames: { '#type': 'type' },
-                ExpressionAttributeValues: {
-                  ':zero': 0,
-                  ':one': 1,
-                  ':month': 'usage_month',
-                  ':now': now,
-                },
-              },
-            },
-          ],
-        }),
-      );
+          },
+        ],
+      });
     } catch (error) {
-      // An active crawl wins: a duplicate submit returns it and is not counted.
+      // An active crawl of the same page wins: a duplicate submit returns it and is not
+      // counted. A full day is final; a full active set clears as crawls finish.
       if (cancelledAt(error, SOURCE_ITEM)) throw new ActiveCrawlError();
       if (cancelledAt(error, DAY_ITEM)) throw new DailyLimitError();
+      if (cancelledAt(error, ACTIVE_ITEM)) throw new TooManyActiveCrawlsError();
       throw error;
     }
     return crawl;
@@ -252,6 +281,26 @@ export class CrawlRepository {
 
   listCrawls(userId: string, limit: number, after?: string): Promise<Page<Crawl>> {
     return queryNewestFirst(this.client, this.tables.crawls, 'crawlId', userId, limit, after);
+  }
+
+  /** The IDs in the user's active set (queued or running crawls, possibly stale). */
+  async getActiveCrawlIds(userId: string): Promise<string[]> {
+    const res = await this.client.send(
+      new GetCommand({
+        TableName: this.tables.usage,
+        Key: { userId, sk: ACTIVE_SK },
+        ConsistentRead: true,
+      }),
+    );
+    const ids = res.Item?.crawlIds as Set<string> | undefined;
+    return ids ? [...ids] : [];
+  }
+
+  /** Frees slots held by crawls that are finished or gone (self-healing; idempotent). */
+  async releaseActive(userId: string, crawlIds: string[]): Promise<void> {
+    if (crawlIds.length === 0) return;
+    const { Update } = releaseActive(this.tables.usage, userId, crawlIds, this.now().toISOString());
+    await this.client.send(new UpdateCommand(Update));
   }
 
   /**
@@ -321,43 +370,40 @@ export class CrawlRepository {
     // Both `result` and `error` are DynamoDB reserved words: always use placeholders.
     const field = outcome.status === 'succeeded' ? '#result' : '#error';
     try {
-      await this.client.send(
-        new TransactWriteCommand({
-          TransactItems: [
-            {
-              Update: {
-                TableName: this.tables.crawls,
-                Key: { userId, crawlId },
-                UpdateExpression: `SET #status = :status, ${field} = :outcome, finishedAt = :now, updatedAt = :now REMOVE lastError`,
-                ConditionExpression: '#status IN (:queued, :running)',
-                ExpressionAttributeNames: {
-                  '#status': 'status',
-                  ...(outcome.status === 'failed'
-                    ? { '#error': 'error' }
-                    : { '#result': 'result' }),
-                },
-                ExpressionAttributeValues: {
-                  ':status': outcome.status,
-                  ':outcome':
-                    outcome.status === 'succeeded' ? outcome.result : trimError(outcome.error),
-                  ':queued': 'queued',
-                  ':running': 'running',
-                  ':now': now,
-                },
+      await transactWrite(this.client, {
+        TransactItems: [
+          {
+            Update: {
+              TableName: this.tables.crawls,
+              Key: { userId, crawlId },
+              UpdateExpression: `SET #status = :status, ${field} = :outcome, finishedAt = :now, updatedAt = :now REMOVE lastError`,
+              ConditionExpression: '#status IN (:queued, :running)',
+              ExpressionAttributeNames: {
+                '#status': 'status',
+                ...(outcome.status === 'failed' ? { '#error': 'error' } : { '#result': 'result' }),
+              },
+              ExpressionAttributeValues: {
+                ':status': outcome.status,
+                ':outcome':
+                  outcome.status === 'succeeded' ? outcome.result : trimError(outcome.error),
+                ':queued': 'queued',
+                ':running': 'running',
+                ':now': now,
               },
             },
-            {
-              Put: {
-                TableName: this.tables.audit,
-                Item: auditItem({ ...audit, userId }, at),
-                ConditionExpression: 'attribute_not_exists(userId)',
-              },
+          },
+          {
+            Put: {
+              TableName: this.tables.audit,
+              Item: auditItem({ ...audit, userId }, at),
+              ConditionExpression: 'attribute_not_exists(userId)',
             },
-          ],
-        }),
-      );
+          },
+          releaseActive(this.tables.usage, userId, [crawlId], now),
+        ],
+      });
     } catch (error) {
-      if (error instanceof Error && error.name === 'TransactionCanceledException') return false;
+      if (cancelledAt(error, 0)) return false;
       throw error;
     }
     // Separate on purpose: if this page has moved on to a newer crawl, the condition
@@ -387,6 +433,19 @@ function trimError(error: CrawlError): CrawlError {
 /** Positions in `request`'s transaction. */
 const SOURCE_ITEM = 0;
 const DAY_ITEM = 3;
+const ACTIVE_ITEM = 5;
+
+/** Removes crawls from the user's active set (idempotent; the set disappears when empty). */
+function releaseActive(table: string, userId: string, crawlIds: string[], now: string) {
+  return {
+    Update: {
+      TableName: table,
+      Key: { userId, sk: ACTIVE_SK },
+      UpdateExpression: 'DELETE crawlIds :ids SET updatedAt = :now',
+      ExpressionAttributeValues: { ':ids': new Set(crawlIds), ':now': now },
+    },
+  };
+}
 
 /** How many crawls the user has started today (UTC). */
 export async function crawlsToday(

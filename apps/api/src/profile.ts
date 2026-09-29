@@ -27,6 +27,7 @@ import type { z } from 'zod';
 import { refuseWritesWhileDeleting } from './account-guard.js';
 import { type UserAudit, userAudit } from './audited.js';
 import { cognitoEmailLookup } from './cognito.js';
+import { concurrentUpdateProblem } from './errors.js';
 
 const logger = createLogger('api-profile');
 
@@ -44,9 +45,22 @@ export interface ProfileDeps {
 }
 
 function defaultDeps(): ProfileDeps {
-  const { USERS_TABLE_NAME, PREFERENCES_TABLE_NAME, AUDIT_TABLE_NAME, USER_POOL_ID, CELL } =
-    process.env;
-  if (!USERS_TABLE_NAME || !PREFERENCES_TABLE_NAME || !AUDIT_TABLE_NAME || !USER_POOL_ID || !CELL) {
+  const {
+    USERS_TABLE_NAME,
+    PREFERENCES_TABLE_NAME,
+    AUDIT_TABLE_NAME,
+    USAGE_TABLE_NAME,
+    USER_POOL_ID,
+    CELL,
+  } = process.env;
+  if (
+    !USERS_TABLE_NAME ||
+    !PREFERENCES_TABLE_NAME ||
+    !AUDIT_TABLE_NAME ||
+    !USAGE_TABLE_NAME ||
+    !USER_POOL_ID ||
+    !CELL
+  ) {
     throw new Error(
       'USERS_TABLE_NAME, PREFERENCES_TABLE_NAME, AUDIT_TABLE_NAME, USER_POOL_ID, and CELL must be set',
     );
@@ -57,7 +71,12 @@ function defaultDeps(): ProfileDeps {
     isBeingDeleted: (userId) => account.isBeingDeleted(userId),
     cell: CELL,
     profiles: new ProfileRepository(client, USERS_TABLE_NAME),
-    preferences: new PreferencesRepository(client, PREFERENCES_TABLE_NAME),
+    preferences: new PreferencesRepository(
+      client,
+      PREFERENCES_TABLE_NAME,
+      undefined,
+      USAGE_TABLE_NAME,
+    ),
     emailOf: cognitoEmailLookup(USER_POOL_ID),
     audit: userAudit(AUDIT_TABLE_NAME, ulid),
   };
@@ -236,6 +255,11 @@ export async function handler(event: Event, context: Context): Promise<HttpRespo
     deps ??= defaultDeps();
     return await route(event, deps);
   } catch (error) {
+    const busy = concurrentUpdateProblem(error, event.requestContext.requestId);
+    if (busy) {
+      logger.warn('Concurrent update after retries', { error: error as Error });
+      return busy;
+    }
     logger.error('Unhandled error', { error: error as Error });
     return problem(500, 'Internal error', { requestId: event.requestContext.requestId });
   }

@@ -316,12 +316,16 @@ export class CellStack extends Stack {
         USERS_TABLE_NAME: usersTable.tableName,
         PREFERENCES_TABLE_NAME: preferencesTable.tableName,
         AUDIT_TABLE_NAME: auditTable.tableName,
+        USAGE_TABLE_NAME: usageTable.tableName,
         USER_POOL_ID: auth.userPool.userPoolId,
         CELL: props.cell,
       },
     });
     // T06d: every change is recorded in the user's audit history, in the same transaction.
     auditTable.grant(profile.fn, 'dynamodb:PutItem');
+    // The role counter (exact cap under concurrent creates): counted in the transaction,
+    // read and corrected when it disagrees with the roles that exist.
+    usageTable.grant(profile.fn, 'dynamodb:GetItem', 'dynamodb:UpdateItem');
     usersTable.grant(profile.fn, 'dynamodb:GetItem', 'dynamodb:PutItem');
     preferencesTable.grant(
       profile.fn,
@@ -341,10 +345,13 @@ export class CellStack extends Stack {
         DOCUMENTS_BUCKET_NAME: documents.bucket.bucketName,
         USERS_TABLE_NAME: usersTable.tableName,
         AUDIT_TABLE_NAME: auditTable.tableName,
+        USAGE_TABLE_NAME: usageTable.tableName,
       },
     });
     usersTable.grant(documentsApi.fn, 'dynamodb:GetItem');
     auditTable.grant(documentsApi.fn, 'dynamodb:PutItem');
+    // The document counter and default marker (exact cap, one default).
+    usageTable.grant(documentsApi.fn, 'dynamodb:GetItem', 'dynamodb:UpdateItem');
     documentsTable.grant(
       documentsApi.fn,
       'dynamodb:Query',
@@ -416,6 +423,8 @@ export class CellStack extends Stack {
     });
     usersTable.grant(crawlWorker.fn, 'dynamodb:GetItem');
     crawlsTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem');
+    // Frees the crawl's active slot when it ends (same transaction).
+    usageTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem');
     sourcesTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem');
     auditTable.grant(crawlWorker.fn, 'dynamodb:PutItem');
     // Writes fetched pages only (tagged for the 30-day expiry); reads nothing from S3.

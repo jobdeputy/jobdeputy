@@ -1,4 +1,4 @@
-import { type Document, VersionConflictError } from '@jobdeputy/db';
+import { type Document, DocumentLimitError, VersionConflictError } from '@jobdeputy/db';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
 import { type DocumentsDeps, route } from '../src/documents.js';
@@ -87,9 +87,9 @@ describe('POST /me/documents', () => {
         s3Key: `users/user-a/documents/${ID}/original`,
         title: 'Ada CV',
         format: 'pdf',
-        isDefault: true,
       }),
       { table: 'Audit', entry: expect.objectContaining({ name: 'document.upload_started' }) },
+      10,
     );
     expect(d.presignUpload).toHaveBeenCalledWith(`users/user-a/documents/${ID}/original`, PDF);
     const out = JSON.parse(res.body);
@@ -98,25 +98,24 @@ describe('POST /me/documents', () => {
     expect(JSON.stringify(out)).not.toContain('s3Key');
   });
 
-  it('is not the default when one already exists', async () => {
+  it('leaves the count and the default to the repository (exact under concurrent uploads)', async () => {
     const d = deps();
-    d.repo.list.mockResolvedValueOnce([doc({ documentId: 'OTHER', isDefault: true })]);
     await route(event('POST /me/documents', body({ fileName: 'b.pdf', contentType: PDF })), d);
-    expect(d.repo.create).toHaveBeenCalledWith(
-      expect.objectContaining({ isDefault: false }),
-      expect.anything(),
-    );
+    const fields = d.repo.create.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(fields).not.toHaveProperty('isDefault');
+    expect(d.repo.list).not.toHaveBeenCalled();
   });
 
   it('refuses an 11th document', async () => {
     const d = deps();
-    d.repo.list.mockResolvedValueOnce(Array.from({ length: 10 }, () => doc()));
+    d.repo.create.mockRejectedValueOnce(new DocumentLimitError());
     const res = await route(
       event('POST /me/documents', body({ fileName: 'b.pdf', contentType: PDF })),
       d,
     );
     expect(res.statusCode).toBe(422);
-    expect(d.repo.create).not.toHaveBeenCalled();
+    expect(JSON.parse(res.body).detail).toBe('You can keep at most 10 résumés. Delete one first.');
+    expect(d.presignUpload).not.toHaveBeenCalled();
   });
 
   it.each([

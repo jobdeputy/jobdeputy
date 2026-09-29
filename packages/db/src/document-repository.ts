@@ -1,8 +1,16 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { GetCommand, QueryCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import type { DocumentFormat, DocumentStatus } from '@jobdeputy/shared';
 import { type AuditWrite, auditPut } from './audit-repository.js';
 import { cancelledAt } from './client.js';
+import { ConcurrentUpdateError, transactWrite } from './transact.js';
+import {
+  countDown,
+  countUp,
+  DOCUMENTS_SK,
+  getUsageCounter,
+  repairUsageCounter,
+} from './usage-counters.js';
 import { VersionConflictError } from './versioned.js';
 
 /** `documents` (docs/data-model.md). Keys: `userId`, `documentId`. */
@@ -41,6 +49,11 @@ export interface Document {
 }
 
 const PENDING_TTL_SECONDS = 24 * 60 * 60;
+
+/** The user already has the most documents allowed. */
+export class DocumentLimitError extends Error {
+  override name = 'DocumentLimitError';
+}
 const MAX_ERROR_LENGTH = 300;
 
 export class DocumentRepository {
@@ -48,7 +61,14 @@ export class DocumentRepository {
     private readonly client: DynamoDBDocumentClient,
     private readonly tableName: string,
     private readonly now: () => Date = () => new Date(),
+    /** `usage`: the document counter and default marker. Needed to create, delete, and switch the default. */
+    private readonly usageTable?: string,
   ) {}
+
+  private usage(): string {
+    if (!this.usageTable) throw new Error('DocumentRepository needs the usage table for this');
+    return this.usageTable;
+  }
 
   async list(userId: string): Promise<Document[]> {
     const res = await this.client.send(
@@ -73,41 +93,83 @@ export class DocumentRepository {
     return res.Item as Document | undefined;
   }
 
+  /**
+   * Creates a pending document, counted in the same transaction, only while fewer than
+   * `maxDocuments` exist. The first document becomes the default, but only if it claims
+   * the default marker in the same transaction: of two first uploads at once, exactly one
+   * is the default. Pending uploads that never arrive expire without running our code, so
+   * a counter that disagrees with what exists is corrected once, then the create retried.
+   */
   async create(
     fields: Pick<
       Document,
-      'userId' | 'documentId' | 'title' | 'fileName' | 'mimeType' | 'format' | 's3Key' | 'isDefault'
+      'userId' | 'documentId' | 'title' | 'fileName' | 'mimeType' | 'format' | 's3Key'
     >,
     audit: AuditWrite,
+    maxDocuments: number,
   ): Promise<Document> {
-    const at = this.now();
-    const doc: Document = {
-      ...fields,
-      type: 'document',
-      kind: 'resume',
-      origin: 'uploaded',
-      status: 'pending',
-      version: 1,
-      ttl: Math.floor(at.getTime() / 1000) + PENDING_TTL_SECONDS,
-      createdAt: at.toISOString(),
-      updatedAt: at.toISOString(),
-      schemaVersion: 1,
-    };
-    await this.client.send(
-      new TransactWriteCommand({
-        TransactItems: [
-          {
-            Put: {
-              TableName: this.tableName,
-              Item: doc,
-              ConditionExpression: 'attribute_not_exists(userId)',
+    const usage = this.usage();
+    const { userId, documentId } = fields;
+    for (let round = 0; round < 3; round += 1) {
+      const existing = await this.list(userId);
+      if (existing.length >= maxDocuments) throw new DocumentLimitError();
+      const isDefault = !existing.some((d) => d.isDefault);
+      const at = this.now();
+      const doc: Document = {
+        ...fields,
+        isDefault,
+        type: 'document',
+        kind: 'resume',
+        origin: 'uploaded',
+        status: 'pending',
+        version: 1,
+        ttl: Math.floor(at.getTime() / 1000) + PENDING_TTL_SECONDS,
+        createdAt: at.toISOString(),
+        updatedAt: at.toISOString(),
+        schemaVersion: 1,
+      };
+      try {
+        await transactWrite(this.client, {
+          TransactItems: [
+            {
+              Put: {
+                TableName: this.tableName,
+                Item: doc,
+                ConditionExpression: 'attribute_not_exists(userId)',
+              },
             },
-          },
-          auditPut(audit, fields.userId, at),
-        ],
-      }),
-    );
-    return doc;
+            auditPut(audit, userId, at),
+            countUp(
+              usage,
+              userId,
+              DOCUMENTS_SK,
+              maxDocuments,
+              at.toISOString(),
+              isDefault ? documentId : undefined,
+            ),
+          ],
+        });
+        return doc;
+      } catch (error) {
+        if (!cancelledAt(error, 2)) throw error;
+        // The cap or the default marker disagreed: read both, and correct them to
+        // what exists (a no-op when another upload simply won the default).
+        const seen = await getUsageCounter(this.client, usage, userId, DOCUMENTS_SK);
+        const now = await this.list(userId);
+        if (now.length >= maxDocuments) throw new DocumentLimitError();
+        const actualDefault = now.find((d) => d.isDefault)?.documentId;
+        await repairUsageCounter(
+          this.client,
+          usage,
+          userId,
+          DOCUMENTS_SK,
+          seen,
+          { itemCount: now.length, ...(actualDefault ? { defaultDocumentId: actualDefault } : {}) },
+          at.toISOString(),
+        );
+      }
+    }
+    throw new ConcurrentUpdateError('Documents were changed at the same moment');
   }
 
   /**
@@ -227,38 +289,56 @@ export class DocumentRepository {
     if (target.version !== expectedVersion) throw new VersionConflictError(target.version);
     const now = this.now().toISOString();
     const others = all.filter((d) => d.isDefault && d.documentId !== documentId);
+    // The default marker must still be what this request read: of two switches at once
+    // (to different documents), one wins and the other is a conflict (409).
+    const usage = this.usage();
+    const seen = (await getUsageCounter(this.client, usage, userId, DOCUMENTS_SK))
+      .defaultDocumentId;
     try {
-      await this.client.send(
-        new TransactWriteCommand({
-          TransactItems: [
-            {
-              Update: {
-                TableName: this.tableName,
-                Key: { userId, documentId },
-                UpdateExpression:
-                  'SET isDefault = :true, version = version + :one, updatedAt = :now',
-                ConditionExpression: 'version = :expected',
-                ExpressionAttributeValues: {
-                  ':true': true,
-                  ':one': 1,
-                  ':now': now,
-                  ':expected': expectedVersion,
-                },
+      await transactWrite(this.client, {
+        TransactItems: [
+          {
+            Update: {
+              TableName: this.tableName,
+              Key: { userId, documentId },
+              UpdateExpression: 'SET isDefault = :true, version = version + :one, updatedAt = :now',
+              ConditionExpression: 'version = :expected',
+              ExpressionAttributeValues: {
+                ':true': true,
+                ':one': 1,
+                ':now': now,
+                ':expected': expectedVersion,
               },
             },
-            ...others.map((d) => ({
-              Update: {
-                TableName: this.tableName,
-                Key: { userId, documentId: d.documentId },
-                UpdateExpression: 'SET isDefault = :false, updatedAt = :now',
-                ConditionExpression: 'attribute_exists(userId)',
-                ExpressionAttributeValues: { ':false': false, ':now': now },
+          },
+          ...others.map((d) => ({
+            Update: {
+              TableName: this.tableName,
+              Key: { userId, documentId: d.documentId },
+              UpdateExpression: 'SET isDefault = :false, updatedAt = :now',
+              ConditionExpression: 'attribute_exists(userId)',
+              ExpressionAttributeValues: { ':false': false, ':now': now },
+            },
+          })),
+          auditPut(audit, userId, this.now()),
+          {
+            Update: {
+              TableName: usage,
+              Key: { userId, sk: DOCUMENTS_SK },
+              UpdateExpression: 'SET defaultDocumentId = :id, updatedAt = :now',
+              ConditionExpression:
+                seen === undefined
+                  ? 'attribute_not_exists(defaultDocumentId)'
+                  : 'defaultDocumentId = :seen',
+              ExpressionAttributeValues: {
+                ':id': documentId,
+                ':now': now,
+                ...(seen !== undefined ? { ':seen': seen } : {}),
               },
-            })),
-            auditPut(audit, userId, this.now()),
-          ],
-        }),
-      );
+            },
+          },
+        ],
+      });
     } catch (error) {
       if (error instanceof Error && error.name === 'TransactionCanceledException') {
         throw new VersionConflictError(-1);
@@ -280,20 +360,25 @@ export class DocumentRepository {
     const current = await this.get(userId, documentId);
     if (!current) return undefined;
     try {
-      await this.client.send(
-        new TransactWriteCommand({
-          TransactItems: [
-            {
-              Delete: {
-                TableName: this.tableName,
-                Key: { userId, documentId },
-                ConditionExpression: 'attribute_exists(userId)',
-              },
+      await transactWrite(this.client, {
+        TransactItems: [
+          {
+            Delete: {
+              TableName: this.tableName,
+              Key: { userId, documentId },
+              ConditionExpression: 'attribute_exists(userId)',
             },
-            auditPut(audit, userId, this.now()),
-          ],
-        }),
-      );
+          },
+          auditPut(audit, userId, this.now()),
+          countDown(
+            this.usage(),
+            userId,
+            DOCUMENTS_SK,
+            this.now().toISOString(),
+            current.isDefault,
+          ),
+        ],
+      });
       return current;
     } catch (error) {
       if (cancelledAt(error, 0)) return undefined;
@@ -334,11 +419,9 @@ export class DocumentRepository {
       ExpressionAttributeValues: { ':now': at.toISOString(), ...values },
     };
     try {
-      await this.client.send(
-        new TransactWriteCommand({
-          TransactItems: [{ Update: write }, ...(audit ? [auditPut(audit, userId, at)] : [])],
-        }),
-      );
+      await transactWrite(this.client, {
+        TransactItems: [{ Update: write }, ...(audit ? [auditPut(audit, userId, at)] : [])],
+      });
     } catch (error) {
       if (cancelledAt(error, 0)) return undefined;
       throw error;

@@ -1,7 +1,8 @@
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { GetCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
+import type { DynamoDBDocumentClient, TransactWriteCommandInput } from '@aws-sdk/lib-dynamodb';
+import { GetCommand } from '@aws-sdk/lib-dynamodb';
 import { type AuditWrite, auditPut } from './audit-repository.js';
 import { cancelledAt } from './client.js';
+import { transactWrite } from './transact.js';
 
 /** The item changed since the caller read it (another tab or device saved first). */
 export class VersionConflictError extends Error {
@@ -49,6 +50,8 @@ export async function putVersioned<T extends object>(
   expectedVersion: number,
   now: Date,
   audit: AuditWrite,
+  /** More writes in the same transaction (for example a counter); they follow item and audit. */
+  extra: NonNullable<TransactWriteCommandInput['TransactItems']> = [],
 ): Promise<Versioned<T>> {
   const existing = await getItem<T>(client, table, key.userId, key.sk);
   const currentVersion = existing?.version ?? 0;
@@ -63,24 +66,23 @@ export async function putVersioned<T extends object>(
     schemaVersion: 1,
   } as Versioned<T>;
   try {
-    await client.send(
-      new TransactWriteCommand({
-        TransactItems: [
-          {
-            Put: {
-              TableName: table,
-              Item: item,
-              ConditionExpression:
-                expectedVersion === 0 ? 'attribute_not_exists(userId)' : 'version = :expected',
-              ...(expectedVersion === 0
-                ? {}
-                : { ExpressionAttributeValues: { ':expected': expectedVersion } }),
-            },
+    await transactWrite(client, {
+      TransactItems: [
+        {
+          Put: {
+            TableName: table,
+            Item: item,
+            ConditionExpression:
+              expectedVersion === 0 ? 'attribute_not_exists(userId)' : 'version = :expected',
+            ...(expectedVersion === 0
+              ? {}
+              : { ExpressionAttributeValues: { ':expected': expectedVersion } }),
           },
-          auditPut(audit, key.userId, now),
-        ],
-      }),
-    );
+        },
+        auditPut(audit, key.userId, now),
+        ...extra,
+      ],
+    });
   } catch (error) {
     // Someone saved between our read and write.
     if (cancelledAt(error, 0)) throw new VersionConflictError(-1);

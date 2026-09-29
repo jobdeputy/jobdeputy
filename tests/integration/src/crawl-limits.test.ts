@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { callApi, createTestUser, stackOutputs, type TestUser } from './stack.js';
+import { callApi, createTestUser, stackOutputs, type TestUser, waitFor } from './stack.js';
 
 /**
  * Deployed wiring of T06c: the admin limits parameter, the user's own limit, and the
@@ -52,12 +52,20 @@ describe('daily crawl limits (deployed)', () => {
     });
     expect(stale.status).toBe(409);
 
-    // Two different pages fit; a third does not.
+    // Two different pages fit; a third does not. Each waits for the previous crawl to
+    // finish, so the limit on crawls in progress at once (default 1) is not what refuses.
     for (const n of [1, 2]) {
       const ok = await callApi(api, 'POST', 'me/crawls', token, {
         url: new URL(`test-site/jobs?page=${n}`, testSite).href,
       });
       expect(ok.status, JSON.stringify(ok.body)).toBe(202);
+      await waitFor(
+        async () => {
+          const c = await callApi(api, 'GET', `me/crawls/${ok.body.crawlId}`, token);
+          return ['succeeded', 'failed'].includes(c.body.status) ? true : undefined;
+        },
+        { timeoutMs: 180_000, intervalMs: 2_000 },
+      );
     }
     const refused = await callApi(api, 'POST', 'me/crawls', token, {
       url: new URL('test-site/jobs?page=3', testSite).href,

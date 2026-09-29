@@ -4,6 +4,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   AccountRepository,
   type Document,
+  DocumentLimitError,
   DocumentRepository,
   documentClient,
   VersionConflictError,
@@ -30,6 +31,7 @@ import type { APIGatewayProxyEventV2WithJWTAuthorizer, Context } from 'aws-lambd
 import { ulid } from 'ulid';
 import { refuseWritesWhileDeleting } from './account-guard.js';
 import { type UserAudit, userAudit } from './audited.js';
+import { concurrentUpdateProblem } from './errors.js';
 
 const logger = createLogger('api-documents');
 
@@ -90,15 +92,26 @@ function s3Deps(
 }
 
 function defaultDeps(): DocumentsDeps {
-  const { DOCUMENTS_TABLE_NAME, DOCUMENTS_BUCKET_NAME, USERS_TABLE_NAME, AUDIT_TABLE_NAME } =
-    process.env;
-  if (!DOCUMENTS_TABLE_NAME || !DOCUMENTS_BUCKET_NAME || !USERS_TABLE_NAME || !AUDIT_TABLE_NAME) {
+  const {
+    DOCUMENTS_TABLE_NAME,
+    DOCUMENTS_BUCKET_NAME,
+    USERS_TABLE_NAME,
+    AUDIT_TABLE_NAME,
+    USAGE_TABLE_NAME,
+  } = process.env;
+  if (
+    !DOCUMENTS_TABLE_NAME ||
+    !DOCUMENTS_BUCKET_NAME ||
+    !USERS_TABLE_NAME ||
+    !AUDIT_TABLE_NAME ||
+    !USAGE_TABLE_NAME
+  ) {
     throw new Error('Table and bucket names must be set');
   }
   const client = documentClient();
   const account = new AccountRepository(client, USERS_TABLE_NAME);
   return {
-    repo: new DocumentRepository(client, DOCUMENTS_TABLE_NAME),
+    repo: new DocumentRepository(client, DOCUMENTS_TABLE_NAME, undefined, USAGE_TABLE_NAME),
     ...s3Deps(DOCUMENTS_BUCKET_NAME),
     newId: ulid,
     isBeingDeleted: (userId) => account.isBeingDeleted(userId),
@@ -162,32 +175,35 @@ export async function route(event: Event, deps: DocumentsDeps): Promise<HttpResp
         if (body === undefined) return problem(400, 'Body must be valid JSON', { requestId });
         const input = createDocumentInput.safeParse(body);
         if (!input.success) return validationProblem(input.error, requestId);
-        const existing = await deps.repo.list(userId);
-        if (existing.length >= MAX_DOCUMENTS) {
+        const documentId = deps.newId();
+        const s3Key = documentKeys(userId, documentId).original;
+        let doc: Document;
+        try {
+          // Counted, and made the default if it is the first, exactly: see the repository.
+          doc = await deps.repo.create(
+            {
+              userId,
+              documentId,
+              title: titleOf(input.data.fileName),
+              fileName: input.data.fileName,
+              mimeType: input.data.contentType,
+              format: DOCUMENT_TYPES[input.data.contentType].format,
+              s3Key,
+            },
+            deps.audit(
+              'document.upload_started',
+              { type: 'document', id: documentId },
+              'Résumé upload started',
+            ),
+            MAX_DOCUMENTS,
+          );
+        } catch (error) {
+          if (!(error instanceof DocumentLimitError)) throw error;
           return problem(422, 'Document limit reached', {
             detail: `You can keep at most ${MAX_DOCUMENTS} résumés. Delete one first.`,
             requestId,
           });
         }
-        const documentId = deps.newId();
-        const s3Key = documentKeys(userId, documentId).original;
-        const doc = await deps.repo.create(
-          {
-            userId,
-            documentId,
-            title: titleOf(input.data.fileName),
-            fileName: input.data.fileName,
-            mimeType: input.data.contentType,
-            format: DOCUMENT_TYPES[input.data.contentType].format,
-            s3Key,
-            isDefault: !existing.some((d) => d.isDefault),
-          },
-          deps.audit(
-            'document.upload_started',
-            { type: 'document', id: documentId },
-            'Résumé upload started',
-          ),
-        );
         const upload = await deps.presignUpload(s3Key, input.data.contentType);
         logger.info('Upload started', { documentId });
         return json(201, {
@@ -279,6 +295,11 @@ export async function handler(event: Event, context: Context): Promise<HttpRespo
     deps ??= defaultDeps();
     return await route(event, deps);
   } catch (error) {
+    const busy = concurrentUpdateProblem(error, event.requestContext.requestId);
+    if (busy) {
+      logger.warn('Concurrent update after retries', { error: error as Error });
+      return busy;
+    }
     logger.error('Unhandled error', { error: error as Error });
     return problem(500, 'Internal error', { requestId: event.requestContext.requestId });
   }
