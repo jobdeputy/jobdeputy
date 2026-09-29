@@ -8,10 +8,12 @@ import {
   DailyLimitError,
   documentClient,
   sourceIdFor,
+  TooManyActiveCrawlsError,
   VersionConflictError,
 } from '@jobdeputy/db';
 import {
   ACTIVE_CRAWL_STATUSES,
+  activeLimitMessage,
   CRAWL_ERRORS,
   type CrawlLimitsConfig,
   callerFromEvent,
@@ -34,6 +36,7 @@ import type { APIGatewayProxyEventV2WithJWTAuthorizer, Context } from 'aws-lambd
 import { ulid } from 'ulid';
 import { refuseWritesWhileDeleting } from './account-guard.js';
 import { ssmCrawlLimits } from './crawl-limits.js';
+import { concurrentUpdateProblem } from './errors.js';
 
 const logger = createLogger('api-crawls');
 
@@ -44,7 +47,16 @@ const logger = createLogger('api-crawls');
 export const STALE_CRAWL_MS = 15 * 60 * 1000;
 
 export interface CrawlsDeps {
-  repo: Pick<CrawlRepository, 'request' | 'getSource' | 'getCrawl' | 'listCrawls' | 'finish'>;
+  repo: Pick<
+    CrawlRepository,
+    | 'request'
+    | 'getSource'
+    | 'getCrawl'
+    | 'listCrawls'
+    | 'finish'
+    | 'getActiveCrawlIds'
+    | 'releaseActive'
+  >;
   settings: Pick<CrawlSettingsRepository, 'get' | 'save'>;
   /** The admin's default and maximum (T06c), cached for at most 5 minutes. */
   limits: () => Promise<CrawlLimitsConfig>;
@@ -97,10 +109,11 @@ function defaultDeps(): CrawlsDeps {
 
 /** The limit that applies and why, plus today's use (`GET /me/crawl-settings`). */
 async function settingsView(userId: string, deps: CrawlsDeps) {
-  const [config, settings, usedToday] = await Promise.all([
+  const [config, settings, usedToday, active] = await Promise.all([
     deps.limits(),
     deps.settings.get(userId),
     deps.usedToday(userId),
+    deps.repo.getActiveCrawlIds(userId),
   ]);
   return {
     dailyLimit: effectiveDailyLimit(config, settings?.dailyLimit),
@@ -109,6 +122,8 @@ async function settingsView(userId: string, deps: CrawlsDeps) {
     maxAllowed: config.dailyMax,
     usedToday,
     resetsAt: nextUtcMidnight(new Date(deps.now())).toISOString(),
+    maxActive: config.maxActive,
+    activeNow: active.length,
     version: settings?.version ?? 0,
   };
 }
@@ -141,6 +156,54 @@ export function crawlView(c: Crawl) {
 
 type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
 
+/** How long a client should wait before submitting again when its active crawls are full. */
+export const ACTIVE_RETRY_AFTER_SECONDS = 30;
+
+const isActive = (c: Crawl | undefined, now: number) =>
+  c !== undefined &&
+  ACTIVE_CRAWL_STATUSES.includes(c.status) &&
+  now - Date.parse(c.createdAt) <= STALE_CRAWL_MS;
+
+/**
+ * Ends a crawl that stopped without finishing (for example its message was lost):
+ * clearly failed, audited, and its active slot freed.
+ */
+async function endStale(deps: CrawlsDeps, crawl: Crawl) {
+  logger.warn('Ending a stale crawl', { crawlId: crawl.crawlId });
+  await deps.repo.finish(
+    crawl,
+    { status: 'failed', error: { code: 'internal', message: CRAWL_ERRORS.internal } },
+    {
+      auditId: deps.newId(),
+      name: 'crawl.failed',
+      entity: { type: 'crawl', id: crawl.crawlId },
+      actor: 'system',
+      summary: `Crawl failed: ${new URL(crawl.url).hostname} (internal)`,
+      detail: { code: 'internal' },
+    },
+  );
+}
+
+/**
+ * Frees active slots held by crawls that are finished, gone, or stale. Returns how many
+ * were freed. Keeps a user from being blocked forever by a crawl that never finished.
+ */
+async function healActiveSlots(userId: string, deps: CrawlsDeps): Promise<number> {
+  const ids = await deps.repo.getActiveCrawlIds(userId);
+  const crawls = await Promise.all(ids.map((id) => deps.repo.getCrawl(userId, id)));
+  const now = deps.now();
+  let freed = 0;
+  const gone: string[] = [];
+  for (const [i, crawl] of crawls.entries()) {
+    if (isActive(crawl, now)) continue;
+    if (crawl && ACTIVE_CRAWL_STATUSES.includes(crawl.status)) await endStale(deps, crawl);
+    else gone.push(ids[i] as string);
+    freed += 1;
+  }
+  await deps.repo.releaseActive(userId, gone);
+  return freed;
+}
+
 async function submit(userId: string, rawUrl: string, deps: CrawlsDeps, requestId: string) {
   const checked = parseCrawlUrl(rawUrl);
   if (!checked.ok) {
@@ -155,9 +218,10 @@ async function submit(userId: string, rawUrl: string, deps: CrawlsDeps, requestI
   const [config, settings] = await Promise.all([deps.limits(), deps.settings.get(userId)]);
   const dailyLimit = effectiveDailyLimit(config, settings?.dailyLimit);
   let replacing: string | undefined;
+  let healed = false;
 
-  // At most one replacement: a second conflict means another submit won the race.
-  for (let round = 0; round < 2; round += 1) {
+  // Bounded: at most one replacement of this page's crawl and one clean-up of stale slots.
+  for (let round = 0; round < 3; round += 1) {
     const crawlId = deps.newId();
     try {
       const crawl = await deps.repo.request({
@@ -175,6 +239,7 @@ async function submit(userId: string, rawUrl: string, deps: CrawlsDeps, requestI
           detail: { sourceId },
         },
         dailyLimit,
+        maxActive: config.maxActive,
         ...(replacing !== undefined ? { replacing } : {}),
       });
       logger.info('Crawl queued', { crawlId, sourceId });
@@ -188,37 +253,36 @@ async function submit(userId: string, rawUrl: string, deps: CrawlsDeps, requestI
           requestId,
         });
       }
+      if (error instanceof TooManyActiveCrawlsError) {
+        if (!healed && (await healActiveSlots(userId, deps)) > 0) {
+          healed = true;
+          continue;
+        }
+        const res = problem(429, 'Too many crawls in progress', {
+          detail: activeLimitMessage(config.maxActive),
+          code: 'too-many-active-crawls',
+          requestId,
+        });
+        return {
+          ...res,
+          headers: { ...res.headers, 'retry-after': String(ACTIVE_RETRY_AFTER_SECONDS) },
+        };
+      }
       if (!(error instanceof ActiveCrawlError)) throw error;
     }
 
     const activeId = (await deps.repo.getSource(userId, sourceId))?.activeCrawlId;
     if (activeId === undefined) continue; // Freed meanwhile: try again.
     const active = await deps.repo.getCrawl(userId, activeId);
-    const stale =
-      active !== undefined && deps.now() - Date.parse(active.createdAt) > STALE_CRAWL_MS;
-    if (active !== undefined && ACTIVE_CRAWL_STATUSES.includes(active.status) && !stale) {
-      return json(200, crawlView(active));
-    }
+    if (isActive(active, deps.now())) return json(200, crawlView(active as Crawl));
     if (active !== undefined && ACTIVE_CRAWL_STATUSES.includes(active.status)) {
-      // It stopped without finishing (for example its message was lost): end it clearly.
-      logger.warn('Replacing a stale crawl', { crawlId: activeId });
-      await deps.repo.finish(
-        active,
-        { status: 'failed', error: { code: 'internal', message: CRAWL_ERRORS.internal } },
-        {
-          auditId: deps.newId(),
-          name: 'crawl.failed',
-          entity: { type: 'crawl', id: activeId },
-          actor: 'system',
-          summary: `Crawl failed: ${url.hostname} (internal)`,
-          detail: { code: 'internal' },
-        },
-      );
+      await endStale(deps, active);
     }
     replacing = activeId;
   }
   return problem(409, 'Conflict', {
     detail: 'This page is being submitted at the same moment. Try again.',
+    code: 'try-again',
     requestId,
   });
 }
@@ -317,6 +381,11 @@ export async function handler(event: Event, context: Context): Promise<HttpRespo
     deps ??= defaultDeps();
     return await route(event, deps);
   } catch (error) {
+    const busy = concurrentUpdateProblem(error, event.requestContext.requestId);
+    if (busy) {
+      logger.warn('Concurrent update after retries', { error: error as Error });
+      return busy;
+    }
     logger.error('Unhandled error', { error: error as Error });
     return problem(500, 'Internal error', { requestId: event.requestContext.requestId });
   }

@@ -27,6 +27,7 @@ import type { z } from 'zod';
 import { refuseWritesWhileDeleting } from './account-guard.js';
 import { type UserAudit, userAudit } from './audited.js';
 import { cognitoEmailLookup } from './cognito.js';
+import { concurrentUpdateProblem } from './errors.js';
 
 const logger = createLogger('api-profile');
 
@@ -236,6 +237,11 @@ export async function handler(event: Event, context: Context): Promise<HttpRespo
     deps ??= defaultDeps();
     return await route(event, deps);
   } catch (error) {
+    const busy = concurrentUpdateProblem(error, event.requestContext.requestId);
+    if (busy) {
+      logger.warn('Concurrent update after retries', { error: error as Error });
+      return busy;
+    }
     logger.error('Unhandled error', { error: error as Error });
     return problem(500, 'Internal error', { requestId: event.requestContext.requestId });
   }

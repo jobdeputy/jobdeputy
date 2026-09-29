@@ -416,6 +416,8 @@ export class CellStack extends Stack {
     });
     usersTable.grant(crawlWorker.fn, 'dynamodb:GetItem');
     crawlsTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem');
+    // Frees the crawl's active slot when it ends (same transaction).
+    usageTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem');
     sourcesTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem');
     auditTable.grant(crawlWorker.fn, 'dynamodb:PutItem');
     // Writes fetched pages only (tagged for the 30-day expiry); reads nothing from S3.

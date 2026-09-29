@@ -1,8 +1,9 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { GetCommand, QueryCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import type { DocumentFormat, DocumentStatus } from '@jobdeputy/shared';
 import { type AuditWrite, auditPut } from './audit-repository.js';
 import { cancelledAt } from './client.js';
+import { transactWrite } from './transact.js';
 import { VersionConflictError } from './versioned.js';
 
 /** `documents` (docs/data-model.md). Keys: `userId`, `documentId`. */
@@ -93,20 +94,18 @@ export class DocumentRepository {
       updatedAt: at.toISOString(),
       schemaVersion: 1,
     };
-    await this.client.send(
-      new TransactWriteCommand({
-        TransactItems: [
-          {
-            Put: {
-              TableName: this.tableName,
-              Item: doc,
-              ConditionExpression: 'attribute_not_exists(userId)',
-            },
+    await transactWrite(this.client, {
+      TransactItems: [
+        {
+          Put: {
+            TableName: this.tableName,
+            Item: doc,
+            ConditionExpression: 'attribute_not_exists(userId)',
           },
-          auditPut(audit, fields.userId, at),
-        ],
-      }),
-    );
+        },
+        auditPut(audit, fields.userId, at),
+      ],
+    });
     return doc;
   }
 
@@ -228,37 +227,34 @@ export class DocumentRepository {
     const now = this.now().toISOString();
     const others = all.filter((d) => d.isDefault && d.documentId !== documentId);
     try {
-      await this.client.send(
-        new TransactWriteCommand({
-          TransactItems: [
-            {
-              Update: {
-                TableName: this.tableName,
-                Key: { userId, documentId },
-                UpdateExpression:
-                  'SET isDefault = :true, version = version + :one, updatedAt = :now',
-                ConditionExpression: 'version = :expected',
-                ExpressionAttributeValues: {
-                  ':true': true,
-                  ':one': 1,
-                  ':now': now,
-                  ':expected': expectedVersion,
-                },
+      await transactWrite(this.client, {
+        TransactItems: [
+          {
+            Update: {
+              TableName: this.tableName,
+              Key: { userId, documentId },
+              UpdateExpression: 'SET isDefault = :true, version = version + :one, updatedAt = :now',
+              ConditionExpression: 'version = :expected',
+              ExpressionAttributeValues: {
+                ':true': true,
+                ':one': 1,
+                ':now': now,
+                ':expected': expectedVersion,
               },
             },
-            ...others.map((d) => ({
-              Update: {
-                TableName: this.tableName,
-                Key: { userId, documentId: d.documentId },
-                UpdateExpression: 'SET isDefault = :false, updatedAt = :now',
-                ConditionExpression: 'attribute_exists(userId)',
-                ExpressionAttributeValues: { ':false': false, ':now': now },
-              },
-            })),
-            auditPut(audit, userId, this.now()),
-          ],
-        }),
-      );
+          },
+          ...others.map((d) => ({
+            Update: {
+              TableName: this.tableName,
+              Key: { userId, documentId: d.documentId },
+              UpdateExpression: 'SET isDefault = :false, updatedAt = :now',
+              ConditionExpression: 'attribute_exists(userId)',
+              ExpressionAttributeValues: { ':false': false, ':now': now },
+            },
+          })),
+          auditPut(audit, userId, this.now()),
+        ],
+      });
     } catch (error) {
       if (error instanceof Error && error.name === 'TransactionCanceledException') {
         throw new VersionConflictError(-1);
@@ -280,20 +276,18 @@ export class DocumentRepository {
     const current = await this.get(userId, documentId);
     if (!current) return undefined;
     try {
-      await this.client.send(
-        new TransactWriteCommand({
-          TransactItems: [
-            {
-              Delete: {
-                TableName: this.tableName,
-                Key: { userId, documentId },
-                ConditionExpression: 'attribute_exists(userId)',
-              },
+      await transactWrite(this.client, {
+        TransactItems: [
+          {
+            Delete: {
+              TableName: this.tableName,
+              Key: { userId, documentId },
+              ConditionExpression: 'attribute_exists(userId)',
             },
-            auditPut(audit, userId, this.now()),
-          ],
-        }),
-      );
+          },
+          auditPut(audit, userId, this.now()),
+        ],
+      });
       return current;
     } catch (error) {
       if (cancelledAt(error, 0)) return undefined;
@@ -334,11 +328,9 @@ export class DocumentRepository {
       ExpressionAttributeValues: { ':now': at.toISOString(), ...values },
     };
     try {
-      await this.client.send(
-        new TransactWriteCommand({
-          TransactItems: [{ Update: write }, ...(audit ? [auditPut(audit, userId, at)] : [])],
-        }),
-      );
+      await transactWrite(this.client, {
+        TransactItems: [{ Update: write }, ...(audit ? [auditPut(audit, userId, at)] : [])],
+      });
     } catch (error) {
       if (cancelledAt(error, 0)) return undefined;
       throw error;

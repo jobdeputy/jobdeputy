@@ -17,6 +17,7 @@ import {
   crawlsToday,
   DailyLimitError,
   sourceIdFor,
+  TooManyActiveCrawlsError,
   USAGE_DAY_TTL_SECONDS,
   VersionConflictError,
 } from '../src/index.js';
@@ -77,6 +78,7 @@ describe('CrawlRepository.request', () => {
     normalizedUrl: 'https://example.com/jobs',
     audit: audit('crawl.requested'),
     dailyLimit: 20,
+    maxActive: 3,
   };
   const cancelled = (...codes: string[]) =>
     named('TransactionCanceledException', {
@@ -145,6 +147,78 @@ describe('CrawlRepository.request', () => {
       throw cancelled('ConditionalCheckFailed', 'None', 'None', 'None', 'None');
     });
     await expect(repo(c).request(input)).rejects.toBeInstanceOf(ActiveCrawlError);
+  });
+
+  it('holds an active slot in the same transaction, only while fewer than maxActive are held', async () => {
+    const { c, send } = client();
+    await repo(c).request(input);
+    const active = sent<TransactWriteCommand>(send, 0).input.TransactItems?.[5]?.Update;
+    expect(active).toMatchObject({
+      TableName: 'Usage',
+      Key: { userId: USER, sk: 'ACTIVE' },
+      ConditionExpression: 'attribute_not_exists(crawlIds) OR size(crawlIds) < :maxActive',
+    });
+    expect(active?.UpdateExpression).toContain('ADD crawlIds :id');
+    expect(active?.ExpressionAttributeValues?.[':id']).toEqual(new Set(['C1']));
+    expect(active?.ExpressionAttributeValues?.[':maxActive']).toBe(3);
+  });
+
+  it('reports a full active set', async () => {
+    const { c } = client(() => {
+      throw cancelled('None', 'None', 'None', 'None', 'None', 'ConditionalCheckFailed');
+    });
+    await expect(repo(c).request(input)).rejects.toBeInstanceOf(TooManyActiveCrawlsError);
+  });
+
+  it('prefers the daily limit over a full active set (the day will not clear by waiting)', async () => {
+    const { c } = client(() => {
+      throw cancelled(
+        'None',
+        'None',
+        'None',
+        'ConditionalCheckFailed',
+        'None',
+        'ConditionalCheckFailed',
+      );
+    });
+    await expect(repo(c).request(input)).rejects.toBeInstanceOf(DailyLimitError);
+  });
+
+  it('retries a conflict on the shared counters instead of failing (found on real AWS)', async () => {
+    let calls = 0;
+    const { c, send } = client(() => {
+      calls += 1;
+      if (calls === 1)
+        throw cancelled(
+          'None',
+          'None',
+          'None',
+          'TransactionConflict',
+          'TransactionConflict',
+          'None',
+        );
+      return {};
+    });
+    await expect(repo(c).request(input)).resolves.toMatchObject({ status: 'queued' });
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads and frees active slots', async () => {
+    const { c, send } = client((cmd) =>
+      cmd instanceof GetCommand ? { Item: { crawlIds: new Set(['A', 'B']) } } : {},
+    );
+    expect(await repo(c).getActiveCrawlIds(USER)).toEqual(['A', 'B']);
+    await repo(c).releaseActive(USER, ['A']);
+    await repo(c).releaseActive(USER, []);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(sent<UpdateCommand>(send, 1).input).toMatchObject({
+      TableName: 'Usage',
+      Key: { userId: USER, sk: 'ACTIVE' },
+      UpdateExpression: 'DELETE crawlIds :ids SET updatedAt = :now',
+      ExpressionAttributeValues: { ':ids': new Set(['A']) },
+    });
+    const { c: empty } = client(() => ({}));
+    expect(await repo(empty).getActiveCrawlIds(USER)).toEqual([]);
   });
 
   it('reports the daily limit', async () => {
@@ -246,6 +320,12 @@ describe('CrawlRepository.finish', () => {
       '#result': 'result',
     });
     expect(tx[1]?.Put?.Item).toMatchObject({ name: 'crawl.succeeded' });
+    // The crawl's active slot is freed in the same transaction.
+    expect(tx[2]?.Update).toMatchObject({
+      TableName: 'Usage',
+      Key: { userId: USER, sk: 'ACTIVE' },
+      ExpressionAttributeValues: { ':ids': new Set(['C1']) },
+    });
     const source = sent<UpdateCommand>(send, 1);
     expect(source.input).toMatchObject({
       TableName: 'Sources',
@@ -271,7 +351,13 @@ describe('CrawlRepository.finish', () => {
 
   it('does nothing (no audit, no source change) for a crawl already finished', async () => {
     const { c, send } = client(() => {
-      throw named('TransactionCanceledException');
+      throw named('TransactionCanceledException', {
+        CancellationReasons: [
+          { Code: 'ConditionalCheckFailed' },
+          { Code: 'None' },
+          { Code: 'None' },
+        ],
+      });
     });
     expect(
       await repo(c).finish(crawl, { status: 'succeeded', result }, audit('crawl.succeeded')),
@@ -347,6 +433,7 @@ describe('DynamoDB reserved words', () => {
       normalizedUrl: 'u',
       audit: audit('crawl.requested'),
       dailyLimit: 20,
+      maxActive: 3,
       replacing: 'OLD',
     });
     await r.start(USER, 'C1');

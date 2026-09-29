@@ -1,16 +1,19 @@
 import {
   ActiveCrawlError,
+  ConcurrentUpdateError,
   type Crawl,
   type CrawlSettings,
   DailyLimitError,
   type Source,
   sourceIdFor,
+  TooManyActiveCrawlsError,
   VersionConflictError,
 } from '@jobdeputy/db';
 import type { APIGatewayProxyEventV2, APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
 import { route as auditRoute } from '../src/audit.js';
 import { type CrawlsDeps, route, STALE_CRAWL_MS } from '../src/crawls.js';
+import { concurrentUpdateProblem } from '../src/errors.js';
 import { PAGES, handler as testSite } from '../src/test-site.js';
 
 const NOW = Date.parse('2026-09-28T12:00:00.000Z');
@@ -62,6 +65,8 @@ function deps(over: Partial<CrawlsDeps['repo']> = {}) {
     getCrawl: vi.fn(async (): Promise<Crawl | undefined> => undefined),
     listCrawls: vi.fn(async () => ({ items: [crawl()] })),
     finish: vi.fn(async () => true),
+    getActiveCrawlIds: vi.fn(async (): Promise<string[]> => []),
+    releaseActive: vi.fn(async () => undefined),
     ...over,
   };
   const settings = {
@@ -71,7 +76,7 @@ function deps(over: Partial<CrawlsDeps['repo']> = {}) {
   const d: CrawlsDeps = {
     repo,
     settings,
-    limits: vi.fn(async () => ({ dailyDefault: 20, dailyMax: 50 })),
+    limits: vi.fn(async () => ({ dailyDefault: 20, dailyMax: 50, maxActive: 3 })),
     usedToday: vi.fn(async () => 3),
     auditTable: 'Audit',
     newId: () => `01J8ZQ4Y3N5W6X7Y8Z9A0B1C${String(10 + (n++ % 90))}`,
@@ -250,7 +255,8 @@ describe('POST /me/crawls', () => {
       getCrawl: vi.fn(async () => crawl({ crawlId: C0, status: 'failed' })),
     });
     expect((await route(post(URL_), d)).statusCode).toBe(409);
-    expect(repo.request).toHaveBeenCalledTimes(2);
+    // Bounded: at most 3 attempts per submit.
+    expect(repo.request).toHaveBeenCalledTimes(3);
   });
 
   it('is refused while the account is being deleted (410)', async () => {
@@ -282,7 +288,7 @@ describe('daily crawl limit (T06c)', () => {
 
     // The admin lowered the maximum after the user chose 40.
     settings.get.mockResolvedValueOnce({ dailyLimit: 40 } as CrawlSettings);
-    vi.mocked(d.limits).mockResolvedValueOnce({ dailyDefault: 10, dailyMax: 30 });
+    vi.mocked(d.limits).mockResolvedValueOnce({ dailyDefault: 10, dailyMax: 30, maxActive: 3 });
     await route(post(URL_), d);
     expect(vi.mocked(repo.request).mock.calls[1]?.[0].dailyLimit).toBe(30);
   });
@@ -313,6 +319,8 @@ describe('daily crawl limit (T06c)', () => {
       maxAllowed: 50,
       usedToday: 3,
       resetsAt: '2026-09-29T00:00:00.000Z',
+      maxActive: 3,
+      activeNow: 0,
       version: 2,
     });
   });
@@ -387,6 +395,93 @@ describe('daily crawl limit (T06c)', () => {
     vi.mocked(d.isBeingDeleted).mockResolvedValue(true);
     expect((await route(put({ version: 0, dailyLimit: 5 }), d)).statusCode).toBe(410);
     expect(settings.save).not.toHaveBeenCalled();
+  });
+});
+
+describe('crawls in progress at once (fix after T06d)', () => {
+  const full = () => {
+    throw new TooManyActiveCrawlsError();
+  };
+
+  it('passes the admin maximum to the request', async () => {
+    const { d, repo } = deps();
+    await route(post(URL_), d);
+    expect(vi.mocked(repo.request).mock.calls[0]?.[0].maxActive).toBe(3);
+  });
+
+  it('refuses with 429 and Retry-After when the slots are held by crawls still running', async () => {
+    const running = (id: string) => crawl({ crawlId: id, status: 'running' });
+    const { d, repo } = deps({
+      request: vi.fn(async () => full()),
+      getActiveCrawlIds: vi.fn(async () => ['A', 'B', 'C']),
+      getCrawl: vi.fn(async (_u: string, id: string) => running(id)),
+    });
+    const res = await route(post(URL_), d);
+    expect(res.statusCode).toBe(429);
+    expect(res.headers['retry-after']).toBe('30');
+    expect(body(res)).toMatchObject({
+      code: 'too-many-active-crawls',
+      detail: 'You have 3 crawls in progress, the most at one time. Try again when one finishes.',
+    });
+    expect(repo.releaseActive).toHaveBeenCalledWith('user-a', []);
+    expect(repo.finish).not.toHaveBeenCalled();
+    expect(repo.request).toHaveBeenCalledTimes(1);
+  });
+
+  it('frees slots held by finished, missing, or stale crawls, then accepts (a user is never stuck)', async () => {
+    let calls = 0;
+    const stale = crawl({
+      crawlId: 'S',
+      status: 'queued',
+      createdAt: new Date(NOW - STALE_CRAWL_MS - 1).toISOString(),
+    });
+    const { d, repo } = deps({
+      request: vi.fn(async (input: Parameters<CrawlsDeps['repo']['request']>[0]) => {
+        calls += 1;
+        if (calls === 1) full();
+        return crawl({ crawlId: input.crawlId });
+      }),
+      getActiveCrawlIds: vi.fn(async () => ['DONE', 'GONE', 'S']),
+      getCrawl: vi.fn(async (_u: string, id: string) => {
+        if (id === 'DONE') return crawl({ crawlId: 'DONE', status: 'succeeded' });
+        if (id === 'S') return stale;
+        return undefined;
+      }),
+    });
+    const res = await route(post(URL_), d);
+    expect(res.statusCode).toBe(202);
+    expect(repo.releaseActive).toHaveBeenCalledWith('user-a', ['DONE', 'GONE']);
+    // The stale one is ended clearly (which frees its slot too).
+    expect(repo.finish).toHaveBeenCalledWith(
+      stale,
+      { status: 'failed', error: { code: 'internal', message: expect.any(String) } },
+      expect.objectContaining({ name: 'crawl.failed', actor: 'system' }),
+    );
+  });
+
+  it('cleans up only once per submit, then refuses', async () => {
+    const { d, repo } = deps({
+      request: vi.fn(async () => full()),
+      getActiveCrawlIds: vi.fn(async () => ['GONE']),
+    });
+    expect((await route(post(URL_), d)).statusCode).toBe(429);
+    expect(repo.request).toHaveBeenCalledTimes(2);
+    expect(repo.getActiveCrawlIds).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the maximum and how many are in progress', async () => {
+    const { d } = deps({ getActiveCrawlIds: vi.fn(async () => ['A', 'B']) });
+    const res = await route(event('GET /me/crawl-settings'), d);
+    expect(body(res)).toMatchObject({ maxActive: 3, activeNow: 2 });
+  });
+});
+
+describe('concurrent updates after retries', () => {
+  it('become 409 "try again", never 500', () => {
+    const res = concurrentUpdateProblem(new ConcurrentUpdateError('x'), 'req-1');
+    expect(res?.statusCode).toBe(409);
+    expect(JSON.parse(res?.body ?? '{}')).toMatchObject({ code: 'try-again', requestId: 'req-1' });
+    expect(concurrentUpdateProblem(new Error('other'), 'req-1')).toBeUndefined();
   });
 });
 

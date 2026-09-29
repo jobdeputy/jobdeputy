@@ -94,9 +94,16 @@ describe('crawls (deployed)', () => {
       // RFC 6761: never resolves.
       ['https://jobdeputy-integration-test.invalid/careers', 'unreachable'],
     ];
+    // Submitted in batches no larger than the stack's limit of crawls in progress at once.
+    const { maxActive } = (await callApi(api, 'GET', 'me/crawl-settings', user.accessToken)).body;
     const ids: string[] = [];
-    for (const [url] of cases) ids.push(await submit(url));
-    const crawls = await finished(ids);
+    const crawls = new Map<string, unknown>();
+    for (let i = 0; i < cases.length; i += maxActive) {
+      const batch: string[] = [];
+      for (const [url] of cases.slice(i, i + maxActive)) batch.push(await submit(url));
+      for (const [id, crawl] of await finished(batch)) crawls.set(id, crawl);
+      ids.push(...batch);
+    }
     cases.forEach(([url, code], i) => {
       expect(crawls.get(ids[i] as string), url).toMatchObject({
         status: 'failed',

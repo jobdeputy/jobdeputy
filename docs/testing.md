@@ -21,6 +21,8 @@ Per feature, usually:
 
 Crawl tests fetch only the stack's own **dev-only test site** (`GET /test-site/{page}` on a separate small API, output `TestSiteUrl`; no token, never deployed to prod, watched by no alarm, so its deliberate 503 page never pages anyone), never someone else's site, so they do not depend on or burden anyone else. They poll one list call for all their crawls, to stay well within the dev API's throttle.
 
+**Concurrency** (`concurrency.test.ts`): only real DynamoDB shows transaction conflicts, so requests sent at the same moment (parallel submits, a double-clicked save) are tested on the deployed stack. None may return a 5xx.
+
 ## Rules against flaky tests
 
 1. **Never sleep for a fixed time.** Poll for an observable fact (a status, a counter) with `waitFor`.

@@ -144,6 +144,14 @@ describe('daily limit helpers (T06c)', () => {
     expect(crawlLimitsConfig.safeParse(DEFAULT_CRAWL_LIMITS).success).toBe(true);
     expect(crawlLimitsConfig.safeParse({ dailyDefault: 50, dailyMax: 20 }).success).toBe(false);
     expect(crawlLimitsConfig.safeParse({ dailyDefault: 1.5, dailyMax: 20 }).success).toBe(false);
+    // A setting saved before maxActive existed still works, with the default of 3.
+    expect(crawlLimitsConfig.parse({ dailyDefault: 20, dailyMax: 50 }).maxActive).toBe(3);
+    expect(crawlLimitsConfig.safeParse({ ...DEFAULT_CRAWL_LIMITS, maxActive: 0 }).success).toBe(
+      false,
+    );
+    expect(crawlLimitsConfig.safeParse({ ...DEFAULT_CRAWL_LIMITS, maxActive: 21 }).success).toBe(
+      false,
+    );
   });
 
   it('writes the message users see', () => {

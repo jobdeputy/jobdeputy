@@ -1,9 +1,10 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { QueryCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
+import { QueryCommand } from '@aws-sdk/lib-dynamodb';
 import type { CreateRoleInput, SearchInput } from '@jobdeputy/shared';
 import { ulid } from 'ulid';
 import { type AuditWrite, auditPut } from './audit-repository.js';
 import { cancelledAt } from './client.js';
+import { transactWrite } from './transact.js';
 import { getItem, putVersioned, type Versioned } from './versioned.js';
 
 /** `preferences` → `SEARCH` and `ROLE#<roleId>` (docs/data-model.md). */
@@ -107,20 +108,18 @@ export class PreferencesRepository {
   /** False if the role did not exist (for this user). Audited in the same transaction. */
   async deleteRole(userId: string, roleId: string, audit: AuditWrite): Promise<boolean> {
     try {
-      await this.client.send(
-        new TransactWriteCommand({
-          TransactItems: [
-            {
-              Delete: {
-                TableName: this.tableName,
-                Key: { userId, sk: `${ROLE_PREFIX}${roleId}` },
-                ConditionExpression: 'attribute_exists(userId)',
-              },
+      await transactWrite(this.client, {
+        TransactItems: [
+          {
+            Delete: {
+              TableName: this.tableName,
+              Key: { userId, sk: `${ROLE_PREFIX}${roleId}` },
+              ConditionExpression: 'attribute_exists(userId)',
             },
-            auditPut(audit, userId, this.now()),
-          ],
-        }),
-      );
+          },
+          auditPut(audit, userId, this.now()),
+        ],
+      });
       return true;
     } catch (error) {
       if (cancelledAt(error, 0)) return false;

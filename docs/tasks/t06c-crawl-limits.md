@@ -39,3 +39,12 @@ Agreed on 2026-09-28 as part of T06.
 - [x] The limit is enforced exactly, including two submits at the same moment: the day counter's condition is part of the crawl request transaction (unit), and a third submit past a limit of 2 is refused with 429 and the agreed message (integration).
 - [x] A user cannot set a limit above the admin maximum (422, unit and integration); changing the parameter takes effect without a deploy (proven on the personal stack: `{"dailyDefault":3,"dailyMax":4}` showed in `GET /me/crawl-settings`, then restored; the 5-minute cache is unit-tested).
 - [x] Integration tests for the 429 and the settings routes (409 on a stale version, reset to the default, audit entries); 23/23 on the personal stack; nothing left afterwards (0 items in `usage`, `preferences`, `sources`, `crawls`, `audit`).
+
+## Follow-up (2026-09-29): requests at the same moment
+
+A strict review found, and proved on real AWS, that crawl submits at the same moment (even of different pages) and a double-clicked save failed with 500: DynamoDB cancels one of two transactions touching the same item with `TransactionConflict`, which the code did not handle. Agreed with the maintainer:
+
+- Every transaction retries a pure conflict with jitter (at most 4 attempts in all, 25 ms base, 400 ms cap), then answers 409 "try again"; never 500.
+- A per-user limit on crawls in progress at once, `maxActive` (admin level, live, default 3), enforced exactly in the request transaction; 429 `too-many-active-crawls` with `Retry-After`. Slots of crawls that finished, vanished, or went stale are freed on the next submit, so a user cannot be stuck. Shown in `GET /me/crawl-settings` (`maxActive`, `activeNow`).
+- Per-user request throttling beyond that was not added: API Gateway has no per-user throttle, and a counter written on every request would be a new hot item; the parallel and daily limits plus the API throttle bound one user.
+- A concurrency integration test on the deployed stack.

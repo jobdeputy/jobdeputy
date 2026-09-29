@@ -38,6 +38,8 @@ What is deployed today, per cell. Every table is DynamoDB on-demand (`PAY_PER_RE
 
 Every user-table call is keyed by the caller's `userId` from the token; no request can name another user.
 
+Every `TransactWriteItems` goes through `transactWrite` (`packages/db/src/transact.ts`): a transaction cancelled only by `TransactionConflict` (another write to the same item at the same moment) is retried with jitter, at most 4 attempts in all, then answered with 409 "try again"; a failed condition is never retried.
+
 | Table | Operation | Key | Used by |
 |---|---|---|---|
 | `users` | `GetItem` (consistent) | `userId`, `sk = PROFILE` | `GET` and `PUT /me/profile` |
@@ -53,8 +55,9 @@ Every user-table call is keyed by the caller's `userId` from the token; no reque
 | `documents` + `audit` | `TransactWriteItems`: `PutItem` with `attribute_not_exists(userId)`, `PutItem` audit entry | `userId`, `documentId` | `POST /me/documents` (status `pending`) |
 | `documents` + `audit` | `GetItem`; `TransactWriteItems` of the conditional `UpdateItem` (rename; the default switch's updates) or `DeleteItem`, with the audit entry; then a consistent `GetItem` of the result | `userId`, `documentId` | `GET`, `PUT`, `DELETE /me/documents/{documentId}` |
 | `documents` (+ `audit`) | `GetItem`; `TransactWriteItems` of an `UpdateItem` conditioned on `status` or `eTag` (with an audit entry for `ready`, `rejected`, `failed`) | `userId`, `documentId` (parsed from the S3 key) | document worker |
-| `sources` + `crawls` + `audit` + `usage` | `TransactWriteItems`: `UpdateItem` source with `attribute_not_exists(activeCrawlId)` (or `= :replacing`), `PutItem` crawl (`queued`), `PutItem` audit entry, `UpdateItem` `DAY#<date>` with `attribute_not_exists(crawls) OR crawls < :limit`, `UpdateItem` `MONTH#<month>` | `userId`, `sourceId` / `crawlId` / `auditId` / `sk` | `POST /me/crawls` (a failed source condition means the page already has an active crawl, which is returned and not counted; a failed day condition means the daily limit is reached: 429) |
-| `usage` | `GetItem` (consistent) | `userId`, `sk = DAY#<today>` | `GET /me/crawl-settings`; the 429 message |
+| `sources` + `crawls` + `audit` + `usage` | `TransactWriteItems`: `UpdateItem` source with `attribute_not_exists(activeCrawlId)` (or `= :replacing`), `PutItem` crawl (`queued`), `PutItem` audit entry, `UpdateItem` `DAY#<date>` with `attribute_not_exists(crawls) OR crawls < :limit`, `UpdateItem` `MONTH#<month>`, `UpdateItem` `ACTIVE` (`ADD crawlIds`) with `attribute_not_exists(crawlIds) OR size(crawlIds) < :maxActive` | `userId`, `sourceId` / `crawlId` / `auditId` / `sk` | `POST /me/crawls` (a failed source condition means the page already has an active crawl, which is returned and not counted; a failed day condition means the daily limit is reached: 429) |
+| `usage` | `GetItem` (consistent) | `userId`, `sk = DAY#<today>` / `ACTIVE` | `GET /me/crawl-settings`; the 429 messages; freeing stale slots |
+| `usage` | `UpdateItem` `DELETE crawlIds` (idempotent) | `userId`, `sk = ACTIVE` | `POST /me/crawls` freeing slots of finished or gone crawls; in the crawl-ending transaction (worker, stale crawls) |
 | `preferences` + `audit` | `GetItem`, then `TransactWriteItems`: `PutItem` with `attribute_not_exists(userId)` or `version = :expected`, `PutItem` audit entry | `userId`, `sk = CRAWL_SETTINGS` | `GET` and `PUT /me/crawl-settings` |
 | `sources` | `GetItem` (consistent) | `userId`, `sourceId` | `POST /me/crawls`: find the active crawl |
 | `crawls` | `GetItem` (consistent) | `userId`, `crawlId` | `GET /me/crawls/{crawlId}`; `POST /me/crawls` (active crawl) |
@@ -162,6 +165,7 @@ Key: `userId`, `crawlId` (ULID).
 | `COMPANY#<companyId>` | `count N`, `windowStart`, `windowDays N`, `countsOn` |
 | `DAY#<yyyy-mm-dd>` | `crawls N` (T06c), `applications N`, `ttl` (7 days). Enforces daily caps. Days are UTC. |
 | `MONTH#<yyyy-mm>` | `crawls N` (T06c), `llmCalls N`, `inputTokens N`, `outputTokens N`, `applications N` |
+| `ACTIVE` | `crawlIds SS`: the user's queued or running crawls. Added in the crawl request transaction (only while fewer than the admin's `maxActive`), removed in the transaction that ends the crawl; a submit that finds the set full first frees IDs of crawls that are finished, gone, or stale. |
 
 **How a found job is counted against a company rule:** the job's company and, if known, its parent company are looked up. For each matching rule, one conditional write increments `count` only while the window is current and `count < maxJobs`. If the window has expired, the same write starts a new window at 1. This stays exact even when two crawls run at once. A job that fits gets `limitState = counted`. Otherwise it gets `over_limit` and is hidden but kept. Within one crawl, the best-scoring jobs are admitted first. Counting applications later only changes `countsOn`.
 
@@ -267,3 +271,4 @@ Everything under `users/<userId>/` and `derived/users/<userId>/` goes with accou
 | 2026-09-28 | `sources`, `crawls` (stream), and `audit` tables built; `sources.activeCrawlId`, `crawls.result` and `lastError`; `audit` crawl entries; S3 `derived/users/…/crawls/<crawlId>/page` (30-day expiry by tag) | T06b |
 | 2026-09-28 | `usage` table built (`DAY#` and `MONTH#` `crawls`, counted in the crawl request transaction); `preferences` `CRAWL_SETTINGS` (`dailyLimit`); audit `crawl_limit.changed` | T06c |
 | 2026-09-28 | `audit`: entries for every change to the profile, search settings, roles, and résumés (T05 actions), each in the same transaction as the change | T06d |
+| 2026-09-29 | `usage` `ACTIVE` item (`crawlIds`): a per-user limit on crawls in progress at once; every transaction retries conflicts | fix after T06d |

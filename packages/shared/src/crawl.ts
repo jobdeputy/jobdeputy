@@ -144,12 +144,18 @@ export const crawlLimitsConfig = z
   .strictObject({
     dailyDefault: z.number().int().min(1).max(1000),
     dailyMax: z.number().int().min(1).max(1000),
+    /** Crawls one user may have queued or running at the same time (fix after T06d). */
+    maxActive: z.number().int().min(1).max(20).default(3),
   })
   .refine((c) => c.dailyDefault <= c.dailyMax, 'dailyDefault must not exceed dailyMax');
 export type CrawlLimitsConfig = z.infer<typeof crawlLimitsConfig>;
 
 /** Used when the admin setting is missing or invalid (and as the initial setting). */
-export const DEFAULT_CRAWL_LIMITS: CrawlLimitsConfig = { dailyDefault: 20, dailyMax: 50 };
+export const DEFAULT_CRAWL_LIMITS: CrawlLimitsConfig = {
+  dailyDefault: 20,
+  dailyMax: 50,
+  maxActive: 3,
+};
 
 /** `PUT /me/crawl-settings`: `dailyLimit: null` goes back to the admin default. */
 export const updateCrawlSettingsInput = z.strictObject({
@@ -158,7 +164,10 @@ export const updateCrawlSettingsInput = z.strictObject({
 });
 
 /** The limit that applies: the user's own (if any) or the default, never above the maximum. */
-export function effectiveDailyLimit(config: CrawlLimitsConfig, userLimit?: number | null): number {
+export function effectiveDailyLimit(
+  config: Pick<CrawlLimitsConfig, 'dailyDefault' | 'dailyMax'>,
+  userLimit?: number | null,
+): number {
   return Math.min(userLimit ?? config.dailyDefault, config.dailyMax);
 }
 
@@ -167,6 +176,10 @@ export const utcDay = (at: Date) => at.toISOString().slice(0, 10);
 export const utcMonth = (at: Date) => at.toISOString().slice(0, 7);
 export function nextUtcMidnight(at: Date): Date {
   return new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate() + 1));
+}
+
+export function activeLimitMessage(active: number): string {
+  return `You have ${active} crawls in progress, the most at one time. Try again when one finishes.`;
 }
 
 export function dailyLimitMessage(used: number, limit: number): string {

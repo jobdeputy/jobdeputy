@@ -138,7 +138,7 @@ describe('crawl limits (T06c)', () => {
     t.hasResourceProperties('AWS::SSM::Parameter', {
       Name: '/jobdeputy/jobdeputy-dev-iad/crawl-limits',
       Type: 'String',
-      Value: '{"dailyDefault":20,"dailyMax":50}',
+      Value: '{"dailyDefault":20,"dailyMax":50,"maxActive":3}',
     });
     const parameter = Object.values(t.findResources('AWS::SSM::Parameter')).find(
       (p) => p.Properties.Name === '/jobdeputy/jobdeputy-dev-iad/crawl-limits',
@@ -166,7 +166,8 @@ describe('crawl limits (T06c)', () => {
     expect(JSON.stringify(ssm[0]?.Resource)).toMatch(/:parameter",{"Ref":"CrawlLimits/);
 
     const worker = statementsFor('CrawlWorkerFn');
-    expect(actionsOn(worker, 'UsageTable')).toEqual([]);
+    // Only to free the crawl's active slot when it ends; counting happens at submit.
+    expect(actionsOn(worker, 'UsageTable')).toEqual(['dynamodb:UpdateItem']);
     expect(actionsOn(worker, 'PreferencesTable')).toEqual([]);
   });
 });
