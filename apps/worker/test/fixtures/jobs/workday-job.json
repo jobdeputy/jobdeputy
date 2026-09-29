@@ -1,0 +1,15 @@
+{
+  "jobPostingInfo": {
+    "id": "82edd1bba3e6102e02ec17d4f52f0000",
+    "title": "Firmware Engineer",
+    "jobDescription": "<p><span>Acme builds chips.</span></p><ul><li>C</li><li>Rust</li></ul>",
+    "location": "IN, Bengaluru",
+    "additionalLocations": ["IN, Hyderabad", "IN, Pune"],
+    "postedOn": "Posted 3 Days Ago",
+    "startDate": "2026-09-26",
+    "timeType": "Full time",
+    "jobReqId": "JR2000002",
+    "externalUrl": "https://acme.wd5.myworkdayjobs.com/External/job/IN-Bengaluru/Firmware-Engineer_JR2000002"
+  },
+  "hiringOrganization": { "name": "Acme India", "url": "" }
+}
