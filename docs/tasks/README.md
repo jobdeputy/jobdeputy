@@ -21,7 +21,7 @@ Every task goes through these statuses: `planned` → `researching` → `awaitin
 | T06c | [Crawl limits](t06c-crawl-limits.md) | done | T06b |
 | T06d | [Audit for existing actions](t06d-audit-existing-actions.md) | done | T06b |
 | T07 | [Job extraction, normalization, and storage](t07-job-extraction-storage.md) | in-progress | T06 |
-| T07a | [Job readers](t07a-job-readers.md) | in-review | T07 |
+| T07a | [Job readers](t07a-job-readers.md) | done | T07 |
 | T07b | [Jobs table and storage](t07b-jobs-storage.md) | planned | T07a |
 | T07c | [Paging, crawl limits, and closed jobs](t07c-paging-and-closed-jobs.md) | planned | T07b |
 | T07d | [LLM extraction](t07d-llm-extraction.md) ([#41](https://github.com/jobdeputy/jobdeputy/issues/41)) | planned | T07b, AI credentials |

@@ -1,8 +1,8 @@
 # T07a: Job readers
 
-- **Status:** in-review
+- **Status:** done
 - **Depends on:** T07 ([decision](t07-job-extraction-storage.md#decision), [0008](../decisions/0008-job-extraction.md))
-- **Branch / PR:** `t07a-job-extraction`
+- **Branch / PR:** `t07a-job-extraction`, [#42](https://github.com/jobdeputy/jobdeputy/pull/42) (merged)
 
 ## Goal
 
