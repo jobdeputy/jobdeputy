@@ -6,6 +6,7 @@ import {
   BlockedAddressError,
   checkedLookup,
   createSafeDispatcher,
+  dnsResolve,
   isPublicAddress,
   type Resolve,
 } from '../src/fetch/address.js';
@@ -125,6 +126,33 @@ describe('checkedLookup', () => {
     failure.code = 'ENOTFOUND';
     const result = await lookupWith(async () => Promise.reject(failure));
     expect(result.error?.code).toBe('ENOTFOUND');
+  });
+});
+
+describe('dnsResolve', () => {
+  const failing = (code: string) => ({
+    resolve4: async () => {
+      const error: NodeJS.ErrnoException = new Error(code);
+      error.code = code;
+      throw error;
+    },
+  });
+
+  it('returns IPv4 addresses', async () => {
+    const resolve = dnsResolve({ resolve4: async () => ['8.8.8.8', '1.1.1.1'] });
+    expect(await resolve('jobs.example.com')).toEqual([
+      { address: '8.8.8.8', family: 4 },
+      { address: '1.1.1.1', family: 4 },
+    ]);
+  });
+
+  it.each([
+    ['a name that does not exist', 'ENOTFOUND', 'ENOTFOUND'],
+    ['a name without an IPv4 address', 'ENODATA', 'ENOTFOUND'],
+    ['a DNS timeout (retriable)', 'ETIMEOUT', 'ETIMEOUT'],
+    ['a server failure (retriable)', 'ESERVFAIL', 'ESERVFAIL'],
+  ])('reports %s as %s', async (_, raw, code) => {
+    await expect(dnsResolve(failing(raw))('jobs.example.com')).rejects.toMatchObject({ code });
   });
 });
 

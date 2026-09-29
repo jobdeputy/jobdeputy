@@ -11,6 +11,11 @@ export interface AsyncPipelineProps extends QueueWorkerProps {
   readonly table: Table;
   /** Name of the string partition key sent to the worker as `id`. */
   readonly idAttribute: string;
+  /**
+   * Instead of `id`: string key attributes sent under their own names, for tables
+   * keyed by more than one attribute (for example `userId` and `crawlId`).
+   */
+  readonly messageKeys?: readonly string[];
   /** Extra conditions on the new item, for tables where only some inserts start work. */
   readonly newImageFilter?: Record<string, unknown>;
 }
@@ -78,7 +83,9 @@ export class AsyncPipeline extends Construct {
       target: this.queue.queueArn,
       targetParameters: {
         // IDs only: no user data in queue messages.
-        inputTemplate: `{"id": "<$.dynamodb.Keys.${props.idAttribute}.S>"}`,
+        inputTemplate: props.messageKeys
+          ? `{${props.messageKeys.map((k) => `"${k}": "<$.dynamodb.Keys.${k}.S>"`).join(', ')}}`
+          : `{"id": "<$.dynamodb.Keys.${props.idAttribute}.S>"}`,
       },
     });
   }

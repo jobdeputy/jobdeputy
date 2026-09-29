@@ -1,4 +1,9 @@
-import { DERIVED_PREFIX, SCANNED_PREFIX } from '@jobdeputy/shared';
+import {
+  CRAWL_PAGE_RETENTION_DAYS,
+  CRAWL_PAGE_RETENTION_TAG,
+  DERIVED_PREFIX,
+  SCANNED_PREFIX,
+} from '@jobdeputy/shared';
 import { Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import type { Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Rule } from 'aws-cdk-lib/aws-events';
@@ -45,7 +50,16 @@ export class Documents extends Construct {
       enforceSSL: true,
       // No notifications configured here: the GuardDuty plan turns on the bucket's
       // EventBridge notifications itself (s3:PutBucketNotification in its role).
-      lifecycleRules: [{ abortIncompleteMultipartUploadAfter: Duration.days(1) }],
+      lifecycleRules: [
+        { abortIncompleteMultipartUploadAfter: Duration.days(1) },
+        // Fetched pages (T06b) are working copies: gone after 30 days. By tag, because
+        // their keys are per user (derived/users/<id>/crawls/…) and filters are prefixes.
+        {
+          id: 'ExpireCrawlPages',
+          tagFilters: { [CRAWL_PAGE_RETENTION_TAG.key]: CRAWL_PAGE_RETENTION_TAG.value },
+          expiration: Duration.days(CRAWL_PAGE_RETENTION_DAYS),
+        },
+      ],
       removalPolicy: props.removalPolicy,
       // Dev and PR stacks must delete cleanly; prod keeps user files.
       autoDeleteObjects: !isProd,

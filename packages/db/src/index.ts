@@ -1,5 +1,7 @@
 export * from './account-repository.js';
+export * from './audit-repository.js';
 export * from './client.js';
+export * from './crawl-repository.js';
 export * from './document-repository.js';
 export * from './ping-repository.js';
 export * from './preferences-repository.js';

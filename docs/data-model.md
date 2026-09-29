@@ -27,6 +27,9 @@ What is deployed today, per cell. Every table is DynamoDB on-demand (`PAY_PER_RE
 | `<stack>-users` | `userId` (S) | `sk` (S) | `NEW_IMAGE` → Pipe (only `DELETION` inserts) → queue | `ttl` (`DELETION` items only) | prod only | dev: deleted; prod: kept | T05b, stream T12 |
 | `<stack>-preferences` | `userId` (S) | `sk` (S) | — | — | prod only | dev: deleted; prod: kept | T05b |
 | `<stack>-documents` | `userId` (S) | `documentId` (S) | — | `ttl` (pending uploads only) | prod only | dev: deleted; prod: kept | T05c |
+| `<stack>-sources` | `userId` (S) | `sourceId` (S) | — | — | prod only | dev: deleted; prod: kept | T06b |
+| `<stack>-crawls` | `userId` (S) | `crawlId` (S) | `NEW_IMAGE` → Pipe (only `queued` inserts; sends `userId` and `crawlId`) → queue | `ttl` (180 days) | prod only | dev: deleted; prod: kept | T06b |
+| `<stack>-audit` | `userId` (S) | `auditId` (S) | — | `ttl` (1 year) | prod only | dev: deleted; prod: kept | T06b |
 | `<stack>-ping-jobs` | `id` (S) | — | `NEW_IMAGE` → Pipe → queue | `ttl` | — | dev: deleted; prod: kept | T04 |
 | `<stack>-idempotency` | `id` (S) | — | — | `expiration` | — | dev: deleted; prod: kept | T04 |
 
@@ -49,6 +52,14 @@ Every user-table call is keyed by the caller's `userId` from the token; no reque
 | `documents` | `PutItem` with `attribute_not_exists(userId)` | `userId`, `documentId` | `POST /me/documents` (status `pending`) |
 | `documents` | `GetItem` / conditional `UpdateItem` / `TransactWriteItems` (default switch) / `DeleteItem` | `userId`, `documentId` | `GET`, `PUT`, `DELETE /me/documents/{documentId}` |
 | `documents` | `GetItem` / `UpdateItem` conditioned on `status` or `eTag` | `userId`, `documentId` (parsed from the S3 key) | document worker |
+| `sources` + `crawls` + `audit` | `TransactWriteItems`: `UpdateItem` source with `attribute_not_exists(activeCrawlId)` (or `= :replacing`), `PutItem` crawl (`queued`), `PutItem` audit entry | `userId`, `sourceId` / `crawlId` / `auditId` | `POST /me/crawls` (a failed source condition means the page already has an active crawl, which is returned) |
+| `sources` | `GetItem` (consistent) | `userId`, `sourceId` | `POST /me/crawls`: find the active crawl |
+| `crawls` | `GetItem` (consistent) | `userId`, `crawlId` | `GET /me/crawls/{crawlId}`; `POST /me/crawls` (active crawl) |
+| `crawls` | `Query`, newest first, `Limit`, `ExclusiveStartKey` | `userId` | `GET /me/crawls` (paged) |
+| `crawls` | `UpdateItem` with `#status IN (queued, running)` | `userId`, `crawlId` | crawl worker: claim an attempt; note a retriable error (`= running`) |
+| `crawls` + `audit` | `TransactWriteItems`: `UpdateItem` crawl with `#status IN (queued, running)` → `succeeded`/`failed`, `PutItem` audit entry | `userId`, `crawlId` / `auditId` | crawl worker; `POST /me/crawls` ending a stale crawl |
+| `sources` | `UpdateItem` with `activeCrawlId = :crawlId` (`REMOVE activeCrawlId`) | `userId`, `sourceId` | crawl worker, after a crawl ends |
+| `audit` | `Query`, newest first, `Limit`, `ExclusiveStartKey` | `userId` | `GET /me/audit` (paged) |
 | `ping-jobs` | `PutItem` / `GetItem` / conditional `UpdateItem` | `id` | ping API and worker |
 | `idempotency` | Powertools reads and writes | `id` | ping worker |
 
@@ -130,15 +141,15 @@ Key: `userId`, `documentId` (ULID).
 
 ## 4. `sources`: pages the user saved
 
-Key: `userId`, `sourceId` (a hash of `normalizedUrl`, [0007](decisions/0007-crawler.md): the same page cannot be saved twice by one user).
+Key: `userId`, `sourceId` (the first 32 hex characters of SHA-256 of `normalizedUrl`, [0007](decisions/0007-crawler.md): the same page cannot be saved twice by one user).
 
-`url`, `normalizedUrl`, `label?`, `kind` (`company_careers`, `ats_board`, `aggregator`, `linkedin_search`, or `unknown`), `ats?` (`greenhouse`, `lever`, `workday`, `ashby`, …), `companyHint?` (`companyId`, for single-company pages), `companyConfirmed B`, `active B`, `schedule {type}` (`manual` now; `daily` later), `lastCrawlId?`, `lastCrawledAt?`, `stats {lastFound, totalJobs}`.
+`url` (as submitted), `normalizedUrl` (lowercase host, no fragment or tracking parameters), `label?`, `kind` (`company_careers`, `ats_board`, `aggregator`, `linkedin_search`, or `unknown`; `unknown` until T07), `ats?` (`greenhouse`, `lever`, `workday`, `ashby`, …), `companyHint?` (`companyId`, for single-company pages), `companyConfirmed B`, `active B`, `schedule {type}` (`manual` now; `daily` later), `lastCrawlId?`, `lastCrawledAt?`, `activeCrawlId?` (T06b: set while a crawl of this page is queued or running, so a second submit returns it; replaced if that crawl is finished, missing, or older than 15 minutes), `stats {lastFound, totalJobs}` (T07).
 
 ## 5. `crawls`: crawl runs (stream → crawl worker)
 
 Key: `userId`, `crawlId` (ULID).
 
-`sourceId`, `url` (a copy at crawl time), `trigger` (`user`, `schedule`, or `redrive`), `status` (`queued`, `running`, `succeeded`, `failed`, or `cancelled`), `attempts N`, `startedAt?`, `finishedAt?`, `stats {pagesFetched, jobsFound, jobsNew, jobsUpdated, jobsRelevant, jobsOverLimit, jobsClosed}`, `error? {code, message}`, `llm {provider (byot or platform), model, calls, inputTokens, outputTokens}`, `ttl` (180 days).
+`sourceId`, `url` (the normalized URL at crawl time), `trigger` (`user`, `schedule`, or `redrive`), `status` (`queued`, `running`, `succeeded`, `failed`, or `cancelled`), `attempts N`, `startedAt?`, `finishedAt?`, `result? {finalUrl, httpStatus, contentType, bytes, s3Key}` (T06b: the fetched page; `s3Key` is never shown by the API), `stats {pagesFetched, jobsFound, jobsNew, jobsUpdated, jobsRelevant, jobsOverLimit, jobsClosed}` (T07), `error? {code, message}` (`code` from `CRAWL_ERRORS` in `packages/shared`), `lastError? {code, message}` (T06b: the latest retriable failure while a retry is pending), `llm {provider (byot or platform), model, calls, inputTokens, outputTokens}` (T07), `ttl` (180 days).
 
 ## 6. `usage`: counters
 
@@ -153,6 +164,8 @@ Key: `userId`, `crawlId` (ULID).
 ## 7. `audit`: audit history (renamed from `events`, [0007](decisions/0007-crawler.md))
 
 Key: `userId`, `auditId` (ULID, so entries are ordered by time). Written in the same transaction as the action it records; never changed; erased only with the account.
+
+`name` (T06b: `crawl.requested`, `crawl.succeeded`, `crawl.failed`), `entity {type, id}`, `actor` (`user` or `system`), `summary` (short, for example `Crawl failed: jobs.example.com (blocked)`), `detail? M` (IDs, codes, and sizes only), `ttl` (1 year).
 
 `name` (for example `crawl.started`, `job.found`, `rule.changed`, `application.submitted`), `entity {type, id}`, `actor` (`user`, `system`, or `automation`), `summary`, `detail? M` (never secrets or sensitive answers), `ttl` (1 year).
 
@@ -216,6 +229,7 @@ Key: `userId`, `sk`. Values are encrypted in the application before they are wri
 ```text
 users/<userId>/documents/<documentId>/original             the uploaded file (PDF or DOCX, at most 5 MB)
 derived/users/<userId>/documents/<documentId>/text.txt     its extracted text (at most 200,000 characters)
+derived/users/<userId>/crawls/<crawlId>/page             the fetched page (at most 5 MB; expires after 30 days)
 users/<userId>/applications/<applicationId>/...    screenshots and confirmations
 users/<userId>/snapshots/<jobId>/...               page snapshots (deleted after 30 days)
 ```
@@ -223,8 +237,9 @@ users/<userId>/snapshots/<jobId>/...               page snapshots (deleted after
 Everything under `users/<userId>/` and `derived/users/<userId>/` goes with account deletion or export.
 
 - **`users/`** holds what users upload. GuardDuty scans every new object there and tags it `GuardDutyMalwareScanStatus`; the API can only read an `original` tagged `NO_THREATS_FOUND` (bucket policy).
-- **`derived/users/`** holds files we produce from clean uploads (for example extracted text). It is not scanned, so each upload is scanned exactly once. Only the worker can write there.
-- The prefixes and key format are defined once, in `packages/shared` (`documentKeys`). The bucket is private, S3-encrypted, HTTPS-only, and never replicated.
+- **`derived/users/`** holds files we produce: text extracted from clean uploads, and pages the crawl worker fetched (T06b). It is not scanned, so each upload is scanned exactly once; fetched pages are never served to a browser. Only workers can write there (the crawl worker only to `…/crawls/*/page`).
+- Fetched pages carry the tag `retention=crawl-page`; a lifecycle rule deletes them after 30 days.
+- The prefixes and key format are defined once, in `packages/shared` (`documentKeys`, `crawlKeys`). The bucket is private, S3-encrypted, HTTPS-only, and never replicated.
 
 ## Change log
 
@@ -239,3 +254,4 @@ Everything under `users/<userId>/` and `derived/users/<userId>/` goes with accou
 | 2026-09-28 | Extracted text moved to `derived/users/…/text.txt`, outside the scanned prefix: one malware scan per upload instead of two | T05c |
 | 2026-09-28 | `documents` table and file bucket built: statuses `pending`/`processing`/`ready`/`rejected`/`failed`, `format`, `eTag`, `error`, `ttl`, and `parsed` fields; S3 `original` and `text.txt` | T05c |
 | 2026-09-28 | `events` renamed `audit` (key `auditId`); `sourceId` is a hash of the normalized URL ([0007](decisions/0007-crawler.md)); design only, tables not built yet | T06 |
+| 2026-09-28 | `sources`, `crawls` (stream), and `audit` tables built; `sources.activeCrawlId`, `crawls.result` and `lastError`; `audit` crawl entries; S3 `derived/users/…/crawls/<crawlId>/page` (30-day expiry by tag) | T06b |

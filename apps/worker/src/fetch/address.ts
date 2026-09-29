@@ -1,4 +1,4 @@
-import { lookup as dnsLookup } from 'node:dns/promises';
+import { Resolver } from 'node:dns/promises';
 import type { LookupFunction } from 'node:net';
 import { isIP } from 'node:net';
 import ipaddr from 'ipaddr.js';
@@ -38,8 +38,33 @@ export interface ResolvedAddress {
 }
 export type Resolve = (hostname: string) => Promise<ResolvedAddress[]>;
 
-export const systemResolve: Resolve = (hostname) =>
-  dnsLookup(hostname, { all: true, verbatim: true });
+/** The part of Node's DNS resolver we use (injectable for tests). */
+export interface Resolve4 {
+  resolve4(hostname: string): Promise<string[]>;
+}
+
+/**
+ * Asks DNS directly (c-ares), for IPv4 only:
+ * - A Lambda outside a VPC has no IPv6 route, so IPv4 is all it can connect to.
+ * - Unlike the system lookup (`getaddrinfo`), which in Lambda reports a non-existent
+ *   name as an ambiguous `EBUSY`, it answers `ENOTFOUND` for a name that does not
+ *   exist and `ENODATA` for one without an IPv4 address: both final, so never retried.
+ * - It skips the local hosts file and does not use libuv's small thread pool.
+ */
+export function dnsResolve(resolver: Resolve4): Resolve {
+  return async (hostname) => {
+    try {
+      return (await resolver.resolve4(hostname)).map((address) => ({ address, family: 4 }));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENODATA') {
+        throw notFound(`${hostname} has no IPv4 address`);
+      }
+      throw error;
+    }
+  };
+}
+
+export const systemResolve: Resolve = dnsResolve(new Resolver({ timeout: 3_000, tries: 2 }));
 
 /**
  * A `net.connect` lookup that refuses the whole connection if **any** address the name

@@ -91,6 +91,9 @@ export function classifyNetworkError(error: unknown, deadline: AbortSignal): Fet
   const codes = chain.map((e) => String((e as NodeJS.ErrnoException).code ?? ''));
   if (codes.some((c) => TIMEOUT_CODES.has(c))) return new FetchError('timeout', true);
   if (codes.some((c) => TLS_CODE.test(c))) return new FetchError('tls_error', false);
+  // The name does not exist (an authoritative answer): retrying cannot help. A
+  // temporary DNS failure (EAI_AGAIN) or a refused or dropped connection can.
+  if (codes.includes('ENOTFOUND')) return new FetchError('unreachable', false, 'ENOTFOUND');
   return new FetchError('unreachable', true, codes.find((c) => c !== '') || undefined);
 }
 

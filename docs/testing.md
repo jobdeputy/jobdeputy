@@ -19,6 +19,8 @@ Per feature, usually:
 
 **Not** in integration tests: input-validation permutations, error-message wording, or business-rule edge cases. Those are unit tests. If a new integration test only repeats a unit test through HTTP, remove it.
 
+Crawl tests fetch only the stack's own **dev-only test site** (`GET /test-site/{page}`, no token, never deployed to prod), never someone else's site, so they do not depend on or burden anyone else. They poll one list call for all their crawls, to stay well within the dev API's throttle.
+
 ## Rules against flaky tests
 
 1. **Never sleep for a fixed time.** Poll for an observable fact (a status, a counter) with `waitFor`.

@@ -39,7 +39,16 @@ describe('documents (T05c)', () => {
         ],
       },
       LifecycleConfiguration: {
-        Rules: [Match.objectLike({ AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 } })],
+        Rules: [
+          Match.objectLike({ AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 } }),
+          // Fetched pages (T06b) expire after 30 days, selected by the tag the crawl worker sets.
+          Match.objectLike({
+            Id: 'ExpireCrawlPages',
+            ExpirationInDays: 30,
+            TagFilters: [{ Key: 'retention', Value: 'crawl-page' }],
+            Status: 'Enabled',
+          }),
+        ],
       },
     });
     t.hasResourceProperties('AWS::S3::BucketPolicy', {
