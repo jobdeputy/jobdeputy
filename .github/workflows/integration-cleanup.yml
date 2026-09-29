@@ -23,7 +23,9 @@ jobs:
     environment: pr
     timeout-minutes: 30
     steps:
-      - uses: aws-actions/configure-aws-credentials@v6
+      # For scripts/cleanup-log-groups.sh.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ secrets.AWS_PR_ROLE_ARN }}
           aws-region: us-east-1
@@ -59,4 +61,9 @@ jobs:
           done
           for stack in $STACKS; do
             aws cloudformation wait stack-delete-complete --stack-name "$stack"
+            scripts/cleanup-log-groups.sh stack "$stack"
           done
+
+      - name: Sweep log groups (daily)
+        if: github.event_name != 'pull_request'
+        run: scripts/cleanup-log-groups.sh sweep

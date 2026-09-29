@@ -17,12 +17,14 @@ One-time organization setup for [T03](../../docs/tasks/t03-infrastructure-founda
 | `01-organization.sh` | Creates the `Workloads/Dev` and `Workloads/Prod` OUs, enables centralized root access (member accounts get no root credentials), creates `jobdeputy-dev-iad`, and assigns the admin user to it. |
 | `02-guardrails.sh` | Creates the service control policies. Attaches a Region lock to each workload account and the cost guardrails to `Workloads`. Creates the `jd-budget-stop` policy without attaching it. |
 | `03-budget.sh` | Creates the $20 gross-cost budget with alerts at $5, $10, and $15 actual and $20 forecast. Creates the budget action that attaches `jd-budget-stop` to `Workloads` at $20 actual, and a daily anomaly email for impact of $1 or more. |
+| `04-access-analyzer.sh` | Creates an organization-wide IAM Access Analyzer (free) that flags any resource shared publicly or outside the organization. `us-east-1` now; pass `ap-south-1 eu-west-2` at launch. |
 
 ```sh
 export AWS_PROFILE=jobdeputy-mgmt
 DEV_IAD_EMAIL=... ADMIN_USERNAME=... ./01-organization.sh
 ./02-guardrails.sh
 ALERT_EMAIL=... ./03-budget.sh
+./04-access-analyzer.sh
 ```
 
 Prod accounts (`jobdeputy-prod-iad`, `-bom`, `-lhr`) are created at launch by extending `01-organization.sh`. `02-guardrails.sh` already knows their Regions.

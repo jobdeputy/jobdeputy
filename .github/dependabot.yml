@@ -1,6 +1,28 @@
 version: 2
 updates:
+  # Actions are pinned to exact commits (T14); Dependabot bumps the commit and the
+  # version comment together.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+
+  # npm packages across the pnpm workspace. Security fixes arrive as soon as an
+  # advisory is published (Dependabot security updates); version bumps weekly.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      aws-sdk:
+        patterns: ['@aws-sdk/*', '@smithy/*']
+      aws-cdk:
+        patterns: ['aws-cdk', 'aws-cdk-lib', 'constructs']
+      powertools:
+        patterns: ['@aws-lambda-powertools/*']
+      dev-tools:
+        dependency-type: development

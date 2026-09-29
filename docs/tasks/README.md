@@ -13,7 +13,8 @@ Every task goes through these statuses: `planned` → `researching` → `awaitin
 | T11 | [Integration tests on every PR (before merge)](t11-pr-integration-tests.md) | done | T04 |
 | T05 | [Sign-up, sign-in, and profile API](t05-profile-api.md) | done | T04 |
 | T12 | [Delete my account](t12-account-deletion.md) ([#17](https://github.com/jobdeputy/jobdeputy/issues/17)) | done | T05 |
-| T13 | [No orphaned user data](t13-no-orphaned-data.md) | in-review | T12 |
+| T13 | [No orphaned user data](t13-no-orphaned-data.md) | done | T12 |
+| T14 | [Security and hygiene](t14-security-hygiene.md) | in-review | T13 |
 | T06 | [Asynchronous crawl request pipeline](t06-async-crawl-pipeline.md) | planned | T04, T05 |
 | T07 | [Job extraction, normalization, and storage](t07-job-extraction-storage.md) | planned | T06 |
 | T08 | [Relevance filter](t08-relevance-filter.md) | planned | T05, T07 |
@@ -28,6 +29,10 @@ Must be fixed before the prod launch. Tracked as GitHub issues with the [`releas
 |---|---|
 | [#8](https://github.com/jobdeputy/jobdeputy/issues/8) | Narrow the CDK deploy execution role (`AdministratorAccess`) and add a permissions boundary |
 | [#13](https://github.com/jobdeputy/jobdeputy/issues/13) | Send Cognito emails through SES in each prod Region |
+| [#21](https://github.com/jobdeputy/jobdeputy/issues/21) | CloudTrail: organization trail with permanent audit logs |
+| [#22](https://github.com/jobdeputy/jobdeputy/issues/22) | Production wiring: prod accounts, approval-gated deploys, prod alerts |
+
+Other tracked maintenance: [#23](https://github.com/jobdeputy/jobdeputy/issues/23) (Node.js 24 before 2027-04-30), [#24](https://github.com/jobdeputy/jobdeputy/issues/24) (CDK asset garbage collection).
 
 ## Future (after this slice)
 
