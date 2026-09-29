@@ -16,7 +16,7 @@ JobDeputy discovers jobs from any URL a user gives, keeps the relevant ones, and
 | One task's goal, research, decision, done criteria | `docs/tasks/tNN-*.md` |
 | Tables, attributes, and S3 paths | [docs/data-model.md](docs/data-model.md) |
 | What to test where, and rules against flaky tests | [docs/testing.md](docs/testing.md) |
-| What to do when an alarm fires; deleting an account | [docs/runbooks/](docs/runbooks/alarms.md) |
+| What to do when an alarm fires; deleting an account; changing crawl limits | [docs/runbooks/](docs/runbooks/alarms.md) |
 | Agreed decisions (do not re-litigate) | [docs/decisions/](docs/decisions/README.md) |
 | Contribution and branch rules | [CONTRIBUTING.md](CONTRIBUTING.md) |
 

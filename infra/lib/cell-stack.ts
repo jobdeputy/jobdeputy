@@ -1,4 +1,4 @@
-import { crawlKeys, DERIVED_PREFIX, SCANNED_PREFIX } from '@jobdeputy/shared';
+import { crawlKeys, DEFAULT_CRAWL_LIMITS, DERIVED_PREFIX, SCANNED_PREFIX } from '@jobdeputy/shared';
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps, Tags } from 'aws-cdk-lib';
 import { HttpApi, HttpMethod, HttpNoneAuthorizer, HttpStage } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
@@ -120,6 +120,8 @@ export class CellStack extends Stack {
     const sourcesTable = userTable('SourcesTable', 'sources', 'sourceId');
     const crawlsTable = userTable('CrawlsTable', 'crawls', 'crawlId', 'ttl', true);
     const auditTable = userTable('AuditTable', 'audit', 'auditId', 'ttl');
+    // T06c: counters (DAY# items expire after a week).
+    const usageTable = userTable('UsageTable', 'usage', 'sk', 'ttl');
     /**
      * Every table keyed by userId. Account deletion erases all of them; an infra test
      * fails if a table keyed by userId is missing here (T12).
@@ -131,6 +133,7 @@ export class CellStack extends Stack {
       { table: sourcesTable, sortKey: 'sourceId' },
       { table: crawlsTable, sortKey: 'crawlId' },
       { table: auditTable, sortKey: 'auditId' },
+      { table: usageTable, sortKey: 'sk' },
     ];
     const documents = new Documents(this, 'Documents', {
       namePrefix: id,
@@ -356,15 +359,38 @@ export class CellStack extends Stack {
       SOURCES_TABLE_NAME: sourcesTable.tableName,
       AUDIT_TABLE_NAME: auditTable.tableName,
       USERS_TABLE_NAME: usersTable.tableName,
+      USAGE_TABLE_NAME: usageTable.tableName,
     };
+    /**
+     * T06c: the admin's daily crawl limits for this cell (free standard parameter). Edit
+     * it to change them without a deploy (docs/runbooks/crawl-limits.md). The value here
+     * is only the initial one: CloudFormation rewrites it only if this value changes.
+     */
+    const crawlLimits = new StringParameter(this, 'CrawlLimits', {
+      parameterName: `/jobdeputy/${id}/crawl-limits`,
+      description:
+        'Daily crawl limits: {"dailyDefault": N, "dailyMax": N}. Read live by the API (5-minute cache).',
+      stringValue: JSON.stringify(DEFAULT_CRAWL_LIMITS),
+    });
     // T06b: POST /me/crawls → crawls table (queued) → stream → Pipe → queue → worker.
     const crawlsApi = new AppFunction(this, 'CrawlsApi', {
       entry: 'apps/api/src/crawls.ts',
       timeout: Duration.seconds(10),
       removalPolicy,
-      environment: crawlTablesEnv,
+      environment: {
+        ...crawlTablesEnv,
+        PREFERENCES_TABLE_NAME: preferencesTable.tableName,
+        CRAWL_LIMITS_PARAMETER: crawlLimits.parameterName,
+      },
     });
     usersTable.grant(crawlsApi.fn, 'dynamodb:GetItem');
+    // Counting (in the request transaction) and reading today's use.
+    usageTable.grant(crawlsApi.fn, 'dynamodb:GetItem', 'dynamodb:UpdateItem');
+    // The user's own limit (CRAWL_SETTINGS), saved with its audit entry.
+    preferencesTable.grant(crawlsApi.fn, 'dynamodb:GetItem', 'dynamodb:PutItem');
+    crawlsApi.fn.addToRolePolicy(
+      new PolicyStatement({ actions: ['ssm:GetParameter'], resources: [crawlLimits.parameterArn] }),
+    );
     sourcesTable.grant(crawlsApi.fn, 'dynamodb:GetItem', 'dynamodb:UpdateItem');
     // UpdateItem: ending a stale crawl before replacing it.
     crawlsTable.grant(
@@ -477,6 +503,12 @@ export class CellStack extends Stack {
       methods: [HttpMethod.GET],
       integration: crawlsIntegration,
     });
+    httpApi.addRoutes({
+      path: '/me/crawl-settings',
+      methods: [HttpMethod.GET, HttpMethod.PUT],
+      integration: crawlsIntegration,
+    });
+
     httpApi.addRoutes({
       path: '/me/audit',
       methods: [HttpMethod.GET],

@@ -1,4 +1,12 @@
-import { ActiveCrawlError, type Crawl, type Source, sourceIdFor } from '@jobdeputy/db';
+import {
+  ActiveCrawlError,
+  type Crawl,
+  type CrawlSettings,
+  DailyLimitError,
+  type Source,
+  sourceIdFor,
+  VersionConflictError,
+} from '@jobdeputy/db';
 import type { APIGatewayProxyEventV2, APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
 import { route as auditRoute } from '../src/audit.js';
@@ -56,13 +64,20 @@ function deps(over: Partial<CrawlsDeps['repo']> = {}) {
     finish: vi.fn(async () => true),
     ...over,
   };
+  const settings = {
+    get: vi.fn(async (): Promise<CrawlSettings | undefined> => undefined),
+    save: vi.fn(async () => ({}) as CrawlSettings),
+  };
   const d: CrawlsDeps = {
     repo,
+    settings,
+    limits: vi.fn(async () => ({ dailyDefault: 20, dailyMax: 50 })),
+    usedToday: vi.fn(async () => 3),
     newId: () => `01J8ZQ4Y3N5W6X7Y8Z9A0B1C${String(10 + (n++ % 90))}`,
     now: () => NOW,
     isBeingDeleted: vi.fn(async () => false),
   };
-  return { d, repo };
+  return { d, repo, settings };
 }
 const body = (res: { body: string }) => JSON.parse(res.body);
 
@@ -248,6 +263,133 @@ describe('POST /me/crawls', () => {
   it('requires a signed-in caller', async () => {
     const { d } = deps();
     expect((await route(event('POST /me/crawls', { body: '{}' }, null), d)).statusCode).toBe(401);
+  });
+});
+
+describe('daily crawl limit (T06c)', () => {
+  it('passes the admin default when the user has no limit of their own', async () => {
+    const { d, repo } = deps();
+    await route(post(URL_), d);
+    expect(vi.mocked(repo.request).mock.calls[0]?.[0].dailyLimit).toBe(20);
+  });
+
+  it("uses the user's own limit, but never above the admin maximum", async () => {
+    const { d, repo, settings } = deps();
+    settings.get.mockResolvedValueOnce({ dailyLimit: 5 } as CrawlSettings);
+    await route(post(URL_), d);
+    expect(vi.mocked(repo.request).mock.calls[0]?.[0].dailyLimit).toBe(5);
+
+    // The admin lowered the maximum after the user chose 40.
+    settings.get.mockResolvedValueOnce({ dailyLimit: 40 } as CrawlSettings);
+    vi.mocked(d.limits).mockResolvedValueOnce({ dailyDefault: 10, dailyMax: 30 });
+    await route(post(URL_), d);
+    expect(vi.mocked(repo.request).mock.calls[1]?.[0].dailyLimit).toBe(30);
+  });
+
+  it('refuses with 429 and a clear message once the limit is used', async () => {
+    const { d } = deps({
+      request: vi.fn(async () => {
+        throw new DailyLimitError();
+      }),
+    });
+    vi.mocked(d.usedToday).mockResolvedValue(20);
+    const res = await route(post(URL_), d);
+    expect(res.statusCode).toBe(429);
+    expect(body(res)).toMatchObject({
+      code: 'daily-limit-reached',
+      detail: "You've used 20 of 20 crawls today. Resets at 00:00 UTC.",
+    });
+  });
+
+  it('shows the limit, why it applies, and today’s use', async () => {
+    const { d, settings } = deps();
+    settings.get.mockResolvedValue({ dailyLimit: 5, version: 2 } as CrawlSettings);
+    const res = await route(event('GET /me/crawl-settings'), d);
+    expect(body(res)).toEqual({
+      dailyLimit: 5,
+      customLimit: 5,
+      defaultLimit: 20,
+      maxAllowed: 50,
+      usedToday: 3,
+      resetsAt: '2026-09-29T00:00:00.000Z',
+      version: 2,
+    });
+  });
+
+  it('shows the default for a user who never chose a limit', async () => {
+    const { d } = deps();
+    const res = await route(event('GET /me/crawl-settings'), d);
+    expect(body(res)).toMatchObject({ dailyLimit: 20, customLimit: null, version: 0 });
+  });
+
+  const put = (payload: unknown) =>
+    event('PUT /me/crawl-settings', { body: JSON.stringify(payload) });
+
+  it('saves a limit with an audit entry and answers with the new settings', async () => {
+    const { d, settings } = deps();
+    const res = await route(put({ version: 0, dailyLimit: 5 }), d);
+    expect(res.statusCode).toBe(200);
+    expect(settings.save).toHaveBeenCalledWith(
+      'user-a',
+      5,
+      0,
+      expect.objectContaining({
+        name: 'crawl_limit.changed',
+        actor: 'user',
+        summary: 'Daily crawl limit set to 5',
+        detail: { from: 'default', to: 5 },
+      }),
+    );
+  });
+
+  it('goes back to the default with null', async () => {
+    const { d, settings } = deps();
+    settings.get.mockResolvedValue({ dailyLimit: 5, version: 1 } as CrawlSettings);
+    await route(put({ version: 1, dailyLimit: null }), d);
+    expect(settings.save).toHaveBeenCalledWith(
+      'user-a',
+      null,
+      1,
+      expect.objectContaining({
+        summary: 'Daily crawl limit set back to the default (20)',
+        detail: { from: 5, to: 'default' },
+      }),
+    );
+  });
+
+  it('refuses a limit above the admin maximum (422)', async () => {
+    const { d, settings } = deps();
+    const res = await route(put({ version: 0, dailyLimit: 51 }), d);
+    expect(res.statusCode).toBe(422);
+    expect(body(res)).toMatchObject({
+      code: 'limit-above-maximum',
+      detail: 'The most you can choose is 50 crawls a day.',
+    });
+    expect(settings.save).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['no version', { dailyLimit: 5 }],
+    ['zero', { version: 0, dailyLimit: 0 }],
+    ['a fraction', { version: 0, dailyLimit: 2.5 }],
+    ['text', { version: 0, dailyLimit: 'ten' }],
+    ['extra fields', { version: 0, dailyLimit: 5, maxAllowed: 1000 }],
+  ])('rejects %s', async (_, payload) => {
+    const { d } = deps();
+    expect((await route(put(payload), d)).statusCode).toBe(400);
+  });
+
+  it('answers 409 when the settings changed elsewhere', async () => {
+    const { d, settings } = deps();
+    settings.save.mockRejectedValue(new VersionConflictError(3));
+    expect((await route(put({ version: 1, dailyLimit: 5 }), d)).statusCode).toBe(409);
+  });
+
+  it('refuses changes while the account is being deleted (410)', async () => {
+    const { d, settings } = deps();
+    vi.mocked(d.isBeingDeleted).mockResolvedValue(true);
+    expect((await route(put({ version: 0, dailyLimit: 5 }), d)).statusCode).toBe(410);
+    expect(settings.save).not.toHaveBeenCalled();
   });
 });
 

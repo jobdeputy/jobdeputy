@@ -1,6 +1,6 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
-  type GetCommand,
+  GetCommand,
   type QueryCommand,
   TransactWriteCommand,
   type UpdateCommand,
@@ -13,12 +13,17 @@ import {
   auditItem,
   CRAWL_TTL_SECONDS,
   CrawlRepository,
+  CrawlSettingsRepository,
+  crawlsToday,
+  DailyLimitError,
   sourceIdFor,
+  USAGE_DAY_TTL_SECONDS,
+  VersionConflictError,
 } from '../src/index.js';
 
 const NOW = new Date('2026-09-28T12:00:00.000Z');
 const USER = '0f8fad5b-d9cb-469f-a165-70867728950e';
-const TABLES = { crawls: 'Crawls', sources: 'Sources', audit: 'Audit' };
+const TABLES = { crawls: 'Crawls', sources: 'Sources', audit: 'Audit', usage: 'Usage' };
 const named = (name: string, extra: Record<string, unknown> = {}) =>
   Object.assign(new Error(name), { name, ...extra });
 
@@ -71,7 +76,12 @@ describe('CrawlRepository.request', () => {
     url: 'https://Example.com/jobs#x',
     normalizedUrl: 'https://example.com/jobs',
     audit: audit('crawl.requested'),
+    dailyLimit: 20,
   };
+  const cancelled = (...codes: string[]) =>
+    named('TransactionCanceledException', {
+      CancellationReasons: codes.map((Code) => ({ Code })),
+    });
 
   it('saves the source, queues the crawl, and audits it in one transaction', async () => {
     const { c, send } = client();
@@ -109,30 +119,65 @@ describe('CrawlRepository.request', () => {
     expect(source?.ExpressionAttributeValues?.[':replacing']).toBe('OLD');
   });
 
+  it('counts the crawl for today (only below the limit) and this month, in the same transaction', async () => {
+    const { c, send } = client();
+    await repo(c).request(input);
+    const [, , , day, month] = sent<TransactWriteCommand>(send, 0).input.TransactItems ?? [];
+    expect(day?.Update).toMatchObject({
+      TableName: 'Usage',
+      Key: { userId: USER, sk: 'DAY#2026-09-28' },
+      ConditionExpression: 'attribute_not_exists(crawls) OR crawls < :limit',
+    });
+    expect(day?.Update?.UpdateExpression).toContain('crawls = if_not_exists(crawls, :zero) + :one');
+    expect(day?.Update?.ExpressionAttributeValues).toMatchObject({
+      ':limit': 20,
+      ':ttl': NOW.getTime() / 1000 + USAGE_DAY_TTL_SECONDS,
+    });
+    expect(month?.Update).toMatchObject({
+      TableName: 'Usage',
+      Key: { userId: USER, sk: 'MONTH#2026-09' },
+    });
+    expect(month?.Update?.ConditionExpression).toBeUndefined();
+  });
+
   it('reports an active crawl on the same page', async () => {
     const { c } = client(() => {
-      throw named('TransactionCanceledException', {
-        CancellationReasons: [
-          { Code: 'ConditionalCheckFailed' },
-          { Code: 'None' },
-          { Code: 'None' },
-        ],
-      });
+      throw cancelled('ConditionalCheckFailed', 'None', 'None', 'None', 'None');
+    });
+    await expect(repo(c).request(input)).rejects.toBeInstanceOf(ActiveCrawlError);
+  });
+
+  it('reports the daily limit', async () => {
+    const { c } = client(() => {
+      throw cancelled('None', 'None', 'None', 'ConditionalCheckFailed', 'None');
+    });
+    await expect(repo(c).request(input)).rejects.toBeInstanceOf(DailyLimitError);
+  });
+
+  it('prefers the active crawl when both conditions fail (a duplicate is not counted)', async () => {
+    const { c } = client(() => {
+      throw cancelled('ConditionalCheckFailed', 'None', 'None', 'ConditionalCheckFailed', 'None');
     });
     await expect(repo(c).request(input)).rejects.toBeInstanceOf(ActiveCrawlError);
   });
 
   it('passes other failures through', async () => {
     const { c } = client(() => {
-      throw named('TransactionCanceledException', {
-        CancellationReasons: [
-          { Code: 'None' },
-          { Code: 'ConditionalCheckFailed' },
-          { Code: 'None' },
-        ],
-      });
+      throw cancelled('None', 'ConditionalCheckFailed', 'None', 'None', 'None');
     });
     await expect(repo(c).request(input)).rejects.toThrow('TransactionCanceledException');
+  });
+
+  it("reads today's count, 0 when nothing was counted", async () => {
+    const { c, send } = client(() => ({ Item: { crawls: 7 } }));
+    expect(await crawlsToday(c, 'Usage', USER, NOW)).toBe(7);
+    expect(sent<GetCommand>(send, 0).input).toMatchObject({
+      TableName: 'Usage',
+      Key: { userId: USER, sk: 'DAY#2026-09-28' },
+      ConsistentRead: true,
+    });
+    const { c: empty } = client(() => ({}));
+    expect(await crawlsToday(empty, 'Usage', USER, NOW)).toBe(0);
   });
 });
 
@@ -288,7 +333,7 @@ describe('reads', () => {
 describe('DynamoDB reserved words', () => {
   // Found on a real table: `result` is reserved, and a mocked client cannot tell. Every
   // expression the repository sends is checked for these words used without a placeholder.
-  const RESERVED = ['result', 'error', 'status', 'type', 'url', 'kind', 'name', 'source'];
+  const RESERVED = ['result', 'error', 'status', 'type', 'url', 'kind', 'name', 'source', 'ttl'];
 
   it('are never used bare in any expression', async () => {
     const { c, send } = client(() => ({ Attributes: {} }));
@@ -301,6 +346,7 @@ describe('DynamoDB reserved words', () => {
       url: 'u',
       normalizedUrl: 'u',
       audit: audit('crawl.requested'),
+      dailyLimit: 20,
       replacing: 'OLD',
     });
     await r.start(USER, 'C1');
@@ -334,5 +380,62 @@ describe('DynamoDB reserved words', () => {
         expect(expression, expression).not.toMatch(new RegExp(`(^|[^#:\\w])${word}\\b`));
       }
     }
+  });
+});
+
+describe('CrawlSettingsRepository', () => {
+  const tables = { preferences: 'Prefs', audit: 'Audit' };
+  const change = audit('crawl_limit.changed');
+
+  it("saves the user's limit with its audit entry in one transaction", async () => {
+    const { c, send } = client((cmd) => (cmd instanceof GetCommand ? {} : {}));
+    const saved = await new CrawlSettingsRepository(c, tables, () => NOW).save(USER, 5, 0, change);
+    expect(saved).toMatchObject({
+      sk: 'CRAWL_SETTINGS',
+      type: 'crawl_settings',
+      dailyLimit: 5,
+      version: 1,
+    });
+    const [put, entry] = sent<TransactWriteCommand>(send, 1).input.TransactItems ?? [];
+    expect(put?.Put).toMatchObject({
+      TableName: 'Prefs',
+      ConditionExpression: 'attribute_not_exists(userId)',
+    });
+    expect(entry?.Put).toMatchObject({ TableName: 'Audit', Item: { name: 'crawl_limit.changed' } });
+  });
+
+  it('goes back to the default with null, checking the version it read', async () => {
+    const { c, send } = client((cmd) =>
+      cmd instanceof GetCommand ? { Item: { version: 2, dailyLimit: 5, createdAt: 'then' } } : {},
+    );
+    const saved = await new CrawlSettingsRepository(c, tables, () => NOW).save(
+      USER,
+      null,
+      2,
+      change,
+    );
+    expect(saved).not.toHaveProperty('dailyLimit');
+    expect(saved).toMatchObject({ version: 3, createdAt: 'then' });
+    const put = sent<TransactWriteCommand>(send, 1).input.TransactItems?.[0]?.Put;
+    expect(put).toMatchObject({
+      ConditionExpression: 'version = :expected',
+      ExpressionAttributeValues: { ':expected': 2 },
+    });
+  });
+
+  it('refuses a stale version before writing, and a concurrent save at write time', async () => {
+    const { c, send } = client(() => ({ Item: { version: 3 } }));
+    await expect(
+      new CrawlSettingsRepository(c, tables).save(USER, 5, 2, change),
+    ).rejects.toBeInstanceOf(VersionConflictError);
+    expect(send).toHaveBeenCalledTimes(1);
+
+    const { c: racing } = client((cmd) => {
+      if (cmd instanceof GetCommand) return {};
+      throw named('TransactionCanceledException');
+    });
+    await expect(
+      new CrawlSettingsRepository(racing, tables).save(USER, 5, 0, change),
+    ).rejects.toBeInstanceOf(VersionConflictError);
   });
 });

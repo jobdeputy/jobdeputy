@@ -30,6 +30,7 @@ What is deployed today, per cell. Every table is DynamoDB on-demand (`PAY_PER_RE
 | `<stack>-sources` | `userId` (S) | `sourceId` (S) | — | — | prod only | dev: deleted; prod: kept | T06b |
 | `<stack>-crawls` | `userId` (S) | `crawlId` (S) | `NEW_IMAGE` → Pipe (only `queued` inserts; sends `userId` and `crawlId`) → queue | `ttl` (180 days) | prod only | dev: deleted; prod: kept | T06b |
 | `<stack>-audit` | `userId` (S) | `auditId` (S) | — | `ttl` (1 year) | prod only | dev: deleted; prod: kept | T06b |
+| `<stack>-usage` | `userId` (S) | `sk` (S) | — | `ttl` (`DAY#` items only: 7 days) | prod only | dev: deleted; prod: kept | T06c |
 | `<stack>-ping-jobs` | `id` (S) | — | `NEW_IMAGE` → Pipe → queue | `ttl` | — | dev: deleted; prod: kept | T04 |
 | `<stack>-idempotency` | `id` (S) | — | — | `expiration` | — | dev: deleted; prod: kept | T04 |
 
@@ -52,7 +53,9 @@ Every user-table call is keyed by the caller's `userId` from the token; no reque
 | `documents` | `PutItem` with `attribute_not_exists(userId)` | `userId`, `documentId` | `POST /me/documents` (status `pending`) |
 | `documents` | `GetItem` / conditional `UpdateItem` / `TransactWriteItems` (default switch) / `DeleteItem` | `userId`, `documentId` | `GET`, `PUT`, `DELETE /me/documents/{documentId}` |
 | `documents` | `GetItem` / `UpdateItem` conditioned on `status` or `eTag` | `userId`, `documentId` (parsed from the S3 key) | document worker |
-| `sources` + `crawls` + `audit` | `TransactWriteItems`: `UpdateItem` source with `attribute_not_exists(activeCrawlId)` (or `= :replacing`), `PutItem` crawl (`queued`), `PutItem` audit entry | `userId`, `sourceId` / `crawlId` / `auditId` | `POST /me/crawls` (a failed source condition means the page already has an active crawl, which is returned) |
+| `sources` + `crawls` + `audit` + `usage` | `TransactWriteItems`: `UpdateItem` source with `attribute_not_exists(activeCrawlId)` (or `= :replacing`), `PutItem` crawl (`queued`), `PutItem` audit entry, `UpdateItem` `DAY#<date>` with `attribute_not_exists(crawls) OR crawls < :limit`, `UpdateItem` `MONTH#<month>` | `userId`, `sourceId` / `crawlId` / `auditId` / `sk` | `POST /me/crawls` (a failed source condition means the page already has an active crawl, which is returned and not counted; a failed day condition means the daily limit is reached: 429) |
+| `usage` | `GetItem` (consistent) | `userId`, `sk = DAY#<today>` | `GET /me/crawl-settings`; the 429 message |
+| `preferences` + `audit` | `GetItem`, then `TransactWriteItems`: `PutItem` with `attribute_not_exists(userId)` or `version = :expected`, `PutItem` audit entry | `userId`, `sk = CRAWL_SETTINGS` | `GET` and `PUT /me/crawl-settings` |
 | `sources` | `GetItem` (consistent) | `userId`, `sourceId` | `POST /me/crawls`: find the active crawl |
 | `crawls` | `GetItem` (consistent) | `userId`, `crawlId` | `GET /me/crawls/{crawlId}`; `POST /me/crawls` (active crawl) |
 | `crawls` | `Query`, newest first, `Limit`, `ExclusiveStartKey` | `userId` | `GET /me/crawls` (paged) |
@@ -126,6 +129,7 @@ Work history and education are prefilled from the parsed résumé, and the user 
 | `SEARCH` | `version`, `locations L<{city?, region?, country}>`, `workplace L` (`onsite`, `hybrid`, `remote`), `employmentTypes L` (`full_time`, `contract`, …), `minSalary?` (money), `seniority L`, `excludeKeywords L` |
 | `ROLE#<roleId>` | `roleId` (ULID), `version`, `title`, `altTitles L`, `seniority L`, `locations? L` (overrides `SEARCH`), `mustHave L`, `exclude L`, `resumeDocumentId?`, `priority N`, `active B` |
 | `COMPANY_RULE#<companyId>` | `mode` (`limit`, `block`, or `prefer`), `maxJobs N`, `windowDays N` (default 30), `countsOn` (`found` now; `applied` later), `extraCompanyIds L`, `note?`. The sort key `COMPANY_RULE#*` is the user's default for companies they did not list. |
+| `CRAWL_SETTINGS` | T06c: `version`, `dailyLimit?` (the user's own daily crawl limit, 1 to the admin maximum; absent = the admin default). The limit applied is `min(dailyLimit ?? default, maximum)`, so an admin lowering the maximum always wins. |
 | `APPLY_SETTINGS` | `mode` (`off`, `review_each`, or `auto_within_rules`; default `review_each`; `auto_within_rules` arrives in Phase 2), `dailyMax N`, `alwaysReview L` (for example `cover_letter`, `custom_questions`), `quietHours? {start, end, timezone}`, `notify {email B}` |
 
 ## 3. `documents`: files
@@ -156,8 +160,8 @@ Key: `userId`, `crawlId` (ULID).
 | `sk` | Attributes |
 |---|---|
 | `COMPANY#<companyId>` | `count N`, `windowStart`, `windowDays N`, `countsOn` |
-| `DAY#<yyyy-mm-dd>` | `crawls N`, `applications N`, `ttl` (7 days). Enforces daily caps. |
-| `MONTH#<yyyy-mm>` | `crawls N`, `llmCalls N`, `inputTokens N`, `outputTokens N`, `applications N` |
+| `DAY#<yyyy-mm-dd>` | `crawls N` (T06c), `applications N`, `ttl` (7 days). Enforces daily caps. Days are UTC. |
+| `MONTH#<yyyy-mm>` | `crawls N` (T06c), `llmCalls N`, `inputTokens N`, `outputTokens N`, `applications N` |
 
 **How a found job is counted against a company rule:** the job's company and, if known, its parent company are looked up. For each matching rule, one conditional write increments `count` only while the window is current and `count < maxJobs`. If the window has expired, the same write starts a new window at 1. This stays exact even when two crawls run at once. A job that fits gets `limitState = counted`. Otherwise it gets `over_limit` and is hidden but kept. Within one crawl, the best-scoring jobs are admitted first. Counting applications later only changes `countsOn`.
 
@@ -165,7 +169,7 @@ Key: `userId`, `crawlId` (ULID).
 
 Key: `userId`, `auditId` (ULID, so entries are ordered by time). Written in the same transaction as the action it records; never changed; erased only with the account.
 
-`name` (T06b: `crawl.requested`, `crawl.succeeded`, `crawl.failed`), `entity {type, id}`, `actor` (`user` or `system`), `summary` (short, for example `Crawl failed: jobs.example.com (blocked)`), `detail? M` (IDs, codes, and sizes only), `ttl` (1 year).
+`name` (T06b: `crawl.requested`, `crawl.succeeded`, `crawl.failed`; T06c: `crawl_limit.changed`), `entity {type, id}`, `actor` (`user` or `system`), `summary` (short, for example `Crawl failed: jobs.example.com (blocked)`), `detail? M` (IDs, codes, and sizes only), `ttl` (1 year).
 
 `name` (for example `crawl.started`, `job.found`, `rule.changed`, `application.submitted`), `entity {type, id}`, `actor` (`user`, `system`, or `automation`), `summary`, `detail? M` (never secrets or sensitive answers), `ttl` (1 year).
 
@@ -255,3 +259,4 @@ Everything under `users/<userId>/` and `derived/users/<userId>/` goes with accou
 | 2026-09-28 | `documents` table and file bucket built: statuses `pending`/`processing`/`ready`/`rejected`/`failed`, `format`, `eTag`, `error`, `ttl`, and `parsed` fields; S3 `original` and `text.txt` | T05c |
 | 2026-09-28 | `events` renamed `audit` (key `auditId`); `sourceId` is a hash of the normalized URL ([0007](decisions/0007-crawler.md)); design only, tables not built yet | T06 |
 | 2026-09-28 | `sources`, `crawls` (stream), and `audit` tables built; `sources.activeCrawlId`, `crawls.result` and `lastError`; `audit` crawl entries; S3 `derived/users/…/crawls/<crawlId>/page` (30-day expiry by tag) | T06b |
+| 2026-09-28 | `usage` table built (`DAY#` and `MONTH#` `crawls`, counted in the crawl request transaction); `preferences` `CRAWL_SETTINGS` (`dailyLimit`); audit `crawl_limit.changed` | T06c |
