@@ -67,6 +67,41 @@ export async function handleDeletion(body: unknown, deps: DeletionDeps): Promise
   return 'erased';
 }
 
+/**
+ * Deletes every file under the user's two prefixes (uploads and derived files), page by
+ * page (S3 lists at most 1,000 keys at a time). A partial delete fails loudly, so the
+ * message is retried rather than the account being reported erased. Returns the count.
+ */
+export async function eraseUserFiles(
+  s3: Pick<S3Client, 'send'>,
+  bucket: string,
+  userId: string,
+): Promise<number> {
+  let deleted = 0;
+  for (const prefix of [`${SCANNED_PREFIX}${userId}/`, `${DERIVED_PREFIX}${userId}/`]) {
+    let token: string | undefined;
+    do {
+      const page = await s3.send(
+        new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: prefix,
+          ...(token ? { ContinuationToken: token } : {}),
+        }),
+      );
+      const keys = (page.Contents ?? []).flatMap((o) => (o.Key ? [{ Key: o.Key }] : []));
+      if (keys.length > 0) {
+        const res = await s3.send(
+          new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: keys, Quiet: true } }),
+        );
+        if (res.Errors?.length) throw new Error(`Could not delete ${res.Errors.length} files`);
+        deleted += keys.length;
+      }
+      token = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (token);
+  }
+  return deleted;
+}
+
 function ignoreUserNotFound(error: unknown): void {
   if ((error as Error).name !== 'UserNotFoundException') throw error;
 }
@@ -86,34 +121,7 @@ function defaultDeps(): DeletionDeps {
   return {
     account: new AccountRepository(client, USERS_TABLE_NAME),
     eraseItems: (userId) => eraseUserItems(client, tables, userId),
-    eraseFiles: async (userId) => {
-      let deleted = 0;
-      for (const prefix of [`${SCANNED_PREFIX}${userId}/`, `${DERIVED_PREFIX}${userId}/`]) {
-        let token: string | undefined;
-        do {
-          const page = await s3.send(
-            new ListObjectsV2Command({
-              Bucket: DOCUMENTS_BUCKET_NAME,
-              Prefix: prefix,
-              ...(token ? { ContinuationToken: token } : {}),
-            }),
-          );
-          const keys = (page.Contents ?? []).flatMap((o) => (o.Key ? [{ Key: o.Key }] : []));
-          if (keys.length > 0) {
-            const res = await s3.send(
-              new DeleteObjectsCommand({
-                Bucket: DOCUMENTS_BUCKET_NAME,
-                Delete: { Objects: keys, Quiet: true },
-              }),
-            );
-            if (res.Errors?.length) throw new Error(`Could not delete ${res.Errors.length} files`);
-            deleted += keys.length;
-          }
-          token = page.IsTruncated ? page.NextContinuationToken : undefined;
-        } while (token);
-      }
-      return deleted;
-    },
+    eraseFiles: (userId) => eraseUserFiles(s3, DOCUMENTS_BUCKET_NAME, userId),
     signOutAndDeleteLogin: async (username) => {
       await cognito
         .send(new AdminUserGlobalSignOutCommand({ UserPoolId: USER_POOL_ID, Username: username }))

@@ -22,7 +22,8 @@ export interface DocumentsProps {
   /** The user's audit history: the worker records each outcome there (T06d). */
   readonly auditTable: Table;
   readonly removalPolicy: RemovalPolicy;
-  readonly alarmTopic: ITopic;
+  /** Shared stacks only (see addQueueWorker). */
+  readonly alarmTopic?: ITopic | undefined;
 }
 
 const WORKER_TIMEOUT = Duration.seconds(60);
@@ -149,6 +150,8 @@ export class Documents extends Construct {
       maxReceives: DOCUMENT_MAX_RECEIVES,
       maxConcurrency: 2,
       alarmTopic: props.alarmTopic,
+      // Normal worst case: 3 attempts, each after a 6-minute visibility timeout.
+      backlogAlarmAfter: Duration.minutes(30),
     });
 
     // Only scan results for this bucket; the message is GuardDuty's event (bucket, key, ETag, result).

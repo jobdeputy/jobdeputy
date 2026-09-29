@@ -72,8 +72,10 @@ export class CellStack extends Stack {
     }
     /**
      * Shared stacks only (no owner): personal and PR stacks have no subscribers, and
-     * this keeps the account within CloudWatch's 10 free alarms (T13).
+     * this keeps the account within CloudWatch's 10 free alarms (T13). The queue
+     * workers' alarms follow the same rule (sharedAlarms).
      */
+    const sharedAlarms = props.owner ? undefined : alarmTopic;
     const alarm = (logicalId: string, metric: IMetric, description: string) =>
       new Alarm(this, logicalId, {
         alarmDescription: description,
@@ -140,7 +142,7 @@ export class CellStack extends Stack {
       table: documentsTable,
       auditTable,
       removalPolicy,
-      alarmTopic,
+      alarmTopic: sharedAlarms,
     });
 
     // T13, every stage: reserved test domains (example.com, *.test, …) can never become
@@ -211,7 +213,7 @@ export class CellStack extends Stack {
       workerTimeout: WORKER_TIMEOUT,
       maxReceives: MAX_RECEIVES,
       maxConcurrency: 2,
-      alarmTopic,
+      alarmTopic: sharedAlarms,
       queueName: `${id}-ping-jobs`,
     });
 
@@ -271,7 +273,10 @@ export class CellStack extends Stack {
       workerTimeout: Duration.seconds(120),
       maxReceives: 3,
       maxConcurrency: 2,
-      alarmTopic,
+      alarmTopic: sharedAlarms,
+      // Deletion is a legal obligation. Normal worst case: 3 attempts, 12-minute
+      // visibility each, and the final sweep's 15-minute delay.
+      backlogAlarmAfter: Duration.hours(1),
       queueName: `${id}-account-deletions`,
     });
     // The worker schedules its one final sweep on its own queue.
@@ -442,7 +447,9 @@ export class CellStack extends Stack {
       workerTimeout: CRAWL_WORKER_TIMEOUT,
       maxReceives: MAX_RECEIVES,
       maxConcurrency: 2,
-      alarmTopic,
+      alarmTopic: sharedAlarms,
+      // Normal worst case: about 6 minutes (3 attempts with 30 s and 120 s waits).
+      backlogAlarmAfter: Duration.minutes(15),
       queueName: `${id}-crawls`,
     });
 

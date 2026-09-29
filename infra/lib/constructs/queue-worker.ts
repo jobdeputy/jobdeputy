@@ -16,7 +16,16 @@ export interface QueueWorkerProps {
   readonly maxReceives: number;
   /** Maximum concurrent worker invocations (SQS event source, minimum 2). */
   readonly maxConcurrency: number;
-  readonly alarmTopic: ITopic;
+  /**
+   * Where alarms go. Shared stacks only: personal and PR stacks have no subscribers,
+   * and alarms there would use up the account's 10 free alarms (review, 2026-09-29).
+   */
+  readonly alarmTopic?: ITopic | undefined;
+  /**
+   * Alarm when the oldest message has waited this long: the worker is stuck, throttled,
+   * or failing slowly. Longer than the slowest normal path (retries and delays).
+   */
+  readonly backlogAlarmAfter?: Duration;
 }
 
 export interface QueueWorker {
@@ -52,16 +61,32 @@ export function addQueueWorker(scope: Construct, props: QueueWorkerProps): Queue
     }),
   );
 
-  new Alarm(scope, 'DeadLetterAlarm', {
-    alarmDescription: `Messages in ${props.queueName}-dlq: work failed after all retries.`,
-    metric: deadLetterQueue.metricApproximateNumberOfMessagesVisible({
-      period: Duration.minutes(5),
-    }),
-    threshold: 1,
-    evaluationPeriods: 1,
-    comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-    treatMissingData: TreatMissingData.NOT_BREACHING,
-  }).addAlarmAction(new SnsAction(props.alarmTopic));
+  if (props.alarmTopic) {
+    new Alarm(scope, 'DeadLetterAlarm', {
+      alarmDescription: `Messages in ${props.queueName}-dlq: work failed after all retries.`,
+      metric: deadLetterQueue.metricApproximateNumberOfMessagesVisible({
+        period: Duration.minutes(5),
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: TreatMissingData.NOT_BREACHING,
+    }).addAlarmAction(new SnsAction(props.alarmTopic));
+
+    if (props.backlogAlarmAfter) {
+      new Alarm(scope, 'BacklogAlarm', {
+        alarmDescription: `${props.queueName}: a message has waited over ${props.backlogAlarmAfter.toMinutes()} minutes (worker stuck or throttled). See docs/runbooks/alarms.md.`,
+        metric: queue.metricApproximateAgeOfOldestMessage({
+          period: Duration.minutes(5),
+          statistic: 'Maximum',
+        }),
+        threshold: props.backlogAlarmAfter.toSeconds(),
+        evaluationPeriods: 1,
+        comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: TreatMissingData.NOT_BREACHING,
+      }).addAlarmAction(new SnsAction(props.alarmTopic));
+    }
+  }
 
   return { queue, deadLetterQueue };
 }

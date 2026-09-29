@@ -1,8 +1,10 @@
+import { type DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import type { DeletionRequest } from '@jobdeputy/db';
 import type { SQSRecord } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
 import {
   type DeletionDeps,
+  eraseUserFiles,
   FINAL_SWEEP_DELAY_SECONDS,
   handleDeletion,
   processRecord,
@@ -94,5 +96,60 @@ describe('deletion worker', () => {
 
   it('sweeps once, 15 minutes later (the longest native SQS delay)', () => {
     expect(FINAL_SWEEP_DELAY_SECONDS).toBe(900);
+  });
+});
+
+describe('eraseUserFiles', () => {
+  const USER = '0f8fad5b-d9cb-469f-a165-70867728950e';
+  const listed = (keys: string[], next?: string) => ({
+    Contents: keys.map((Key) => ({ Key })),
+    IsTruncated: next !== undefined,
+    ...(next ? { NextContinuationToken: next } : {}),
+  });
+
+  function s3(pages: Record<string, unknown[]>, deleteResult: unknown = {}) {
+    const deletes: string[][] = [];
+    const send = vi.fn(async (cmd: ListObjectsV2Command | DeleteObjectsCommand) => {
+      if (cmd instanceof ListObjectsV2Command) {
+        return (pages[cmd.input.Prefix as string] ?? []).shift() ?? listed([]);
+      }
+      deletes.push((cmd.input.Delete?.Objects ?? []).map((o) => o.Key as string));
+      return deleteResult;
+    });
+    return { client: { send } as never, send, deletes };
+  }
+
+  it('deletes uploads and derived files, following every page (S3 lists 1,000 at a time)', async () => {
+    const up = `users/${USER}/`;
+    const derived = `derived/users/${USER}/`;
+    const { client, send, deletes } = s3({
+      [up]: [listed([`${up}a`, `${up}b`], 't1'), listed([`${up}c`])],
+      [derived]: [listed([`${derived}x`])],
+    });
+    expect(await eraseUserFiles(client, 'B', USER)).toBe(4);
+    expect(deletes).toEqual([[`${up}a`, `${up}b`], [`${up}c`], [`${derived}x`]]);
+    const second = send.mock.calls[2]?.[0] as ListObjectsV2Command;
+    expect(second.input).toMatchObject({ Prefix: up, ContinuationToken: 't1' });
+  });
+
+  it("never lists outside the user's two prefixes", async () => {
+    const { client, send } = s3({});
+    await eraseUserFiles(client, 'B', USER);
+    const prefixes = send.mock.calls.map(([c]) => (c as ListObjectsV2Command).input.Prefix);
+    expect(prefixes).toEqual([`users/${USER}/`, `derived/users/${USER}/`]);
+  });
+
+  it('does nothing and reports 0 when there are no files', async () => {
+    const { client, deletes } = s3({});
+    expect(await eraseUserFiles(client, 'B', USER)).toBe(0);
+    expect(deletes).toEqual([]);
+  });
+
+  it('fails loudly on a partial delete, so the account is not reported erased', async () => {
+    const { client } = s3(
+      { [`users/${USER}/`]: [listed([`users/${USER}/a`])] },
+      { Errors: [{ Key: 'a' }] },
+    );
+    await expect(eraseUserFiles(client, 'B', USER)).rejects.toThrow('Could not delete 1 files');
   });
 });
