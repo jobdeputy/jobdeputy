@@ -22,6 +22,10 @@ updates:
       # together (#23). Minor, patch, and security updates still come through.
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
+      # undici 8 needs Node 22.19 or later; the fetcher stays on 7 until Node 24 (#23).
+      # CI would pass it (newer Node) while local Node 22 runs would break.
+      - dependency-name: 'undici'
+        update-types: ['version-update:semver-major']
     groups:
       aws-sdk:
         patterns: ['@aws-sdk/*', '@smithy/*']

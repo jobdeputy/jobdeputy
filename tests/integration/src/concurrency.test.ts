@@ -18,8 +18,9 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
-  await Promise.all(users.map((u) => u.delete()));
-});
+  // One after another: six at once can exceed the dev API's throttle (see cleanup.ts).
+  for (const user of users) await user.delete();
+}, 180_000);
 
 async function newUser(): Promise<TestUser> {
   const user = await createTestUser(outputs);
