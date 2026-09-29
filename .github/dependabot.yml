@@ -17,6 +17,11 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # Types must match the Node.js runtime (22). Node 24 moves types and runtime
+      # together (#23). Minor, patch, and security updates still come through.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     groups:
       aws-sdk:
         patterns: ['@aws-sdk/*', '@smithy/*']
