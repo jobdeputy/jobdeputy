@@ -35,7 +35,9 @@ AWS profile for all commands below: `--profile jobdeputy-dev-iad` (dev) or the p
 
 **Meaning:** at least one API request failed with a server error in the last 5 minutes. Users may be affected.
 
-1. Find the failing Lambda: search the API functions' logs (`MeApi`, `ProfileApi`, `DocumentsApi`, `PingApi`) for `Unhandled error`. Each entry has the request ID and the error.
+1. Find the failing Lambda: search the API functions' logs (`MeApi`, `ProfileApi`, `DocumentsApi`, `CrawlsApi`, `AuditApi`, `PingApi`) for `Unhandled error`. Each entry has the request ID and the error.
+   - **No `Unhandled error` anywhere?** The 5xx came from API Gateway itself: check the Lambda `Throttles` metric (the account's concurrency limit) and API Gateway's own limits.
+   - The dev test site's deliberate errors (its "site that is down" page answers 503) never trigger this alarm: the test site is a separate API that no alarm watches (fixed on 2026-09-29, after it caused false alarms on every merge).
 2. **Right after a deploy?** Revert the last PR (a new PR with `git revert`), which deploys the previous version, then investigate.
 3. **Not after a deploy?** Check the AWS Health Dashboard for the Region and the throttling limits (API Gateway, DynamoDB, Cognito).
 4. Add a test that reproduces the error, with the fix, in the same PR.

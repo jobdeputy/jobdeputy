@@ -1,6 +1,6 @@
 import { crawlKeys, DEFAULT_CRAWL_LIMITS, DERIVED_PREFIX, SCANNED_PREFIX } from '@jobdeputy/shared';
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps, Tags } from 'aws-cdk-lib';
-import { HttpApi, HttpMethod, HttpNoneAuthorizer, HttpStage } from 'aws-cdk-lib/aws-apigatewayv2';
+import { HttpApi, HttpMethod, HttpStage } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import {
@@ -522,21 +522,33 @@ export class CellStack extends Stack {
     });
 
     if (props.stage === 'dev') {
-      // T06b, dev stacks only: fixed public pages for the crawl integration tests. The
-      // only route without a token; it holds and reads no data (an infra test keeps it
-      // out of prod).
+      // T06b, dev stacks only: fixed public pages for the crawl integration tests, holding
+      // and reading no data. Its own API, apart from the product API, so that (1) its
+      // deliberate errors (a "site that is down" answers 503) never reach the API 5xx
+      // alarm, and (2) every product API route needs a token in every stage. Infra tests
+      // keep it out of prod and out of alarms.
       const testSite = new AppFunction(this, 'TestSite', {
         entry: 'apps/api/src/test-site.ts',
         timeout: Duration.seconds(5),
         removalPolicy,
         environment: { STAGE: props.stage },
       });
-      httpApi.addRoutes({
+      const testSiteApi = new HttpApi(this, 'TestSiteApi', {
+        apiName: `${id}-test-site`,
+        createDefaultStage: false,
+      });
+      const testSiteStage = new HttpStage(this, 'TestSiteStage', {
+        httpApi: testSiteApi,
+        stageName: '$default',
+        autoDeploy: true,
+        throttle: { rateLimit: 5, burstLimit: 10 },
+      });
+      testSiteApi.addRoutes({
         path: '/test-site/{page}',
         methods: [HttpMethod.GET],
         integration: new HttpLambdaIntegration('TestSiteIntegration', testSite.fn),
-        authorizer: new HttpNoneAuthorizer(),
       });
+      new CfnOutput(this, 'TestSiteUrl', { value: testSiteStage.url });
     }
 
     new CfnOutput(this, 'ApiUrl', { value: stage.url });

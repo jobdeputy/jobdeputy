@@ -1,6 +1,6 @@
 # T06: Asynchronous crawl request pipeline
 
-- **Status:** in-review (T06a–T06c done; T06d in review)
+- **Status:** done
 - **Depends on:** T04, T05
 
 ## Goal
@@ -162,4 +162,4 @@ Agreed with the maintainer on 2026-09-28, recorded in [0007](../decisions/0007-c
 
 - [x] Submitting a URL returns a job ID without waiting for the crawl (T06b).
 - [x] Failures (unreachable, timeout, blocked, invalid URL, internal IP) end as `failed` with a reason, and each has a test (T06a, T06b).
-- [ ] T06a–T06d done.
+- [x] T06a–T06d done ([#29](https://github.com/jobdeputy/jobdeputy/pull/29), [#30](https://github.com/jobdeputy/jobdeputy/pull/30), [#31](https://github.com/jobdeputy/jobdeputy/pull/31), [#32](https://github.com/jobdeputy/jobdeputy/pull/32)).

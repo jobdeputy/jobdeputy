@@ -8,12 +8,14 @@ import { callApi, createTestUser, stackOutputs, type TestUser, waitFor } from '.
  * are unit-tested. See docs/testing.md.
  */
 let api: string;
+let testSite: string;
 let user: TestUser;
 let other: TestUser;
 
 beforeAll(async () => {
   const outputs = await stackOutputs();
   api = outputs.ApiUrl ?? '';
+  testSite = outputs.TestSiteUrl ?? '';
   [user, other] = await Promise.all([createTestUser(outputs), createTestUser(outputs)]);
 }, 60_000);
 
@@ -21,7 +23,7 @@ afterAll(async () => {
   await Promise.all([user?.delete(), other?.delete()]);
 });
 
-const site = (page: string) => new URL(`test-site/${page}`, api).href;
+const site = (page: string) => new URL(`test-site/${page}`, testSite).href;
 
 async function submit(url: string): Promise<string> {
   const res = await callApi(api, 'POST', 'me/crawls', user.accessToken, { url });

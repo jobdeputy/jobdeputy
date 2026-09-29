@@ -1,8 +1,8 @@
 # T06d: Audit for existing actions
 
-- **Status:** in-review
+- **Status:** done
 - **Depends on:** T06b (the `audit` table)
-- **Branch / PR:** `t06d-audit-existing-actions`
+- **Branch / PR:** `t06d-audit-existing-actions`, [#32](https://github.com/jobdeputy/jobdeputy/pull/32) (merged)
 
 ## Goal
 

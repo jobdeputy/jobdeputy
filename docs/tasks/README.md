@@ -15,11 +15,11 @@ Every task goes through these statuses: `planned` → `researching` → `awaitin
 | T12 | [Delete my account](t12-account-deletion.md) ([#17](https://github.com/jobdeputy/jobdeputy/issues/17)) | done | T05 |
 | T13 | [No orphaned user data](t13-no-orphaned-data.md) | done | T12 |
 | T14 | [Security and hygiene](t14-security-hygiene.md) | done | T13 |
-| T06 | [Asynchronous crawl request pipeline](t06-async-crawl-pipeline.md) | in-review | T04, T05 |
+| T06 | [Asynchronous crawl request pipeline](t06-async-crawl-pipeline.md) | done | T04, T05 |
 | T06a | [Safe fetcher](t06a-safe-fetcher.md) | done | T06 |
 | T06b | [Crawl pipeline](t06b-crawl-pipeline.md) | done | T06a |
 | T06c | [Crawl limits](t06c-crawl-limits.md) | done | T06b |
-| T06d | [Audit for existing actions](t06d-audit-existing-actions.md) | in-review | T06b |
+| T06d | [Audit for existing actions](t06d-audit-existing-actions.md) | done | T06b |
 | T07 | [Job extraction, normalization, and storage](t07-job-extraction-storage.md) | planned | T06 |
 | T08 | [Relevance filter](t08-relevance-filter.md) | planned | T05, T07 |
 | T09 | [User interface for the slice](t09-ui.md) | planned | T05, T06, T08 |

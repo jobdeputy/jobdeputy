@@ -229,8 +229,13 @@ describe('least privilege (T04)', () => {
 describe('HTTP API (T04)', () => {
   const t = devTemplate();
 
-  it('requires a Cognito token on every route but the dev test site', () => {
-    const routes = t.findResources('AWS::ApiGatewayV2::Route');
+  it('requires a Cognito token on every product API route', () => {
+    // The dev test site is a separate API (see below); the product API has no open route.
+    const routes = Object.fromEntries(
+      Object.entries(t.findResources('AWS::ApiGatewayV2::Route')).filter(
+        ([id]) => !id.startsWith('TestSiteApi'),
+      ),
+    );
     expect(
       Object.values(routes)
         .map((r) => r.Properties.RouteKey)
@@ -250,7 +255,6 @@ describe('HTTP API (T04)', () => {
       'GET /me/profile',
       'GET /me/roles',
       'GET /ping-jobs/{id}',
-      'GET /test-site/{page}',
       'POST /me/crawls',
       'POST /me/documents',
       'POST /me/roles',
@@ -294,6 +298,21 @@ describe('HTTP API (T04)', () => {
     );
     expect(handled.size).toBeGreaterThan(10);
     expect([...handled].filter((key) => !deployed.has(key))).toEqual([]);
+  });
+
+  it('serves the dev test site from its own API, which no alarm watches', () => {
+    const apis = Object.entries(t.findResources('AWS::ApiGatewayV2::Api'));
+    const site = apis.find(([id]) => id.startsWith('TestSiteApi'));
+    expect(site?.[1].Properties.Name).toBe('jobdeputy-dev-iad-test-site');
+    const siteRoutes = Object.entries(t.findResources('AWS::ApiGatewayV2::Route')).filter(([id]) =>
+      id.startsWith('TestSiteApi'),
+    );
+    expect(
+      siteRoutes.map(([, r]) => [r.Properties.RouteKey, r.Properties.AuthorizationType]),
+    ).toEqual([['GET /test-site/{page}', 'NONE']]);
+    // Its deliberate 503 ("a site that is down") must never reach an alarm.
+    const alarms = JSON.stringify(t.findResources('AWS::CloudWatch::Alarm'));
+    expect(alarms).not.toContain(site?.[0] ?? 'missing');
   });
 
   it('has no route without a token in prod (no test site)', () => {
