@@ -45,6 +45,18 @@ describe('async pipeline (T04)', () => {
     });
   });
 
+  it('creates every Pipe only after its role policy (its DLQ and queue permissions)', () => {
+    const pipes = Object.values(t.findResources('AWS::Pipes::Pipe'));
+    expect(pipes.length).toBeGreaterThanOrEqual(3);
+    for (const pipe of pipes) {
+      const dependsOn = [pipe.DependsOn ?? []].flat() as string[];
+      expect(
+        dependsOn.some((d) => /PipeRoleDefaultPolicy/.test(d)),
+        JSON.stringify(dependsOn),
+      ).toBe(true);
+    }
+  });
+
   it('retries 3 times, then dead-letters, and the worker agrees on the count', () => {
     expect(MAX_RECEIVES).toBe(3);
     expect(WORKER_MAX_RECEIVES).toBe(MAX_RECEIVES);
