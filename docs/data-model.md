@@ -187,16 +187,95 @@ Other attributes: `entity {type, id}`, `actor` (`user` or `system`), `summary` (
 
 ## 8. `jobs`: jobs found for the user
 
-Key: `userId`, `jobId`. `jobId` is a hash of the best available posting key: the ATS and its job ID; otherwise the canonical apply URL; otherwise company + title + location. So the same job is stored once per user, and a re-crawl updates it.
+Key: `userId`, `jobId`. One shape for every job, whatever it was read from (a job-board feed, schema.org data, or later an LLM); each source's own format is converted into these fields ([0008](decisions/0008-job-extraction.md)).
 
-| Group | Attributes |
-|---|---|
-| Posting | `dedupeKey`, `companyId?`, `companyName` (raw), `title`, `locations L<{city?, region?, country?}>`, `workplace?`, `employmentType?`, `seniority?`, `salary?` (`{min, max, currency, period}`), `description` (up to 32 KB), `descriptionS3Key?`, `jobUrl`, `applyUrl`, `ats?`, `externalId?`, `postedAt?`, `contentHash` |
-| Discovery | `sourceIds L`, `firstCrawlId`, `lastCrawlId`, `firstSeenAt`, `lastSeenAt`, `closedAt?`, `extraction {method (parser or llm), version}` |
-| Relevance | `scores M<roleId, N>`, `bestRoleId?`, `score N`, `reasons L` (short), `scoredAt`, `scoringVersion` |
-| User | `status` (`new`, `shortlisted`, `dismissed`, `applying`, `applied`, or `archived`), `limitState` (`counted`, `over_limit`, or `uncounted`), `companyNeedsReview B`, `starred B`, `notes?`, `applicationId?` |
+`jobId` is the first 32 hex characters of SHA-256 of `dedupeKey`, the best available posting key:
+
+1. `ats:<companyKey>:<externalId>`: the job board and its posting ID (the title or link can change; the job is the same);
+2. otherwise `url:<jobUrl>` (normalized, tracking parameters dropped);
+3. otherwise `text:<companyKey>|<title>|<first location>` (lowercase), only when one link lists several jobs.
+
+So the same job is stored once per user, and a re-crawl updates it.
+
+**Required** means every saved job has it: a listing without a title or a usable link is skipped and counted, never saved. **Optional** attributes are absent (not `null`) until known. Later tasks only add attributes; they never change a required one.
+
+### Posting: read from the site (T07b)
+
+| Attribute | Type | Required | Notes |
+|---|---|---|---|
+| `dedupeKey` | S | yes | See above |
+| `title` | S | yes | Plain text, at most 300 characters |
+| `jobUrl` | S | yes | The posting's page; `http(s)` only, passing the crawl URL rules (no private addresses, credentials, or LinkedIn) |
+| `companyKey` | S | yes | Who is hiring, until the shared company list exists ([#40](https://github.com/jobdeputy/jobdeputy/issues/40)): `greenhouse:acme`, `lever:acme`, `ashby:acme`, `workday:<host>/<site>`, or `site:<domain>`. Lowercase. |
+| `locations` | L | yes, may be empty | `{text, city?, region?, country?}`: `text` as the site wrote it; the parts only when the site gives them; `country` only as an ISO 3166 alpha-2 code. At most 20. Empty when the list only says "3 Locations". |
+| `contentHash` | S | yes | Hash of what the user reads (title, company, places, workplace, type, salary, description, apply link); a change means re-score |
+| `companyName` | S | no | As the site wrote it, at most 200 characters. Lever, Ashby, and Workday lists do not give it; the app then shows the board. |
+| `companyId` | S | no | Resolved from `companyKey` once `companies` exists ([#40](https://github.com/jobdeputy/jobdeputy/issues/40)) |
+| `applyUrl` | S | no | Only when it differs from `jobUrl`; same rules |
+| `ats` | S | no | `greenhouse`, `lever`, `ashby`, or `workday`; absent for a company's own site |
+| `externalId` | S | no | The board's posting ID (Workday: the requisition ID) |
+| `workplace` | S | no | `onsite`, `hybrid`, or `remote` |
+| `employmentType` | S | no | `full_time`, `part_time`, `contract`, `internship`, or `temporary` |
+| `salary` | M | no | A range, unlike the single-amount money convention: `{min?, max?, currency, period}`, at least one amount; `currency` ISO 4217; `period` `year`, `month`, `week`, `day`, or `hour`. Never converted. |
+| `description` | S | no | Plain text (never HTML), at most 32,000 characters. Absent when the list has none (Greenhouse, Workday): fetched later for relevant jobs only (T08). |
+| `descriptionTruncated` | B | no | Present (`true`) only when the description was cut |
+| `postedAt` | S | no | ISO 8601; absent when unknown or implausible (Workday's "30+ days ago") |
+
+### Discovery: where and when it was found (T07b, T07c)
+
+| Attribute | Type | Required | Notes |
+|---|---|---|---|
+| `sourceIds` | L | yes | Every saved page that listed it |
+| `firstCrawlId`, `lastCrawlId` | S | yes | |
+| `firstSeenAt`, `lastSeenAt` | S | yes | |
+| `extraction` | M | yes | `{method, version}`: `ats_feed` or `schema_org` now; `llm` later ([T07d](https://github.com/jobdeputy/jobdeputy/issues/41)) |
+| `closedAt` | S | no | Set when a complete crawl of the source no longer lists it (T07c), or its posting is gone when T08 fetches the description; removed if it is seen again |
+
+### Fit for the user (T08 and later)
+
+Designed with the LLM work; the shapes below are the layout, not final.
+
+| Attribute | Type | Required | Notes |
+|---|---|---|---|
+| `relevance` | M | no | T08: `{score N, bestRoleId?, byRole M<roleId, N>, reasons L (short), method, version, scoredAt}` |
+| `match` | M | no | Résumé against the job (the "ATS score"), with the LLM: `{resumeDocumentId, score N, matched L, missing L, method, version, scoredAt}` |
+| `materials` | M | no | Documents made for this job: `{resumeDocumentId?, coverLetterDocumentId?}`. The files are `documents` items (`origin: generated`, `baseDocumentId`, `jobId`), so they are listed, versioned, and deleted with the account like any document. |
+| `limitState` | S | no | With company rules ([#40](https://github.com/jobdeputy/jobdeputy/issues/40)): `counted`, `over_limit`, or `uncounted` |
+| `companyNeedsReview` | B | no | With the shared company list: set when the company cannot be resolved |
+
+### The user's own fields (T07b)
+
+A re-crawl updates only the posting and discovery groups; it never overwrites these.
+
+| Attribute | Type | Required | Notes |
+|---|---|---|---|
+| `status` | S | yes | `new` (on first save), `shortlisted`, `dismissed`, `applying`, `applied`, or `archived` |
+| `starred` | B | yes | `false` on first save |
+| `notes` | S | no | The user's own text |
+| `applicationId` | S | no | Phase 2 |
+
+### Example (abridged)
+
+```jsonc
+{
+  "userId": "…", "jobId": "bead180324ab962b9b6f84408d10f120",
+  "type": "job", "schemaVersion": 1, "createdAt": "2026-09-30T10:00:00Z", "updatedAt": "2026-09-30T10:00:00Z",
+  "dedupeKey": "ats:greenhouse:acme:4001001",
+  "title": "Backend Engineer", "companyName": "Acme Robotics", "companyKey": "greenhouse:acme",
+  "locations": [{ "text": "Dublin" }],
+  "jobUrl": "https://job-boards.greenhouse.io/acme/jobs/4001001",
+  "ats": "greenhouse", "externalId": "4001001", "postedAt": "2026-09-03T17:30:34.000Z",
+  "contentHash": "…",
+  "sourceIds": ["…"], "firstCrawlId": "01K…", "lastCrawlId": "01K…",
+  "firstSeenAt": "2026-09-30T10:00:00Z", "lastSeenAt": "2026-09-30T10:00:00Z",
+  "extraction": { "method": "ats_feed", "version": 1 },
+  "status": "new", "starred": false
+}
+```
 
 ## 9. `companies`: shared company list (public, per cell)
+
+Deferred to the first feature that needs a resolved company, such as company rules ([0008](decisions/0008-job-extraction.md), [#40](https://github.com/jobdeputy/jobdeputy/issues/40)). Until then jobs carry `companyKey`.
 
 Key: `companyId` (a slug, for example `amazon`).
 
@@ -276,3 +355,4 @@ Everything under `users/<userId>/` and `derived/users/<userId>/` goes with accou
 | 2026-09-29 | `usage` `ACTIVE` item (`crawlIds`): a per-user limit on crawls in progress at once; every transaction retries conflicts | fix after T06d |
 | 2026-09-29 | `usage` `ROLES` and `DOCUMENTS` counters (exact caps under concurrent creates; one default document) | fix after T06d |
 | 2026-09-29 | `ping-jobs` and `idempotency`: dev stacks only; `ping-jobs` items expire after 1 day (were 7), because they hold a user ID that account deletion does not reach | deep check |
+| 2026-09-29 | `jobs` layout: required and optional attributes, `dedupeKey` rules, `companyKey`, `locations` items `{text, city?, region?, country?}`, `salary` as a range, `description` as plain text (32,000 characters), `descriptionTruncated`; groups for relevance, résumé match, and generated materials; `companies` deferred ([0008](decisions/0008-job-extraction.md)); design only, table not built yet | docs |
