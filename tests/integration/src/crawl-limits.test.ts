@@ -7,11 +7,13 @@ import { callApi, createTestUser, stackOutputs, type TestUser } from './stack.js
  * Nothing here assumes the admin's values: they are read from the API.
  */
 let api: string;
+let testSite: string;
 let user: TestUser;
 
 beforeAll(async () => {
   const outputs = await stackOutputs();
   api = outputs.ApiUrl ?? '';
+  testSite = outputs.TestSiteUrl ?? '';
   user = await createTestUser(outputs);
 }, 60_000);
 
@@ -53,12 +55,12 @@ describe('daily crawl limits (deployed)', () => {
     // Two different pages fit; a third does not.
     for (const n of [1, 2]) {
       const ok = await callApi(api, 'POST', 'me/crawls', token, {
-        url: new URL(`test-site/jobs?page=${n}`, api).href,
+        url: new URL(`test-site/jobs?page=${n}`, testSite).href,
       });
       expect(ok.status, JSON.stringify(ok.body)).toBe(202);
     }
     const refused = await callApi(api, 'POST', 'me/crawls', token, {
-      url: new URL('test-site/jobs?page=3', api).href,
+      url: new URL('test-site/jobs?page=3', testSite).href,
     });
     expect(refused.status).toBe(429);
     expect(refused.body).toMatchObject({

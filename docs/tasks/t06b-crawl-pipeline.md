@@ -17,7 +17,7 @@
   - The fetched body at `derived/users/<userId>/crawls/<crawlId>/page`, deleted after 30 days (lifecycle rule).
   - A duplicate submit returns the crawl already queued or running.
   - Audit entries: `crawl.requested`, `crawl.succeeded`, `crawl.failed`, each in the same transaction as the state change.
-  - A dev-only test site: unauthenticated routes on the dev API that serve fixed pages (a job list, a redirect to `169.254.169.254`, a sign-in form, a JavaScript shell, a blocked page, a page that is down), so integration tests never depend on someone else's site. Not deployed to prod (infra test).
+  - A dev-only test site (moved to its own API after merge: its deliberate 503 set off the API 5xx alarm on every merge): unauthenticated routes that serve fixed pages (a job list, a redirect to `169.254.169.254`, a sign-in form, a JavaScript shell, a blocked page, a page that is down), so integration tests never depend on someone else's site. Not deployed to prod (infra test).
   - DLQ alarm on shared stacks; data model, physical schema, and runbook updated.
 - Out: daily limits (T06c), audit for older actions (T06d), extraction (T07).
 

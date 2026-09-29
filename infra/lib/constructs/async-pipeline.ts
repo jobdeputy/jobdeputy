@@ -55,7 +55,7 @@ export class AsyncPipeline extends Construct {
     this.queue.grantSendMessages(role);
     this.deadLetterQueue.grantSendMessages(role);
 
-    new CfnPipe(this, 'Pipe', {
+    const pipe = new CfnPipe(this, 'Pipe', {
       roleArn: role.roleArn,
       source: props.table.tableStreamArn,
       sourceParameters: {
@@ -88,5 +88,10 @@ export class AsyncPipeline extends Construct {
           : `{"id": "<$.dynamodb.Keys.${props.idAttribute}.S>"}`,
       },
     });
+    // The Pipe only references the role's ARN, so CloudFormation could create it before
+    // the role's policy exists; the Pipe then fails to validate its dead-letter queue
+    // ("Error occurred while sending message to SQS queue"). Seen on a PR stack
+    // (2026-09-29). Depending on the role includes its policy.
+    pipe.node.addDependency(role);
   }
 }

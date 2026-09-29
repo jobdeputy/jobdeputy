@@ -16,11 +16,13 @@ import {
  * and paging rules are unit-tested. See docs/testing.md.
  */
 let api: string;
+let testSite: string;
 let user: TestUser;
 
 beforeAll(async () => {
   const outputs = await stackOutputs();
   api = outputs.ApiUrl ?? '';
+  testSite = outputs.TestSiteUrl ?? '';
   await waitForMalwareScanning(outputs);
   user = await createTestUser(outputs);
 }, 360_000);
@@ -46,7 +48,7 @@ describe('delete my account (deployed)', () => {
       makePdf([['Delete me']]),
     );
     const crawl = await callApi(api, 'POST', 'me/crawls', token, {
-      url: new URL('test-site/jobs', api).href,
+      url: new URL('test-site/jobs', testSite).href,
     });
     expect(crawl.status).toBe(202);
     await waitFor(

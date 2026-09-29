@@ -19,7 +19,7 @@ Per feature, usually:
 
 **Not** in integration tests: input-validation permutations, error-message wording, or business-rule edge cases. Those are unit tests. If a new integration test only repeats a unit test through HTTP, remove it.
 
-Crawl tests fetch only the stack's own **dev-only test site** (`GET /test-site/{page}`, no token, never deployed to prod), never someone else's site, so they do not depend on or burden anyone else. They poll one list call for all their crawls, to stay well within the dev API's throttle.
+Crawl tests fetch only the stack's own **dev-only test site** (`GET /test-site/{page}` on a separate small API, output `TestSiteUrl`; no token, never deployed to prod, watched by no alarm, so its deliberate 503 page never pages anyone), never someone else's site, so they do not depend on or burden anyone else. They poll one list call for all their crawls, to stay well within the dev API's throttle.
 
 ## Rules against flaky tests
 
