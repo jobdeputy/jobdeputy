@@ -109,4 +109,33 @@ describe('account deletion (T12)', () => {
       expect(actions, fn).not.toContain('dynamodb:DeleteItem');
     }
   });
+
+  it('runs the test-data reaper daily in dev, with request-only permissions, and never in prod', () => {
+    t.hasResourceProperties('AWS::Events::Rule', {
+      ScheduleExpression: 'cron(30 4 * * ? *)',
+      Targets: [Match.objectLike({ RetryPolicy: { MaximumRetryAttempts: 2 } })],
+    });
+    const actions = [
+      ...new Set(statementsFor('TestDataReaperFn').flatMap((s) => [s.Action].flat())),
+    ].sort();
+    expect(actions).toEqual([
+      'cognito-idp:ListUsers',
+      'cognito-idp:ListUsersInGroup',
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+      'dynamodb:Scan',
+    ]);
+    // It can only request deletions, never delete.
+    expect(actions.some((a) => /Delete|BatchWrite/.test(a))).toBe(false);
+
+    for (const cell of ['iad', 'bom', 'lhr']) {
+      const prod = Template.fromStack(
+        buildApp({ stage: 'prod', env: {} }).node.findChild(`jobdeputy-prod-${cell}`) as never,
+      );
+      const reapers = Object.keys(prod.findResources('AWS::Lambda::Function')).filter((id) =>
+        id.startsWith('TestDataReaper'),
+      );
+      expect(reapers, cell).toEqual([]);
+    }
+  });
 });

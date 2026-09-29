@@ -3,7 +3,17 @@ import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps, Tags } from
 import { HttpApi, HttpMethod, HttpStage } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
+import {
+  Alarm,
+  ComparisonOperator,
+  type IMetric,
+  TreatMissingData,
+} from 'aws-cdk-lib/aws-cloudwatch';
+import { SnsAction } from 'aws-cdk-lib/aws-cloudwatch-actions';
+import { UserPoolOperation } from 'aws-cdk-lib/aws-cognito';
 import { AttributeType, BillingMode, StreamViewType, Table } from 'aws-cdk-lib/aws-dynamodb';
+import { Rule, Schedule } from 'aws-cdk-lib/aws-events';
+import { LambdaFunction } from 'aws-cdk-lib/aws-events-targets';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Topic } from 'aws-cdk-lib/aws-sns';
 import { EmailSubscription } from 'aws-cdk-lib/aws-sns-subscriptions';
@@ -58,6 +68,19 @@ export class CellStack extends Stack {
     for (const email of props.alertEmails ?? []) {
       alarmTopic.addSubscription(new EmailSubscription(email));
     }
+    /**
+     * Shared stacks only (no owner): personal and PR stacks have no subscribers, and
+     * this keeps the account within CloudWatch's 10 free alarms (T13).
+     */
+    const alarm = (logicalId: string, metric: IMetric, description: string) =>
+      new Alarm(this, logicalId, {
+        alarmDescription: description,
+        metric,
+        threshold: 1,
+        evaluationPeriods: 1,
+        comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: TreatMissingData.NOT_BREACHING,
+      }).addAlarmAction(new SnsAction(alarmTopic));
 
     const auth = new Auth(this, 'Auth', {
       namePrefix: id,
@@ -105,6 +128,16 @@ export class CellStack extends Stack {
       removalPolicy,
       alarmTopic,
     });
+
+    // T13, every stage: reserved test domains (example.com, *.test, …) can never become
+    // real accounts. Admin-created test users are allowed only in dev pools.
+    const preSignUp = new AppFunction(this, 'PreSignUp', {
+      entry: 'apps/api/src/pre-signup.ts',
+      timeout: Duration.seconds(5),
+      removalPolicy,
+      environment: { ALLOW_TEST_USERS: props.stage === 'dev' ? 'true' : 'false' },
+    });
+    auth.userPool.addTrigger(UserPoolOperation.PRE_SIGN_UP, preSignUp.fn);
 
     const pingTable = new Table(this, 'PingJobsTable', {
       tableName: `${id}-ping-jobs`,
@@ -183,15 +216,16 @@ export class CellStack extends Stack {
     auth.userPool.grant(me.fn, 'cognito-idp:AdminGetUser');
     usersTable.grant(me.fn, 'dynamodb:GetItem', 'dynamodb:PutItem');
 
+    const userTablesJson = Stack.of(this).toJsonString(
+      userTables.map(({ table, sortKey }) => ({ name: table.tableName, sortKey })),
+    );
     const deletionWorker = new AppFunction(this, 'DeletionWorker', {
       entry: 'apps/worker/src/deletion-worker.ts',
       timeout: Duration.seconds(120),
       removalPolicy,
       environment: {
         USERS_TABLE_NAME: usersTable.tableName,
-        USER_TABLES: Stack.of(this).toJsonString(
-          userTables.map(({ table, sortKey }) => ({ name: table.tableName, sortKey })),
-        ),
+        USER_TABLES: userTablesJson,
         DOCUMENTS_BUCKET_NAME: documents.bucket.bucketName,
         USER_POOL_ID: auth.userPool.userPoolId,
       },
@@ -229,6 +263,36 @@ export class CellStack extends Stack {
     // The worker schedules its one final sweep on its own queue.
     deletionWorker.fn.addEnvironment('QUEUE_URL', deletionPipeline.queue.queueUrl);
     deletionPipeline.queue.grantSendMessages(deletionWorker.fn);
+
+    if (props.stage === 'dev') {
+      // T13, dev stacks only: once a day, request deletion (T12) of test logins older than
+      // a day and of data whose login is gone. It deletes nothing itself.
+      const reaper = new AppFunction(this, 'TestDataReaper', {
+        entry: 'apps/worker/src/test-data-reaper.ts',
+        timeout: Duration.seconds(60),
+        removalPolicy,
+        environment: {
+          USERS_TABLE_NAME: usersTable.tableName,
+          USER_TABLES: userTablesJson,
+          USER_POOL_ID: auth.userPool.userPoolId,
+        },
+      });
+      auth.userPool.grant(reaper.fn, 'cognito-idp:ListUsersInGroup', 'cognito-idp:ListUsers');
+      for (const { table } of userTables) table.grant(reaper.fn, 'dynamodb:Scan');
+      usersTable.grant(reaper.fn, 'dynamodb:GetItem', 'dynamodb:PutItem');
+      new Rule(this, 'TestDataReaperSchedule', {
+        schedule: Schedule.cron({ minute: '30', hour: '4' }),
+        targets: [new LambdaFunction(reaper.fn, { retryAttempts: 2 })],
+      });
+      if (!props.owner) {
+        // Fails when the reaper breaks or finds leftovers (it reports those as an error).
+        alarm(
+          'TestDataReaperAlarm',
+          reaper.fn.metricErrors({ period: Duration.minutes(5) }),
+          'The test-data reaper failed or found leftover data. See docs/runbooks/alarms.md.',
+        );
+      }
+    }
 
     const profile = new AppFunction(this, 'ProfileApi', {
       entry: 'apps/api/src/profile.ts',
@@ -286,6 +350,13 @@ export class CellStack extends Stack {
         userPoolClients: [auth.webClient, ...(auth.testsClient ? [auth.testsClient] : [])],
       }),
     });
+    if (!props.owner) {
+      alarm(
+        'ApiServerErrorAlarm',
+        httpApi.metricServerError({ period: Duration.minutes(5) }),
+        'The API returned server errors (5xx). See docs/runbooks/alarms.md.',
+      );
+    }
     const stage = new HttpStage(this, 'DefaultStage', {
       httpApi,
       stageName: '$default',

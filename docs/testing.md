@@ -31,6 +31,11 @@ Per feature, usually:
 
 Every feature PR adds integration tests for its own feature, and the **whole** suite runs each time, so earlier features are re-checked by every change. Existing tests are only changed when behaviour is meant to change, and the PR says why.
 
+## Test data clean-up
+
+- Each test user is deleted through `DELETE /me`, which erases all of its data. If that fails, the login is still removed and the run fails (`tests/integration/src/cleanup.ts`).
+- PR stacks are deleted whole. The shared dev and personal stacks also run a daily reaper that requests deletion of stale test logins and orphaned data ([runbook](runbooks/account-deletion.md)).
+
 ## Running
 
 | Command | What |
@@ -39,6 +44,8 @@ Every feature PR adds integration tests for its own feature, and the **whole** s
 | `JD_OWNER=<you> JD_FULL=1 AWS_PROFILE=jobdeputy-dev-iad pnpm test:integration` | Integration tests against your personal stack; `JD_FULL=1` adds the queue-level tests |
 
 The full suite (`JD_FULL=1`) runs automatically:
+
+- **Every night** against the shared dev stack, even with no code changes (T13). A failure emails the alert list ([alarms runbook](runbooks/alarms.md)).
 
 - **On every PR, before merge** (required check **Integration**, T11): the PR's code is deployed to its own stack `jobdeputy-dev-pr<N>-iad`, tested, and deleted. PRs that change only Markdown pass without deploying, and a push that changes only Markdown **reuses** the previous commit's passing result instead of running again (the code is identical). PRs from forks get no AWS access; a maintainer pushes the branch to this repo after review.
 - **After every merge to `main`**, against the shared `jobdeputy-dev-iad`.

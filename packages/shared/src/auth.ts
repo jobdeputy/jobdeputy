@@ -37,3 +37,17 @@ export const ACCOUNT_DELETION_NOTICE =
 /** The message returned for any change attempted while an account is being deleted. */
 export const ACCOUNT_DELETED_DETAIL =
   'This account is being deleted, so it can no longer be changed.';
+
+/**
+ * Reserved for documentation and testing (RFC 2606 and RFC 6761): nobody can own
+ * these, so no real person can use them. Test users live here (T13).
+ */
+const RESERVED_DOMAIN = /(^|\.)(example\.(com|net|org)|test|example|invalid|localhost)$/i;
+
+export function isReservedEmailDomain(email: string): boolean {
+  const domain = email.trim().toLowerCase().split('@').pop() ?? '';
+  return RESERVED_DOMAIN.test(domain);
+}
+
+/** The Cognito group every integration-test user belongs to (dev pools only). */
+export const TEST_USERS_GROUP = 'integration-tests';

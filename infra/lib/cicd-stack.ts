@@ -71,6 +71,13 @@ export class CicdStack extends Stack {
     // at deploy time, so they cannot be named; this account holds only dev pools.
     role.addToPolicy(testUserStatement(this.region, this.account));
     role.addToPolicy(malwarePlanStatusStatement(this.region, this.account));
+    // The nightly integration run emails the alert list if it fails (T13).
+    role.addToPolicy(
+      new PolicyStatement({
+        actions: ['sns:Publish'],
+        resources: [`arn:aws:sns:${this.region}:${this.account}:${tested}-alarms`],
+      }),
+    );
     // Duplicate-delivery test: send to the stack's work queues.
     role.addToPolicy(
       new PolicyStatement({
@@ -176,6 +183,7 @@ export class CicdStack extends Stack {
 /** Create, sign in, and delete throwaway integration-test users. Nothing else in Cognito. */
 export const TEST_USER_ACTIONS = [
   'cognito-idp:AdminCreateUser',
+  'cognito-idp:AdminAddUserToGroup',
   'cognito-idp:AdminSetUserPassword',
   'cognito-idp:AdminInitiateAuth',
   'cognito-idp:AdminDeleteUser',

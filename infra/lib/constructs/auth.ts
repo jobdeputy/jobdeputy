@@ -1,6 +1,8 @@
+import { TEST_USERS_GROUP } from '@jobdeputy/shared';
 import { Duration, type RemovalPolicy } from 'aws-cdk-lib';
 import {
   AccountRecovery,
+  CfnUserPoolGroup,
   FeaturePlan,
   Mfa,
   UserPool,
@@ -76,6 +78,12 @@ export class Auth extends Construct {
     });
 
     if (props.testsClient) {
+      // Every integration-test user joins this group; the dev reaper only looks inside it (T13).
+      new CfnUserPoolGroup(this, 'TestUsersGroup', {
+        userPoolId: this.userPool.userPoolId,
+        groupName: TEST_USERS_GROUP,
+        description: 'Integration-test users only (created by CI). Never add real accounts.',
+      });
       // Admin sign-in needs AWS credentials (cognito-idp:AdminInitiateAuth); never usable from a browser.
       this.testsClient = this.userPool.addClient('TestsClient', {
         userPoolClientName: 'integration-tests',
