@@ -130,7 +130,7 @@ Key: `userId`, `documentId` (ULID).
 
 ## 4. `sources`: pages the user saved
 
-Key: `userId`, `sourceId`.
+Key: `userId`, `sourceId` (a hash of `normalizedUrl`, [0007](decisions/0007-crawler.md): the same page cannot be saved twice by one user).
 
 `url`, `normalizedUrl`, `label?`, `kind` (`company_careers`, `ats_board`, `aggregator`, `linkedin_search`, or `unknown`), `ats?` (`greenhouse`, `lever`, `workday`, `ashby`, …), `companyHint?` (`companyId`, for single-company pages), `companyConfirmed B`, `active B`, `schedule {type}` (`manual` now; `daily` later), `lastCrawlId?`, `lastCrawledAt?`, `stats {lastFound, totalJobs}`.
 
@@ -150,9 +150,9 @@ Key: `userId`, `crawlId` (ULID).
 
 **How a found job is counted against a company rule:** the job's company and, if known, its parent company are looked up. For each matching rule, one conditional write increments `count` only while the window is current and `count < maxJobs`. If the window has expired, the same write starts a new window at 1. This stays exact even when two crawls run at once. A job that fits gets `limitState = counted`. Otherwise it gets `over_limit` and is hidden but kept. Within one crawl, the best-scoring jobs are admitted first. Counting applications later only changes `countsOn`.
 
-## 7. `events`: audit trail
+## 7. `audit`: audit history (renamed from `events`, [0007](decisions/0007-crawler.md))
 
-Key: `userId`, `eventId` (ULID, so events are ordered by time).
+Key: `userId`, `auditId` (ULID, so entries are ordered by time). Written in the same transaction as the action it records; never changed; erased only with the account.
 
 `name` (for example `crawl.started`, `job.found`, `rule.changed`, `application.submitted`), `entity {type, id}`, `actor` (`user`, `system`, or `automation`), `summary`, `detail? M` (never secrets or sensitive answers), `ttl` (1 year).
 
@@ -238,3 +238,4 @@ Everything under `users/<userId>/` and `derived/users/<userId>/` goes with accou
 | 2026-09-28 | `users`: `DELETION` item, stream (filtered to `DELETION` inserts), and `ttl`; account deletion erases every table keyed by `userId` and both S3 prefixes (an infra test enforces coverage) | T12 |
 | 2026-09-28 | Extracted text moved to `derived/users/…/text.txt`, outside the scanned prefix: one malware scan per upload instead of two | T05c |
 | 2026-09-28 | `documents` table and file bucket built: statuses `pending`/`processing`/`ready`/`rejected`/`failed`, `format`, `eTag`, `error`, `ttl`, and `parsed` fields; S3 `original` and `text.txt` | T05c |
+| 2026-09-28 | `events` renamed `audit` (key `auditId`); `sourceId` is a hash of the normalized URL ([0007](decisions/0007-crawler.md)); design only, tables not built yet | T06 |
