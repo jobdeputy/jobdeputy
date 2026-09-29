@@ -35,6 +35,7 @@ Must be fixed before the prod launch. Tracked as GitHub issues with the [`releas
 | [#13](https://github.com/jobdeputy/jobdeputy/issues/13) | Send Cognito emails through SES in each prod Region |
 | [#21](https://github.com/jobdeputy/jobdeputy/issues/21) | CloudTrail: organization trail with permanent audit logs |
 | [#22](https://github.com/jobdeputy/jobdeputy/issues/22) | Production wiring: prod accounts, approval-gated deploys, prod alerts |
+| [#34](https://github.com/jobdeputy/jobdeputy/issues/34) | Safe prod deploys: gradual rollout with automatic rollback, error-rate 5xx alarm, a second alert channel, Lambda concurrency quotas |
 
 Other tracked maintenance: [#23](https://github.com/jobdeputy/jobdeputy/issues/23) (Node.js 24 before 2027-04-30), [#24](https://github.com/jobdeputy/jobdeputy/issues/24) (CDK asset garbage collection).
 
