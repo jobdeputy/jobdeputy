@@ -47,7 +47,7 @@ The full suite (`JD_FULL=1`) runs automatically:
 
 - **Every night** against the shared dev stack, even with no code changes (T13). A failure emails the alert list ([alarms runbook](runbooks/alarms.md)).
 
-- **On every PR, before merge** (required check **Integration**, T11): the PR's code is deployed to its own stack `jobdeputy-dev-pr<N>-iad`, tested, and deleted. PRs that change only Markdown pass without deploying, and a push that changes only Markdown **reuses** the previous commit's passing result instead of running again (the code is identical). PRs from forks get no AWS access; a maintainer pushes the branch to this repo after review.
+- **On every PR, before merge** (required check **Integration**, T11). Dependabot PRs run only after a maintainer adds the `safe-to-test` label ([CONTRIBUTING.md](../CONTRIBUTING.md#integration-tests-on-prs)): the PR's code is deployed to its own stack `jobdeputy-dev-pr<N>-iad`, tested, and deleted. PRs that change only Markdown pass without deploying, and a push that changes only Markdown **reuses** the previous commit's passing result instead of running again (the code is identical). PRs from forks get no AWS access; a maintainer pushes the branch to this repo after review.
 - **After every merge to `main`**, against the shared `jobdeputy-dev-iad`.
 
 Leftover PR stacks are deleted when the PR closes, and a daily job deletes any older than 24 hours.

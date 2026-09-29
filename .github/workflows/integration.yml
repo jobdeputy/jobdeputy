@@ -6,7 +6,8 @@ name: Integration
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    # labeled: a maintainer's safe-to-test label approves a Dependabot PR (below).
+    types: [opened, synchronize, reopened, labeled]
 
 permissions:
   contents: read
@@ -35,6 +36,27 @@ jobs:
           echo "::error::PRs from forks get no AWS access. A maintainer can push this branch to jobdeputy/jobdeputy after review to run the integration tests."
           exit 1
 
+      # Dependency updates bring new third-party code. GitHub gives Dependabot's own
+      # runs no secrets, and we do not want unreviewed code near AWS anyway: a
+      # maintainer reviews the PR, then adds the safe-to-test label, and that run
+      # (triggered by the maintainer) gets AWS access. Never "skip" here: a skipped
+      # required check counts as passed.
+      - name: Dependabot PRs need a maintainer's safe-to-test label
+        if: github.event.pull_request.user.login == 'dependabot[bot]'
+        env:
+          ACTOR: ${{ github.actor }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          if [ "$ACTOR" = "dependabot[bot]" ]; then
+            echo "::error::Dependabot PR: a maintainer reviews it, then adds the 'safe-to-test' label to run Integration (after new pushes, remove and re-add the label)."
+            exit 1
+          fi
+          if ! jq -e 'index("safe-to-test")' <<< "$LABELS" >/dev/null; then
+            echo "::error::Dependabot PR: add the 'safe-to-test' label after review to run Integration."
+            exit 1
+          fi
+          echo "Approved by $ACTOR with the safe-to-test label."
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -47,6 +69,8 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           BEFORE: ${{ github.event.action == 'synchronize' && github.event.before || '' }}
+          ACTION: ${{ github.event.action }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           # True only if every file changed between two commits is Markdown.
           # Fails safe: a missing commit or an empty diff counts as "not only Markdown".
@@ -56,6 +80,17 @@ jobs:
             [ -n "$files" ] || return 1
             ! grep -qvE '\.md$' <<< "$files"
           }
+
+          # 0. A label added to a (non-Dependabot) PR does not change code: if this
+          #    exact commit already passed Integration, reuse that result.
+          if [ "$ACTION" = "labeled" ] && [ "$AUTHOR" != "dependabot[bot]" ]; then
+            previous=$(gh api "repos/$REPO/commits/$HEAD_SHA/check-runs?check_name=Integration" \
+              --jq '[.check_runs[] | select(.status == "completed")] | sort_by(.completed_at) | last | .conclusion // ""')
+            if [ "$previous" = "success" ]; then
+              echo "Label added; commit ${HEAD_SHA:0:7} already passed Integration: reusing that result."
+              echo "code=false" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+          fi
 
           # 1. Nothing but Markdown in the whole PR: nothing to test.
           if only_markdown "$BASE" "$HEAD_SHA"; then
