@@ -14,3 +14,11 @@ export function documentClient(): DynamoDBDocumentClient {
 export function isConditionFailure(error: unknown): boolean {
   return error instanceof Error && error.name === 'ConditionalCheckFailedException';
 }
+
+/** A transaction was cancelled because the condition on item `index` failed. */
+export function cancelledAt(error: unknown, index: number): boolean {
+  if (!(error instanceof Error) || error.name !== 'TransactionCanceledException') return false;
+  const reasons = (error as Error & { CancellationReasons?: { Code?: string }[] })
+    .CancellationReasons;
+  return reasons?.[index]?.Code === 'ConditionalCheckFailed';
+}

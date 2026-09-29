@@ -49,6 +49,7 @@ export interface CrawlsDeps {
   /** The admin's default and maximum (T06c), cached for at most 5 minutes. */
   limits: () => Promise<CrawlLimitsConfig>;
   usedToday: (userId: string) => Promise<number>;
+  auditTable: string;
   newId: () => string;
   now: () => number;
   isBeingDeleted: (userId: string) => Promise<boolean>;
@@ -84,10 +85,8 @@ function defaultDeps(): CrawlsDeps {
       audit: AUDIT_TABLE_NAME,
       usage: USAGE_TABLE_NAME,
     }),
-    settings: new CrawlSettingsRepository(client, {
-      preferences: PREFERENCES_TABLE_NAME,
-      audit: AUDIT_TABLE_NAME,
-    }),
+    settings: new CrawlSettingsRepository(client, PREFERENCES_TABLE_NAME),
+    auditTable: AUDIT_TABLE_NAME,
     limits: ssmCrawlLimits(CRAWL_LIMITS_PARAMETER),
     usedToday: (userId) => crawlsToday(client, USAGE_TABLE_NAME, userId, new Date()),
     newId: ulid,
@@ -281,15 +280,18 @@ export async function route(event: Event, deps: CrawlsDeps): Promise<HttpRespons
       const previous = (await deps.settings.get(userId))?.dailyLimit;
       try {
         await deps.settings.save(userId, dailyLimit, version, {
-          auditId: deps.newId(),
-          name: 'crawl_limit.changed',
-          entity: { type: 'crawl_settings', id: 'CRAWL_SETTINGS' },
-          actor: 'user',
-          summary:
-            dailyLimit === null
-              ? `Daily crawl limit set back to the default (${config.dailyDefault})`
-              : `Daily crawl limit set to ${dailyLimit}`,
-          detail: { from: previous ?? 'default', to: dailyLimit ?? 'default' },
+          table: deps.auditTable,
+          entry: {
+            auditId: deps.newId(),
+            name: 'crawl_limit.changed',
+            entity: { type: 'crawl_settings', id: 'CRAWL_SETTINGS' },
+            actor: 'user',
+            summary:
+              dailyLimit === null
+                ? `Daily crawl limit set back to the default (${config.dailyDefault})`
+                : `Daily crawl limit set to ${dailyLimit}`,
+            detail: { from: previous ?? 'default', to: dailyLimit ?? 'default' },
+          },
         });
       } catch (error) {
         if (error instanceof VersionConflictError) {

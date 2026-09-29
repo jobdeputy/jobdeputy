@@ -3,7 +3,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { GetCommand, TransactWriteCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { type CrawlErrorCode, type CrawlStatus, utcDay, utcMonth } from '@jobdeputy/shared';
 import { type AuditInput, auditItem, type Page, queryNewestFirst } from './audit-repository.js';
-import { isConditionFailure } from './client.js';
+import { cancelledAt, isConditionFailure } from './client.js';
 
 /** `sources` (docs/data-model.md): a page the user saved. Keys: `userId`, `sourceId`. */
 export interface Source {
@@ -221,8 +221,8 @@ export class CrawlRepository {
       );
     } catch (error) {
       // An active crawl wins: a duplicate submit returns it and is not counted.
-      if (cancelledBy(error, SOURCE_ITEM)) throw new ActiveCrawlError();
-      if (cancelledBy(error, DAY_ITEM)) throw new DailyLimitError();
+      if (cancelledAt(error, SOURCE_ITEM)) throw new ActiveCrawlError();
+      if (cancelledAt(error, DAY_ITEM)) throw new DailyLimitError();
       throw error;
     }
     return crawl;
@@ -387,14 +387,6 @@ function trimError(error: CrawlError): CrawlError {
 /** Positions in `request`'s transaction. */
 const SOURCE_ITEM = 0;
 const DAY_ITEM = 3;
-
-/** A transaction cancelled because the condition on item `index` failed. */
-function cancelledBy(error: unknown, index: number): boolean {
-  if (!(error instanceof Error) || error.name !== 'TransactionCanceledException') return false;
-  const reasons = (error as Error & { CancellationReasons?: { Code?: string }[] })
-    .CancellationReasons;
-  return reasons?.[index]?.Code === 'ConditionalCheckFailed';
-}
 
 /** How many crawls the user has started today (UTC). */
 export async function crawlsToday(

@@ -138,6 +138,7 @@ export class CellStack extends Stack {
     const documents = new Documents(this, 'Documents', {
       namePrefix: id,
       table: documentsTable,
+      auditTable,
       removalPolicy,
       alarmTopic,
     });
@@ -314,10 +315,13 @@ export class CellStack extends Stack {
       environment: {
         USERS_TABLE_NAME: usersTable.tableName,
         PREFERENCES_TABLE_NAME: preferencesTable.tableName,
+        AUDIT_TABLE_NAME: auditTable.tableName,
         USER_POOL_ID: auth.userPool.userPoolId,
         CELL: props.cell,
       },
     });
+    // T06d: every change is recorded in the user's audit history, in the same transaction.
+    auditTable.grant(profile.fn, 'dynamodb:PutItem');
     usersTable.grant(profile.fn, 'dynamodb:GetItem', 'dynamodb:PutItem');
     preferencesTable.grant(
       profile.fn,
@@ -336,9 +340,11 @@ export class CellStack extends Stack {
         DOCUMENTS_TABLE_NAME: documentsTable.tableName,
         DOCUMENTS_BUCKET_NAME: documents.bucket.bucketName,
         USERS_TABLE_NAME: usersTable.tableName,
+        AUDIT_TABLE_NAME: auditTable.tableName,
       },
     });
     usersTable.grant(documentsApi.fn, 'dynamodb:GetItem');
+    auditTable.grant(documentsApi.fn, 'dynamodb:PutItem');
     documentsTable.grant(
       documentsApi.fn,
       'dynamodb:Query',

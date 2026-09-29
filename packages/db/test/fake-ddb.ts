@@ -1,5 +1,11 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { DeleteCommand, GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import {
+  DeleteCommand,
+  GetCommand,
+  PutCommand,
+  QueryCommand,
+  TransactWriteCommand,
+} from '@aws-sdk/lib-dynamodb';
 
 type Item = Record<string, unknown>;
 
@@ -12,12 +18,26 @@ function conditionFailed(): Error {
 /**
  * In-memory stand-in for the userId/sk tables, supporting exactly the
  * conditions the repositories use. `beforePut` lets a test simulate a
- * concurrent write between a read and a write.
+ * concurrent write between a read and a write. Transactions (T06d) put the
+ * item and its audit entry together: audit entries (any table named `audit`)
+ * are collected in `audit`, and nothing is written if a condition fails.
  */
 export function fakeTable() {
   const items = new Map<string, Item>();
+  const audit: Item[] = [];
   const key = (k: Item) => `${k.userId}|${k.sk}`;
   const hooks: { beforePut?: () => void } = {};
+
+  function putAllowed(input: PutCommand['input']): boolean {
+    const existing = items.get(key(input.Item as Item));
+    const cond = input.ConditionExpression;
+    if (cond === 'attribute_not_exists(userId)' && existing) return false;
+    if (cond === 'version = :expected') {
+      const expected = input.ExpressionAttributeValues?.[':expected'];
+      if (!existing || existing.version !== expected) return false;
+    }
+    return true;
+  }
 
   const client = {
     send: async (cmd: unknown) => {
@@ -27,15 +47,32 @@ export function fakeTable() {
       }
       if (cmd instanceof PutCommand) {
         hooks.beforePut?.();
+        if (!putAllowed(cmd.input)) throw conditionFailed();
         const item = cmd.input.Item as Item;
-        const existing = items.get(key(item));
-        const cond = cmd.input.ConditionExpression;
-        if (cond === 'attribute_not_exists(userId)' && existing) throw conditionFailed();
-        if (cond === 'version = :expected') {
-          const expected = cmd.input.ExpressionAttributeValues?.[':expected'];
-          if (!existing || existing.version !== expected) throw conditionFailed();
-        }
         items.set(key(item), structuredClone(item));
+        return {};
+      }
+      if (cmd instanceof TransactWriteCommand) {
+        hooks.beforePut?.();
+        const writes = cmd.input.TransactItems ?? [];
+        const reasons = writes.map((w) => {
+          if (w.Put?.TableName === 'audit') return 'None';
+          if (w.Put)
+            return putAllowed(w.Put as PutCommand['input']) ? 'None' : 'ConditionalCheckFailed';
+          if (w.Delete)
+            return items.has(key(w.Delete.Key as Item)) ? 'None' : 'ConditionalCheckFailed';
+          throw new Error('Unsupported transaction item');
+        });
+        if (reasons.includes('ConditionalCheckFailed')) {
+          const e = new Error('Transaction cancelled');
+          e.name = 'TransactionCanceledException';
+          throw Object.assign(e, { CancellationReasons: reasons.map((Code) => ({ Code })) });
+        }
+        for (const w of writes) {
+          if (w.Put?.TableName === 'audit') audit.push(structuredClone(w.Put.Item as Item));
+          else if (w.Put) items.set(key(w.Put.Item as Item), structuredClone(w.Put.Item as Item));
+          else if (w.Delete) items.delete(key(w.Delete.Key as Item));
+        }
         return {};
       }
       if (cmd instanceof QueryCommand) {
@@ -55,5 +92,5 @@ export function fakeTable() {
     },
   } as unknown as DynamoDBDocumentClient;
 
-  return { client, items, hooks };
+  return { client, items, audit, hooks };
 }

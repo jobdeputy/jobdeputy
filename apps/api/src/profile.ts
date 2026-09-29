@@ -22,8 +22,10 @@ import {
   validationProblem,
 } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, Context } from 'aws-lambda';
+import { ulid } from 'ulid';
 import type { z } from 'zod';
 import { refuseWritesWhileDeleting } from './account-guard.js';
+import { type UserAudit, userAudit } from './audited.js';
 import { cognitoEmailLookup } from './cognito.js';
 
 const logger = createLogger('api-profile');
@@ -37,12 +39,17 @@ export interface ProfileDeps {
   >;
   emailOf: (username: string) => Promise<string | undefined>;
   isBeingDeleted: (userId: string) => Promise<boolean>;
+  /** Every change is recorded in the user's audit history, in the same transaction (T06d). */
+  audit: UserAudit;
 }
 
 function defaultDeps(): ProfileDeps {
-  const { USERS_TABLE_NAME, PREFERENCES_TABLE_NAME, USER_POOL_ID, CELL } = process.env;
-  if (!USERS_TABLE_NAME || !PREFERENCES_TABLE_NAME || !USER_POOL_ID || !CELL) {
-    throw new Error('USERS_TABLE_NAME, PREFERENCES_TABLE_NAME, USER_POOL_ID, and CELL must be set');
+  const { USERS_TABLE_NAME, PREFERENCES_TABLE_NAME, AUDIT_TABLE_NAME, USER_POOL_ID, CELL } =
+    process.env;
+  if (!USERS_TABLE_NAME || !PREFERENCES_TABLE_NAME || !AUDIT_TABLE_NAME || !USER_POOL_ID || !CELL) {
+    throw new Error(
+      'USERS_TABLE_NAME, PREFERENCES_TABLE_NAME, AUDIT_TABLE_NAME, USER_POOL_ID, and CELL must be set',
+    );
   }
   const client = documentClient();
   const account = new AccountRepository(client, USERS_TABLE_NAME);
@@ -52,6 +59,7 @@ function defaultDeps(): ProfileDeps {
     profiles: new ProfileRepository(client, USERS_TABLE_NAME),
     preferences: new PreferencesRepository(client, PREFERENCES_TABLE_NAME),
     emailOf: cognitoEmailLookup(USER_POOL_ID),
+    audit: userAudit(AUDIT_TABLE_NAME, ulid),
   };
 }
 
@@ -118,6 +126,9 @@ export async function route(event: Event, deps: ProfileDeps): Promise<HttpRespon
           userId,
           { ...fields, ...(email ? { email } : {}), homeCell: deps.cell },
           version,
+          deps.audit('profile.saved', { type: 'profile', id: 'PROFILE' }, 'Profile saved', {
+            version: version + 1,
+          }),
         );
         return json(200, view(saved));
       }
@@ -141,7 +152,15 @@ export async function route(event: Event, deps: ProfileDeps): Promise<HttpRespon
         const input = body(searchInput);
         if (!input.ok) return input.res;
         const { version, ...fields } = input.data;
-        return json(200, view(await deps.preferences.saveSearch(userId, fields, version)));
+        const saved = await deps.preferences.saveSearch(
+          userId,
+          fields,
+          version,
+          deps.audit('search.saved', { type: 'search', id: 'SEARCH' }, 'Search settings saved', {
+            version: version + 1,
+          }),
+        );
+        return json(200, view(saved));
       }
       case 'GET /me/roles': {
         const roles = await deps.preferences.listRoles(userId);
@@ -150,14 +169,25 @@ export async function route(event: Event, deps: ProfileDeps): Promise<HttpRespon
       case 'POST /me/roles': {
         const input = body(createRoleInput);
         if (!input.ok) return input.res;
-        return json(201, view(await deps.preferences.createRole(userId, input.data, MAX_ROLES)));
+        const created = await deps.preferences.createRole(userId, input.data, MAX_ROLES, (roleId) =>
+          deps.audit(
+            'role.created',
+            { type: 'role', id: roleId },
+            `Target role added: ${input.data.title}`,
+          ),
+        );
+        return json(201, view(created));
       }
       case 'PUT /me/roles/{roleId}':
       case 'DELETE /me/roles/{roleId}': {
         const id = roleIdSchema.safeParse(event.pathParameters?.roleId);
         if (!id.success) return validationProblem(id.error, requestId);
         if (event.routeKey.startsWith('DELETE')) {
-          const deleted = await deps.preferences.deleteRole(userId, id.data);
+          const deleted = await deps.preferences.deleteRole(
+            userId,
+            id.data,
+            deps.audit('role.deleted', { type: 'role', id: id.data }, 'Target role removed'),
+          );
           return deleted
             ? { statusCode: 204, headers: {}, body: '' }
             : problem(404, 'Not found', { requestId });
@@ -165,7 +195,17 @@ export async function route(event: Event, deps: ProfileDeps): Promise<HttpRespon
         const input = body(updateRoleInput);
         if (!input.ok) return input.res;
         const { version, ...fields } = input.data;
-        const updated = await deps.preferences.updateRole(userId, id.data, fields, version);
+        const updated = await deps.preferences.updateRole(
+          userId,
+          id.data,
+          fields,
+          version,
+          deps.audit(
+            'role.updated',
+            { type: 'role', id: id.data },
+            `Target role updated: ${fields.title}`,
+          ),
+        );
         return updated ? json(200, view(updated)) : problem(404, 'Not found', { requestId });
       }
       default:
