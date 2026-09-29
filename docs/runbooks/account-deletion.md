@@ -20,9 +20,21 @@ Accounts are deleted **only** in one of these two ways, so no data is ever left 
 
 ## Checking that an account is gone
 
+Every table keyed by the user and both file prefixes, in one go (only a `DELETION` record may remain in `users`; it expires about 2 hours after the request):
+
 ```sh
-aws dynamodb query --table-name <stack>-users --key-condition-expression "userId = :u" \
-  --expression-attribute-values '{":u":{"S":"<user-id>"}}' --profile <profile>
+STACK=jobdeputy-dev-iad USER_ID=<user-id> PROFILE=jobdeputy-dev-iad
+for t in users preferences documents sources crawls audit usage; do
+  n=$(aws dynamodb query --table-name "$STACK-$t" --key-condition-expression "userId = :u" \
+    --expression-attribute-values "{\":u\":{\"S\":\"$USER_ID\"}}" --select COUNT \
+    --query Count --output text --profile "$PROFILE")
+  echo "$t: $n"
+done
+BUCKET=$(aws cloudformation describe-stacks --stack-name "$STACK" --profile "$PROFILE" \
+  --query "Stacks[0].Outputs[?OutputKey=='DocumentsBucketName'].OutputValue" --output text)
+for p in "users/$USER_ID/" "derived/users/$USER_ID/"; do
+  echo "$p: $(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "$p" --query 'length(Contents || `[]`)' --output text --profile "$PROFILE")"
+done
 ```
 
-Only the `DELETION` record should remain, and it expires about 2 hours after the request. Repeat the query for the other user tables (see [docs/data-model.md](../data-model.md)); S3 prefixes `users/<user-id>/` and `derived/users/<user-id>/` should be empty.
+Expected: `users: 1` (the `DELETION` record) or `0` once it has expired, every other table `0`, and both prefixes `0`. The table list is the one in [docs/data-model.md](../data-model.md) and in `infra/lib/cell-stack.ts` (`userTables`); a table added there must be added here.

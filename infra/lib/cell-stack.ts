@@ -155,67 +155,77 @@ export class CellStack extends Stack {
     });
     auth.userPool.addTrigger(UserPoolOperation.PRE_SIGN_UP, preSignUp.fn);
 
-    const pingTable = new Table(this, 'PingJobsTable', {
-      tableName: `${id}-ping-jobs`,
-      partitionKey: { name: 'id', type: AttributeType.STRING },
-      billingMode: BillingMode.PAY_PER_REQUEST,
-      stream: StreamViewType.NEW_IMAGE,
-      timeToLiveAttribute: 'ttl',
-      removalPolicy,
-    });
+    /**
+     * T04's test scaffolding (the async pattern with a forced-failure flag): dev stacks
+     * only, like the reaper and the test site. It stores the caller's user ID outside the
+     * user tables, so account deletion does not reach it; in dev there are only test users
+     * and items expire after a day (deep check, 2026-09-29). Prod has no ping at all.
+     */
+    let ping: { table: Table; api: AppFunction; pipeline: AsyncPipeline } | undefined;
+    if (props.stage === 'dev') {
+      const pingTable = new Table(this, 'PingJobsTable', {
+        tableName: `${id}-ping-jobs`,
+        partitionKey: { name: 'id', type: AttributeType.STRING },
+        billingMode: BillingMode.PAY_PER_REQUEST,
+        stream: StreamViewType.NEW_IMAGE,
+        timeToLiveAttribute: 'ttl',
+        removalPolicy,
+      });
 
-    const idempotencyTable = new Table(this, 'IdempotencyTable', {
-      tableName: `${id}-idempotency`,
-      partitionKey: { name: 'id', type: AttributeType.STRING },
-      billingMode: BillingMode.PAY_PER_REQUEST,
-      timeToLiveAttribute: 'expiration',
-      removalPolicy,
-    });
+      const idempotencyTable = new Table(this, 'IdempotencyTable', {
+        tableName: `${id}-idempotency`,
+        partitionKey: { name: 'id', type: AttributeType.STRING },
+        billingMode: BillingMode.PAY_PER_REQUEST,
+        timeToLiveAttribute: 'expiration',
+        removalPolicy,
+      });
 
-    const api = new AppFunction(this, 'PingApi', {
-      entry: 'apps/api/src/ping-jobs.ts',
-      timeout: Duration.seconds(10),
-      removalPolicy,
-      environment: {
-        PING_TABLE_NAME: pingTable.tableName,
-        STAGE: props.stage,
-        USERS_TABLE_NAME: usersTable.tableName,
-      },
-    });
-    usersTable.grant(api.fn, 'dynamodb:GetItem');
-    // Least privilege: only the calls each function makes.
-    pingTable.grant(api.fn, 'dynamodb:PutItem', 'dynamodb:GetItem');
+      const api = new AppFunction(this, 'PingApi', {
+        entry: 'apps/api/src/ping-jobs.ts',
+        timeout: Duration.seconds(10),
+        removalPolicy,
+        environment: {
+          PING_TABLE_NAME: pingTable.tableName,
+          STAGE: props.stage,
+          USERS_TABLE_NAME: usersTable.tableName,
+        },
+      });
+      usersTable.grant(api.fn, 'dynamodb:GetItem');
+      // Least privilege: only the calls each function makes.
+      pingTable.grant(api.fn, 'dynamodb:PutItem', 'dynamodb:GetItem');
 
-    const worker = new AppFunction(this, 'PingWorker', {
-      entry: 'apps/worker/src/ping-worker.ts',
-      timeout: WORKER_TIMEOUT,
-      removalPolicy,
-      environment: {
-        PING_TABLE_NAME: pingTable.tableName,
-        IDEMPOTENCY_TABLE_NAME: idempotencyTable.tableName,
-        STAGE: props.stage,
-      },
-    });
-    pingTable.grant(worker.fn, 'dynamodb:UpdateItem');
-    // What Powertools idempotency needs.
-    idempotencyTable.grant(
-      worker.fn,
-      'dynamodb:GetItem',
-      'dynamodb:PutItem',
-      'dynamodb:UpdateItem',
-      'dynamodb:DeleteItem',
-    );
+      const worker = new AppFunction(this, 'PingWorker', {
+        entry: 'apps/worker/src/ping-worker.ts',
+        timeout: WORKER_TIMEOUT,
+        removalPolicy,
+        environment: {
+          PING_TABLE_NAME: pingTable.tableName,
+          IDEMPOTENCY_TABLE_NAME: idempotencyTable.tableName,
+          STAGE: props.stage,
+        },
+      });
+      pingTable.grant(worker.fn, 'dynamodb:UpdateItem');
+      // What Powertools idempotency needs.
+      idempotencyTable.grant(
+        worker.fn,
+        'dynamodb:GetItem',
+        'dynamodb:PutItem',
+        'dynamodb:UpdateItem',
+        'dynamodb:DeleteItem',
+      );
 
-    const pipeline = new AsyncPipeline(this, 'PingPipeline', {
-      table: pingTable,
-      idAttribute: 'id',
-      worker: worker.fn,
-      workerTimeout: WORKER_TIMEOUT,
-      maxReceives: MAX_RECEIVES,
-      maxConcurrency: 2,
-      alarmTopic: sharedAlarms,
-      queueName: `${id}-ping-jobs`,
-    });
+      const pipeline = new AsyncPipeline(this, 'PingPipeline', {
+        table: pingTable,
+        idAttribute: 'id',
+        worker: worker.fn,
+        workerTimeout: WORKER_TIMEOUT,
+        maxReceives: MAX_RECEIVES,
+        maxConcurrency: 2,
+        alarmTopic: sharedAlarms,
+        queueName: `${id}-ping-jobs`,
+      });
+      ping = { table: pingTable, api, pipeline };
+    }
 
     const me = new AppFunction(this, 'MeApi', {
       entry: 'apps/api/src/me.ts',
@@ -484,9 +494,11 @@ export class CellStack extends Stack {
       autoDeploy: true,
       throttle: isProd ? { rateLimit: 50, burstLimit: 100 } : { rateLimit: 5, burstLimit: 10 },
     });
-    const integration = new HttpLambdaIntegration('PingIntegration', api.fn);
-    httpApi.addRoutes({ path: '/ping-jobs', methods: [HttpMethod.POST], integration });
-    httpApi.addRoutes({ path: '/ping-jobs/{id}', methods: [HttpMethod.GET], integration });
+    if (ping) {
+      const integration = new HttpLambdaIntegration('PingIntegration', ping.api.fn);
+      httpApi.addRoutes({ path: '/ping-jobs', methods: [HttpMethod.POST], integration });
+      httpApi.addRoutes({ path: '/ping-jobs/{id}', methods: [HttpMethod.GET], integration });
+    }
     httpApi.addRoutes({
       path: '/me',
       methods: [HttpMethod.GET, HttpMethod.DELETE],
@@ -577,8 +589,12 @@ export class CellStack extends Stack {
     if (auth.testsClient) {
       new CfnOutput(this, 'TestsClientId', { value: auth.testsClient.userPoolClientId });
     }
-    new CfnOutput(this, 'PingTableName', { value: pingTable.tableName });
-    new CfnOutput(this, 'PingQueueUrl', { value: pipeline.queue.queueUrl });
-    new CfnOutput(this, 'PingDeadLetterQueueUrl', { value: pipeline.deadLetterQueue.queueUrl });
+    if (ping) {
+      new CfnOutput(this, 'PingTableName', { value: ping.table.tableName });
+      new CfnOutput(this, 'PingQueueUrl', { value: ping.pipeline.queue.queueUrl });
+      new CfnOutput(this, 'PingDeadLetterQueueUrl', {
+        value: ping.pipeline.deadLetterQueue.queueUrl,
+      });
+    }
   }
 }

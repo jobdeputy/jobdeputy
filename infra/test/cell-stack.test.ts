@@ -343,6 +343,23 @@ describe('HTTP API (T04)', () => {
     expect(alarms).not.toContain(site?.[0] ?? 'missing');
   });
 
+  it('deploys the ping scaffolding in dev stacks only (it keeps user IDs outside the user tables)', () => {
+    const prod = Template.fromStack(
+      buildApp({ stage: 'prod', env: {} }).node.findChild('jobdeputy-prod-iad') as never,
+    );
+    const names = (tpl: Template) =>
+      Object.values(tpl.findResources('AWS::DynamoDB::Table')).map(
+        (r) => r.Properties.TableName as string,
+      );
+    expect(names(prod).filter((n) => /ping-jobs|idempotency/.test(n))).toEqual([]);
+    expect(JSON.stringify(prod.toJSON())).not.toMatch(/ping-jobs|ping-worker|PingPipeline/);
+    expect(
+      names(t)
+        .filter((n) => /ping-jobs|idempotency/.test(n))
+        .sort(),
+    ).toEqual(['jobdeputy-dev-iad-idempotency', 'jobdeputy-dev-iad-ping-jobs']);
+  });
+
   it('has no route without a token in prod (no test site)', () => {
     const prod = Template.fromStack(
       buildApp({ stage: 'prod', env: {} }).node.findChild('jobdeputy-prod-iad') as never,

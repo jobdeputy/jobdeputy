@@ -7,7 +7,8 @@ on:
   pull_request:
     types: [closed]
   schedule:
-    - cron: '0 3 * * *'
+    # Off the hour: GitHub delays jobs scheduled at :00 when it is busy.
+    - cron: '41 3 * * *'
   workflow_dispatch:
 
 permissions:

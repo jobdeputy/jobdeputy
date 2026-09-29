@@ -31,8 +31,8 @@ What is deployed today, per cell. Every table is DynamoDB on-demand (`PAY_PER_RE
 | `<stack>-crawls` | `userId` (S) | `crawlId` (S) | `NEW_IMAGE` → Pipe (only `queued` inserts; sends `userId` and `crawlId`) → queue | `ttl` (180 days) | prod only | dev: deleted; prod: kept | T06b |
 | `<stack>-audit` | `userId` (S) | `auditId` (S) | — | `ttl` (1 year) | prod only | dev: deleted; prod: kept | T06b |
 | `<stack>-usage` | `userId` (S) | `sk` (S) | — | `ttl` (`DAY#` items only: 7 days) | prod only | dev: deleted; prod: kept | T06c |
-| `<stack>-ping-jobs` | `id` (S) | — | `NEW_IMAGE` → Pipe → queue | `ttl` | — | dev: deleted; prod: kept | T04 |
-| `<stack>-idempotency` | `id` (S) | — | — | `expiration` | — | dev: deleted; prod: kept | T04 |
+| `<stack>-ping-jobs` | `id` (S) | — | `NEW_IMAGE` → Pipe → queue | `ttl` (1 day) | — | **dev stacks only** (deleted with the stack) | T04 |
+| `<stack>-idempotency` | `id` (S) | — | — | `expiration` | — | **dev stacks only** (used by the ping worker only) | T04 |
 
 ### Access patterns
 
@@ -237,7 +237,7 @@ Key: `userId`, `sk`. Values are encrypted in the application before they are wri
 
 ## 14–15. Infrastructure
 
-- `ping-jobs` (key `id`): `userId` (owner; only the owner can read it), `status`, `attempts`, `sideEffectCount`, `deliveries` (every queue delivery, including duplicates), `fail?` (dev-only test flag), `error?`, `ttl` (7 days).
+- `ping-jobs` (key `id`): `userId` (owner; only the owner can read it), `status`, `attempts`, `sideEffectCount`, `deliveries` (every queue delivery, including duplicates), `fail?` (dev-only test flag), `error?`, `ttl` (1 day). **Dev stacks only** (T04 test scaffolding): it holds a user ID outside the user tables, so account deletion does not reach it; in dev only test users exist, and items expire after a day.
 - `idempotency` (key `id`): Powertools' own schema, with `expiration` as its time-to-live.
 
 ## S3 layout (one bucket per cell)
@@ -275,3 +275,4 @@ Everything under `users/<userId>/` and `derived/users/<userId>/` goes with accou
 | 2026-09-28 | `audit`: entries for every change to the profile, search settings, roles, and résumés (T05 actions), each in the same transaction as the change | T06d |
 | 2026-09-29 | `usage` `ACTIVE` item (`crawlIds`): a per-user limit on crawls in progress at once; every transaction retries conflicts | fix after T06d |
 | 2026-09-29 | `usage` `ROLES` and `DOCUMENTS` counters (exact caps under concurrent creates; one default document) | fix after T06d |
+| 2026-09-29 | `ping-jobs` and `idempotency`: dev stacks only; `ping-jobs` items expire after 1 day (were 7), because they hold a user ID that account deletion does not reach | deep check |
