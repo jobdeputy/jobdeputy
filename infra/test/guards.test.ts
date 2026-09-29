@@ -136,6 +136,7 @@ describe('CI/CD deploy role', () => {
           {
             Action: [
               'cognito-idp:AdminCreateUser',
+              'cognito-idp:AdminAddUserToGroup',
               'cognito-idp:AdminSetUserPassword',
               'cognito-idp:AdminInitiateAuth',
               'cognito-idp:AdminDeleteUser',
@@ -147,6 +148,11 @@ describe('CI/CD deploy role', () => {
             Action: 'guardduty:GetMalwareProtectionPlan',
             Effect: 'Allow',
             Resource: 'arn:aws:guardduty:us-east-1:111111111111:malware-protection-plan/*',
+          },
+          {
+            Action: 'sns:Publish',
+            Effect: 'Allow',
+            Resource: 'arn:aws:sns:us-east-1:111111111111:jobdeputy-dev-iad-alarms',
           },
           {
             Action: 'sqs:SendMessage',

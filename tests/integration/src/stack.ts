@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { CloudFormationClient, DescribeStacksCommand } from '@aws-sdk/client-cloudformation';
 import {
+  AdminAddUserToGroupCommand,
   AdminCreateUserCommand,
   AdminDeleteUserCommand,
   AdminInitiateAuthCommand,
@@ -8,6 +9,7 @@ import {
   CognitoIdentityProviderClient,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { GetMalwareProtectionPlanCommand, GuardDutyClient } from '@aws-sdk/client-guardduty';
+import { cleanUpTestUser } from './cleanup.js';
 
 /**
  * Finds the stack under test by name:
@@ -35,8 +37,8 @@ export interface TestUser {
   /** Signs in again (a fresh auth_time), for example before deleting the account. */
   signIn: () => Promise<string>;
   /**
-   * Deletes the account through `DELETE /me`, so all its data goes (T12). Falls back
-   * to deleting the Cognito user directly, so a broken deletion never leaves a user behind.
+   * Deletes the account through `DELETE /me`, so all its data goes (T12). If that fails,
+   * the login is still removed and the run fails loudly (T13): see cleanup.ts.
    */
   delete: () => Promise<void>;
 }
@@ -63,12 +65,15 @@ export async function createTestUser(outputs: Record<string, string>): Promise<T
       ],
     }),
   );
-  const adminDelete = async () => {
-    await cognito
-      .send(new AdminDeleteUserCommand({ UserPoolId, Username: email }))
-      .catch((error: Error) => {
-        if (error.name !== 'UserNotFoundException') throw error;
-      });
+  /** Returns false if the user did not exist. */
+  const adminDelete = async (): Promise<boolean> => {
+    try {
+      await cognito.send(new AdminDeleteUserCommand({ UserPoolId, Username: email }));
+      return true;
+    } catch (error) {
+      if ((error as Error).name === 'UserNotFoundException') return false;
+      throw error;
+    }
   };
   const signIn = async () => {
     const auth = await cognito.send(
@@ -84,17 +89,25 @@ export async function createTestUser(outputs: Record<string, string>): Promise<T
     return token;
   };
   const deleteAccount = async () => {
-    try {
-      const res = await callApi(outputs.ApiUrl ?? '', 'DELETE', 'me', await signIn(), {
-        confirm: 'delete my account',
-      });
-      if (res.status === 202) return;
-    } catch {
-      // Already deleted, or the API is unavailable: fall through.
-    }
-    await adminDelete();
+    await cleanUpTestUser({
+      deleteViaApi: async () =>
+        (
+          await callApi(outputs.ApiUrl ?? '', 'DELETE', 'me', await signIn(), {
+            confirm: 'delete my account',
+          })
+        ).status,
+      adminDelete,
+    });
   };
   try {
+    // Marks it as a test user: the dev reaper only ever looks inside this group (T13).
+    await cognito.send(
+      new AdminAddUserToGroupCommand({
+        UserPoolId,
+        Username: email,
+        GroupName: 'integration-tests',
+      }),
+    );
     await cognito.send(
       new AdminSetUserPasswordCommand({
         UserPoolId,
@@ -105,7 +118,7 @@ export async function createTestUser(outputs: Record<string, string>): Promise<T
     );
     return { email, accessToken: await signIn(), signIn, delete: deleteAccount };
   } catch (error) {
-    await adminDelete();
+    await adminDelete().catch(() => undefined);
     throw error;
   }
 }

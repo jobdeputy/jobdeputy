@@ -1,6 +1,6 @@
 # T12: Delete my account
 
-- **Status:** in-review
+- **Status:** done
 - **Depends on:** T05
 - **Issue:** [#17](https://github.com/jobdeputy/jobdeputy/issues/17)
 - **Branch / PR:** `t12-account-deletion`

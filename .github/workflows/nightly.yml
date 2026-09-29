@@ -1,0 +1,57 @@
+name: Nightly
+
+# T13: the full integration suite runs every night against the shared dev stack,
+# even when no code changes, so nothing can break silently. A failure emails the
+# alert list (the same addresses as the AWS alarms). See docs/runbooks/alarms.md.
+#
+# GitHub disables scheduled workflows after 60 days without commits; it emails the
+# repository admins first, and one click re-enables it (runbook).
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # GitHub OIDC -> AWS, no stored keys
+
+concurrency:
+  # Never overlaps a deploy of the same stack.
+  group: deploy-dev
+  cancel-in-progress: false
+
+jobs:
+  integration:
+    name: Nightly integration (dev-iad)
+    runs-on: ubuntu-24.04
+    environment: dev
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Integration tests (full suite)
+        env:
+          JD_STACK: jobdeputy-dev-iad
+          JD_FULL: '1'
+          AWS_REGION: us-east-1
+        run: pnpm test:integration
+      - name: Email the alert list on failure
+        if: failure()
+        env:
+          JD_ACCOUNT_DEV_IAD: ${{ secrets.JD_ACCOUNT_DEV_IAD }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          aws sns publish \
+            --topic-arn "arn:aws:sns:us-east-1:${JD_ACCOUNT_DEV_IAD}:jobdeputy-dev-iad-alarms" \
+            --subject "JobDeputy nightly integration FAILED (dev-iad)" \
+            --message "The nightly integration run against jobdeputy-dev-iad failed. Details: ${RUN_URL} . What to do: docs/runbooks/alarms.md (Nightly integration failed)."

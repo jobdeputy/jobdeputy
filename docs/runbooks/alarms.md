@@ -1,0 +1,78 @@
+# Runbook: alarms and what to do
+
+Alarm emails go to the addresses in the `JD_ALERT_EMAIL` secret (GitHub `dev` environment). Alarms exist on the shared stacks (`jobdeputy-dev-iad`, and the prod cells at launch). Personal and PR stacks have none (nobody is subscribed there).
+
+AWS profile for all commands below: `--profile jobdeputy-dev-iad` (dev) or the prod account's profile.
+
+## Dead-letter queue not empty
+
+`…PingPipelineDeadLetterAlarm…`, `…DocumentsDeadLetterAlarm…`, `…DeletionPipelineDeadLetterAlarm…`
+
+**Meaning:** a job failed 3 times and was parked in the dead-letter queue (DLQ). Nothing is lost; the message waits there for 14 days.
+
+1. **Read the parked message** (it holds only IDs, never user data):
+
+   ```sh
+   aws sqs receive-message --queue-url <queue-url>-dlq --max-number-of-messages 1 --visibility-timeout 30
+   ```
+
+2. **Find the error** in the worker's logs (CloudWatch Logs, log group of `PingWorker`, `DocumentsWorker`, or `DeletionWorker`), around the time of the alarm. Search for `"level":"ERROR"` or the ID from the message.
+3. **Fix the cause** (a bug: fix it in a PR; a temporary AWS problem: nothing to fix).
+4. **Retry:** in the SQS console, open the DLQ and choose **Start DLQ redrive** (back to the source queue). Workers are safe to repeat.
+
+**Priority by queue:**
+
+| Queue | What is at stake | Priority |
+|---|---|---|
+| `account-deletions` | A user's data may not be fully erased: a legal obligation (right to erasure) | **Same day.** Fix, redrive, then verify with [account-deletion.md](account-deletion.md#checking-that-an-account-is-gone). |
+| `document-scans` | A résumé is stuck or failed; the user sees "failed, upload again" | Within a day |
+| `ping-jobs` | Test scaffolding only | Whenever convenient; usually from a forced-failure test |
+
+## API server errors (5xx)
+
+`…ApiServerErrorAlarm…`
+
+**Meaning:** at least one API request failed with a server error in the last 5 minutes. Users may be affected.
+
+1. Find the failing Lambda: search the API functions' logs (`MeApi`, `ProfileApi`, `DocumentsApi`, `PingApi`) for `Unhandled error`. Each entry has the request ID and the error.
+2. **Right after a deploy?** Revert the last PR (a new PR with `git revert`), which deploys the previous version, then investigate.
+3. **Not after a deploy?** Check the AWS Health Dashboard for the Region and the throttling limits (API Gateway, DynamoDB, Cognito).
+4. Add a test that reproduces the error, with the fix, in the same PR.
+
+## Test-data reaper failed or found leftovers (dev only)
+
+`…TestDataReaperAlarm…`
+
+**Meaning:** either the daily reaper broke, or it **found leftover data and already requested its deletion**. Leftovers mean something leaked.
+
+1. Read the reaper's log for the run (log group of `TestDataReaper`):
+   - `LeftoversFoundError: Requested deletion of X stale test login(s) and Y orphaned account(s)`: **cleaned up already**. Find out why:
+     - **Stale test logins:** a test run died before its clean-up. Check GitHub Actions for cancelled or timed-out Integration, Deploy dev, or Nightly runs around the users' creation time.
+     - **Orphaned accounts:** a login was deleted without its data, most likely by hand in the Cognito console. That is against the rule in [account-deletion.md](account-deletion.md).
+   - Any other error: the reaper itself is broken. Fix it in a PR. Nothing is lost; the next day's run catches up.
+2. The alarm returns to OK after a clean run (the next day, or invoke the reaper by hand to confirm).
+
+## Nightly integration failed
+
+An email with the subject **"JobDeputy nightly integration FAILED (dev-iad)"** and a link to the run.
+
+1. Open the run link. Read which test failed and why.
+2. **Something changed without a code change** (AWS behaviour, an expired setting, a quota): fix it and add a test that would have caught it.
+3. **The test itself is flaky:** that is a bug ([testing.md](../testing.md#rules-against-flaky-tests)). Fix it or remove it in the next PR; never just re-run until it passes.
+4. Re-run the workflow (Actions → Nightly → Run workflow) to confirm.
+
+**GitHub's 60-day rule:** GitHub disables scheduled workflows (Nightly, and the daily Integration cleanup) after 60 days with no commits. It emails the repository admins first. To re-enable: Actions → the workflow → **Enable workflow**. The AWS alarms and the dev reaper run in AWS and are not affected.
+
+## Budget alerts ($5, $10, $15) and the $20 block
+
+**Meaning:** organization-wide spending reached the amount ([0005](../decisions/0005-pre-launch-cost-guardrails.md)). At $20, a deny-all policy (`budget-stop`) is attached to the Workloads OU automatically: deploys and running services stop.
+
+1. Find what costs money: Billing → Cost Explorer, grouped by service and account.
+2. Stop the cause (delete the resource or stack) and fix it in a PR.
+3. **To lift the $20 block** (management account, after the cause is fixed):
+
+   ```sh
+   aws organizations detach-policy --policy-id <budget-stop-policy-id> --target-id <workloads-ou-id> --profile jobdeputy-mgmt
+   ```
+
+   The IDs are in `infra/bootstrap/` outputs and the maintainer's notes (not in this public repository).

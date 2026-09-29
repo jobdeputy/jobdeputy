@@ -1,17 +1,24 @@
+import { randomBytes, randomUUID } from 'node:crypto';
+import {
+  CognitoIdentityProviderClient,
+  SignUpCommand,
+} from '@aws-sdk/client-cognito-identity-provider';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { callApi, createTestUser, stackOutputs, type TestUser } from './stack.js';
+import { callApi, createTestUser, region, stackOutputs, type TestUser } from './stack.js';
 
 /**
  * Deployed auth wiring (T05): only what API Gateway and Cognito enforce.
  * Claim parsing and validation are covered by unit tests. See docs/testing.md.
  */
 let api: string;
+let webClientId: string;
 let alice: TestUser;
 let bob: TestUser;
 
 beforeAll(async () => {
   const outputs = await stackOutputs();
   api = outputs.ApiUrl ?? '';
+  webClientId = outputs.WebClientId ?? '';
   expect(api).toMatch(/^https:\/\//);
   [alice, bob] = await Promise.all([createTestUser(outputs), createTestUser(outputs)]);
 });
@@ -47,5 +54,19 @@ describe('auth (deployed)', () => {
     expect(asBob.status).toBe(404);
     const asAlice = await callApi(api, 'GET', `ping-jobs/${created.body.id}`, alice.accessToken);
     expect(asAlice.status).toBe(200);
+  });
+
+  it('refuses a real sign-up with a reserved test domain (T13)', async () => {
+    // A public sign-up, exactly as the web app would do it: no AWS credentials.
+    const email = `it-${randomUUID()}@example.com`;
+    const signUp = new CognitoIdentityProviderClient({ region }).send(
+      new SignUpCommand({
+        ClientId: webClientId,
+        Username: email,
+        Password: `${randomBytes(18).toString('base64url')}-Aa1`,
+        UserAttributes: [{ Name: 'email', Value: email }],
+      }),
+    );
+    await expect(signUp).rejects.toThrow('not allowed');
   });
 });
