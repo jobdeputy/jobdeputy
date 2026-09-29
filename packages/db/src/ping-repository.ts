@@ -22,7 +22,8 @@ export interface PingJob {
   ttl: number;
 }
 
-const TTL_SECONDS = 7 * 24 * 60 * 60;
+/** Dev-only scaffolding holding a user ID outside the user tables: keep it briefly. */
+const TTL_SECONDS = 24 * 60 * 60;
 const MAX_ERROR_LENGTH = 500;
 
 export class PingRepository {

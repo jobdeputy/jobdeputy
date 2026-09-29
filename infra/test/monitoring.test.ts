@@ -72,9 +72,9 @@ describe('monitoring (T13)', () => {
     ]);
   });
 
-  it('keeps each prod stack within the 10 free alarms (no reaper, no test site)', () => {
+  it('keeps each prod stack within the 10 free alarms (no reaper, test site, or ping)', () => {
     for (const cell of ['iad', 'bom', 'lhr']) {
-      expect(alarmIds(stack('prod', `jobdeputy-prod-${cell}`)).length, cell).toBe(8);
+      expect(alarmIds(stack('prod', `jobdeputy-prod-${cell}`)).length, cell).toBe(7);
     }
   });
 

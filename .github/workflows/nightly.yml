@@ -9,17 +9,13 @@ name: Nightly
 
 on:
   schedule:
-    - cron: '0 2 * * *'
+    # Off the hour: GitHub delays jobs scheduled at :00 when it is busy (seen: 6 hours).
+    - cron: '23 2 * * *'
   workflow_dispatch:
 
 permissions:
   contents: read
   id-token: write # GitHub OIDC -> AWS, no stored keys
-
-concurrency:
-  # Never overlaps a deploy of the same stack.
-  group: deploy-dev
-  cancel-in-progress: false
 
 jobs:
   integration:
@@ -27,6 +23,13 @@ jobs:
     runs-on: ubuntu-24.04
     environment: dev
     timeout-minutes: 45
+    # Never overlaps a deploy of the same stack. On the job, not the workflow: GitHub
+    # keeps one waiting run per group and cancels the older one, and a run cancelled
+    # before it starts runs no steps. The report job below is outside the group, so a
+    # skipped night is still reported.
+    concurrency:
+      group: deploy-dev
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -45,13 +48,34 @@ jobs:
           JD_FULL: '1'
           AWS_REGION: us-east-1
         run: pnpm test:integration
-      - name: Email the alert list on failure
-        if: failure()
+
+  report:
+    name: Report a failed or skipped night
+    needs: integration
+    # Runs whatever happened to the tests; alerts unless they passed.
+    if: always() && needs.integration.result != 'success'
+    runs-on: ubuntu-24.04
+    environment: dev
+    timeout-minutes: 5
+    steps:
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Email the alert list
         env:
           JD_ACCOUNT_DEV_IAD: ${{ secrets.JD_ACCOUNT_DEV_IAD }}
+          RESULT: ${{ needs.integration.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          if [ "$RESULT" = "failure" ]; then
+            SUBJECT="JobDeputy nightly integration FAILED (dev-iad)"
+            WHAT="failed"
+          else
+            SUBJECT="JobDeputy nightly integration DID NOT RUN (dev-iad)"
+            WHAT="did not run (result: ${RESULT}; for example cancelled while waiting behind deploys)"
+          fi
           aws sns publish \
             --topic-arn "arn:aws:sns:us-east-1:${JD_ACCOUNT_DEV_IAD}:jobdeputy-dev-iad-alarms" \
-            --subject "JobDeputy nightly integration FAILED (dev-iad)" \
-            --message "The nightly integration run against jobdeputy-dev-iad failed. Details: ${RUN_URL} . What to do: docs/runbooks/alarms.md (Nightly integration failed)."
+            --subject "$SUBJECT" \
+            --message "The nightly integration run against jobdeputy-dev-iad ${WHAT}. Details: ${RUN_URL} . What to do: docs/runbooks/alarms.md (Nightly integration failed)."

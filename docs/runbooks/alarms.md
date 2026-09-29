@@ -72,7 +72,9 @@ All queue alarms exist in shared stacks only: personal and PR stacks have no sub
 
 ## Nightly integration failed
 
-An email with the subject **"JobDeputy nightly integration FAILED (dev-iad)"** and a link to the run.
+An email with the subject **"JobDeputy nightly integration FAILED (dev-iad)"**, or **"… DID NOT RUN (dev-iad)"**, with a link to the run. Nightly is scheduled for 02:23 UTC (off the hour; GitHub may still start it late).
+
+- **DID NOT RUN:** the tests were cancelled or never started, usually because two deploys queued while Nightly waited (it never overlaps a deploy of the same stack). Re-run it (step 4). If it happens often, look at what deploys at that hour.
 
 1. Open the run link. Read which test failed and why.
 2. **Something changed without a code change** (AWS behaviour, an expired setting, a quota): fix it and add a test that would have caught it.

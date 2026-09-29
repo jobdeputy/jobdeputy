@@ -24,6 +24,7 @@ T06 lets a user submit a URL that a worker fetches from inside AWS. That raises 
 - **Polite:** robots.txt is respected for every crawl, including user-submitted URLs; an honest user agent (`JobDeputyBot`); no browser impersonation, no bot-challenge solving, no proxies. Sites that block us fail as `blocked`.
 - **No logins:** we never send cookies or credentials. A page that asks for a login (401, a redirect to a sign-in page, or a password field) fails as `login_required`; sites that always need one (LinkedIn) are refused when submitted. Crawling pages behind a login is a later decision.
 - **Per-user daily limit:** an admin default and maximum per stage in SSM Parameter Store (changeable without a deploy, read live with at most 5 minutes of caching), and an optional lower-or-equal limit chosen by the user. Users can see their limit, the maximum, and today's use.
+- **Per-user limit on crawls in progress at once** (added 2026-09-29, T06c follow-up): `maxActive` in the same admin setting (1–20, **default 1**, raisable live), enforced exactly in the crawl request transaction; past it, 429 with `Retry-After`. Per-user request throttling was not added: API Gateway has none per user, and a counter written on every request would be a contended item; the parallel and daily limits plus the API throttle bound one user.
 - **Code first, LLM last** for reading jobs (T07): known job-board data feeds, then embedded schema.org `JobPosting` data, then an LLM on the cleaned text, capped per [0002](0002-llm-loop-and-token-budget.md).
 
 **Amendments to 0006:**

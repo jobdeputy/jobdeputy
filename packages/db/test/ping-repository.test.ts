@@ -12,7 +12,7 @@ function fakeClient(send: (cmd: unknown) => unknown) {
 const NOW = new Date('2026-09-28T00:00:00.000Z');
 
 describe('PingRepository', () => {
-  it('creates a queued job that expires after 7 days, never overwriting', async () => {
+  it('creates a queued job that expires after a day, never overwriting', async () => {
     const client = fakeClient(() => ({}));
     const job = await new PingRepository(client, 'T', () => NOW).create({ userId: 'u-1' });
     expect(job).toMatchObject({
@@ -22,7 +22,7 @@ describe('PingRepository', () => {
       type: 'ping',
       userId: 'u-1',
     });
-    expect(job.ttl).toBe(NOW.getTime() / 1000 + 7 * 86400);
+    expect(job.ttl).toBe(NOW.getTime() / 1000 + 86400);
     const cmd = client.send.mock.calls[0]?.[0] as PutCommand;
     expect(cmd).toBeInstanceOf(PutCommand);
     expect(cmd.input.ConditionExpression).toBe('attribute_not_exists(id)');
