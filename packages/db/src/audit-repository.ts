@@ -31,6 +31,27 @@ export type AuditInput = Pick<
 > &
   Pick<Partial<AuditEntry>, 'detail'>;
 
+/**
+ * The audit entry a write must record (T06d): which table, and the entry without the
+ * user (the write's own user is used). Repositories put it in the same transaction as
+ * the write, so an action is never recorded without happening, or the other way round.
+ */
+export interface AuditWrite {
+  table: string;
+  entry: Omit<AuditInput, 'userId'>;
+}
+
+/** The `Put` of an audit entry, for a `TransactWriteItems` list. */
+export function auditPut(write: AuditWrite, userId: string, at: Date) {
+  return {
+    Put: {
+      TableName: write.table,
+      Item: auditItem({ ...write.entry, userId }, at),
+      ConditionExpression: 'attribute_not_exists(userId)',
+    },
+  };
+}
+
 /** An entry ready to `Put` inside the caller's transaction. */
 export function auditItem(input: AuditInput, at: Date): AuditEntry {
   return {

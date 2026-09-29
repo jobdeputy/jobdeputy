@@ -170,3 +170,18 @@ describe('crawl limits (T06c)', () => {
     expect(actionsOn(worker, 'PreferencesTable')).toEqual([]);
   });
 });
+
+describe('audit history for every action (T06d)', () => {
+  it('lets each function that changes user data write audit entries, and only add them', () => {
+    for (const fn of [
+      'ProfileApiFn',
+      'DocumentsApiFn',
+      'DocumentsWorkerFn',
+      'CrawlsApiFn',
+      'CrawlWorkerFn',
+    ]) {
+      expect(actionsOn(statementsFor(fn), 'AuditTable'), fn).toEqual(['dynamodb:PutItem']);
+    }
+    expect(actionsOn(statementsFor('AuditApiFn'), 'AuditTable')).toEqual(['dynamodb:Query']);
+  });
+});

@@ -1,6 +1,6 @@
 # T06: Asynchronous crawl request pipeline
 
-- **Status:** in-progress (split into T06a–T06d)
+- **Status:** in-review (T06a–T06c done; T06d in review)
 - **Depends on:** T04, T05
 
 ## Goal
@@ -160,6 +160,6 @@ Agreed with the maintainer on 2026-09-28, recorded in [0007](../decisions/0007-c
 
 ## Done when
 
-- [ ] Submitting a URL returns a job ID without waiting for the crawl (T06b).
-- [ ] Failures (unreachable, timeout, blocked, invalid URL, internal IP) end as `failed` with a reason, and each has a test (T06a, T06b).
+- [x] Submitting a URL returns a job ID without waiting for the crawl (T06b).
+- [x] Failures (unreachable, timeout, blocked, invalid URL, internal IP) end as `failed` with a reason, and each has a test (T06a, T06b).
 - [ ] T06a–T06d done.

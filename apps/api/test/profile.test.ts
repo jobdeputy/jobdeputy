@@ -24,6 +24,10 @@ function event(
 
 function deps() {
   const d = {
+    audit: vi.fn((name: string, entity: { type: string; id: string }, summary: string) => ({
+      table: 'Audit',
+      entry: { auditId: 'A', name, entity, actor: 'user' as const, summary },
+    })),
     cell: 'iad',
     isBeingDeleted: vi.fn(async () => false),
     emailOf: vi.fn(async () => 'a@example.com'),
@@ -80,6 +84,10 @@ describe('profile', () => {
       'user-a',
       expect.objectContaining({ firstName: 'Ada', email: 'a@example.com', homeCell: 'iad' }),
       0,
+      {
+        table: 'Audit',
+        entry: expect.objectContaining({ name: 'profile.saved', summary: 'Profile saved' }),
+      },
     );
     const body = JSON.parse(res.body);
     expect(body.version).toBe(1);
@@ -128,6 +136,7 @@ describe('search settings', () => {
       'user-a',
       expect.objectContaining({ workplace: ['remote'] }),
       0,
+      { table: 'Audit', entry: expect.objectContaining({ name: 'search.saved' }) },
     );
   });
 });
@@ -141,7 +150,47 @@ describe('roles', () => {
       'user-a',
       expect.objectContaining({ title: 'Backend Engineer' }),
       10,
+      expect.any(Function),
     );
+    // The entry names the new role (its ID is only known inside the repository).
+    const call = vi.mocked(d.preferences.createRole).mock.calls[0] as unknown[];
+    const auditFor = call[3] as (id: string) => unknown;
+    expect(auditFor('R1')).toMatchObject({
+      entry: {
+        name: 'role.created',
+        entity: { type: 'role', id: 'R1' },
+        summary: 'Target role added: Backend Engineer',
+      },
+    });
+  });
+
+  it('audits role updates and removals with the role ID', async () => {
+    const d = deps();
+    const id = { pathParameters: { roleId: ROLE_ID } };
+    await route(
+      event('PUT /me/roles/{roleId}', {
+        ...id,
+        body: JSON.stringify({ version: 1, title: 'Staff Engineer' }),
+      }),
+      d,
+    );
+    await route(event('DELETE /me/roles/{roleId}', id), d);
+    const update = (vi.mocked(d.preferences.updateRole).mock.calls[0] as unknown[])[4];
+    const remove = (vi.mocked(d.preferences.deleteRole).mock.calls[0] as unknown[])[2];
+    expect(update).toMatchObject({
+      entry: {
+        name: 'role.updated',
+        entity: { type: 'role', id: ROLE_ID },
+        summary: 'Target role updated: Staff Engineer',
+      },
+    });
+    expect(remove).toMatchObject({
+      entry: {
+        name: 'role.deleted',
+        entity: { type: 'role', id: ROLE_ID },
+        summary: 'Target role removed',
+      },
+    });
   });
 
   it('returns 422 past the role limit', async () => {

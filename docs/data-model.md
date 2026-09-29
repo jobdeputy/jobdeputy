@@ -41,18 +41,18 @@ Every user-table call is keyed by the caller's `userId` from the token; no reque
 | Table | Operation | Key | Used by |
 |---|---|---|---|
 | `users` | `GetItem` (consistent) | `userId`, `sk = PROFILE` | `GET` and `PUT /me/profile` |
-| `users` | `PutItem` with `attribute_not_exists(userId)` or `version = :expected` | `userId`, `sk = PROFILE` | `PUT /me/profile` |
+| `users` + `audit` | `TransactWriteItems`: `PutItem` with `attribute_not_exists(userId)` or `version = :expected`, `PutItem` audit entry | `userId`, `sk = PROFILE` | `PUT /me/profile` |
 | `users` | `PutItem` with `attribute_not_exists(userId)` | `userId`, `sk = DELETION` | `DELETE /me` (T12) |
 | `users` | `GetItem` | `userId`, `sk = DELETION` | every write route: refused with 410 while it exists; `GET /me` |
 | every user table | `Query` (keys only) + `BatchWriteItem` deletes, paged | `userId` | deletion worker: erases everything but the `DELETION` item |
-| `preferences` | `GetItem` / conditional `PutItem` | `userId`, `sk = SEARCH` | `/me/preferences/search` |
+| `preferences` (+ `audit`) | `GetItem` / conditional `PutItem` with its audit entry (one transaction) | `userId`, `sk = SEARCH` | `/me/preferences/search` |
 | `preferences` | `Query` `begins_with(sk, "ROLE#")` (consistent) | `userId` | `GET /me/roles`; role count before `POST` |
-| `preferences` | `GetItem` / conditional `PutItem` | `userId`, `sk = ROLE#<roleId>` | `POST`, `PUT /me/roles/{roleId}` |
-| `preferences` | `DeleteItem` with `attribute_exists(userId)` | `userId`, `sk = ROLE#<roleId>` | `DELETE /me/roles/{roleId}` |
+| `preferences` (+ `audit`) | `GetItem` / conditional `PutItem` with its audit entry (one transaction) | `userId`, `sk = ROLE#<roleId>` | `POST`, `PUT /me/roles/{roleId}` |
+| `preferences` + `audit` | `TransactWriteItems`: `DeleteItem` with `attribute_exists(userId)`, `PutItem` audit entry | `userId`, `sk = ROLE#<roleId>` | `DELETE /me/roles/{roleId}` |
 | `documents` | `Query` (consistent) | `userId` | `GET /me/documents`; count before upload; clearing the old default |
-| `documents` | `PutItem` with `attribute_not_exists(userId)` | `userId`, `documentId` | `POST /me/documents` (status `pending`) |
-| `documents` | `GetItem` / conditional `UpdateItem` / `TransactWriteItems` (default switch) / `DeleteItem` | `userId`, `documentId` | `GET`, `PUT`, `DELETE /me/documents/{documentId}` |
-| `documents` | `GetItem` / `UpdateItem` conditioned on `status` or `eTag` | `userId`, `documentId` (parsed from the S3 key) | document worker |
+| `documents` + `audit` | `TransactWriteItems`: `PutItem` with `attribute_not_exists(userId)`, `PutItem` audit entry | `userId`, `documentId` | `POST /me/documents` (status `pending`) |
+| `documents` + `audit` | `GetItem`; `TransactWriteItems` of the conditional `UpdateItem` (rename; the default switch's updates) or `DeleteItem`, with the audit entry; then a consistent `GetItem` of the result | `userId`, `documentId` | `GET`, `PUT`, `DELETE /me/documents/{documentId}` |
+| `documents` (+ `audit`) | `GetItem`; `TransactWriteItems` of an `UpdateItem` conditioned on `status` or `eTag` (with an audit entry for `ready`, `rejected`, `failed`) | `userId`, `documentId` (parsed from the S3 key) | document worker |
 | `sources` + `crawls` + `audit` + `usage` | `TransactWriteItems`: `UpdateItem` source with `attribute_not_exists(activeCrawlId)` (or `= :replacing`), `PutItem` crawl (`queued`), `PutItem` audit entry, `UpdateItem` `DAY#<date>` with `attribute_not_exists(crawls) OR crawls < :limit`, `UpdateItem` `MONTH#<month>` | `userId`, `sourceId` / `crawlId` / `auditId` / `sk` | `POST /me/crawls` (a failed source condition means the page already has an active crawl, which is returned and not counted; a failed day condition means the daily limit is reached: 429) |
 | `usage` | `GetItem` (consistent) | `userId`, `sk = DAY#<today>` | `GET /me/crawl-settings`; the 429 message |
 | `preferences` + `audit` | `GetItem`, then `TransactWriteItems`: `PutItem` with `attribute_not_exists(userId)` or `version = :expected`, `PutItem` audit entry | `userId`, `sk = CRAWL_SETTINGS` | `GET` and `PUT /me/crawl-settings` |
@@ -169,7 +169,13 @@ Key: `userId`, `crawlId` (ULID).
 
 Key: `userId`, `auditId` (ULID, so entries are ordered by time). Written in the same transaction as the action it records; never changed; erased only with the account.
 
-`name` (T06b: `crawl.requested`, `crawl.succeeded`, `crawl.failed`; T06c: `crawl_limit.changed`), `entity {type, id}`, `actor` (`user` or `system`), `summary` (short, for example `Crawl failed: jobs.example.com (blocked)`), `detail? M` (IDs, codes, and sizes only), `ttl` (1 year).
+`name`: every change to the user's data (T06d), written in the same transaction as the change; a failed change writes none:
+
+- by the user: `profile.saved`, `search.saved`, `role.created`, `role.updated`, `role.deleted`, `document.upload_started`, `document.renamed`, `document.default_changed`, `document.deleted`, `crawl.requested`, `crawl_limit.changed`;
+- by the system: `document.ready`, `document.rejected`, `document.failed`, `crawl.succeeded`, `crawl.failed`;
+- not recorded: account deletion (it erases the history too) and internal steps (a document starting processing, a crawl attempt starting).
+
+Other attributes: `entity {type, id}`, `actor` (`user` or `system`), `summary` (short, for example `Crawl failed: jobs.example.com (blocked)`), `detail? M` (IDs, codes, and sizes only), `ttl` (1 year).
 
 `name` (for example `crawl.started`, `job.found`, `rule.changed`, `application.submitted`), `entity {type, id}`, `actor` (`user`, `system`, or `automation`), `summary`, `detail? M` (never secrets or sensitive answers), `ttl` (1 year).
 
@@ -260,3 +266,4 @@ Everything under `users/<userId>/` and `derived/users/<userId>/` goes with accou
 | 2026-09-28 | `events` renamed `audit` (key `auditId`); `sourceId` is a hash of the normalized URL ([0007](decisions/0007-crawler.md)); design only, tables not built yet | T06 |
 | 2026-09-28 | `sources`, `crawls` (stream), and `audit` tables built; `sources.activeCrawlId`, `crawls.result` and `lastError`; `audit` crawl entries; S3 `derived/users/…/crawls/<crawlId>/page` (30-day expiry by tag) | T06b |
 | 2026-09-28 | `usage` table built (`DAY#` and `MONTH#` `crawls`, counted in the crawl request transaction); `preferences` `CRAWL_SETTINGS` (`dailyLimit`); audit `crawl_limit.changed` | T06c |
+| 2026-09-28 | `audit`: entries for every change to the profile, search settings, roles, and résumés (T05 actions), each in the same transaction as the change | T06d |

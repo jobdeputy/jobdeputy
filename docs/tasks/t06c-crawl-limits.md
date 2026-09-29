@@ -1,8 +1,8 @@
 # T06c: Crawl limits
 
-- **Status:** in-review
+- **Status:** done
 - **Depends on:** T06b
-- **Branch / PR:** `t06c-crawl-limits`
+- **Branch / PR:** `t06c-crawl-limits`, [#31](https://github.com/jobdeputy/jobdeputy/pull/31) (merged)
 
 ## Goal
 

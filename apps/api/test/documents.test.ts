@@ -46,6 +46,10 @@ const doc = (over: Partial<Document> = {}): Document => ({
 
 function deps() {
   const d = {
+    audit: vi.fn((name: string, entity: { type: string; id: string }, summary: string) => ({
+      table: 'Audit',
+      entry: { auditId: 'A', name, entity, actor: 'user' as const, summary },
+    })),
     newId: () => ID,
     isBeingDeleted: vi.fn(async () => false),
     presignUpload: vi.fn(async () => ({
@@ -85,6 +89,7 @@ describe('POST /me/documents', () => {
         format: 'pdf',
         isDefault: true,
       }),
+      { table: 'Audit', entry: expect.objectContaining({ name: 'document.upload_started' }) },
     );
     expect(d.presignUpload).toHaveBeenCalledWith(`users/user-a/documents/${ID}/original`, PDF);
     const out = JSON.parse(res.body);
@@ -97,7 +102,10 @@ describe('POST /me/documents', () => {
     const d = deps();
     d.repo.list.mockResolvedValueOnce([doc({ documentId: 'OTHER', isDefault: true })]);
     await route(event('POST /me/documents', body({ fileName: 'b.pdf', contentType: PDF })), d);
-    expect(d.repo.create).toHaveBeenCalledWith(expect.objectContaining({ isDefault: false }));
+    expect(d.repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ isDefault: false }),
+      expect.anything(),
+    );
   });
 
   it('refuses an 11th document', async () => {
@@ -196,8 +204,17 @@ describe('changing documents', () => {
       d,
     );
     expect(res.statusCode).toBe(200);
-    expect(d.repo.rename).toHaveBeenCalledWith('user-a', ID, 'New', 1);
-    expect(d.repo.setDefault).toHaveBeenCalledWith('user-a', ID, 2);
+    const audited = (name: string) => ({
+      table: 'Audit',
+      entry: expect.objectContaining({ name, entity: { type: 'document', id: ID } }),
+    });
+    expect(d.repo.rename).toHaveBeenCalledWith('user-a', ID, 'New', 1, audited('document.renamed'));
+    expect(d.repo.setDefault).toHaveBeenCalledWith(
+      'user-a',
+      ID,
+      2,
+      audited('document.default_changed'),
+    );
   });
 
   it('returns 409 on a conflict', async () => {
@@ -213,6 +230,10 @@ describe('changing documents', () => {
   it('deletes the item and both files', async () => {
     const d = deps();
     expect((await route(event('DELETE /me/documents/{documentId}', path), d)).statusCode).toBe(204);
+    expect(d.repo.delete).toHaveBeenCalledWith('user-a', ID, {
+      table: 'Audit',
+      entry: expect.objectContaining({ name: 'document.deleted', summary: 'Résumé deleted' }),
+    });
     expect(d.deleteFiles).toHaveBeenCalledWith([
       `users/user-a/documents/${ID}/original`,
       `derived/users/user-a/documents/${ID}/text.txt`,

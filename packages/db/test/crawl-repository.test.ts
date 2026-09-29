@@ -384,12 +384,11 @@ describe('DynamoDB reserved words', () => {
 });
 
 describe('CrawlSettingsRepository', () => {
-  const tables = { preferences: 'Prefs', audit: 'Audit' };
-  const change = audit('crawl_limit.changed');
+  const change = { table: 'Audit', entry: audit('crawl_limit.changed') };
 
   it("saves the user's limit with its audit entry in one transaction", async () => {
     const { c, send } = client((cmd) => (cmd instanceof GetCommand ? {} : {}));
-    const saved = await new CrawlSettingsRepository(c, tables, () => NOW).save(USER, 5, 0, change);
+    const saved = await new CrawlSettingsRepository(c, 'Prefs', () => NOW).save(USER, 5, 0, change);
     expect(saved).toMatchObject({
       sk: 'CRAWL_SETTINGS',
       type: 'crawl_settings',
@@ -408,7 +407,7 @@ describe('CrawlSettingsRepository', () => {
     const { c, send } = client((cmd) =>
       cmd instanceof GetCommand ? { Item: { version: 2, dailyLimit: 5, createdAt: 'then' } } : {},
     );
-    const saved = await new CrawlSettingsRepository(c, tables, () => NOW).save(
+    const saved = await new CrawlSettingsRepository(c, 'Prefs', () => NOW).save(
       USER,
       null,
       2,
@@ -426,16 +425,18 @@ describe('CrawlSettingsRepository', () => {
   it('refuses a stale version before writing, and a concurrent save at write time', async () => {
     const { c, send } = client(() => ({ Item: { version: 3 } }));
     await expect(
-      new CrawlSettingsRepository(c, tables).save(USER, 5, 2, change),
+      new CrawlSettingsRepository(c, 'Prefs').save(USER, 5, 2, change),
     ).rejects.toBeInstanceOf(VersionConflictError);
     expect(send).toHaveBeenCalledTimes(1);
 
     const { c: racing } = client((cmd) => {
       if (cmd instanceof GetCommand) return {};
-      throw named('TransactionCanceledException');
+      throw named('TransactionCanceledException', {
+        CancellationReasons: [{ Code: 'ConditionalCheckFailed' }, { Code: 'None' }],
+      });
     });
     await expect(
-      new CrawlSettingsRepository(racing, tables).save(USER, 5, 0, change),
+      new CrawlSettingsRepository(racing, 'Prefs').save(USER, 5, 0, change),
     ).rejects.toBeInstanceOf(VersionConflictError);
   });
 });

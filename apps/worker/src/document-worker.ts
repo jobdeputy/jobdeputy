@@ -5,9 +5,10 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
-import { type Document, DocumentRepository, documentClient } from '@jobdeputy/db';
+import { type AuditWrite, type Document, DocumentRepository, documentClient } from '@jobdeputy/db';
 import { createLogger, documentKeys } from '@jobdeputy/shared';
 import type { Context, SQSBatchResponse, SQSEvent, SQSRecord } from 'aws-lambda';
+import { ulid } from 'ulid';
 import { z } from 'zod';
 import { withDeadline } from './deadline.js';
 import { type Extracted, extractDocumentText, LIMITS, RejectedFileError } from './extract.js';
@@ -65,6 +66,28 @@ export interface DocumentDeps {
   storage: Storage;
   extract: (bytes: Uint8Array, format: Document['format']) => Promise<Extracted>;
   remainingMs: () => number;
+  /** The system's audit entry for a document outcome (T06d), written with the change. */
+  audit: (name: string, documentId: string, summary: string) => AuditWrite;
+}
+
+/** Outcomes the user sees, as audit entries: IDs only, no file names or contents. */
+const AUDIT = {
+  ready: ['document.ready', 'Résumé ready'],
+  rejected: ['document.rejected', 'Résumé rejected: the malware scan found a threat'],
+  failed: ['document.failed', 'Résumé could not be used'],
+} as const;
+
+export function systemAudit(table: string, newId: () => string): DocumentDeps['audit'] {
+  return (name, documentId, summary) => ({
+    table,
+    entry: {
+      auditId: newId(),
+      name,
+      entity: { type: 'document', id: documentId },
+      actor: 'system',
+      summary,
+    },
+  });
 }
 
 export type Outcome =
@@ -92,6 +115,8 @@ export async function handleScanResult(body: unknown, deps: DocumentDeps): Promi
   const { text: textKey } = documentKeys(userId, documentId);
   const keys = [objectKey, textKey];
   const ctx = { userId, documentId, scan: status };
+  const audited = (kind: keyof typeof AUDIT) =>
+    deps.audit(AUDIT[kind][0], documentId, AUDIT[kind][1]);
 
   const doc = await deps.repo.get(userId, documentId);
   if (!doc) {
@@ -103,7 +128,7 @@ export async function handleScanResult(body: unknown, deps: DocumentDeps): Promi
 
   if (status === 'THREATS_FOUND') {
     await deps.storage.delete(keys);
-    await deps.repo.markRejected(userId, documentId, MESSAGES.threat);
+    await deps.repo.markRejected(userId, documentId, MESSAGES.threat, audited('rejected'));
     logger.warn('Malware found; file deleted', ctx);
     return 'rejected';
   }
@@ -111,7 +136,7 @@ export async function handleScanResult(body: unknown, deps: DocumentDeps): Promi
     // Never keep a file we could not scan.
     await deps.storage.delete(keys);
     const reason = status === 'FAILED' ? MESSAGES.scanFailed : MESSAGES.unscannable;
-    await deps.repo.markFailed(userId, documentId, reason);
+    await deps.repo.markFailed(userId, documentId, reason, audited('failed'));
     logger.warn('File could not be scanned; deleted', ctx);
     return 'failed';
   }
@@ -123,7 +148,7 @@ export async function handleScanResult(body: unknown, deps: DocumentDeps): Promi
 
   if (bytes.length > LIMITS.maxBytes) {
     await deps.storage.delete(keys);
-    await deps.repo.markFailed(userId, documentId, MESSAGES.tooLarge, eTag);
+    await deps.repo.markFailed(userId, documentId, MESSAGES.tooLarge, audited('failed'), eTag);
     return 'failed';
   }
 
@@ -136,7 +161,7 @@ export async function handleScanResult(body: unknown, deps: DocumentDeps): Promi
   } catch (error) {
     if (error instanceof RejectedFileError) {
       await deps.storage.delete(keys);
-      await deps.repo.markFailed(userId, documentId, error.message, eTag);
+      await deps.repo.markFailed(userId, documentId, error.message, audited('failed'), eTag);
       logger.info('File rejected', { ...ctx, reason: error.message });
       return 'failed';
     }
@@ -144,13 +169,19 @@ export async function handleScanResult(body: unknown, deps: DocumentDeps): Promi
   }
 
   await deps.storage.putText(textKey, extracted.text);
-  const ready = await deps.repo.markReady(userId, documentId, eTag, {
-    textS3Key: textKey,
-    ...(extracted.pageCount !== undefined ? { pageCount: extracted.pageCount } : {}),
-    charCount: extracted.charCount,
-    noText: extracted.noText,
-    truncated: extracted.truncated,
-  });
+  const ready = await deps.repo.markReady(
+    userId,
+    documentId,
+    eTag,
+    {
+      textS3Key: textKey,
+      ...(extracted.pageCount !== undefined ? { pageCount: extracted.pageCount } : {}),
+      charCount: extracted.charCount,
+      noText: extracted.noText,
+      truncated: extracted.truncated,
+    },
+    audited('ready'),
+  );
   if (!ready) {
     // Deleted meanwhile (or superseded by a newer upload, which rewrites the text).
     if (!(await deps.repo.get(userId, documentId))) await deps.storage.delete(keys);
@@ -176,7 +207,14 @@ export async function processRecord(record: SQSRecord, deps: DocumentDeps): Prom
       ? ORIGINAL_KEY.exec(parsed.data.detail.s3ObjectDetails.objectKey)
       : null;
     if (receiveCount >= MAX_RECEIVES && match?.[1] && match[2]) {
-      await deps.repo.markFailed(match[1], match[2], MESSAGES.processing).catch(() => undefined);
+      await deps.repo
+        .markFailed(
+          match[1],
+          match[2],
+          MESSAGES.processing,
+          deps.audit(AUDIT.failed[0], match[2], AUDIT.failed[1]),
+        )
+        .catch(() => undefined);
     }
     logger.warn('Attempt failed', { receiveCount, reason: (error as Error).message });
     throw error;
@@ -227,14 +265,15 @@ export async function handler(event: SQSEvent, context: Context): Promise<SQSBat
   logger.addContext(context);
   currentContext = context;
   if (!deps) {
-    const { DOCUMENTS_TABLE_NAME, DOCUMENTS_BUCKET_NAME } = process.env;
-    if (!DOCUMENTS_TABLE_NAME || !DOCUMENTS_BUCKET_NAME)
+    const { DOCUMENTS_TABLE_NAME, DOCUMENTS_BUCKET_NAME, AUDIT_TABLE_NAME } = process.env;
+    if (!DOCUMENTS_TABLE_NAME || !DOCUMENTS_BUCKET_NAME || !AUDIT_TABLE_NAME)
       throw new Error('Table and bucket names must be set');
     deps = {
       repo: new DocumentRepository(documentClient(), DOCUMENTS_TABLE_NAME),
       storage: s3Storage(DOCUMENTS_BUCKET_NAME),
       extract: extractDocumentText,
       remainingMs: () => currentContext?.getRemainingTimeInMillis() ?? 60_000,
+      audit: systemAudit(AUDIT_TABLE_NAME, ulid),
     };
   }
   const current = deps;

@@ -1,14 +1,8 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import {
-  DeleteCommand,
-  GetCommand,
-  PutCommand,
-  QueryCommand,
-  TransactWriteCommand,
-  UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+import { GetCommand, QueryCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import type { DocumentFormat, DocumentStatus } from '@jobdeputy/shared';
-import { isConditionFailure } from './client.js';
+import { type AuditWrite, auditPut } from './audit-repository.js';
+import { cancelledAt } from './client.js';
 import { VersionConflictError } from './versioned.js';
 
 /** `documents` (docs/data-model.md). Keys: `userId`, `documentId`. */
@@ -84,6 +78,7 @@ export class DocumentRepository {
       Document,
       'userId' | 'documentId' | 'title' | 'fileName' | 'mimeType' | 'format' | 's3Key' | 'isDefault'
     >,
+    audit: AuditWrite,
   ): Promise<Document> {
     const at = this.now();
     const doc: Document = {
@@ -99,10 +94,17 @@ export class DocumentRepository {
       schemaVersion: 1,
     };
     await this.client.send(
-      new PutCommand({
-        TableName: this.tableName,
-        Item: doc,
-        ConditionExpression: 'attribute_not_exists(userId)',
+      new TransactWriteCommand({
+        TransactItems: [
+          {
+            Put: {
+              TableName: this.tableName,
+              Item: doc,
+              ConditionExpression: 'attribute_not_exists(userId)',
+            },
+          },
+          auditPut(audit, fields.userId, at),
+        ],
       }),
     );
     return doc;
@@ -125,6 +127,7 @@ export class DocumentRepository {
       '(#status = :pending OR eTag <> :etag)',
       { ':processing': 'processing', ':pending': 'pending', ':etag': eTag, ':size': sizeBytes },
       { '#ttl': 'ttl', '#error': 'error' },
+      undefined,
     );
   }
 
@@ -134,6 +137,7 @@ export class DocumentRepository {
     documentId: string,
     eTag: string,
     parsed: NonNullable<Document['parsed']>,
+    audit: AuditWrite,
   ): Promise<Document | undefined> {
     return this.update(
       userId,
@@ -141,6 +145,8 @@ export class DocumentRepository {
       'SET #status = :ready, parsed = :parsed, updatedAt = :now',
       'eTag = :etag',
       { ':ready': 'ready', ':parsed': parsed, ':etag': eTag },
+      {},
+      audit,
     );
   }
 
@@ -148,6 +154,7 @@ export class DocumentRepository {
     userId: string,
     documentId: string,
     reason: string,
+    audit: AuditWrite,
     eTag?: string,
   ): Promise<Document | undefined> {
     return this.update(
@@ -161,6 +168,7 @@ export class DocumentRepository {
         ...(eTag ? { ':etag': eTag } : {}),
       },
       { '#error': 'error', '#ttl': 'ttl' },
+      audit,
     );
   }
 
@@ -169,6 +177,7 @@ export class DocumentRepository {
     userId: string,
     documentId: string,
     reason: string,
+    audit: AuditWrite,
   ): Promise<Document | undefined> {
     return this.update(
       userId,
@@ -177,6 +186,7 @@ export class DocumentRepository {
       'attribute_exists(userId)',
       { ':rejected': 'rejected', ':error': reason.slice(0, MAX_ERROR_LENGTH) },
       { '#error': 'error', '#ttl': 'ttl' },
+      audit,
     );
   }
 
@@ -186,6 +196,7 @@ export class DocumentRepository {
     documentId: string,
     title: string,
     expectedVersion: number,
+    audit: AuditWrite,
   ): Promise<Document | undefined> {
     const current = await this.get(userId, documentId);
     if (!current) return undefined;
@@ -196,6 +207,8 @@ export class DocumentRepository {
       'SET title = :title, version = version + :one, updatedAt = :now',
       'version = :expected',
       { ':title': title, ':one': 1, ':expected': expectedVersion },
+      {},
+      audit,
     );
     if (!updated) throw new VersionConflictError(-1);
     return updated;
@@ -206,6 +219,7 @@ export class DocumentRepository {
     userId: string,
     documentId: string,
     expectedVersion: number,
+    audit: AuditWrite,
   ): Promise<Document | undefined> {
     const all = await this.list(userId);
     const target = all.find((d) => d.documentId === documentId);
@@ -241,6 +255,7 @@ export class DocumentRepository {
                 ExpressionAttributeValues: { ':false': false, ':now': now },
               },
             })),
+            auditPut(audit, userId, this.now()),
           ],
         }),
       );
@@ -253,56 +268,82 @@ export class DocumentRepository {
     return { ...target, isDefault: true, version: expectedVersion + 1, updatedAt: now };
   }
 
-  /** Deletes and returns the item (so its files can be removed). Undefined if missing. */
-  async delete(userId: string, documentId: string): Promise<Document | undefined> {
+  /**
+   * Deletes and returns the item (so its files can be removed), with its audit entry in
+   * the same transaction. Undefined if missing.
+   */
+  async delete(
+    userId: string,
+    documentId: string,
+    audit: AuditWrite,
+  ): Promise<Document | undefined> {
+    const current = await this.get(userId, documentId);
+    if (!current) return undefined;
     try {
-      const res = await this.client.send(
-        new DeleteCommand({
-          TableName: this.tableName,
-          Key: { userId, documentId },
-          ConditionExpression: 'attribute_exists(userId)',
-          ReturnValues: 'ALL_OLD',
+      await this.client.send(
+        new TransactWriteCommand({
+          TransactItems: [
+            {
+              Delete: {
+                TableName: this.tableName,
+                Key: { userId, documentId },
+                ConditionExpression: 'attribute_exists(userId)',
+              },
+            },
+            auditPut(audit, userId, this.now()),
+          ],
         }),
       );
-      return res.Attributes as Document | undefined;
+      return current;
     } catch (error) {
-      if (isConditionFailure(error)) return undefined;
+      if (cancelledAt(error, 0)) return undefined;
       throw error;
     }
   }
 
+  /**
+   * A conditional update, recorded in the audit history in the same transaction when
+   * `audit` is given (every change a user sees; not internal steps). Returns the item
+   * after the update, or undefined when the condition failed.
+   */
   private async update(
     userId: string,
     documentId: string,
     updateExpression: string,
     condition: string,
     values: Record<string, unknown>,
-    names: Record<string, string> = {},
+    names: Record<string, string>,
+    audit: AuditWrite | undefined,
   ): Promise<Document | undefined> {
     const allNames = { '#status': 'status', ...names };
     const expressions = `${updateExpression} ${condition}`;
+    // DynamoDB rejects unused placeholders, and an empty map: send only the ones used.
+    const usedNames = Object.fromEntries(
+      Object.entries(allNames).filter(([k]) => expressions.includes(k)),
+    );
+    const at = this.now();
+    const write = {
+      TableName: this.tableName,
+      Key: { userId, documentId },
+      UpdateExpression: updateExpression,
+      ConditionExpression:
+        condition === 'attribute_exists(userId)'
+          ? condition
+          : `attribute_exists(userId) AND ${condition}`,
+      ...(Object.keys(usedNames).length > 0 ? { ExpressionAttributeNames: usedNames } : {}),
+      ExpressionAttributeValues: { ':now': at.toISOString(), ...values },
+    };
     try {
-      const res = await this.client.send(
-        new UpdateCommand({
-          TableName: this.tableName,
-          Key: { userId, documentId },
-          UpdateExpression: updateExpression,
-          ConditionExpression:
-            condition === 'attribute_exists(userId)'
-              ? condition
-              : `attribute_exists(userId) AND ${condition}`,
-          // DynamoDB rejects unused placeholders, so send only the ones used.
-          ExpressionAttributeNames: Object.fromEntries(
-            Object.entries(allNames).filter(([k]) => expressions.includes(k)),
-          ),
-          ExpressionAttributeValues: { ':now': this.now().toISOString(), ...values },
-          ReturnValues: 'ALL_NEW',
+      await this.client.send(
+        new TransactWriteCommand({
+          TransactItems: [{ Update: write }, ...(audit ? [auditPut(audit, userId, at)] : [])],
         }),
       );
-      return res.Attributes as Document;
     } catch (error) {
-      if (isConditionFailure(error)) return undefined;
+      if (cancelledAt(error, 0)) return undefined;
       throw error;
     }
+    // Transactions return no attributes: read the result (consistent).
+    return this.get(userId, documentId);
   }
 }

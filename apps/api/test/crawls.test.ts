@@ -73,6 +73,7 @@ function deps(over: Partial<CrawlsDeps['repo']> = {}) {
     settings,
     limits: vi.fn(async () => ({ dailyDefault: 20, dailyMax: 50 })),
     usedToday: vi.fn(async () => 3),
+    auditTable: 'Audit',
     newId: () => `01J8ZQ4Y3N5W6X7Y8Z9A0B1C${String(10 + (n++ % 90))}`,
     now: () => NOW,
     isBeingDeleted: vi.fn(async () => false),
@@ -329,32 +330,28 @@ describe('daily crawl limit (T06c)', () => {
     const { d, settings } = deps();
     const res = await route(put({ version: 0, dailyLimit: 5 }), d);
     expect(res.statusCode).toBe(200);
-    expect(settings.save).toHaveBeenCalledWith(
-      'user-a',
-      5,
-      0,
-      expect.objectContaining({
+    expect(settings.save).toHaveBeenCalledWith('user-a', 5, 0, {
+      table: 'Audit',
+      entry: expect.objectContaining({
         name: 'crawl_limit.changed',
         actor: 'user',
         summary: 'Daily crawl limit set to 5',
         detail: { from: 'default', to: 5 },
       }),
-    );
+    });
   });
 
   it('goes back to the default with null', async () => {
     const { d, settings } = deps();
     settings.get.mockResolvedValue({ dailyLimit: 5, version: 1 } as CrawlSettings);
     await route(put({ version: 1, dailyLimit: null }), d);
-    expect(settings.save).toHaveBeenCalledWith(
-      'user-a',
-      null,
-      1,
-      expect.objectContaining({
+    expect(settings.save).toHaveBeenCalledWith('user-a', null, 1, {
+      table: 'Audit',
+      entry: expect.objectContaining({
         summary: 'Daily crawl limit set back to the default (20)',
         detail: { from: 5, to: 'default' },
       }),
-    );
+    });
   });
 
   it('refuses a limit above the admin maximum (422)', async () => {

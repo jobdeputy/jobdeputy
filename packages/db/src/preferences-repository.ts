@@ -1,8 +1,9 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { DeleteCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { QueryCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import type { CreateRoleInput, SearchInput } from '@jobdeputy/shared';
 import { ulid } from 'ulid';
-import { isConditionFailure } from './client.js';
+import { type AuditWrite, auditPut } from './audit-repository.js';
+import { cancelledAt } from './client.js';
 import { getItem, putVersioned, type Versioned } from './versioned.js';
 
 /** `preferences` → `SEARCH` and `ROLE#<roleId>` (docs/data-model.md). */
@@ -28,7 +29,12 @@ export class PreferencesRepository {
     return getItem<SearchFields>(this.client, this.tableName, userId, 'SEARCH');
   }
 
-  saveSearch(userId: string, fields: SearchFields, expectedVersion: number): Promise<Search> {
+  saveSearch(
+    userId: string,
+    fields: SearchFields,
+    expectedVersion: number,
+    audit: AuditWrite,
+  ): Promise<Search> {
     return putVersioned(
       this.client,
       this.tableName,
@@ -36,6 +42,7 @@ export class PreferencesRepository {
       fields,
       expectedVersion,
       this.now(),
+      audit,
     );
   }
 
@@ -56,7 +63,12 @@ export class PreferencesRepository {
   }
 
   /** The limit is checked before writing: a best-effort cap against abuse, not a hard invariant. */
-  async createRole(userId: string, fields: CreateRoleInput, maxRoles: number): Promise<Role> {
+  async createRole(
+    userId: string,
+    fields: CreateRoleInput,
+    maxRoles: number,
+    audit: (roleId: string) => AuditWrite,
+  ): Promise<Role> {
     if ((await this.listRoles(userId)).length >= maxRoles) {
       throw new RoleLimitError(`At most ${maxRoles} roles`);
     }
@@ -68,6 +80,7 @@ export class PreferencesRepository {
       { ...fields, roleId },
       0,
       this.now(),
+      audit(roleId),
     );
   }
 
@@ -77,6 +90,7 @@ export class PreferencesRepository {
     roleId: string,
     fields: CreateRoleInput,
     expectedVersion: number,
+    audit: AuditWrite,
   ): Promise<Role | undefined> {
     if (!(await this.getRole(userId, roleId))) return undefined;
     return putVersioned(
@@ -86,22 +100,30 @@ export class PreferencesRepository {
       { ...fields, roleId },
       expectedVersion,
       this.now(),
+      audit,
     );
   }
 
-  /** False if the role did not exist (for this user). */
-  async deleteRole(userId: string, roleId: string): Promise<boolean> {
+  /** False if the role did not exist (for this user). Audited in the same transaction. */
+  async deleteRole(userId: string, roleId: string, audit: AuditWrite): Promise<boolean> {
     try {
       await this.client.send(
-        new DeleteCommand({
-          TableName: this.tableName,
-          Key: { userId, sk: `${ROLE_PREFIX}${roleId}` },
-          ConditionExpression: 'attribute_exists(userId)',
+        new TransactWriteCommand({
+          TransactItems: [
+            {
+              Delete: {
+                TableName: this.tableName,
+                Key: { userId, sk: `${ROLE_PREFIX}${roleId}` },
+                ConditionExpression: 'attribute_exists(userId)',
+              },
+            },
+            auditPut(audit, userId, this.now()),
+          ],
         }),
       );
       return true;
     } catch (error) {
-      if (isConditionFailure(error)) return false;
+      if (cancelledAt(error, 0)) return false;
       throw error;
     }
   }

@@ -1,4 +1,4 @@
-import type { Document } from '@jobdeputy/db';
+import type { AuditWrite, Document } from '@jobdeputy/db';
 import { documentKeys } from '@jobdeputy/shared';
 import { makeDocx, makePdf } from '@jobdeputy/test-fixtures';
 import type { SQSRecord } from 'aws-lambda';
@@ -9,6 +9,7 @@ import {
   handleScanResult,
   MESSAGES,
   processRecord,
+  systemAudit,
 } from '../src/document-worker.js';
 import { extractDocumentText } from '../src/extract.js';
 
@@ -43,8 +44,13 @@ function world(
     format,
     ...initial,
   };
+  /** Audit entries written with each change, like the real transactions (T06d). */
+  const audits: { name: string; id: string; actor: string }[] = [];
+  const record = (write: AuditWrite) =>
+    audits.push({ name: write.entry.name, id: write.entry.entity.id, actor: write.entry.actor });
   const deps: DocumentDeps = {
     remainingMs: () => 60_000,
+    audit: systemAudit('Audit', () => '01J8ZQ4Y3N5W6X7Y8Z9A0B1C2E'),
     extract: extractDocumentText,
     storage: {
       get: async (key, eTag) => {
@@ -65,24 +71,27 @@ function world(
         doc = { ...doc, status: 'processing', eTag, sizeBytes: size };
         return doc as Document;
       },
-      markReady: async (_u, _d, eTag, parsed) => {
+      markReady: async (_u, _d, eTag, parsed, audit) => {
         if (!doc || doc.eTag !== eTag) return undefined;
         doc = { ...doc, status: 'ready', parsed };
+        record(audit);
         return doc as Document;
       },
-      markFailed: async (_u, _d, reason, eTag) => {
+      markFailed: async (_u, _d, reason, audit, eTag) => {
         if (!doc || (eTag && doc.eTag !== eTag)) return undefined;
         doc = { ...doc, status: 'failed', error: reason };
+        record(audit);
         return doc as Document;
       },
-      markRejected: async (_u, _d, reason) => {
+      markRejected: async (_u, _d, reason, audit) => {
         if (!doc) return undefined;
         doc = { ...doc, status: 'rejected', error: reason };
+        record(audit);
         return doc as Document;
       },
     },
   };
-  return { deps, objects, doc: () => doc, remove: () => (doc = undefined) };
+  return { deps, objects, audits, doc: () => doc, remove: () => (doc = undefined) };
 }
 
 describe('document worker', () => {
@@ -101,6 +110,7 @@ describe('document worker', () => {
       parsed: { pageCount: 1, noText: false },
     });
     expect(String(w.objects.get(TEXT_KEY)?.bytes)).toContain('Ada Lovelace');
+    expect(w.audits).toEqual([{ name: 'document.ready', id: DOC, actor: 'system' }]);
   });
 
   it('extracts a clean DOCX', async () => {
@@ -114,6 +124,7 @@ describe('document worker', () => {
     await expect(handleScanResult(scan('THREATS_FOUND'), w.deps)).resolves.toBe('rejected');
     expect(w.doc()).toMatchObject({ status: 'rejected', error: MESSAGES.threat });
     expect(w.objects.size).toBe(0);
+    expect(w.audits.map((a) => a.name)).toEqual(['document.rejected']);
   });
 
   it.each([
@@ -125,6 +136,7 @@ describe('document worker', () => {
     await expect(handleScanResult(scan(status), w.deps)).resolves.toBe('failed');
     expect(w.doc()).toMatchObject({ status: 'failed', error: message });
     expect(w.objects.size).toBe(0);
+    expect(w.audits.map((a) => a.name)).toEqual(['document.failed']);
   });
 
   it('fails a file whose content does not match its type, and deletes it', async () => {
@@ -138,6 +150,8 @@ describe('document worker', () => {
     const w = world(makePdf([['x']]));
     await handleScanResult(scan('NO_THREATS_FOUND'), w.deps);
     await expect(handleScanResult(scan('NO_THREATS_FOUND'), w.deps)).resolves.toBe('duplicate');
+    // A duplicate event records nothing more.
+    expect(w.audits.map((a) => a.name)).toEqual(['document.ready']);
   });
 
   it('reprocesses a re-upload (new ETag) of a ready document', async () => {

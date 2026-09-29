@@ -131,8 +131,13 @@ describe('documents (T05c)', () => {
     const worker = statementsFor(t, 'DocumentsWorkerFn');
     expect(actions(worker).filter((a) => a.startsWith('dynamodb:'))).toEqual([
       'dynamodb:GetItem',
+      'dynamodb:PutItem',
       'dynamodb:UpdateItem',
     ]);
+    // T06d: the worker's only PutItem is its audit entries.
+    const puts = worker.filter((x) => [x.Action].flat().includes('dynamodb:PutItem'));
+    expect(JSON.stringify(puts.map((x) => x.Resource))).toMatch(/AuditTable/);
+    expect(JSON.stringify(puts.map((x) => x.Resource))).not.toMatch(/DocumentsTable/);
     // S3: each role only on the prefixes it uses. The worker writes only derived files,
     // which GuardDuty does not scan, so each upload is scanned exactly once.
     const s3Scope = (statements: Statement[], action: string) =>

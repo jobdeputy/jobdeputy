@@ -1,5 +1,6 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { ProfileInput } from '@jobdeputy/shared';
+import type { AuditWrite } from './audit-repository.js';
 import { getItem, putVersioned, type Versioned } from './versioned.js';
 
 /** `users` → `PROFILE` (docs/data-model.md). `email` and `homeCell` are set by the server. */
@@ -17,7 +18,12 @@ export class ProfileRepository {
     return getItem<ProfileFields>(this.client, this.tableName, userId, 'PROFILE');
   }
 
-  save(userId: string, fields: ProfileFields, expectedVersion: number): Promise<Profile> {
+  save(
+    userId: string,
+    fields: ProfileFields,
+    expectedVersion: number,
+    audit: AuditWrite,
+  ): Promise<Profile> {
     return putVersioned(
       this.client,
       this.tableName,
@@ -25,6 +31,7 @@ export class ProfileRepository {
       fields,
       expectedVersion,
       this.now(),
+      audit,
     );
   }
 }

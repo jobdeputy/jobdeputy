@@ -29,6 +29,7 @@ import {
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, Context } from 'aws-lambda';
 import { ulid } from 'ulid';
 import { refuseWritesWhileDeleting } from './account-guard.js';
+import { type UserAudit, userAudit } from './audited.js';
 
 const logger = createLogger('api-documents');
 
@@ -46,6 +47,8 @@ export interface DocumentsDeps {
   deleteFiles: (keys: string[]) => Promise<void>;
   newId: () => string;
   isBeingDeleted: (userId: string) => Promise<boolean>;
+  /** Every change is recorded in the user's audit history, in the same transaction (T06d). */
+  audit: UserAudit;
 }
 
 function s3Deps(
@@ -87,8 +90,9 @@ function s3Deps(
 }
 
 function defaultDeps(): DocumentsDeps {
-  const { DOCUMENTS_TABLE_NAME, DOCUMENTS_BUCKET_NAME, USERS_TABLE_NAME } = process.env;
-  if (!DOCUMENTS_TABLE_NAME || !DOCUMENTS_BUCKET_NAME || !USERS_TABLE_NAME) {
+  const { DOCUMENTS_TABLE_NAME, DOCUMENTS_BUCKET_NAME, USERS_TABLE_NAME, AUDIT_TABLE_NAME } =
+    process.env;
+  if (!DOCUMENTS_TABLE_NAME || !DOCUMENTS_BUCKET_NAME || !USERS_TABLE_NAME || !AUDIT_TABLE_NAME) {
     throw new Error('Table and bucket names must be set');
   }
   const client = documentClient();
@@ -98,6 +102,7 @@ function defaultDeps(): DocumentsDeps {
     ...s3Deps(DOCUMENTS_BUCKET_NAME),
     newId: ulid,
     isBeingDeleted: (userId) => account.isBeingDeleted(userId),
+    audit: userAudit(AUDIT_TABLE_NAME, ulid),
   };
 }
 
@@ -166,16 +171,23 @@ export async function route(event: Event, deps: DocumentsDeps): Promise<HttpResp
         }
         const documentId = deps.newId();
         const s3Key = documentKeys(userId, documentId).original;
-        const doc = await deps.repo.create({
-          userId,
-          documentId,
-          title: titleOf(input.data.fileName),
-          fileName: input.data.fileName,
-          mimeType: input.data.contentType,
-          format: DOCUMENT_TYPES[input.data.contentType].format,
-          s3Key,
-          isDefault: !existing.some((d) => d.isDefault),
-        });
+        const doc = await deps.repo.create(
+          {
+            userId,
+            documentId,
+            title: titleOf(input.data.fileName),
+            fileName: input.data.fileName,
+            mimeType: input.data.contentType,
+            format: DOCUMENT_TYPES[input.data.contentType].format,
+            s3Key,
+            isDefault: !existing.some((d) => d.isDefault),
+          },
+          deps.audit(
+            'document.upload_started',
+            { type: 'document', id: documentId },
+            'Résumé upload started',
+          ),
+        );
         const upload = await deps.presignUpload(s3Key, input.data.contentType);
         logger.info('Upload started', { documentId });
         return json(201, {
@@ -208,12 +220,27 @@ export async function route(event: Event, deps: DocumentsDeps): Promise<HttpResp
         let doc: Document | undefined;
         let version = input.data.version;
         if (input.data.title !== undefined) {
-          doc = await deps.repo.rename(userId, parsed.data, input.data.title, version);
+          doc = await deps.repo.rename(
+            userId,
+            parsed.data,
+            input.data.title,
+            version,
+            deps.audit('document.renamed', { type: 'document', id: parsed.data }, 'Résumé renamed'),
+          );
           if (!doc) return notFound();
           version = doc.version;
         }
         if (input.data.isDefault) {
-          doc = await deps.repo.setDefault(userId, parsed.data, version);
+          doc = await deps.repo.setDefault(
+            userId,
+            parsed.data,
+            version,
+            deps.audit(
+              'document.default_changed',
+              { type: 'document', id: parsed.data },
+              'Default résumé changed',
+            ),
+          );
           if (!doc) return notFound();
         }
         return json(200, view(doc as Document));
@@ -221,7 +248,11 @@ export async function route(event: Event, deps: DocumentsDeps): Promise<HttpResp
       case 'DELETE /me/documents/{documentId}': {
         const parsed = id();
         if (!parsed.success) return validationProblem(parsed.error, requestId);
-        const doc = await deps.repo.delete(userId, parsed.data);
+        const doc = await deps.repo.delete(
+          userId,
+          parsed.data,
+          deps.audit('document.deleted', { type: 'document', id: parsed.data }, 'Résumé deleted'),
+        );
         if (!doc) return notFound();
         await deps.deleteFiles([doc.s3Key, documentKeys(userId, doc.documentId).text]);
         return { statusCode: 204, headers: {}, body: '' };

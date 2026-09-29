@@ -19,6 +19,8 @@ import { addQueueWorker } from './queue-worker.js';
 export interface DocumentsProps {
   readonly namePrefix: string;
   readonly table: Table;
+  /** The user's audit history: the worker records each outcome there (T06d). */
+  readonly auditTable: Table;
   readonly removalPolicy: RemovalPolicy;
   readonly alarmTopic: ITopic;
 }
@@ -129,9 +131,11 @@ export class Documents extends Construct {
       environment: {
         DOCUMENTS_TABLE_NAME: props.table.tableName,
         DOCUMENTS_BUCKET_NAME: this.bucket.bucketName,
+        AUDIT_TABLE_NAME: props.auditTable.tableName,
       },
     });
     props.table.grant(this.worker.fn, 'dynamodb:GetItem', 'dynamodb:UpdateItem');
+    props.auditTable.grant(this.worker.fn, 'dynamodb:PutItem');
     // Reads uploads; writes only derived files (outside the scanned prefix); deletes both.
     this.bucket.grantRead(this.worker.fn, `${SCANNED_PREFIX}*`);
     this.bucket.grantPut(this.worker.fn, `${DERIVED_PREFIX}*`);
