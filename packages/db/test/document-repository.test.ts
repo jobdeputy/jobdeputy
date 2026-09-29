@@ -1,9 +1,26 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { GetCommand, QueryCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
+import {
+  GetCommand,
+  QueryCommand,
+  TransactWriteCommand,
+  UpdateCommand,
+} from '@aws-sdk/lib-dynamodb';
 import { describe, expect, it, vi } from 'vitest';
-import { DocumentRepository, VersionConflictError } from '../src/index.js';
+import {
+  ConcurrentUpdateError,
+  DocumentLimitError,
+  DocumentRepository,
+  VersionConflictError,
+} from '../src/index.js';
 
 const NOW = new Date('2026-09-28T00:00:00.000Z');
+/** A transaction cancelled by the counter's condition (item 2: the cap or the default). */
+const cancelledAt2 = () =>
+  Object.assign(new Error('no'), {
+    name: 'TransactionCanceledException',
+    CancellationReasons: [{ Code: 'None' }, { Code: 'None' }, { Code: 'ConditionalCheckFailed' }],
+  });
+
 /** A cancelled transaction whose first item's condition failed. */
 const cancelled = () =>
   Object.assign(new Error('no'), {
@@ -43,34 +60,152 @@ const doc = (over: Record<string, unknown> = {}) => ({
 });
 
 describe('DocumentRepository', () => {
-  it('creates a pending document that expires after a day, audited in the same transaction', async () => {
-    const { c, send } = client(() => ({}));
-    const created = await new DocumentRepository(c, 'T', () => NOW).create(
-      {
-        userId: 'u1',
-        documentId: 'D1',
-        title: 'CV',
-        fileName: 'cv.pdf',
-        mimeType: 'application/pdf',
-        format: 'pdf',
-        s3Key: 'users/u1/documents/D1/original',
-        isDefault: true,
-      },
-      audit('document.upload_started'),
-    );
+  const fields = {
+    userId: 'u1',
+    documentId: 'D1',
+    title: 'CV',
+    fileName: 'cv.pdf',
+    mimeType: 'application/pdf',
+    format: 'pdf' as const,
+    s3Key: 'users/u1/documents/D1/original',
+  };
+  /** Answers each command type from a queue (the last answer repeats). */
+  function scripted(answers: { query?: unknown[][]; tx?: unknown[]; get?: unknown[] }) {
+    const next = <T>(list: T[] | undefined, fallback: T): T =>
+      list && list.length > 1 ? (list.shift() as T) : (list?.[0] ?? fallback);
+    return client((cmd) => {
+      if (cmd instanceof QueryCommand) return { Items: next(answers.query, []) };
+      if (cmd instanceof GetCommand) return { Item: next(answers.get, undefined) };
+      if (cmd instanceof TransactWriteCommand) {
+        const outcome = next(answers.tx, 'ok');
+        if (outcome instanceof Error) throw outcome;
+        return {};
+      }
+      return {};
+    });
+  }
+  const cap = 10;
+  const repoWithUsage = (c: DynamoDBDocumentClient) =>
+    new DocumentRepository(c, 'T', () => NOW, 'U');
+  const txAt = (send: { mock: { calls: unknown[][] } }) =>
+    send.mock.calls
+      .map(([c]) => c)
+      .filter((c) => c instanceof TransactWriteCommand) as TransactWriteCommand[];
+
+  it('creates the first document as the default: counted and the default claimed in the same transaction', async () => {
+    const { c, send } = scripted({ query: [[]] });
+    const created = await repoWithUsage(c).create(fields, audit('document.upload_started'), cap);
     expect(created).toMatchObject({
       status: 'pending',
       version: 1,
+      isDefault: true,
       kind: 'resume',
       origin: 'uploaded',
     });
     expect(created.ttl).toBe(NOW.getTime() / 1000 + 86400);
-    const [put, entry] = tx(send);
+    const [put, entry, counter] = txAt(send)[0]?.input.TransactItems ?? [];
     expect(put?.Put?.ConditionExpression).toBe('attribute_not_exists(userId)');
     expect(entry?.Put).toMatchObject({
       TableName: 'Audit',
       Item: { userId: 'u1', name: 'document.upload_started' },
     });
+    expect(counter?.Update).toMatchObject({
+      TableName: 'U',
+      Key: { userId: 'u1', sk: 'DOCUMENTS' },
+      ConditionExpression:
+        '(attribute_not_exists(itemCount) OR itemCount < :max) AND attribute_not_exists(defaultDocumentId)',
+    });
+    expect(counter?.Update?.ExpressionAttributeValues).toMatchObject({
+      ':max': cap,
+      ':default': 'D1',
+    });
+  });
+
+  it('creates later documents as not the default, without touching the marker', async () => {
+    const { c, send } = scripted({ query: [[doc({ documentId: 'OLD', isDefault: true })]] });
+    const created = await repoWithUsage(c).create(fields, audit('document.upload_started'), cap);
+    expect(created.isDefault).toBe(false);
+    const counter = txAt(send)[0]?.input.TransactItems?.[2]?.Update;
+    expect(counter?.ConditionExpression).toBe(
+      '(attribute_not_exists(itemCount) OR itemCount < :max)',
+    );
+    expect(counter?.ExpressionAttributeValues).not.toHaveProperty(':default');
+  });
+
+  it('refuses at the cap without writing', async () => {
+    const { c, send } = scripted({
+      query: [Array.from({ length: cap }, (_, i) => doc({ documentId: `D${i}` }))],
+    });
+    await expect(repoWithUsage(c).create(fields, audit('x'), cap)).rejects.toBeInstanceOf(
+      DocumentLimitError,
+    );
+    expect(txAt(send)).toHaveLength(0);
+  });
+
+  it('becomes an ordinary document when another first upload won the default at the same moment', async () => {
+    const winner = doc({ documentId: 'WIN', isDefault: true });
+    const { c, send } = scripted({
+      query: [[], [winner], [winner]],
+      tx: [cancelledAt2(), 'ok'],
+      get: [{ itemCount: 1, defaultDocumentId: 'WIN' }],
+    });
+    const created = await repoWithUsage(c).create(fields, audit('document.upload_started'), cap);
+    expect(created.isDefault).toBe(false);
+    const attempts = txAt(send);
+    expect(attempts).toHaveLength(2);
+    expect(
+      attempts[1]?.input.TransactItems?.[2]?.Update?.ExpressionAttributeValues,
+    ).not.toHaveProperty(':default');
+  });
+
+  it('corrects a counter that drifted (expired pending uploads), then creates', async () => {
+    const three = [1, 2, 3].map((i) => doc({ documentId: `D${i}`, isDefault: i === 1 }));
+    const { c, send } = scripted({
+      query: [three, three, three],
+      tx: [cancelledAt2(), 'ok'],
+      get: [{ itemCount: cap, defaultDocumentId: 'D1' }],
+    });
+    await expect(repoWithUsage(c).create(fields, audit('x'), cap)).resolves.toMatchObject({
+      isDefault: false,
+    });
+    const repair = send.mock.calls
+      .map(([cmd]) => cmd)
+      .find((cmd) => cmd instanceof UpdateCommand) as UpdateCommand;
+    expect(repair.input).toMatchObject({
+      TableName: 'U',
+      ConditionExpression: 'itemCount = :seenCount AND defaultDocumentId = :seenDefault',
+      ExpressionAttributeValues: { ':count': 3, ':seenCount': cap, ':default': 'D1' },
+    });
+  });
+
+  it('frees a default marker left by an expired upload, so the next upload becomes the default', async () => {
+    const { c, send } = scripted({
+      query: [[], [], []],
+      tx: [cancelledAt2(), 'ok'],
+      get: [{ itemCount: 1, defaultDocumentId: 'EXPIRED' }],
+    });
+    await expect(repoWithUsage(c).create(fields, audit('x'), cap)).resolves.toMatchObject({
+      isDefault: true,
+    });
+    const repair = send.mock.calls
+      .map(([cmd]) => cmd)
+      .find((cmd) => cmd instanceof UpdateCommand) as UpdateCommand;
+    expect(repair.input.UpdateExpression).toContain('REMOVE defaultDocumentId');
+    expect(repair.input.ExpressionAttributeValues).toMatchObject({ ':count': 0 });
+  });
+
+  it('gives up with a conflict (409) when it keeps losing a race', async () => {
+    const { c } = scripted({ query: [[]], tx: [cancelledAt2()], get: [{ itemCount: 0 }] });
+    await expect(repoWithUsage(c).create(fields, audit('x'), cap)).rejects.toBeInstanceOf(
+      ConcurrentUpdateError,
+    );
+  });
+
+  it('needs the usage table to create', async () => {
+    const { c } = scripted({ query: [[]] });
+    await expect(new DocumentRepository(c, 'T').create(fields, audit('x'), cap)).rejects.toThrow(
+      'usage table',
+    );
   });
 
   it('claims a pending file or a re-upload, clearing the expiry, without an audit entry (an internal step)', async () => {
@@ -178,41 +313,95 @@ describe('DocumentRepository', () => {
       }
       return {};
     });
-    const result = await new DocumentRepository(c, 'T').setDefault(
+    const result = await new DocumentRepository(c, 'T', undefined, 'U').setDefault(
       'u1',
       'D1',
       1,
       audit('document.default_changed'),
     );
     expect(result).toMatchObject({ isDefault: true, version: 2 });
-    const items = tx(send, 1);
-    expect(items.map((t) => t.Update?.Key?.documentId ?? t.Put?.Item?.name)).toEqual([
-      'D1',
-      'OLD',
-      'document.default_changed',
-    ]);
+    // Calls: the list, the marker read, then one transaction.
+    const items = tx(send, 2);
+    expect(
+      items.map((t) => t.Update?.Key?.documentId ?? t.Put?.Item?.name ?? t.Update?.Key?.sk),
+    ).toEqual(['D1', 'OLD', 'document.default_changed', 'DOCUMENTS']);
+    // Of two switches at once, one wins: the marker must still be what this one read.
+    expect(items[3]?.Update).toMatchObject({
+      ConditionExpression: 'attribute_not_exists(defaultDocumentId)',
+      ExpressionAttributeValues: { ':id': 'D1' },
+    });
+  });
+
+  it('requires the marker it read when one exists', async () => {
+    const { c, send } = client((cmd) => {
+      if (cmd instanceof QueryCommand)
+        return { Items: [doc({ documentId: 'OLD', isDefault: true }), doc({ documentId: 'D1' })] };
+      if (cmd instanceof GetCommand) return { Item: { itemCount: 2, defaultDocumentId: 'OLD' } };
+      return {};
+    });
+    await new DocumentRepository(c, 'T', undefined, 'U').setDefault('u1', 'D1', 1, audit('x'));
+    expect(tx(send, 2)[3]?.Update).toMatchObject({
+      ConditionExpression: 'defaultDocumentId = :seen',
+      ExpressionAttributeValues: { ':seen': 'OLD' },
+    });
   });
 
   it('turns a cancelled default switch into a conflict', async () => {
     const { c } = client((cmd) => {
       if (cmd instanceof QueryCommand) return { Items: [doc()] };
-      throw Object.assign(new Error('x'), { name: 'TransactionCanceledException' });
+      if (cmd instanceof GetCommand) return {};
+      throw Object.assign(new Error('x'), {
+        name: 'TransactionCanceledException',
+        CancellationReasons: [
+          { Code: 'None' },
+          { Code: 'None' },
+          { Code: 'ConditionalCheckFailed' },
+        ],
+      });
     });
     await expect(
-      new DocumentRepository(c, 'T').setDefault('u1', 'D1', 1, audit('document.default_changed')),
+      new DocumentRepository(c, 'T', undefined, 'U').setDefault(
+        'u1',
+        'D1',
+        1,
+        audit('document.default_changed'),
+      ),
     ).rejects.toBeInstanceOf(VersionConflictError);
   });
 
   it('deletes and returns the document, audited in the same transaction', async () => {
     const { c, send } = client((cmd) => (cmd instanceof GetCommand ? { Item: doc() } : {}));
     expect(
-      await new DocumentRepository(c, 'T').delete('u1', 'D1', audit('document.deleted')),
+      await new DocumentRepository(c, 'T', undefined, 'U').delete(
+        'u1',
+        'D1',
+        audit('document.deleted'),
+      ),
     ).toMatchObject({
       documentId: 'D1',
     });
-    const [del, entry] = tx(send, 1);
+    const [del, entry, counter] = tx(send, 1);
+    expect(counter?.Update).toMatchObject({
+      TableName: 'U',
+      Key: { userId: 'u1', sk: 'DOCUMENTS' },
+      UpdateExpression: 'SET itemCount = if_not_exists(itemCount, :one) - :one, updatedAt = :now',
+    });
     expect(del?.Delete?.ConditionExpression).toBe('attribute_exists(userId)');
     expect(entry?.Put?.Item).toMatchObject({ name: 'document.deleted' });
+  });
+
+  it('frees the default marker when the default document is deleted', async () => {
+    const { c, send } = client((cmd) =>
+      cmd instanceof GetCommand ? { Item: doc({ isDefault: true }) } : {},
+    );
+    await new DocumentRepository(c, 'T', undefined, 'U').delete(
+      'u1',
+      'D1',
+      audit('document.deleted'),
+    );
+    expect(tx(send, 1)[2]?.Update?.UpdateExpression).toBe(
+      'SET itemCount = if_not_exists(itemCount, :one) - :one, updatedAt = :now REMOVE defaultDocumentId',
+    );
   });
 
   it('returns undefined, and records nothing, when it vanished between the read and the delete', async () => {
@@ -221,7 +410,7 @@ describe('DocumentRepository', () => {
       throw cancelled();
     });
     await expect(
-      new DocumentRepository(c, 'T').delete('u1', 'D1', audit('document.deleted')),
+      new DocumentRepository(c, 'T', undefined, 'U').delete('u1', 'D1', audit('document.deleted')),
     ).resolves.toBeUndefined();
   });
 

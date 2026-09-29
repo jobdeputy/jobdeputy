@@ -92,4 +92,63 @@ describe('concurrent requests (deployed)', () => {
     const profile = await callApi(api, 'GET', 'me/profile', user.accessToken);
     expect(profile.body.version).toBe(1);
   });
+
+  const startUpload = (user: TestUser, name: string) =>
+    callApi(api, 'POST', 'me/documents', user.accessToken, {
+      fileName: `${name}.pdf`,
+      contentType: 'application/pdf',
+    });
+  const defaults = async (user: TestUser) =>
+    (await callApi(api, 'GET', 'me/documents', user.accessToken)).body.documents.filter(
+      (d: { isDefault: boolean }) => d.isDefault,
+    );
+
+  it('makes exactly one of two first résumé uploads at the same moment the default', async () => {
+    const user = await newUser();
+    const results = await Promise.all([startUpload(user, 'a'), startUpload(user, 'b')]);
+    noServerErrors(results.map((r) => r.status));
+    expect(results.map((r) => r.status)).toEqual([201, 201]);
+    expect(await defaults(user)).toHaveLength(1);
+  });
+
+  it('never has two defaults after two default switches at the same moment', async () => {
+    const user = await newUser();
+    const created = [];
+    for (const name of ['a', 'b', 'c']) created.push((await startUpload(user, name)).body.document);
+    const [, b, c] = created;
+    const results = await Promise.all(
+      [b, c].map((d) =>
+        callApi(api, 'PUT', `me/documents/${d.documentId}`, user.accessToken, {
+          version: d.version,
+          isDefault: true,
+        }),
+      ),
+    );
+    const statuses = results.map((r) => r.status);
+    noServerErrors(statuses);
+    expect(statuses.filter((s) => s === 200).length, statuses.join()).toBeGreaterThanOrEqual(1);
+    expect(await defaults(user)).toHaveLength(1);
+  });
+
+  it('never exceeds the role and résumé caps with creates at the same moment', async () => {
+    const user = await newUser();
+    for (let i = 0; i < 9; i += 1)
+      await callApi(api, 'POST', 'me/roles', user.accessToken, { title: `Role ${i}` });
+    for (let i = 0; i < 9; i += 1) await startUpload(user, `cv${i}`);
+    const [roles, docs] = await Promise.all([
+      Promise.all(
+        [1, 2, 3].map((n) =>
+          callApi(api, 'POST', 'me/roles', user.accessToken, { title: `Race ${n}` }),
+        ),
+      ),
+      Promise.all([1, 2, 3].map((n) => startUpload(user, `race${n}`))),
+    ]);
+    noServerErrors([...roles, ...docs].map((r) => r.status));
+    expect(roles.map((r) => r.status).sort()).toEqual([201, 422, 422]);
+    expect(docs.map((r) => r.status).sort()).toEqual([201, 422, 422]);
+    expect((await callApi(api, 'GET', 'me/roles', user.accessToken)).body.roles).toHaveLength(10);
+    expect(
+      (await callApi(api, 'GET', 'me/documents', user.accessToken)).body.documents,
+    ).toHaveLength(10);
+  });
 });

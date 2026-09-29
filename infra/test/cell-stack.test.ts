@@ -199,14 +199,30 @@ describe('least privilege (T04)', () => {
     ]);
   });
 
-  it('gives the profile API only the calls it makes on its two tables', () => {
+  it('gives the profile API only the calls it makes on its tables', () => {
     expect([...new Set(actionsFor('ProfileApiFn'))].sort()).toEqual([
       'cognito-idp:AdminGetUser',
       'dynamodb:DeleteItem',
       'dynamodb:GetItem',
       'dynamodb:PutItem',
       'dynamodb:Query',
+      // Only on usage: the role counter (exact cap under concurrent creates).
+      'dynamodb:UpdateItem',
     ]);
+    const updates = Object.entries(t.findResources('AWS::IAM::Policy'))
+      .filter(([id]) => id.startsWith('ProfileApiFn'))
+      .flatMap(
+        ([, p]) =>
+          p.Properties.PolicyDocument.Statement as {
+            Action: string | string[];
+            Resource: unknown;
+          }[],
+      )
+      .filter((st) => [st.Action].flat().includes('dynamodb:UpdateItem'));
+    expect(JSON.stringify(updates.map((u) => u.Resource))).toMatch(/UsageTable/);
+    expect(JSON.stringify(updates.map((u) => u.Resource))).not.toMatch(
+      /UsersTable|PreferencesTable/,
+    );
     // Query and DeleteItem (roles) only on preferences; users is get and put only.
     const policy = Object.entries(t.findResources('AWS::IAM::Policy')).find(([id]) =>
       id.startsWith('ProfileApiFn'),

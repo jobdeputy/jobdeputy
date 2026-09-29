@@ -45,9 +45,22 @@ export interface ProfileDeps {
 }
 
 function defaultDeps(): ProfileDeps {
-  const { USERS_TABLE_NAME, PREFERENCES_TABLE_NAME, AUDIT_TABLE_NAME, USER_POOL_ID, CELL } =
-    process.env;
-  if (!USERS_TABLE_NAME || !PREFERENCES_TABLE_NAME || !AUDIT_TABLE_NAME || !USER_POOL_ID || !CELL) {
+  const {
+    USERS_TABLE_NAME,
+    PREFERENCES_TABLE_NAME,
+    AUDIT_TABLE_NAME,
+    USAGE_TABLE_NAME,
+    USER_POOL_ID,
+    CELL,
+  } = process.env;
+  if (
+    !USERS_TABLE_NAME ||
+    !PREFERENCES_TABLE_NAME ||
+    !AUDIT_TABLE_NAME ||
+    !USAGE_TABLE_NAME ||
+    !USER_POOL_ID ||
+    !CELL
+  ) {
     throw new Error(
       'USERS_TABLE_NAME, PREFERENCES_TABLE_NAME, AUDIT_TABLE_NAME, USER_POOL_ID, and CELL must be set',
     );
@@ -58,7 +71,12 @@ function defaultDeps(): ProfileDeps {
     isBeingDeleted: (userId) => account.isBeingDeleted(userId),
     cell: CELL,
     profiles: new ProfileRepository(client, USERS_TABLE_NAME),
-    preferences: new PreferencesRepository(client, PREFERENCES_TABLE_NAME),
+    preferences: new PreferencesRepository(
+      client,
+      PREFERENCES_TABLE_NAME,
+      undefined,
+      USAGE_TABLE_NAME,
+    ),
     emailOf: cognitoEmailLookup(USER_POOL_ID),
     audit: userAudit(AUDIT_TABLE_NAME, ulid),
   };

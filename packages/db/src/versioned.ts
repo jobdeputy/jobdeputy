@@ -1,4 +1,4 @@
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import type { DynamoDBDocumentClient, TransactWriteCommandInput } from '@aws-sdk/lib-dynamodb';
 import { GetCommand } from '@aws-sdk/lib-dynamodb';
 import { type AuditWrite, auditPut } from './audit-repository.js';
 import { cancelledAt } from './client.js';
@@ -50,6 +50,8 @@ export async function putVersioned<T extends object>(
   expectedVersion: number,
   now: Date,
   audit: AuditWrite,
+  /** More writes in the same transaction (for example a counter); they follow item and audit. */
+  extra: NonNullable<TransactWriteCommandInput['TransactItems']> = [],
 ): Promise<Versioned<T>> {
   const existing = await getItem<T>(client, table, key.userId, key.sk);
   const currentVersion = existing?.version ?? 0;
@@ -78,6 +80,7 @@ export async function putVersioned<T extends object>(
           },
         },
         auditPut(audit, key.userId, now),
+        ...extra,
       ],
     });
   } catch (error) {

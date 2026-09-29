@@ -102,7 +102,7 @@ describe('ProfileRepository', () => {
 describe('PreferencesRepository', () => {
   it('saves search settings with versions', async () => {
     const t = fakeTable();
-    const repo = new PreferencesRepository(t.client, 'prefs');
+    const repo = new PreferencesRepository(t.client, 'prefs', undefined, 'usage');
     const s = {
       locations: [],
       workplace: ['remote' as const],
@@ -118,7 +118,7 @@ describe('PreferencesRepository', () => {
 
   it('creates, lists, updates, and deletes roles', async () => {
     const t = fakeTable();
-    const repo = new PreferencesRepository(t.client, 'prefs');
+    const repo = new PreferencesRepository(t.client, 'prefs', undefined, 'usage');
     const created = await repo.createRole('u1', role, 10, () => audit('role.created'));
     expect(created.roleId).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
     expect(created.sk).toBe(`ROLE#${created.roleId}`);
@@ -146,7 +146,7 @@ describe('PreferencesRepository', () => {
 
   it("never touches another user's role", async () => {
     const t = fakeTable();
-    const repo = new PreferencesRepository(t.client, 'prefs');
+    const repo = new PreferencesRepository(t.client, 'prefs', undefined, 'usage');
     const created = await repo.createRole('u1', role, 10, () => audit('role.created'));
     expect(await repo.getRole('u2', created.roleId)).toBeUndefined();
     expect(
@@ -156,9 +156,34 @@ describe('PreferencesRepository', () => {
     expect(await repo.listRoles('u2')).toEqual([]);
   });
 
+  it('counts roles in the same transaction as each create and delete', async () => {
+    const t = fakeTable();
+    const repo = new PreferencesRepository(t.client, 'prefs', undefined, 'usage');
+    const a = await repo.createRole('u1', role, 10, () => audit('role.created'));
+    await repo.createRole('u1', role, 10, () => audit('role.created'));
+    expect(t.counters.get('u1|ROLES')).toBe(2);
+    await repo.deleteRole('u1', a.roleId, audit('role.deleted'));
+    expect(t.counters.get('u1|ROLES')).toBe(1);
+    // A failed delete counts nothing down.
+    await repo.deleteRole('u1', a.roleId, audit('role.deleted'));
+    expect(t.counters.get('u1|ROLES')).toBe(1);
+  });
+
+  it('corrects a counter that drifted above the roles that exist, then creates', async () => {
+    const t = fakeTable();
+    const repo = new PreferencesRepository(t.client, 'prefs', undefined, 'usage');
+    await repo.createRole('u1', role, 3, () => audit('role.created'));
+    t.counters.set('u1|ROLES', 3);
+    await expect(
+      repo.createRole('u1', role, 3, () => audit('role.created')),
+    ).resolves.toMatchObject({ version: 1 });
+    expect(await repo.listRoles('u1')).toHaveLength(2);
+    expect(t.counters.get('u1|ROLES')).toBe(2);
+  });
+
   it('enforces the role limit', async () => {
     const t = fakeTable();
-    const repo = new PreferencesRepository(t.client, 'prefs');
+    const repo = new PreferencesRepository(t.client, 'prefs', undefined, 'usage');
     for (let i = 0; i < 3; i++) await repo.createRole('u1', role, 3, () => audit('role.created'));
     await expect(
       repo.createRole('u1', role, 3, () => audit('role.created')),

@@ -5,6 +5,7 @@ import {
   PutCommand,
   QueryCommand,
   TransactWriteCommand,
+  UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 
 type Item = Record<string, unknown>;
@@ -25,6 +26,8 @@ function conditionFailed(): Error {
 export function fakeTable() {
   const items = new Map<string, Item>();
   const audit: Item[] = [];
+  /** `usage` counters (T06 review): itemCount per user and counter. */
+  const counters = new Map<string, number>();
   const key = (k: Item) => `${k.userId}|${k.sk}`;
   const hooks: { beforePut?: () => void } = {};
 
@@ -41,6 +44,18 @@ export function fakeTable() {
 
   const client = {
     send: async (cmd: unknown) => {
+      if (cmd instanceof GetCommand && cmd.input.TableName === 'usage') {
+        const count = counters.get(key(cmd.input.Key as Item));
+        return { Item: count === undefined ? undefined : { itemCount: count } };
+      }
+      if (cmd instanceof UpdateCommand && cmd.input.TableName === 'usage') {
+        // repairUsageCounter: set the count to what exists.
+        counters.set(
+          key(cmd.input.Key as Item),
+          Number(cmd.input.ExpressionAttributeValues?.[':count']),
+        );
+        return {};
+      }
       if (cmd instanceof GetCommand) {
         const item = items.get(key(cmd.input.Key as Item));
         return { Item: item ? structuredClone(item) : undefined };
@@ -55,8 +70,16 @@ export function fakeTable() {
       if (cmd instanceof TransactWriteCommand) {
         hooks.beforePut?.();
         const writes = cmd.input.TransactItems ?? [];
+        const counterOk = (u: NonNullable<(typeof writes)[number]['Update']>) => {
+          const values = u.ExpressionAttributeValues ?? {};
+          const count = counters.get(key(u.Key as Item)) ?? 0;
+          if (String(u.UpdateExpression).includes('+ :one')) return count < Number(values[':max']);
+          return true;
+        };
         const reasons = writes.map((w) => {
           if (w.Put?.TableName === 'audit') return 'None';
+          if (w.Update?.TableName === 'usage')
+            return counterOk(w.Update) ? 'None' : 'ConditionalCheckFailed';
           if (w.Put)
             return putAllowed(w.Put as PutCommand['input']) ? 'None' : 'ConditionalCheckFailed';
           if (w.Delete)
@@ -72,6 +95,11 @@ export function fakeTable() {
           if (w.Put?.TableName === 'audit') audit.push(structuredClone(w.Put.Item as Item));
           else if (w.Put) items.set(key(w.Put.Item as Item), structuredClone(w.Put.Item as Item));
           else if (w.Delete) items.delete(key(w.Delete.Key as Item));
+          else if (w.Update?.TableName === 'usage') {
+            const k = key(w.Update.Key as Item);
+            const up = String(w.Update.UpdateExpression).includes('+ :one');
+            counters.set(k, Math.max(0, (counters.get(k) ?? 0) + (up ? 1 : -1)));
+          }
         }
         return {};
       }
@@ -92,5 +120,5 @@ export function fakeTable() {
     },
   } as unknown as DynamoDBDocumentClient;
 
-  return { client, items, audit, hooks };
+  return { client, items, audit, counters, hooks };
 }
