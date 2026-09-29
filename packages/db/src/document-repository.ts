@@ -283,17 +283,20 @@ export class DocumentRepository {
     expectedVersion: number,
     audit: AuditWrite,
   ): Promise<Document | undefined> {
+    // The marker is read FIRST, then the list. The transaction requires the marker to be
+    // unchanged, so a switch that lands after this read makes this one a conflict (409);
+    // and when this one succeeds, the list it un-defaults from is at least as new as the
+    // marker. (Reading the list first let a switch land in between: the marker condition
+    // passed on a stale list, leaving two defaults. Caught by the concurrency test in CI.)
+    const usage = this.usage();
+    const seen = (await getUsageCounter(this.client, usage, userId, DOCUMENTS_SK))
+      .defaultDocumentId;
     const all = await this.list(userId);
     const target = all.find((d) => d.documentId === documentId);
     if (!target) return undefined;
     if (target.version !== expectedVersion) throw new VersionConflictError(target.version);
     const now = this.now().toISOString();
     const others = all.filter((d) => d.isDefault && d.documentId !== documentId);
-    // The default marker must still be what this request read: of two switches at once
-    // (to different documents), one wins and the other is a conflict (409).
-    const usage = this.usage();
-    const seen = (await getUsageCounter(this.client, usage, userId, DOCUMENTS_SK))
-      .defaultDocumentId;
     try {
       await transactWrite(this.client, {
         TransactItems: [

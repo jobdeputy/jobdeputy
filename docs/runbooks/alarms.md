@@ -29,6 +29,21 @@ AWS profile for all commands below: `--profile jobdeputy-dev-iad` (dev) or the p
 | `crawls` | Our own failure (a bug, S3 or DynamoDB errors) 3 times in a row. Sites that block us, time out, or are down never reach the DLQ: those crawls end as `failed` with a reason. The crawl already shows `failed` (`internal`), so the user can submit again. | Within a day. After a fix, submit again rather than redrive: a redriven message finds the crawl finished and does nothing. |
 | `ping-jobs` | Test scaffolding only | Whenever convenient; usually from a forced-failure test |
 
+## Queue backed up
+
+`…CrawlPipelineBacklogAlarm…`, `…DocumentsBacklogAlarm…`, `…DeletionPipelineBacklogAlarm…`
+
+**Meaning:** a message has waited longer than that queue's slowest normal path (crawls 15 minutes, documents 30, account deletions 60). The worker is stuck, throttled, or failing slowly; users see crawls stuck in `queued`, résumés stuck in `pending`, or, for deletions, data not yet erased.
+
+1. **Is the worker running?** Check its Lambda metrics: `Throttles` (the account's concurrency limit, #35), `Errors`, and `Duration` near the timeout.
+2. **Throttled:** raise the account's concurrency limit, or find what else is using it (a burst of API calls, another stack's tests).
+3. **Errors:** read the worker's logs, as for a dead-letter alarm above. Messages that keep failing will reach the DLQ.
+4. **Account deletions: same day.** When the queue drains, check each affected account with [account-deletion.md](account-deletion.md#checking-that-an-account-is-gone).
+
+All queue alarms exist in shared stacks only: personal and PR stacks have no subscribers.
+
+**Not alarmed on purpose:** the sign-up check (`PreSignUp`) refuses reserved test domains by throwing an error (Cognito requires this), so its error count includes every refusal, including the Nightly test's. It is 10 lines of pure logic, unit-tested and exercised nightly; alarming only on unexpected errors would need a paid custom metric.
+
 ## API server errors (5xx)
 
 `…ApiServerErrorAlarm…`

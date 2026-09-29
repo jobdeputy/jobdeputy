@@ -1,7 +1,9 @@
+import type { ListUsersInGroupCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { describe, expect, it, vi } from 'vitest';
 import {
   LeftoversFoundError,
   type Login,
+  listTestLogins,
   MAX_REQUESTS_PER_RUN,
   type ReaperDeps,
   reap,
@@ -76,5 +78,36 @@ describe('test-data reaper', () => {
     const d = deps([], orphans);
     await expect(reap(d)).rejects.toThrow('Refusing');
     expect(d.requestDeletion).not.toHaveBeenCalled();
+  });
+});
+
+describe('listTestLogins', () => {
+  const user = (sub: string, email?: string) => ({
+    Username: `u-${sub}`,
+    UserCreateDate: new Date('2026-09-01T00:00:00Z'),
+    Attributes: [{ Name: 'sub', Value: sub }, ...(email ? [{ Name: 'email', Value: email }] : [])],
+  });
+
+  it('reads every page of the test group only', async () => {
+    const send = vi.fn(async (cmd: ListUsersInGroupCommand) =>
+      cmd.input.NextToken === undefined
+        ? { Users: [user('a', 'it-a@example.com')], NextToken: 'n1' }
+        : { Users: [user('b')] },
+    );
+    const logins = await listTestLogins({ send } as never, 'POOL');
+    expect(logins.map((l) => l.userId)).toEqual(['a', 'b']);
+    expect(send).toHaveBeenCalledTimes(2);
+    for (const [cmd] of send.mock.calls) {
+      expect(cmd.input).toMatchObject({ UserPoolId: 'POOL', GroupName: 'integration-tests' });
+    }
+    const second = send.mock.calls[1]?.[0];
+    expect(second?.input.NextToken).toBe('n1');
+  });
+
+  it('skips entries without a user ID (never guesses whom to delete)', async () => {
+    const send = vi.fn(async () => ({
+      Users: [{ Username: 'x', UserCreateDate: new Date(), Attributes: [] }],
+    }));
+    expect(await listTestLogins({ send } as never, 'POOL')).toEqual([]);
   });
 });

@@ -32,15 +32,50 @@ describe('monitoring (T13)', () => {
     expect(ids.some((id) => id.startsWith('TestDataReaperAlarm'))).toBe(false);
   });
 
-  it('adds no extra alarms to personal or PR stacks (no subscribers; stays in the free tier)', () => {
+  it('creates no alarms at all in personal or PR stacks (no subscribers; free alarms kept for shared stacks)', () => {
     for (const owner of ['nava', 'pr42']) {
-      const ids = alarmIds(stack('dev', `jobdeputy-dev-${owner}-iad`, owner));
-      expect(ids.filter((id) => /ApiServerError|TestDataReaper/.test(id))).toEqual([]);
+      expect(alarmIds(stack('dev', `jobdeputy-dev-${owner}-iad`, owner)), owner).toEqual([]);
     }
   });
 
-  it('keeps each shared stack within the 10 free alarms', () => {
-    expect(alarmIds(stack('dev', 'jobdeputy-dev-iad')).length).toBeLessThanOrEqual(10);
+  it('has exactly these alarms in the shared dev stack, within the 10 free ones', () => {
+    const names = alarmIds(stack('dev', 'jobdeputy-dev-iad')).map((id) =>
+      id.replace(/[0-9A-F]{8}$/, ''),
+    );
+    expect(names).toEqual([
+      'ApiServerErrorAlarm',
+      'CrawlPipelineBacklogAlarm',
+      'CrawlPipelineDeadLetterAlarm',
+      'DeletionPipelineBacklogAlarm',
+      'DeletionPipelineDeadLetterAlarm',
+      'DocumentsBacklogAlarm',
+      'DocumentsDeadLetterAlarm',
+      'PingPipelineDeadLetterAlarm',
+      'TestDataReaperAlarm',
+    ]);
+  });
+
+  it("alarms when a worker queue backs up, above each queue's slowest normal path", () => {
+    const t = stack('dev', 'jobdeputy-dev-iad');
+    const backlog = Object.entries(t.findResources('AWS::CloudWatch::Alarm'))
+      .filter(([id]) => id.includes('BacklogAlarm'))
+      .map(([id, a]) => [
+        id.replace(/BacklogAlarm.*/, ''),
+        a.Properties.MetricName,
+        a.Properties.Threshold,
+      ])
+      .sort();
+    expect(backlog).toEqual([
+      ['CrawlPipeline', 'ApproximateAgeOfOldestMessage', 15 * 60],
+      ['DeletionPipeline', 'ApproximateAgeOfOldestMessage', 60 * 60],
+      ['Documents', 'ApproximateAgeOfOldestMessage', 30 * 60],
+    ]);
+  });
+
+  it('keeps each prod stack within the 10 free alarms (no reaper, no test site)', () => {
+    for (const cell of ['iad', 'bom', 'lhr']) {
+      expect(alarmIds(stack('prod', `jobdeputy-prod-${cell}`)).length, cell).toBe(8);
+    }
   });
 
   it('refuses reserved test domains at sign-up in every stage, allowing test users only in dev', () => {

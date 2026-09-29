@@ -91,6 +91,30 @@ export async function reap(deps: ReaperDeps): Promise<ReaperResult> {
   return result;
 }
 
+/** Every member of the test group, page by page (Cognito returns at most 60 at a time). */
+export async function listTestLogins(
+  cognito: Pick<CognitoIdentityProviderClient, 'send'>,
+  userPoolId: string,
+): Promise<Login[]> {
+  const logins: Login[] = [];
+  let token: string | undefined;
+  do {
+    const page = await cognito.send(
+      new ListUsersInGroupCommand({
+        UserPoolId: userPoolId,
+        GroupName: TEST_USERS_GROUP,
+        ...(token ? { NextToken: token } : {}),
+      }),
+    );
+    for (const u of page.Users ?? []) {
+      const login = toLogin(u);
+      if (login) logins.push(login);
+    }
+    token = page.NextToken;
+  } while (token);
+  return logins;
+}
+
 function toLogin(u: UserType): Login | undefined {
   const attr = (name: string) => u.Attributes?.find((a) => a.Name === name)?.Value;
   const sub = attr('sub');
@@ -114,25 +138,7 @@ function defaultDeps(): ReaperDeps {
   const account = new AccountRepository(client, USERS_TABLE_NAME);
   return {
     now: () => new Date(),
-    listTestLogins: async () => {
-      const logins: Login[] = [];
-      let token: string | undefined;
-      do {
-        const page = await cognito.send(
-          new ListUsersInGroupCommand({
-            UserPoolId: USER_POOL_ID,
-            GroupName: TEST_USERS_GROUP,
-            ...(token ? { NextToken: token } : {}),
-          }),
-        );
-        for (const u of page.Users ?? []) {
-          const login = toLogin(u);
-          if (login) logins.push(login);
-        }
-        token = page.NextToken;
-      } while (token);
-      return logins;
-    },
+    listTestLogins: () => listTestLogins(cognito, USER_POOL_ID),
     loginExists: async (userId) => {
       const page = await cognito.send(
         new ListUsersCommand({ UserPoolId: USER_POOL_ID, Filter: `sub = "${userId}"`, Limit: 1 }),
