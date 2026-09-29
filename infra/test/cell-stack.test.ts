@@ -226,7 +226,7 @@ describe('least privilege (T04)', () => {
 describe('HTTP API (T04)', () => {
   const t = devTemplate();
 
-  it('requires a Cognito token on every route', () => {
+  it('requires a Cognito token on every route but the dev test site', () => {
     const routes = t.findResources('AWS::ApiGatewayV2::Route');
     expect(
       Object.values(routes)
@@ -237,12 +237,17 @@ describe('HTTP API (T04)', () => {
       'DELETE /me/documents/{documentId}',
       'DELETE /me/roles/{roleId}',
       'GET /me',
+      'GET /me/audit',
+      'GET /me/crawls',
+      'GET /me/crawls/{crawlId}',
       'GET /me/documents',
       'GET /me/documents/{documentId}',
       'GET /me/preferences/search',
       'GET /me/profile',
       'GET /me/roles',
       'GET /ping-jobs/{id}',
+      'GET /test-site/{page}',
+      'POST /me/crawls',
       'POST /me/documents',
       'POST /me/roles',
       'POST /ping-jobs',
@@ -252,12 +257,28 @@ describe('HTTP API (T04)', () => {
       'PUT /me/roles/{roleId}',
     ]);
     for (const route of Object.values(routes)) {
-      expect(route.Properties.AuthorizationType).toBe('JWT');
+      const open = route.Properties.RouteKey === 'GET /test-site/{page}';
+      expect(route.Properties.AuthorizationType, route.Properties.RouteKey).toBe(
+        open ? 'NONE' : 'JWT',
+      );
     }
     t.hasResourceProperties('AWS::ApiGatewayV2::Authorizer', {
       AuthorizerType: 'JWT',
       IdentitySource: ['$request.header.Authorization'],
     });
+  });
+
+  it('has no route without a token in prod (no test site)', () => {
+    const prod = Template.fromStack(
+      buildApp({ stage: 'prod', env: {} }).node.findChild('jobdeputy-prod-iad') as never,
+    );
+    const routes = Object.values(prod.findResources('AWS::ApiGatewayV2::Route'));
+    expect(routes.length).toBeGreaterThan(0);
+    for (const route of routes) {
+      expect(route.Properties.RouteKey).not.toContain('test-site');
+      expect(route.Properties.AuthorizationType).toBe('JWT');
+    }
+    expect(JSON.stringify(prod.toJSON())).not.toContain('test-site.ts');
   });
 
   it('throttles the dev stage', () => {

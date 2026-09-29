@@ -1,3 +1,6 @@
+import { z } from 'zod';
+import { DERIVED_PREFIX, ulidId } from './documents.js';
+
 /** T06: crawl requests. Decisions: docs/decisions/0007-crawler.md. */
 export const MAX_URL_LENGTH = 2048;
 
@@ -95,3 +98,40 @@ export function parseCrawlUrl(raw: string): CrawlUrlResult {
 
   return { ok: true, url, normalizedUrl: url.href };
 }
+
+/** queued → running → succeeded | failed (0006; `cancelled` is reserved for later). */
+export type CrawlStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+
+/** A crawl is `queued` or `running`: a second submit of the same page returns it. */
+export const ACTIVE_CRAWL_STATUSES: readonly CrawlStatus[] = ['queued', 'running'];
+
+/**
+ * The fetched page. Under `derived/`: we fetched it, the user did not upload it, so it
+ * is not malware-scanned, never served to a browser, and goes with account deletion.
+ * Expires after 30 days (S3 lifecycle rule on the `retention` tag).
+ */
+export function crawlKeys(userId: string, crawlId: string) {
+  return { page: `${DERIVED_PREFIX}${userId}/crawls/${crawlId}/page` };
+}
+export const CRAWL_PAGE_RETENTION_TAG = { key: 'retention', value: 'crawl-page' } as const;
+export const CRAWL_PAGE_RETENTION_DAYS = 30;
+
+/** `POST /me/crawls`. */
+export const createCrawlInput = z.strictObject({
+  url: z.string().max(MAX_URL_LENGTH),
+});
+
+export const crawlId = ulidId;
+
+/** Paging for lists ordered newest first: `?limit=20&cursor=<id of the last item seen>`. */
+export const pageQuery = z.strictObject({
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  cursor: ulidId.optional(),
+});
+
+/** Queue message from the crawls Pipe: the crawl's key only. */
+export const crawlMessage = z.object({
+  userId: z.string().regex(/^[0-9a-f-]{36}$/),
+  crawlId: ulidId,
+});
+export type CrawlMessage = z.infer<typeof crawlMessage>;

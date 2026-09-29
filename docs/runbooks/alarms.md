@@ -6,7 +6,7 @@ AWS profile for all commands below: `--profile jobdeputy-dev-iad` (dev) or the p
 
 ## Dead-letter queue not empty
 
-`…PingPipelineDeadLetterAlarm…`, `…DocumentsDeadLetterAlarm…`, `…DeletionPipelineDeadLetterAlarm…`
+`…PingPipelineDeadLetterAlarm…`, `…DocumentsDeadLetterAlarm…`, `…DeletionPipelineDeadLetterAlarm…`, `…CrawlPipelineDeadLetterAlarm…`
 
 **Meaning:** a job failed 3 times and was parked in the dead-letter queue (DLQ). Nothing is lost; the message waits there for 14 days.
 
@@ -16,7 +16,7 @@ AWS profile for all commands below: `--profile jobdeputy-dev-iad` (dev) or the p
    aws sqs receive-message --queue-url <queue-url>-dlq --max-number-of-messages 1 --visibility-timeout 30
    ```
 
-2. **Find the error** in the worker's logs (CloudWatch Logs, log group of `PingWorker`, `DocumentsWorker`, or `DeletionWorker`), around the time of the alarm. Search for `"level":"ERROR"` or the ID from the message.
+2. **Find the error** in the worker's logs (CloudWatch Logs, log group of `PingWorker`, `DocumentsWorker`, `DeletionWorker`, or `CrawlWorker`), around the time of the alarm. Search for `"level":"ERROR"` or the ID from the message.
 3. **Fix the cause** (a bug: fix it in a PR; a temporary AWS problem: nothing to fix).
 4. **Retry:** in the SQS console, open the DLQ and choose **Start DLQ redrive** (back to the source queue). Workers are safe to repeat.
 
@@ -26,6 +26,7 @@ AWS profile for all commands below: `--profile jobdeputy-dev-iad` (dev) or the p
 |---|---|---|
 | `account-deletions` | A user's data may not be fully erased: a legal obligation (right to erasure) | **Same day.** Fix, redrive, then verify with [account-deletion.md](account-deletion.md#checking-that-an-account-is-gone). |
 | `document-scans` | A résumé is stuck or failed; the user sees "failed, upload again" | Within a day |
+| `crawls` | Our own failure (a bug, S3 or DynamoDB errors) 3 times in a row. Sites that block us, time out, or are down never reach the DLQ: those crawls end as `failed` with a reason. The crawl already shows `failed` (`internal`), so the user can submit again. | Within a day. After a fix, submit again rather than redrive: a redriven message finds the crawl finished and does nothing. |
 | `ping-jobs` | Test scaffolding only | Whenever convenient; usually from a forced-failure test |
 
 ## API server errors (5xx)

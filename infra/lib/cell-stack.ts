@@ -1,6 +1,6 @@
-import { DERIVED_PREFIX, SCANNED_PREFIX } from '@jobdeputy/shared';
+import { crawlKeys, DERIVED_PREFIX, SCANNED_PREFIX } from '@jobdeputy/shared';
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps, Tags } from 'aws-cdk-lib';
-import { HttpApi, HttpMethod, HttpStage } from 'aws-cdk-lib/aws-apigatewayv2';
+import { HttpApi, HttpMethod, HttpNoneAuthorizer, HttpStage } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import {
@@ -36,6 +36,8 @@ export interface CellStackProps extends StackProps {
 }
 
 const WORKER_TIMEOUT = Duration.seconds(30);
+/** A fetch takes at most 20 s (0007); the rest is headroom for S3 and DynamoDB. */
+const CRAWL_WORKER_TIMEOUT = Duration.seconds(60);
 /** T04 decision: 3 tries, then the dead-letter queue. Must match the worker's MAX_RECEIVES. */
 export const MAX_RECEIVES = 3;
 
@@ -113,6 +115,11 @@ export class CellStack extends Stack {
     const preferencesTable = userTable('PreferencesTable', 'preferences');
     // Pending uploads that never arrive expire (ttl).
     const documentsTable = userTable('DocumentsTable', 'documents', 'documentId', 'ttl');
+    // T06b (0007): pages the user saved; crawl runs (stream → crawl worker; kept 180 days);
+    // the user's audit history (kept a year).
+    const sourcesTable = userTable('SourcesTable', 'sources', 'sourceId');
+    const crawlsTable = userTable('CrawlsTable', 'crawls', 'crawlId', 'ttl', true);
+    const auditTable = userTable('AuditTable', 'audit', 'auditId', 'ttl');
     /**
      * Every table keyed by userId. Account deletion erases all of them; an infra test
      * fails if a table keyed by userId is missing here (T12).
@@ -121,6 +128,9 @@ export class CellStack extends Stack {
       { table: usersTable, sortKey: 'sk' },
       { table: preferencesTable, sortKey: 'sk' },
       { table: documentsTable, sortKey: 'documentId' },
+      { table: sourcesTable, sortKey: 'sourceId' },
+      { table: crawlsTable, sortKey: 'crawlId' },
+      { table: auditTable, sortKey: 'auditId' },
     ];
     const documents = new Documents(this, 'Documents', {
       namePrefix: id,
@@ -341,6 +351,69 @@ export class CellStack extends Stack {
     documents.bucket.grantDelete(documentsApi.fn, `${DERIVED_PREFIX}*`);
     if (documentsApi.fn.role) documents.denyUnscannedDownloads(documentsApi.fn.role);
 
+    const crawlTablesEnv = {
+      CRAWLS_TABLE_NAME: crawlsTable.tableName,
+      SOURCES_TABLE_NAME: sourcesTable.tableName,
+      AUDIT_TABLE_NAME: auditTable.tableName,
+      USERS_TABLE_NAME: usersTable.tableName,
+    };
+    // T06b: POST /me/crawls → crawls table (queued) → stream → Pipe → queue → worker.
+    const crawlsApi = new AppFunction(this, 'CrawlsApi', {
+      entry: 'apps/api/src/crawls.ts',
+      timeout: Duration.seconds(10),
+      removalPolicy,
+      environment: crawlTablesEnv,
+    });
+    usersTable.grant(crawlsApi.fn, 'dynamodb:GetItem');
+    sourcesTable.grant(crawlsApi.fn, 'dynamodb:GetItem', 'dynamodb:UpdateItem');
+    // UpdateItem: ending a stale crawl before replacing it.
+    crawlsTable.grant(
+      crawlsApi.fn,
+      'dynamodb:PutItem',
+      'dynamodb:GetItem',
+      'dynamodb:Query',
+      'dynamodb:UpdateItem',
+    );
+    auditTable.grant(crawlsApi.fn, 'dynamodb:PutItem');
+
+    const crawlWorker = new AppFunction(this, 'CrawlWorker', {
+      entry: 'apps/worker/src/crawl-worker.ts',
+      timeout: CRAWL_WORKER_TIMEOUT,
+      removalPolicy,
+      environment: { ...crawlTablesEnv, DOCUMENTS_BUCKET_NAME: documents.bucket.bucketName },
+    });
+    usersTable.grant(crawlWorker.fn, 'dynamodb:GetItem');
+    crawlsTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem');
+    sourcesTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem');
+    auditTable.grant(crawlWorker.fn, 'dynamodb:PutItem');
+    // Writes fetched pages only (tagged for the 30-day expiry); reads nothing from S3.
+    crawlWorker.fn.addToRolePolicy(
+      new PolicyStatement({
+        actions: ['s3:PutObject', 's3:PutObjectTagging'],
+        resources: [documents.bucket.arnForObjects(crawlKeys('*', '*').page)],
+      }),
+    );
+    new AsyncPipeline(this, 'CrawlPipeline', {
+      table: crawlsTable,
+      idAttribute: 'crawlId',
+      messageKeys: ['userId', 'crawlId'],
+      worker: crawlWorker.fn,
+      workerTimeout: CRAWL_WORKER_TIMEOUT,
+      maxReceives: MAX_RECEIVES,
+      maxConcurrency: 2,
+      alarmTopic,
+      queueName: `${id}-crawls`,
+    });
+
+    const auditApi = new AppFunction(this, 'AuditApi', {
+      entry: 'apps/api/src/audit.ts',
+      timeout: Duration.seconds(10),
+      removalPolicy,
+      environment: { AUDIT_TABLE_NAME: auditTable.tableName },
+    });
+    // Read-only: audit entries are never changed through the API.
+    auditTable.grant(auditApi.fn, 'dynamodb:Query');
+
     const httpApi = new HttpApi(this, 'HttpApi', {
       apiName: id,
       createDefaultStage: false,
@@ -392,6 +465,41 @@ export class CellStack extends Stack {
       methods: [HttpMethod.GET, HttpMethod.PUT, HttpMethod.DELETE],
       integration: documentsIntegration,
     });
+
+    const crawlsIntegration = new HttpLambdaIntegration('CrawlsIntegration', crawlsApi.fn);
+    httpApi.addRoutes({
+      path: '/me/crawls',
+      methods: [HttpMethod.GET, HttpMethod.POST],
+      integration: crawlsIntegration,
+    });
+    httpApi.addRoutes({
+      path: '/me/crawls/{crawlId}',
+      methods: [HttpMethod.GET],
+      integration: crawlsIntegration,
+    });
+    httpApi.addRoutes({
+      path: '/me/audit',
+      methods: [HttpMethod.GET],
+      integration: new HttpLambdaIntegration('AuditIntegration', auditApi.fn),
+    });
+
+    if (props.stage === 'dev') {
+      // T06b, dev stacks only: fixed public pages for the crawl integration tests. The
+      // only route without a token; it holds and reads no data (an infra test keeps it
+      // out of prod).
+      const testSite = new AppFunction(this, 'TestSite', {
+        entry: 'apps/api/src/test-site.ts',
+        timeout: Duration.seconds(5),
+        removalPolicy,
+        environment: { STAGE: props.stage },
+      });
+      httpApi.addRoutes({
+        path: '/test-site/{page}',
+        methods: [HttpMethod.GET],
+        integration: new HttpLambdaIntegration('TestSiteIntegration', testSite.fn),
+        authorizer: new HttpNoneAuthorizer(),
+      });
+    }
 
     new CfnOutput(this, 'ApiUrl', { value: stage.url });
     new CfnOutput(this, 'UserPoolId', { value: auth.userPool.userPoolId });

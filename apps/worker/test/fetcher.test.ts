@@ -439,7 +439,7 @@ describe('classifyNetworkError', () => {
   };
 
   it.each([
-    ['ENOTFOUND', 'unreachable', true],
+    ['ENOTFOUND', 'unreachable', false],
     ['EAI_AGAIN', 'unreachable', true],
     ['ECONNREFUSED', 'unreachable', true],
     ['ECONNRESET', 'unreachable', true],

@@ -91,7 +91,7 @@ worker: queued → running (conditional; attempts + 1)
 | 404, 410, other 4xx | no | `not_found` / `http_error` |
 | Wrong content type, too large | no | `unsupported_content` / `too_large` |
 | JS shell with no content | no | `needs_browser` |
-| DNS failure | yes | `unreachable` (after the last attempt) |
+| DNS failure | a name that does not exist: no (refined in T06b); a temporary DNS failure: yes | `unreachable` |
 | Timeout, connection reset, 5xx | yes | `timeout` / `unreachable` / `http_error` |
 | A bug in our worker | yes | `internal` (after the last attempt; DLQ alarm if it crashes every time) |
 

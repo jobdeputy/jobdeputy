@@ -1,8 +1,8 @@
 # T06a: Safe fetcher
 
-- **Status:** in-review
+- **Status:** done
 - **Depends on:** T06 ([decision](t06-async-crawl-pipeline.md#decision), [0007](../decisions/0007-crawler.md))
-- **Branch / PR:** `t06a-safe-fetcher`
+- **Branch / PR:** `t06a-safe-fetcher`, [#29](https://github.com/jobdeputy/jobdeputy/pull/29) (merged)
 
 ## Goal
 
