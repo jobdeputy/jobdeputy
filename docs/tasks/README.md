@@ -17,8 +17,8 @@ Every task goes through these statuses: `planned` → `researching` → `awaitin
 | T14 | [Security and hygiene](t14-security-hygiene.md) | done | T13 |
 | T06 | [Asynchronous crawl request pipeline](t06-async-crawl-pipeline.md) | in-progress | T04, T05 |
 | T06a | [Safe fetcher](t06a-safe-fetcher.md) | done | T06 |
-| T06b | [Crawl pipeline](t06b-crawl-pipeline.md) | in-review | T06a |
-| T06c | [Crawl limits](t06c-crawl-limits.md) | planned | T06b |
+| T06b | [Crawl pipeline](t06b-crawl-pipeline.md) | done | T06a |
+| T06c | [Crawl limits](t06c-crawl-limits.md) | in-review | T06b |
 | T06d | [Audit for existing actions](t06d-audit-existing-actions.md) | planned | T06b |
 | T07 | [Job extraction, normalization, and storage](t07-job-extraction-storage.md) | planned | T06 |
 | T08 | [Relevance filter](t08-relevance-filter.md) | planned | T05, T07 |

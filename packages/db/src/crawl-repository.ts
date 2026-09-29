@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { GetCommand, TransactWriteCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import type { CrawlErrorCode, CrawlStatus } from '@jobdeputy/shared';
+import { type CrawlErrorCode, type CrawlStatus, utcDay, utcMonth } from '@jobdeputy/shared';
 import { type AuditInput, auditItem, type Page, queryNewestFirst } from './audit-repository.js';
 import { isConditionFailure } from './client.js';
 
@@ -69,6 +69,11 @@ export class ActiveCrawlError extends Error {
   override name = 'ActiveCrawlError';
 }
 
+/** Today's crawls have reached the user's daily limit (T06c). */
+export class DailyLimitError extends Error {
+  override name = 'DailyLimitError';
+}
+
 /** Deterministic, so the same page is one source per user (0007). 128 bits of SHA-256. */
 export function sourceIdFor(normalizedUrl: string): string {
   return createHash('sha256').update(normalizedUrl).digest('hex').slice(0, 32);
@@ -78,7 +83,11 @@ export interface CrawlTables {
   crawls: string;
   sources: string;
   audit: string;
+  usage: string;
 }
+
+/** `usage` `DAY#` items expire a week after the day (0006). */
+export const USAGE_DAY_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 export type FinishOutcome =
   | { status: 'succeeded'; result: CrawlResult }
@@ -92,9 +101,11 @@ export class CrawlRepository {
   ) {}
 
   /**
-   * Saves the source, queues the crawl, and records `crawl.requested`, in one
-   * transaction. Throws ActiveCrawlError if the page already has an active crawl,
-   * unless it is `replacing` that (stale or finished) crawl.
+   * Saves the source, queues the crawl, records `crawl.requested`, and counts it for
+   * today and this month, in one transaction. Throws ActiveCrawlError if the page
+   * already has an active crawl (unless it is `replacing` that stale or finished crawl),
+   * and DailyLimitError if today's count has reached `dailyLimit`. Exact even when two
+   * submits race: the day counter's condition decides.
    */
   async request(input: {
     userId: string;
@@ -103,6 +114,7 @@ export class CrawlRepository {
     url: string;
     normalizedUrl: string;
     audit: Omit<AuditInput, 'userId'>;
+    dailyLimit: number;
     replacing?: string;
   }): Promise<Crawl> {
     const at = this.now();
@@ -171,11 +183,46 @@ export class CrawlRepository {
                 ConditionExpression: 'attribute_not_exists(userId)',
               },
             },
+            {
+              Update: {
+                TableName: this.tables.usage,
+                Key: { userId: input.userId, sk: `DAY#${utcDay(at)}` },
+                UpdateExpression:
+                  'SET crawls = if_not_exists(crawls, :zero) + :one, #type = :day, #ttl = :ttl, createdAt = if_not_exists(createdAt, :now), updatedAt = :now, schemaVersion = :one',
+                ConditionExpression: 'attribute_not_exists(crawls) OR crawls < :limit',
+                ExpressionAttributeNames: { '#type': 'type', '#ttl': 'ttl' },
+                ExpressionAttributeValues: {
+                  ':zero': 0,
+                  ':one': 1,
+                  ':day': 'usage_day',
+                  ':ttl': Math.floor(at.getTime() / 1000) + USAGE_DAY_TTL_SECONDS,
+                  ':now': now,
+                  ':limit': input.dailyLimit,
+                },
+              },
+            },
+            {
+              Update: {
+                TableName: this.tables.usage,
+                Key: { userId: input.userId, sk: `MONTH#${utcMonth(at)}` },
+                UpdateExpression:
+                  'SET crawls = if_not_exists(crawls, :zero) + :one, #type = :month, createdAt = if_not_exists(createdAt, :now), updatedAt = :now, schemaVersion = :one',
+                ExpressionAttributeNames: { '#type': 'type' },
+                ExpressionAttributeValues: {
+                  ':zero': 0,
+                  ':one': 1,
+                  ':month': 'usage_month',
+                  ':now': now,
+                },
+              },
+            },
           ],
         }),
       );
     } catch (error) {
-      if (cancelledBySourceCondition(error)) throw new ActiveCrawlError();
+      // An active crawl wins: a duplicate submit returns it and is not counted.
+      if (cancelledBy(error, SOURCE_ITEM)) throw new ActiveCrawlError();
+      if (cancelledBy(error, DAY_ITEM)) throw new DailyLimitError();
       throw error;
     }
     return crawl;
@@ -337,10 +384,31 @@ function trimError(error: CrawlError): CrawlError {
   return { code: error.code, message: error.message.slice(0, MAX_MESSAGE_LENGTH) };
 }
 
-/** A transaction cancelled because the source's condition (item 0) failed. */
-function cancelledBySourceCondition(error: unknown): boolean {
+/** Positions in `request`'s transaction. */
+const SOURCE_ITEM = 0;
+const DAY_ITEM = 3;
+
+/** A transaction cancelled because the condition on item `index` failed. */
+function cancelledBy(error: unknown, index: number): boolean {
   if (!(error instanceof Error) || error.name !== 'TransactionCanceledException') return false;
   const reasons = (error as Error & { CancellationReasons?: { Code?: string }[] })
     .CancellationReasons;
-  return reasons?.[0]?.Code === 'ConditionalCheckFailed';
+  return reasons?.[index]?.Code === 'ConditionalCheckFailed';
+}
+
+/** How many crawls the user has started today (UTC). */
+export async function crawlsToday(
+  client: DynamoDBDocumentClient,
+  usageTable: string,
+  userId: string,
+  at: Date,
+): Promise<number> {
+  const res = await client.send(
+    new GetCommand({
+      TableName: usageTable,
+      Key: { userId, sk: `DAY#${utcDay(at)}` },
+      ConsistentRead: true,
+    }),
+  );
+  return Number(res.Item?.crawls ?? 0);
 }

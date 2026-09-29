@@ -3,27 +3,37 @@ import {
   ActiveCrawlError,
   type Crawl,
   CrawlRepository,
+  CrawlSettingsRepository,
+  crawlsToday,
+  DailyLimitError,
   documentClient,
   sourceIdFor,
+  VersionConflictError,
 } from '@jobdeputy/db';
 import {
   ACTIVE_CRAWL_STATUSES,
   CRAWL_ERRORS,
+  type CrawlLimitsConfig,
   callerFromEvent,
   crawlId as crawlIdSchema,
   createCrawlInput,
   createLogger,
+  dailyLimitMessage,
+  effectiveDailyLimit,
   type HttpResponse,
   json,
+  nextUtcMidnight,
   pageQuery,
   parseCrawlUrl,
   parseJsonBody,
   problem,
+  updateCrawlSettingsInput,
   validationProblem,
 } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, Context } from 'aws-lambda';
 import { ulid } from 'ulid';
 import { refuseWritesWhileDeleting } from './account-guard.js';
+import { ssmCrawlLimits } from './crawl-limits.js';
 
 const logger = createLogger('api-crawls');
 
@@ -35,15 +45,35 @@ export const STALE_CRAWL_MS = 15 * 60 * 1000;
 
 export interface CrawlsDeps {
   repo: Pick<CrawlRepository, 'request' | 'getSource' | 'getCrawl' | 'listCrawls' | 'finish'>;
+  settings: Pick<CrawlSettingsRepository, 'get' | 'save'>;
+  /** The admin's default and maximum (T06c), cached for at most 5 minutes. */
+  limits: () => Promise<CrawlLimitsConfig>;
+  usedToday: (userId: string) => Promise<number>;
   newId: () => string;
   now: () => number;
   isBeingDeleted: (userId: string) => Promise<boolean>;
 }
 
 function defaultDeps(): CrawlsDeps {
-  const { CRAWLS_TABLE_NAME, SOURCES_TABLE_NAME, AUDIT_TABLE_NAME, USERS_TABLE_NAME } = process.env;
-  if (!CRAWLS_TABLE_NAME || !SOURCES_TABLE_NAME || !AUDIT_TABLE_NAME || !USERS_TABLE_NAME) {
-    throw new Error('Table names must be set');
+  const {
+    CRAWLS_TABLE_NAME,
+    SOURCES_TABLE_NAME,
+    AUDIT_TABLE_NAME,
+    USERS_TABLE_NAME,
+    USAGE_TABLE_NAME,
+    PREFERENCES_TABLE_NAME,
+    CRAWL_LIMITS_PARAMETER,
+  } = process.env;
+  if (
+    !CRAWLS_TABLE_NAME ||
+    !SOURCES_TABLE_NAME ||
+    !AUDIT_TABLE_NAME ||
+    !USERS_TABLE_NAME ||
+    !USAGE_TABLE_NAME ||
+    !PREFERENCES_TABLE_NAME ||
+    !CRAWL_LIMITS_PARAMETER
+  ) {
+    throw new Error('Table and parameter names must be set');
   }
   const client = documentClient();
   const account = new AccountRepository(client, USERS_TABLE_NAME);
@@ -52,10 +82,35 @@ function defaultDeps(): CrawlsDeps {
       crawls: CRAWLS_TABLE_NAME,
       sources: SOURCES_TABLE_NAME,
       audit: AUDIT_TABLE_NAME,
+      usage: USAGE_TABLE_NAME,
     }),
+    settings: new CrawlSettingsRepository(client, {
+      preferences: PREFERENCES_TABLE_NAME,
+      audit: AUDIT_TABLE_NAME,
+    }),
+    limits: ssmCrawlLimits(CRAWL_LIMITS_PARAMETER),
+    usedToday: (userId) => crawlsToday(client, USAGE_TABLE_NAME, userId, new Date()),
     newId: ulid,
     now: Date.now,
     isBeingDeleted: (userId) => account.isBeingDeleted(userId),
+  };
+}
+
+/** The limit that applies and why, plus today's use (`GET /me/crawl-settings`). */
+async function settingsView(userId: string, deps: CrawlsDeps) {
+  const [config, settings, usedToday] = await Promise.all([
+    deps.limits(),
+    deps.settings.get(userId),
+    deps.usedToday(userId),
+  ]);
+  return {
+    dailyLimit: effectiveDailyLimit(config, settings?.dailyLimit),
+    customLimit: settings?.dailyLimit ?? null,
+    defaultLimit: config.dailyDefault,
+    maxAllowed: config.dailyMax,
+    usedToday,
+    resetsAt: nextUtcMidnight(new Date(deps.now())).toISOString(),
+    version: settings?.version ?? 0,
   };
 }
 
@@ -98,6 +153,8 @@ async function submit(userId: string, rawUrl: string, deps: CrawlsDeps, requestI
   }
   const { normalizedUrl, url } = checked;
   const sourceId = sourceIdFor(normalizedUrl);
+  const [config, settings] = await Promise.all([deps.limits(), deps.settings.get(userId)]);
+  const dailyLimit = effectiveDailyLimit(config, settings?.dailyLimit);
   let replacing: string | undefined;
 
   // At most one replacement: a second conflict means another submit won the race.
@@ -118,11 +175,20 @@ async function submit(userId: string, rawUrl: string, deps: CrawlsDeps, requestI
           summary: `Crawl requested: ${url.hostname}`,
           detail: { sourceId },
         },
+        dailyLimit,
         ...(replacing !== undefined ? { replacing } : {}),
       });
       logger.info('Crawl queued', { crawlId, sourceId });
       return json(202, crawlView(crawl));
     } catch (error) {
+      if (error instanceof DailyLimitError) {
+        const used = await deps.usedToday(userId);
+        return problem(429, 'Daily crawl limit reached', {
+          detail: dailyLimitMessage(used, dailyLimit),
+          code: 'daily-limit-reached',
+          requestId,
+        });
+      }
       if (!(error instanceof ActiveCrawlError)) throw error;
     }
 
@@ -195,6 +261,46 @@ export async function route(event: Event, deps: CrawlsDeps): Promise<HttpRespons
       const crawl = await deps.repo.getCrawl(userId, id.data);
       if (!crawl) return problem(404, 'Not found', { requestId });
       return json(200, crawlView(crawl));
+    }
+    case 'GET /me/crawl-settings':
+      return json(200, await settingsView(userId, deps));
+    case 'PUT /me/crawl-settings': {
+      const body = parseJsonBody(event.body, event.isBase64Encoded);
+      if (body === undefined) return problem(400, 'Body must be valid JSON', { requestId });
+      const input = updateCrawlSettingsInput.safeParse(body);
+      if (!input.success) return validationProblem(input.error, requestId);
+      const config = await deps.limits();
+      const { dailyLimit, version } = input.data;
+      if (dailyLimit !== null && dailyLimit > config.dailyMax) {
+        return problem(422, 'Limit too high', {
+          detail: `The most you can choose is ${config.dailyMax} crawls a day.`,
+          code: 'limit-above-maximum',
+          requestId,
+        });
+      }
+      const previous = (await deps.settings.get(userId))?.dailyLimit;
+      try {
+        await deps.settings.save(userId, dailyLimit, version, {
+          auditId: deps.newId(),
+          name: 'crawl_limit.changed',
+          entity: { type: 'crawl_settings', id: 'CRAWL_SETTINGS' },
+          actor: 'user',
+          summary:
+            dailyLimit === null
+              ? `Daily crawl limit set back to the default (${config.dailyDefault})`
+              : `Daily crawl limit set to ${dailyLimit}`,
+          detail: { from: previous ?? 'default', to: dailyLimit ?? 'default' },
+        });
+      } catch (error) {
+        if (error instanceof VersionConflictError) {
+          return problem(409, 'Conflict', {
+            detail: 'This was changed elsewhere. Reload, then try again.',
+            requestId,
+          });
+        }
+        throw error;
+      }
+      return json(200, await settingsView(userId, deps));
     }
     default:
       return problem(404, 'Not found', { requestId });

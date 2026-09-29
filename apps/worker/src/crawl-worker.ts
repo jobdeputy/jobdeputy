@@ -213,6 +213,8 @@ function defaultDeps(): CrawlWorkerDeps {
       crawls: CRAWLS_TABLE_NAME,
       sources: SOURCES_TABLE_NAME,
       audit: AUDIT_TABLE_NAME,
+      // Counting happens at submit; the worker never touches usage (and has no grant).
+      usage: process.env.USAGE_TABLE_NAME ?? '',
     }),
     isBeingDeleted: (userId) => account.isBeingDeleted(userId),
     fetchPage: (url) => createFetcher().fetch(url),

@@ -132,3 +132,41 @@ describe('crawl pipeline (T06b)', () => {
     );
   });
 });
+
+describe('crawl limits (T06c)', () => {
+  it('keeps the admin limits in a free standard parameter, starting at the built-in defaults', () => {
+    t.hasResourceProperties('AWS::SSM::Parameter', {
+      Name: '/jobdeputy/jobdeputy-dev-iad/crawl-limits',
+      Type: 'String',
+      Value: '{"dailyDefault":20,"dailyMax":50}',
+    });
+    const parameter = Object.values(t.findResources('AWS::SSM::Parameter')).find(
+      (p) => p.Properties.Name === '/jobdeputy/jobdeputy-dev-iad/crawl-limits',
+    );
+    expect(parameter?.Properties.Tier ?? 'Standard').toBe('Standard');
+  });
+
+  it('builds the usage table with expiry, keyed by userId and sk', () => {
+    t.hasResourceProperties('AWS::DynamoDB::Table', {
+      TableName: 'jobdeputy-dev-iad-usage',
+      KeySchema: [
+        { AttributeName: 'userId', KeyType: 'HASH' },
+        { AttributeName: 'sk', KeyType: 'RANGE' },
+      ],
+      TimeToLiveSpecification: { AttributeName: 'ttl', Enabled: true },
+    });
+  });
+
+  it('lets only the crawls API count, read settings, and read the limits parameter', () => {
+    const api = statementsFor('CrawlsApiFn');
+    expect(actionsOn(api, 'UsageTable')).toEqual(['dynamodb:GetItem', 'dynamodb:UpdateItem']);
+    expect(actionsOn(api, 'PreferencesTable')).toEqual(['dynamodb:GetItem', 'dynamodb:PutItem']);
+    const ssm = api.filter((s) => [s.Action].flat().some((a) => a.startsWith('ssm:')));
+    expect(ssm.flatMap((s) => [s.Action].flat())).toEqual(['ssm:GetParameter']);
+    expect(JSON.stringify(ssm[0]?.Resource)).toMatch(/:parameter",{"Ref":"CrawlLimits/);
+
+    const worker = statementsFor('CrawlWorkerFn');
+    expect(actionsOn(worker, 'UsageTable')).toEqual([]);
+    expect(actionsOn(worker, 'PreferencesTable')).toEqual([]);
+  });
+});

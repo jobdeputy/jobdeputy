@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { CRAWL_ERRORS, type CrawlErrorCode, MAX_URL_LENGTH, parseCrawlUrl } from '../src/index.js';
+import {
+  CRAWL_ERRORS,
+  type CrawlErrorCode,
+  crawlLimitsConfig,
+  DEFAULT_CRAWL_LIMITS,
+  dailyLimitMessage,
+  effectiveDailyLimit,
+  MAX_URL_LENGTH,
+  nextUtcMidnight,
+  parseCrawlUrl,
+  utcDay,
+  utcMonth,
+} from '../src/index.js';
 
 function codeOf(raw: string): CrawlErrorCode | 'ok' {
   const result = parseCrawlUrl(raw);
@@ -101,5 +113,42 @@ describe('parseCrawlUrl', () => {
       code: 'blocked_address',
       message: CRAWL_ERRORS.blocked_address,
     });
+  });
+});
+
+describe('daily limit helpers (T06c)', () => {
+  it('applies the user limit, else the default, never above the maximum', () => {
+    const config = { dailyDefault: 20, dailyMax: 50 };
+    expect(effectiveDailyLimit(config)).toBe(20);
+    expect(effectiveDailyLimit(config, null)).toBe(20);
+    expect(effectiveDailyLimit(config, 5)).toBe(5);
+    expect(effectiveDailyLimit(config, 50)).toBe(50);
+    expect(effectiveDailyLimit({ dailyDefault: 20, dailyMax: 30 }, 40)).toBe(30);
+  });
+
+  it('keys days and months in UTC and resets at the next UTC midnight', () => {
+    // 23:30 in UTC is already the next day in India: the UTC day still counts.
+    const late = new Date('2026-12-31T23:30:00.000Z');
+    expect(utcDay(late)).toBe('2026-12-31');
+    expect(utcMonth(late)).toBe('2026-12');
+    expect(nextUtcMidnight(late).toISOString()).toBe('2027-01-01T00:00:00.000Z');
+    expect(nextUtcMidnight(new Date('2028-02-28T00:00:00.000Z')).toISOString()).toBe(
+      '2028-02-29T00:00:00.000Z',
+    );
+    expect(nextUtcMidnight(new Date('2026-09-28T00:00:00.000Z')).toISOString()).toBe(
+      '2026-09-29T00:00:00.000Z',
+    );
+  });
+
+  it('validates the admin setting', () => {
+    expect(crawlLimitsConfig.safeParse(DEFAULT_CRAWL_LIMITS).success).toBe(true);
+    expect(crawlLimitsConfig.safeParse({ dailyDefault: 50, dailyMax: 20 }).success).toBe(false);
+    expect(crawlLimitsConfig.safeParse({ dailyDefault: 1.5, dailyMax: 20 }).success).toBe(false);
+  });
+
+  it('writes the message users see', () => {
+    expect(dailyLimitMessage(20, 20)).toBe(
+      "You've used 20 of 20 crawls today. Resets at 00:00 UTC.",
+    );
   });
 });

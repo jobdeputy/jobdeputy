@@ -1,8 +1,8 @@
 # T06b: Crawl pipeline
 
-- **Status:** in-review
+- **Status:** done
 - **Depends on:** T06a
-- **Branch / PR:** `t06b-crawl-pipeline`
+- **Branch / PR:** `t06b-crawl-pipeline`, [#30](https://github.com/jobdeputy/jobdeputy/pull/30) (merged)
 
 ## Goal
 

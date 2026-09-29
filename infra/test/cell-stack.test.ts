@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { App, Stack } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { CfnUserPool } from 'aws-cdk-lib/aws-cognito';
@@ -7,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { MAX_RECEIVES as WORKER_MAX_RECEIVES } from '../../apps/worker/src/ping-worker.js';
 import { buildApp, parseAlertEmails } from '../lib/build-app.js';
 import { MAX_RECEIVES } from '../lib/cell-stack.js';
+import { REPO_ROOT } from '../lib/constructs/node-function.js';
 import { checkGuards } from '../lib/guards.js';
 
 function devTemplate(env: Record<string, string> = {}): Template {
@@ -238,6 +241,7 @@ describe('HTTP API (T04)', () => {
       'DELETE /me/roles/{roleId}',
       'GET /me',
       'GET /me/audit',
+      'GET /me/crawl-settings',
       'GET /me/crawls',
       'GET /me/crawls/{crawlId}',
       'GET /me/documents',
@@ -251,6 +255,7 @@ describe('HTTP API (T04)', () => {
       'POST /me/documents',
       'POST /me/roles',
       'POST /ping-jobs',
+      'PUT /me/crawl-settings',
       'PUT /me/documents/{documentId}',
       'PUT /me/preferences/search',
       'PUT /me/profile',
@@ -266,6 +271,29 @@ describe('HTTP API (T04)', () => {
       AuthorizerType: 'JWT',
       IdentitySource: ['$request.header.Authorization'],
     });
+  });
+
+  it('deploys every route the API code handles (a handled route without one is unreachable)', () => {
+    // Found in T06c: a handler case existed, but no API Gateway route, so the call was a 404.
+    const dir = join(REPO_ROOT, 'apps', 'api', 'src');
+    const handled = new Set(
+      readdirSync(dir)
+        .filter((f) => f.endsWith('.ts'))
+        .flatMap((f) =>
+          [
+            ...readFileSync(join(dir, f), 'utf8').matchAll(
+              /'((?:GET|POST|PUT|PATCH|DELETE) \/[^']*)'/g,
+            ),
+          ].map((m) => m[1] as string),
+        ),
+    );
+    const deployed = new Set(
+      Object.values(t.findResources('AWS::ApiGatewayV2::Route')).map(
+        (r) => r.Properties.RouteKey as string,
+      ),
+    );
+    expect(handled.size).toBeGreaterThan(10);
+    expect([...handled].filter((key) => !deployed.has(key))).toEqual([]);
   });
 
   it('has no route without a token in prod (no test site)', () => {
