@@ -24,7 +24,7 @@ One crawl reads a whole board within fixed limits, and jobs that disappear from 
 - **Where the "listed before" set lives:** on the source item (`listedJobIds`, at most 2,000 IDs, about 64 KB), rather than a query of every job of the user. A crawl reads it once. The first crawl after this change sets it; nothing is closed until then.
 - **Large boards stay partial:** a board with more than 500 jobs (Stripe has 710) is always partial, so its jobs are never closed by a crawl. They still close when T08 finds a posting gone.
 - **The time budget is checked before each request** against the longest a request can take (20 seconds), so a crawl never runs past 150 seconds. The gap and the budget are tested with a fake clock: no test waits.
-- **The integration test seeds a job** the page "listed before" (the test site holds no state, so a page cannot drop a job between crawls). It runs with the queue-level tests (`JD_FULL=1`: every PR, merge, and nightly run).
+- **The integration test seeds a job** the page "listed before" (the test site holds no state, so a page cannot drop a job between crawls). It runs with the queue-level tests (`JD_FULL=1`: every PR, merge, and nightly run). CI's test roles could not write to tables, so, as agreed with the maintainer, they may now `PutItem`/`UpdateItem` the `-jobs` and `-sources` tables of the tested dev and PR stacks only (`testDataWrites`, dev only; a test proves the prod role gets no table access). Deployed to `jobdeputy-cicd-dev-iad` on 2026-09-29.
 
 ## Done when
 

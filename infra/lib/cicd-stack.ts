@@ -16,6 +16,22 @@ export interface CicdStackProps extends StackProps {
   readonly prEnvironment?: string;
   /** For example "jobdeputy-dev-pr". */
   readonly prStackPrefix?: string;
+  /**
+   * Dev only (T07c): integration tests may seed test data that no page can produce (a
+   * job a page "listed before"), with `PutItem`/`UpdateItem` on the tested stacks'
+   * `-jobs` and `-sources` tables only. Never set for prod.
+   */
+  readonly testDataWrites?: boolean;
+}
+
+/** T07c: the tables integration tests may seed, and only these calls. */
+function testDataStatement(region: string, account: string, stackPattern: string) {
+  const table = (name: string) =>
+    `arn:aws:dynamodb:${region}:${account}:table/${stackPattern}-${name}`;
+  return new PolicyStatement({
+    actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem'],
+    resources: [table('jobs'), table('sources')],
+  });
 }
 
 const GITHUB_OIDC = 'token.actions.githubusercontent.com';
@@ -94,6 +110,9 @@ export class CicdStack extends Stack {
       }),
     );
 
+    if (props.testDataWrites)
+      role.addToPolicy(testDataStatement(this.region, this.account, tested));
+
     new CfnOutput(this, 'DeployRoleArn', { value: role.roleArn });
 
     if (props.prEnvironment && props.prStackPrefix) {
@@ -170,6 +189,7 @@ export class CicdStack extends Stack {
       testUserStatement(region, account),
       malwarePlanStatusStatement(region, account),
       new PolicyStatement({ actions: ['sqs:SendMessage'], resources: [sqsArn(`${prefix}*`)] }),
+      ...(props.testDataWrites ? [testDataStatement(region, account, `${prefix}*`)] : []),
       // T14 (scripts/cleanup-log-groups.sh): log groups CDK's bucket helper leaves behind.
       new PolicyStatement({
         actions: ['logs:DescribeLogGroups'],

@@ -34,6 +34,7 @@ describe('PR integration role (T11)', () => {
     testedStackName: 'jobdeputy-dev-iad',
     prEnvironment: 'pr',
     prStackPrefix: 'jobdeputy-dev-pr',
+    testDataWrites: true,
   });
   const t = Template.fromStack(stack);
 
@@ -100,6 +101,14 @@ describe('PR integration role (T11)', () => {
       if (list.some((a) => a.startsWith('sqs:'))) {
         expect(String(s.Resource)).toMatch(/:jobdeputy-dev-pr\*(-dlq)?$/);
       }
+      if (list.some((a) => a.startsWith('dynamodb:'))) {
+        // T07c: seeding test data, on PR stacks' jobs and sources tables only; no reads or deletes.
+        expect(list).toEqual(['dynamodb:PutItem', 'dynamodb:UpdateItem']);
+        expect(s.Resource).toEqual([
+          'arn:aws:dynamodb:us-east-1:111111111111:table/jobdeputy-dev-pr*-jobs',
+          'arn:aws:dynamodb:us-east-1:111111111111:table/jobdeputy-dev-pr*-sources',
+        ]);
+      }
     }
   });
 
@@ -115,5 +124,43 @@ describe('PR integration role (T11)', () => {
         id.startsWith('GitHubPrRole'),
       ),
     ).toBe(false);
+  });
+
+  it('can write test data only where asked: never for prod', () => {
+    const roleActions = (
+      testDataWrites: boolean,
+      env: string,
+    ): { actions: string[]; resource: unknown }[] => {
+      const stack = new CicdStack(new App(), 'cicd', {
+        env: { region: 'us-east-1', account: '111111111111' },
+        subjectPrefix: 'repo:x',
+        githubEnvironment: env,
+        testedStackName: `jobdeputy-${env}-iad`,
+        ...(testDataWrites ? { testDataWrites } : {}),
+      });
+      return Object.values(Template.fromStack(stack).findResources('AWS::IAM::Policy')).flatMap(
+        (p) =>
+          p.Properties.PolicyDocument.Statement.map(
+            (st: { Action: string | string[]; Resource: unknown }) => ({
+              actions: [st.Action].flat(),
+              resource: st.Resource,
+            }),
+          ),
+      );
+    };
+    const prod = roleActions(false, 'prod');
+    expect(prod.flatMap((st) => st.actions).some((a) => a.startsWith('dynamodb:'))).toBe(false);
+    const dev = roleActions(true, 'dev').filter((st) =>
+      st.actions.some((a) => a.startsWith('dynamodb:')),
+    );
+    expect(dev).toEqual([
+      {
+        actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem'],
+        resource: [
+          'arn:aws:dynamodb:us-east-1:111111111111:table/jobdeputy-dev-iad-jobs',
+          'arn:aws:dynamodb:us-east-1:111111111111:table/jobdeputy-dev-iad-sources',
+        ],
+      },
+    ]);
   });
 });

@@ -18,7 +18,9 @@ if (app.node.tryGetContext('cicd') === 'true' || app.node.tryGetContext('cicd') 
     subjectPrefix: GITHUB_OIDC_SUBJECT_PREFIX,
     githubEnvironment: stage,
     testedStackName: `jobdeputy-${stage}-iad`,
-    // PR integration runs exist only in dev (T11).
-    ...(stage === 'dev' ? { prEnvironment: 'pr', prStackPrefix: 'jobdeputy-dev-pr' } : {}),
+    // PR integration runs, and seeding test data, exist only in dev (T11, T07c).
+    ...(stage === 'dev'
+      ? { prEnvironment: 'pr', prStackPrefix: 'jobdeputy-dev-pr', testDataWrites: true }
+      : {}),
   });
 }
