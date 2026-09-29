@@ -403,6 +403,25 @@ describe('crawls in progress at once (fix after T06d)', () => {
     throw new TooManyActiveCrawlsError();
   };
 
+  it.each([
+    ['the active-crawl limit', () => new TooManyActiveCrawlsError()],
+    ['the daily limit', () => new DailyLimitError()],
+  ])("returns the page's running crawl (200) when a duplicate surfaces as %s", async (_, error) => {
+    // Seen on real AWS: DynamoDB reported only the limit's failed condition, not the page's.
+    const running = crawl({ crawlId: C0, status: 'running' });
+    const { d, repo } = deps({
+      request: vi.fn(async () => {
+        throw error();
+      }),
+      getSource: vi.fn(async () => ({ activeCrawlId: C0 }) as Source),
+      getCrawl: vi.fn(async () => running),
+    });
+    const res = await route(post(URL_), d);
+    expect(res.statusCode).toBe(200);
+    expect(body(res)).toMatchObject({ crawlId: C0, status: 'running' });
+    expect(repo.getActiveCrawlIds).not.toHaveBeenCalled();
+  });
+
   it('passes the admin maximum to the request', async () => {
     const { d, repo } = deps();
     await route(post(URL_), d);

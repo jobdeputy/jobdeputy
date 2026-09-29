@@ -204,6 +204,14 @@ async function healActiveSlots(userId: string, deps: CrawlsDeps): Promise<number
   return freed;
 }
 
+/** This page's crawl, if one is queued or running (and not stale). */
+async function activeCrawlOf(userId: string, sourceId: string, deps: CrawlsDeps) {
+  const activeId = (await deps.repo.getSource(userId, sourceId))?.activeCrawlId;
+  if (activeId === undefined) return undefined;
+  const crawl = await deps.repo.getCrawl(userId, activeId);
+  return isActive(crawl, deps.now()) ? crawl : undefined;
+}
+
 async function submit(userId: string, rawUrl: string, deps: CrawlsDeps, requestId: string) {
   const checked = parseCrawlUrl(rawUrl);
   if (!checked.ok) {
@@ -245,6 +253,13 @@ async function submit(userId: string, rawUrl: string, deps: CrawlsDeps, requestI
       logger.info('Crawl queued', { crawlId, sourceId });
       return json(202, crawlView(crawl));
     } catch (error) {
+      if (error instanceof DailyLimitError || error instanceof TooManyActiveCrawlsError) {
+        // DynamoDB does not always report every failed condition of a transaction, so a
+        // duplicate of a page already in progress can surface as a limit. The same page
+        // always gets its running crawl (200), and is never counted (seen on real AWS).
+        const running = await activeCrawlOf(userId, sourceId, deps);
+        if (running) return json(200, crawlView(running));
+      }
       if (error instanceof DailyLimitError) {
         const used = await deps.usedToday(userId);
         return problem(429, 'Daily crawl limit reached', {

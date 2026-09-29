@@ -332,6 +332,16 @@ describe('DocumentRepository', () => {
     });
   });
 
+  it('reads the default marker before the list (so a switch in between is a conflict, not a second default)', async () => {
+    const { c, send } = client((cmd) => {
+      if (cmd instanceof QueryCommand) return { Items: [doc({ documentId: 'D1' })] };
+      return {};
+    });
+    await new DocumentRepository(c, 'T', undefined, 'U').setDefault('u1', 'D1', 1, audit('x'));
+    const order = send.mock.calls.map(([cmd]) => (cmd as object).constructor.name);
+    expect(order.slice(0, 3)).toEqual(['GetCommand', 'QueryCommand', 'TransactWriteCommand']);
+  });
+
   it('requires the marker it read when one exists', async () => {
     const { c, send } = client((cmd) => {
       if (cmd instanceof QueryCommand)
@@ -419,7 +429,7 @@ describe('DocumentRepository', () => {
       if (cmd instanceof QueryCommand) return { Items: [] };
       return {};
     });
-    const repo = new DocumentRepository(c, 'T');
+    const repo = new DocumentRepository(c, 'T', undefined, 'U');
     await expect(repo.setDefault('u2', 'D1', 1, audit('x'))).resolves.toBeUndefined();
     await expect(repo.rename('u2', 'D1', 'x', 1, audit('x'))).resolves.toBeUndefined();
     await expect(repo.delete('u2', 'D1', audit('x'))).resolves.toBeUndefined();
