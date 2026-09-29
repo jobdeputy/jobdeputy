@@ -9,8 +9,9 @@ Short records of choices that shape the project. Agents and contributors treat a
 | [0003](0003-serverless-aws-stack.md) | Serverless AWS stack, async backbone, and CI/CD | Accepted |
 | [0004](0004-regional-cells-and-data-residency.md) | Regional cells and data residency (US, India, UK) | Accepted |
 | [0005](0005-pre-launch-cost-guardrails.md) | Pre-launch cost guardrails ($20 hard stop) | Accepted |
-| [0006](0006-data-model.md) | Data model: tables, keys, and schemas | Accepted (amended by 0007) |
+| [0006](0006-data-model.md) | Data model: tables, keys, and schemas | Accepted (amended by 0007, 0008) |
 | [0007](0007-crawler.md) | Crawler: plain fetch, SSRF-safe, polite, and limited | Accepted |
+| [0008](0008-job-extraction.md) | Job extraction: job-board feeds and schema.org first, LLM later | Accepted |
 
 ## Template
 

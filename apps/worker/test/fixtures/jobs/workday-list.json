@@ -1,0 +1,26 @@
+{
+  "total": 3,
+  "jobPostings": [
+    {
+      "title": "Senior EDA Engineer",
+      "externalPath": "/job/US-CA-Santa-Clara/Senior-EDA-Engineer_JR2000001",
+      "locationsText": "US, CA, Santa Clara",
+      "postedOn": "Posted Today",
+      "bulletFields": ["JR2000001"]
+    },
+    {
+      "title": "Firmware Engineer",
+      "externalPath": "/job/IN-Bengaluru/Firmware-Engineer_JR2000002",
+      "locationsText": "3 Locations",
+      "postedOn": "Posted 3 Days Ago",
+      "bulletFields": ["JR2000002"]
+    },
+    {
+      "title": "Program Manager",
+      "externalPath": "/job/UK-Reading/Program-Manager_JR2000003",
+      "locationsText": "UK, Reading",
+      "postedOn": "Posted 30+ Days Ago",
+      "bulletFields": ["JR2000003"]
+    }
+  ]
+}

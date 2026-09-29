@@ -1,0 +1,10 @@
+{
+  "absolute_url": "https://job-boards.greenhouse.io/acme/jobs/4001001",
+  "id": 4001001,
+  "location": { "name": "Dublin" },
+  "updated_at": "2026-09-25T16:45:00-04:00",
+  "first_published": "2026-09-03T13:30:34-04:00",
+  "title": "Backend Engineer",
+  "company_name": "Acme Robotics",
+  "content": "&lt;h2&gt;&lt;strong&gt;Who we are&lt;/strong&gt;&lt;/h2&gt;\n&lt;p&gt;Acme builds robots &amp;amp; tools.&lt;/p&gt;\n&lt;ul&gt;&lt;li&gt;Go&lt;/li&gt;&lt;li&gt;AWS&lt;/li&gt;&lt;/ul&gt;&lt;script&gt;alert(1)&lt;/script&gt;"
+}

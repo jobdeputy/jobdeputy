@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<title>Careers at Acme</title>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Organization","name":"Acme"}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "JobPosting",
+      "title": "Site Reliability Engineer",
+      "description": "<p>Keep Acme <b>up</b>.</p><p>On call 1 week in 6.</p>",
+      "identifier": {"@type": "PropertyValue", "name": "Acme", "value": "SRE-1"},
+      "datePosted": "2026-09-10",
+      "validThrough": "2099-01-01T00:00",
+      "employmentType": ["FULL_TIME"],
+      "hiringOrganization": {"@type": "Organization", "name": "Acme"},
+      "jobLocation": [
+        {"@type": "Place", "address": {"@type": "PostalAddress", "addressLocality": "Manchester", "addressRegion": "England", "addressCountry": "GB"}},
+        {"@type": "Place", "address": {"@type": "PostalAddress", "addressLocality": "Leeds", "addressCountry": {"@type": "Country", "name": "UK"}}}
+      ],
+      "baseSalary": {"@type": "MonetaryAmount", "currency": "GBP", "value": {"@type": "QuantitativeValue", "minValue": 70000, "maxValue": 85000, "unitText": "YEAR"}},
+      "url": "/careers/sre"
+    },
+    {
+      "@type": ["JobPosting"],
+      "title": "Remote Writer",
+      "description": "Write docs.",
+      "jobLocationType": "TELECOMMUTE",
+      "hiringOrganization": "Acme",
+      "employmentType": "CONTRACTOR",
+      "url": "https://acme.example/careers/writer"
+    },
+    {
+      "@type": "JobPosting",
+      "title": "Closed Role",
+      "validThrough": "2020-01-01",
+      "url": "https://acme.example/careers/closed"
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">{ this is broken json </script>
+</head>
+<body><h1>Careers</h1><p>See our open roles below.</p></body>
+</html>

@@ -20,7 +20,11 @@ Every task goes through these statuses: `planned` → `researching` → `awaitin
 | T06b | [Crawl pipeline](t06b-crawl-pipeline.md) | done | T06a |
 | T06c | [Crawl limits](t06c-crawl-limits.md) | done | T06b |
 | T06d | [Audit for existing actions](t06d-audit-existing-actions.md) | done | T06b |
-| T07 | [Job extraction, normalization, and storage](t07-job-extraction-storage.md) | planned | T06 |
+| T07 | [Job extraction, normalization, and storage](t07-job-extraction-storage.md) | in-progress | T06 |
+| T07a | [Job readers](t07a-job-readers.md) | in-review | T07 |
+| T07b | [Jobs table and storage](t07b-jobs-storage.md) | planned | T07a |
+| T07c | [Paging, crawl limits, and closed jobs](t07c-paging-and-closed-jobs.md) | planned | T07b |
+| T07d | [LLM extraction](t07d-llm-extraction.md) ([#41](https://github.com/jobdeputy/jobdeputy/issues/41)) | planned | T07b, AI credentials |
 | T08 | [Relevance filter](t08-relevance-filter.md) | planned | T05, T07 |
 | T09 | [User interface for the slice](t09-ui.md) | planned | T05, T06, T08 |
 | T10 | [End-to-end tests and hardening](t10-end-to-end-hardening.md) | planned | T09 |
@@ -37,7 +41,7 @@ Must be fixed before the prod launch. Tracked as GitHub issues with the [`releas
 | [#22](https://github.com/jobdeputy/jobdeputy/issues/22) | Production wiring: prod accounts, approval-gated deploys, prod alerts |
 | [#34](https://github.com/jobdeputy/jobdeputy/issues/34) | Safe prod deploys: gradual rollout with automatic rollback, error-rate 5xx alarm, a second alert channel, Lambda concurrency quotas |
 
-Other tracked maintenance: [#23](https://github.com/jobdeputy/jobdeputy/issues/23) (Node.js 24 before 2027-04-30), [#24](https://github.com/jobdeputy/jobdeputy/issues/24) (CDK asset garbage collection), [#35](https://github.com/jobdeputy/jobdeputy/issues/35) (restore the dev account's Lambda concurrency limit, 10 → 1000).
+Deferred from T07: [#40](https://github.com/jobdeputy/jobdeputy/issues/40) (shared `companies` and `company-aliases` tables, built with company rules). Other tracked maintenance: [#23](https://github.com/jobdeputy/jobdeputy/issues/23) (Node.js 24 before 2027-04-30), [#24](https://github.com/jobdeputy/jobdeputy/issues/24) (CDK asset garbage collection), [#35](https://github.com/jobdeputy/jobdeputy/issues/35) (restore the dev account's Lambda concurrency limit, 10 → 1000).
 
 ## Future (after this slice)
 
