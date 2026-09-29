@@ -138,7 +138,7 @@ describe('crawl limits (T06c)', () => {
     t.hasResourceProperties('AWS::SSM::Parameter', {
       Name: '/jobdeputy/jobdeputy-dev-iad/crawl-limits',
       Type: 'String',
-      Value: '{"dailyDefault":20,"dailyMax":50,"maxActive":3}',
+      Value: '{"dailyDefault":20,"dailyMax":50,"maxActive":1}',
     });
     const parameter = Object.values(t.findResources('AWS::SSM::Parameter')).find(
       (p) => p.Properties.Name === '/jobdeputy/jobdeputy-dev-iad/crawl-limits',

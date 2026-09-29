@@ -7,16 +7,16 @@ describe('cachedCrawlLimits', () => {
     let now = 0;
     const read = vi.fn(async () => '{"dailyDefault":10,"dailyMax":40}');
     const limits = cachedCrawlLimits(read, () => now);
-    expect(await limits()).toEqual({ dailyDefault: 10, dailyMax: 40, maxActive: 3 });
+    expect(await limits()).toEqual({ dailyDefault: 10, dailyMax: 40, maxActive: 1 });
     now = LIMITS_CACHE_MS - 1;
     await limits();
     expect(read).toHaveBeenCalledTimes(1);
 
     // An admin change is picked up once the cache expires, without a deploy.
     read.mockResolvedValue('{"dailyDefault":5,"dailyMax":8}');
-    // (maxActive is optional in the setting: the default 3 applies.)
+    // (maxActive is optional in the setting: the default 1 applies.)
     now = LIMITS_CACHE_MS;
-    expect(await limits()).toEqual({ dailyDefault: 5, dailyMax: 8, maxActive: 3 });
+    expect(await limits()).toEqual({ dailyDefault: 5, dailyMax: 8, maxActive: 1 });
   });
 
   it.each([
@@ -38,6 +38,6 @@ describe('cachedCrawlLimits', () => {
       .mockResolvedValue('{"dailyDefault":7,"dailyMax":9}');
     const limits = cachedCrawlLimits(read);
     expect(await limits()).toEqual(DEFAULT_CRAWL_LIMITS);
-    expect(await limits()).toEqual({ dailyDefault: 7, dailyMax: 9, maxActive: 3 });
+    expect(await limits()).toEqual({ dailyDefault: 7, dailyMax: 9, maxActive: 1 });
   });
 });

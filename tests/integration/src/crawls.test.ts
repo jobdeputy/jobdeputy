@@ -113,6 +113,21 @@ describe('crawls (deployed)', () => {
     });
   });
 
+  it("keeps each user's crawls and audit history private", async () => {
+    const crawlId = await submit(site('jobs'));
+    const peek = await callApi(api, 'GET', `me/crawls/${crawlId}`, other.accessToken);
+    expect(peek.status).toBe(404);
+    const [crawls, audit] = await Promise.all([
+      callApi(api, 'GET', 'me/crawls', other.accessToken),
+      callApi(api, 'GET', 'me/audit', other.accessToken),
+    ]);
+    expect(crawls.body.crawls).toEqual([]);
+    expect(audit.body.entries).toEqual([]);
+    await finished([crawlId]);
+  });
+
+  // Last: this crawl stays in progress for minutes (a site that is down), holding one of
+  // the user's active slots (the default is 1), so nothing may follow it.
   it('returns the active crawl when the same page is submitted again, and retries a site that is down', async () => {
     // The page answers 503, so the crawl stays active for minutes (retries after 30 s and 120 s).
     const url = site('unavailable');
@@ -132,18 +147,5 @@ describe('crawls (deployed)', () => {
     );
     expect(retrying).toMatchObject({ status: 'running', lastError: { code: 'http_error' } });
     // Left running on purpose: deleting the account afterwards stops it (T12).
-  });
-
-  it("keeps each user's crawls and audit history private", async () => {
-    const crawlId = await submit(site('jobs'));
-    const peek = await callApi(api, 'GET', `me/crawls/${crawlId}`, other.accessToken);
-    expect(peek.status).toBe(404);
-    const [crawls, audit] = await Promise.all([
-      callApi(api, 'GET', 'me/crawls', other.accessToken),
-      callApi(api, 'GET', 'me/audit', other.accessToken),
-    ]);
-    expect(crawls.body.crawls).toEqual([]);
-    expect(audit.body.entries).toEqual([]);
-    await finished([crawlId]);
   });
 });

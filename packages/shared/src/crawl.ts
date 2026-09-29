@@ -145,7 +145,7 @@ export const crawlLimitsConfig = z
     dailyDefault: z.number().int().min(1).max(1000),
     dailyMax: z.number().int().min(1).max(1000),
     /** Crawls one user may have queued or running at the same time (fix after T06d). */
-    maxActive: z.number().int().min(1).max(20).default(3),
+    maxActive: z.number().int().min(1).max(20).default(1),
   })
   .refine((c) => c.dailyDefault <= c.dailyMax, 'dailyDefault must not exceed dailyMax');
 export type CrawlLimitsConfig = z.infer<typeof crawlLimitsConfig>;
@@ -154,7 +154,7 @@ export type CrawlLimitsConfig = z.infer<typeof crawlLimitsConfig>;
 export const DEFAULT_CRAWL_LIMITS: CrawlLimitsConfig = {
   dailyDefault: 20,
   dailyMax: 50,
-  maxActive: 3,
+  maxActive: 1,
 };
 
 /** `PUT /me/crawl-settings`: `dailyLimit: null` goes back to the admin default. */

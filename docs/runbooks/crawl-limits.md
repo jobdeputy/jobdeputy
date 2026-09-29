@@ -16,11 +16,11 @@ Users see all of it in `GET /me/crawl-settings`: the limit that applies, the def
 ```sh
 aws ssm put-parameter --overwrite \
   --name /jobdeputy/jobdeputy-dev-iad/crawl-limits \
-  --value '{"dailyDefault":20,"dailyMax":50,"maxActive":3}' \
+  --value '{"dailyDefault":20,"dailyMax":50,"maxActive":1}' \
   --profile jobdeputy-dev-iad
 ```
 
-- **Rules:** the daily values are whole numbers from 1 to 1000, and the default can't be above the maximum. `maxActive` is 1 to 20 (default 3 if left out). Past it, a submit gets 429 `too-many-active-crawls` with `Retry-After: 30`.
+- **Rules:** the daily values are whole numbers from 1 to 1000, and the default can't be above the maximum. `maxActive` is 1 to 20 (default 1 if left out; raise it when users need to submit several pages at once). Past it, a submit gets 429 `too-many-active-crawls` with `Retry-After: 30`.
   - An invalid value is ignored: the API uses the built-in defaults (20 and 50) and logs an error (`Invalid crawl limits setting`).
 - **When it takes effect:** within 5 minutes (the API's cache). Nothing needs restarting.
 - **Check it:** sign in and call `GET /me/crawl-settings`. `defaultLimit` and `maxAllowed` show the new values.
