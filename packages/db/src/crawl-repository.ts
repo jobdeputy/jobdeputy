@@ -19,6 +19,11 @@ export interface Source {
   ats?: string;
   /** From the last successful crawl (T07b). */
   stats?: { lastFound: number };
+  /**
+   * T07c: the jobs this page lists, as far as its crawls know (after a complete crawl,
+   * exactly what it listed). A later complete crawl closes the ones no longer listed.
+   */
+  listedJobIds?: Set<string>;
   companyConfirmed: boolean;
   active: boolean;
   schedule: { type: 'manual' };
@@ -69,7 +74,14 @@ export interface CrawlStats {
   jobsFound: number;
   jobsNew: number;
   jobsUpdated: number;
+  /** T07c: requests made (robots.txt not counted). */
+  pagesFetched?: number;
+  /** T07c: jobs closed because this complete crawl no longer listed them. */
+  jobsClosed?: number;
 }
+
+/** Why a crawl saved only part of what it could have read (0008). */
+export type PartialReason = 'max_jobs' | 'max_pages' | 'time_budget' | 'page_failed';
 
 /** How jobs were read (0008). */
 export interface CrawlExtraction {
@@ -81,7 +93,7 @@ export interface CrawlExtraction {
   /** Listings without a title or a usable link. */
   skipped: number;
   /** Set when the crawl stopped at a limit and saved only part of what it read. */
-  partial?: { reason: 'max_jobs' };
+  partial?: { reason: PartialReason };
 }
 
 /** What a successful crawl learned about its source (T07b). */
@@ -89,6 +101,8 @@ export interface SourceUpdate {
   kind: Source['kind'];
   ats?: string;
   lastFound: number;
+  /** T07c: the new `listedJobIds`; empty removes it; absent leaves it as it was. */
+  listedJobIds?: string[];
 }
 
 export interface CrawlError {
@@ -470,9 +484,17 @@ export class CrawlRepository {
         new UpdateCommand({
           TableName: this.tables.sources,
           Key: { userId, sourceId },
-          UpdateExpression: `SET lastCrawledAt = :now, updatedAt = :now${learned ? `, #kind = :kind, #stats = :stats${learned.ats ? ', ats = :ats' : ''}` : ''} REMOVE activeCrawlId`,
+          UpdateExpression: sourceUpdateExpression(learned),
           ConditionExpression: 'activeCrawlId = :crawlId',
-          ...(learned ? { ExpressionAttributeNames: { '#kind': 'kind', '#stats': 'stats' } } : {}),
+          ...(learned
+            ? {
+                ExpressionAttributeNames: {
+                  '#kind': 'kind',
+                  '#stats': 'stats',
+                  ...(learned.listedJobIds !== undefined ? { '#listed': 'listedJobIds' } : {}),
+                },
+              }
+            : {}),
           ExpressionAttributeValues: {
             ':now': now,
             ':crawlId': crawlId,
@@ -481,6 +503,9 @@ export class CrawlRepository {
                   ':kind': learned.kind,
                   ':stats': { lastFound: learned.lastFound },
                   ...(learned.ats ? { ':ats': learned.ats } : {}),
+                  ...(learned.listedJobIds?.length
+                    ? { ':listed': new Set(learned.listedJobIds) }
+                    : {}),
                 }
               : {}),
           },
@@ -491,6 +516,19 @@ export class CrawlRepository {
     }
     return true;
   }
+}
+
+/** The source's update after a crawl ends. DynamoDB cannot store an empty set: it is removed. */
+function sourceUpdateExpression(learned: SourceUpdate | undefined): string {
+  const set = ['lastCrawledAt = :now', 'updatedAt = :now'];
+  const remove = ['activeCrawlId'];
+  if (learned) {
+    set.push('#kind = :kind', '#stats = :stats');
+    if (learned.ats) set.push('ats = :ats');
+    if (learned.listedJobIds?.length) set.push('#listed = :listed');
+    else if (learned.listedJobIds !== undefined) remove.push('#listed');
+  }
+  return `SET ${set.join(', ')} REMOVE ${remove.join(', ')}`;
 }
 
 function trimError(error: CrawlError): CrawlError {

@@ -98,7 +98,7 @@ describe('crawl pipeline (T06b)', () => {
   it('gives the worker only the writes it makes, and S3 writes of fetched pages only', () => {
     const worker = statementsFor('CrawlWorkerFn');
     expect(actionsOn(worker, 'CrawlsTable')).toEqual(['dynamodb:UpdateItem']);
-    expect(actionsOn(worker, 'SourcesTable')).toEqual(['dynamodb:UpdateItem']);
+    expect(actionsOn(worker, 'SourcesTable')).toEqual(['dynamodb:GetItem', 'dynamodb:UpdateItem']);
     expect(actionsOn(worker, 'AuditTable')).toEqual(['dynamodb:PutItem']);
     expect(actionsOn(worker, 'UsersTable')).toEqual(['dynamodb:GetItem']);
     // T07b: one update per job; never a read, a delete, or a scan.

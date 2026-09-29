@@ -10,8 +10,10 @@
   "devDependencies": {
     "@aws-sdk/client-cloudformation": "3.1141.0",
     "@aws-sdk/client-cognito-identity-provider": "3.1141.0",
+    "@aws-sdk/client-dynamodb": "3.1141.0",
     "@aws-sdk/client-guardduty": "3.1141.0",
     "@aws-sdk/client-sqs": "3.1141.0",
+    "@aws-sdk/lib-dynamodb": "3.1141.0",
     "@jobdeputy/test-fixtures": "workspace:*"
   }
 }

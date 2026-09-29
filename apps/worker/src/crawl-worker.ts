@@ -42,6 +42,12 @@ export interface CrawlWorkerDeps {
   storePage: (key: string, page: FetchedPage) => Promise<void>;
   /** T07b: creates or updates the jobs (idempotent, so a retried crawl is safe). */
   saveJobs: (userId: string, jobs: JobPosting[], context: SaveContext) => Promise<SaveStats>;
+  /** T07c: the jobs the source listed as of its earlier crawls. */
+  listedJobIds: (userId: string, sourceId: string) => Promise<string[]>;
+  /** T07c: the source no longer lists these; closes the ones no page lists. Returns how many closed. */
+  closeJobs: (userId: string, sourceId: string, jobIds: string[]) => Promise<number>;
+  /** Waits between requests to one host. */
+  sleep: (ms: number) => Promise<void>;
   now: () => Date;
   delayRetry: (record: SQSRecord, seconds: number) => Promise<void>;
   newId: () => string;
@@ -49,6 +55,16 @@ export interface CrawlWorkerDeps {
 }
 
 export type CrawlOutcome = 'succeeded' | 'failed' | 'skipped';
+
+/**
+ * The most job IDs a source remembers: a partial crawl adds to what it knew. Newest
+ * first, so a page that keeps being partial keeps what it lists now.
+ */
+export const MAX_LISTED_JOB_IDS = 2_000;
+
+export function listed(seen: string[], previous: string[]): string[] {
+  return [...new Set([...seen, ...previous])].slice(0, MAX_LISTED_JOB_IDS);
+}
 
 /** Asks SQS for another attempt (the message is not deleted). */
 export class RetryLaterError extends Error {
@@ -121,20 +137,41 @@ export async function processRecord(
   };
 
   try {
-    const { page, jobs, extraction, board } = await withDeadline(
+    const { page, jobs, extraction, board, requests, complete } = await withDeadline(
       (async () => {
-        const reading = await readJobs(crawl.url, deps.newFetcher(), deps.now());
+        const reading = await readJobs(crawl.url, deps.newFetcher(), {
+          now: deps.now(),
+          sleep: deps.sleep,
+        });
         await deps.storePage(crawlKeys(userId, crawlId).page, reading.page);
         return reading;
       })(),
       deps.remainingMs() - SAFETY_MARGIN_MS,
     );
     const key = crawlKeys(userId, crawlId).page;
-    const saved = await withDeadline(
-      deps.saveJobs(userId, jobs, { sourceId: crawl.sourceId, crawlId }),
+    const { saved, closed, listedJobIds } = await withDeadline(
+      (async () => {
+        const saved = await deps.saveJobs(userId, jobs, { sourceId: crawl.sourceId, crawlId });
+        if (extraction.outcome !== 'read') return { saved, closed: 0 };
+        // T07c: what this page lists now. Only a complete crawl can tell a job is gone;
+        // a partial one keeps what it knew and adds what it read.
+        const seen = jobs.map((j) => j.jobId);
+        const previous = await deps.listedJobIds(userId, crawl.sourceId);
+        if (!complete) return { saved, closed: 0, listedJobIds: listed(seen, previous) };
+        const current = new Set(seen);
+        const missing = previous.filter((id) => !current.has(id));
+        const closed = await deps.closeJobs(userId, crawl.sourceId, missing);
+        return { saved, closed, listedJobIds: seen };
+      })(),
       deps.remainingMs() - SAFETY_MARGIN_MS,
     );
-    const stats = { jobsFound: saved.found, jobsNew: saved.created, jobsUpdated: saved.updated };
+    const stats = {
+      jobsFound: saved.found,
+      jobsNew: saved.created,
+      jobsUpdated: saved.updated,
+      jobsClosed: closed,
+      pagesFetched: requests,
+    };
     await deps.repo.finish(
       crawl,
       {
@@ -152,12 +189,14 @@ export async function processRecord(
           kind: board ? 'ats_board' : 'unknown',
           ...(board ? { ats: board.ats } : {}),
           lastFound: saved.found,
+          ...(listedJobIds !== undefined ? { listedJobIds } : {}),
         },
       },
       audit('crawl.succeeded', `Crawl succeeded: ${host}, ${saved.found} jobs`, {
         bytes: page.body.byteLength,
         jobsFound: saved.found,
         jobsNew: saved.created,
+        jobsClosed: closed,
       }),
     );
     logger.info('Crawl succeeded', {
@@ -238,22 +277,29 @@ function defaultDeps(): CrawlWorkerDeps {
   const client = documentClient();
   const account = new AccountRepository(client, USERS_TABLE_NAME);
   const jobs = new JobRepository(client, JOBS_TABLE_NAME);
+  const crawls = new CrawlRepository(client, {
+    crawls: CRAWLS_TABLE_NAME,
+    sources: SOURCES_TABLE_NAME,
+    audit: AUDIT_TABLE_NAME,
+    // Counting happens at submit; the worker only frees the crawl's active slot when it ends.
+    usage: process.env.USAGE_TABLE_NAME ?? '',
+  });
   const s3 = new S3Client({});
   const sqs = new SQSClient({});
   return {
-    repo: new CrawlRepository(client, {
-      crawls: CRAWLS_TABLE_NAME,
-      sources: SOURCES_TABLE_NAME,
-      audit: AUDIT_TABLE_NAME,
-      // Counting happens at submit; the worker never touches usage (and has no grant).
-      usage: process.env.USAGE_TABLE_NAME ?? '',
-    }),
+    repo: crawls,
     isBeingDeleted: (userId) => account.isBeingDeleted(userId),
     newFetcher: () => {
       const fetcher = createFetcher();
       return (url, options) => fetcher.fetch(url, options);
     },
     saveJobs: (userId, found, context) => jobs.save(userId, found, context),
+    listedJobIds: async (userId, sourceId) => {
+      const source = await crawls.getSource(userId, sourceId);
+      return [...(source?.listedJobIds ?? [])];
+    },
+    closeJobs: (userId, sourceId, jobIds) => jobs.closeMissing(userId, sourceId, jobIds),
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     now: () => new Date(),
     storePage: async (key, page) => {
       await s3.send(
