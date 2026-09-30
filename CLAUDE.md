@@ -49,7 +49,7 @@ Do not design ahead of the task that needs it. For example, the crawler's archit
 
 Everything runs on AWS serverless services. See [0003](docs/decisions/0003-serverless-aws-stack.md).
 
-- TypeScript everywhere on Node 22, in a pnpm monorepo: `apps/api`, `apps/worker`, `apps/web`, `packages/shared`, `packages/db`, `infra/` (AWS CDK).
+- TypeScript everywhere on Node 22, in a pnpm monorepo: `apps/api`, `apps/worker`, `apps/web`, `packages/shared`, `packages/db`, `packages/llm` (the only Strands caller, [0009](docs/decisions/0009-llm-architecture-and-own-keys.md)), `infra/` (AWS CDK).
 - API: API Gateway HTTP API → Lambda, with Zod validation from `packages/shared`.
 - Async: the API writes to DynamoDB (`status=queued`) → Stream → EventBridge Pipes → SQS → worker Lambda. Never send to SQS directly from the API. Workers must be idempotent.
 - Data: DynamoDB, accessed only through `packages/db`. Files go to S3 through presigned URLs.

@@ -12,6 +12,7 @@ on:
 permissions:
   contents: read
   checks: read # reuse the previous commit's result for Markdown-only pushes
+  pull-requests: write # post the model eval result (T08b)
   id-token: write # GitHub OIDC -> AWS, no stored keys
 
 concurrency:
@@ -128,6 +129,30 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_PR_ROLE_ARN }}
           aws-region: us-east-1
+
+      # T08b: a change to a prompt, schema, model, or packages/llm runs the eval against
+      # the real platform model (about $0.001), posts the result on the PR, and fails on a
+      # regression against the saved baseline (packages/llm/eval/baselines).
+      - name: Model eval (only when packages/llm or the model changes)
+        if: steps.changes.outputs.code == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if ! git diff --name-only "$BASE" "$HEAD_SHA" \
+               | grep -qE '^packages/llm/(src/|eval/|package\.json$)|^packages/shared/src/ai\.ts$'; then
+            echo "No LLM change in this PR: eval skipped."; exit 0
+          fi
+          set +e
+          pnpm --filter @jobdeputy/llm eval --runs 2 --summary "$RUNNER_TEMP/eval.md"
+          status=$?
+          set -e
+          [ -s "$RUNNER_TEMP/eval.md" ] || echo "The eval did not finish (exit $status); see the run log." > "$RUNNER_TEMP/eval.md"
+          { echo "### Model eval"; echo; cat "$RUNNER_TEMP/eval.md"; } > "$RUNNER_TEMP/comment.md"
+          gh pr comment "$PR" --edit-last --create-if-none --body-file "$RUNNER_TEMP/comment.md"
+          exit "$status"
 
       - name: Deploy the PR stack
         if: steps.changes.outputs.code == 'true'

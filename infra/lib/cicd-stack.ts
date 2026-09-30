@@ -1,3 +1,4 @@
+import { platformModelArn } from '@jobdeputy/shared';
 import { CfnOutput, Duration, Stack, type StackProps } from 'aws-cdk-lib';
 import { CfnOIDCProvider, FederatedPrincipal, PolicyStatement, Role } from 'aws-cdk-lib/aws-iam';
 import type { Construct } from 'constructs';
@@ -22,6 +23,19 @@ export interface CicdStackProps extends StackProps {
    * `-jobs` and `-sources` tables only. Never set for prod.
    */
   readonly testDataWrites?: boolean;
+  /**
+   * Dev only (T08b): the model eval on PRs and Nightly's real-model check call the
+   * platform model, with `bedrock:InvokeModel` on that one model in this Region only.
+   */
+  readonly modelChecks?: boolean;
+}
+
+/** T08b: invoke the pinned platform model (decision 0010), nothing else in Bedrock. */
+function modelCheckStatement(region: string) {
+  return new PolicyStatement({
+    actions: ['bedrock:InvokeModel'],
+    resources: [platformModelArn(region)],
+  });
 }
 
 /** T07c: the tables integration tests may seed, and only these calls. */
@@ -112,6 +126,7 @@ export class CicdStack extends Stack {
 
     if (props.testDataWrites)
       role.addToPolicy(testDataStatement(this.region, this.account, tested));
+    if (props.modelChecks) role.addToPolicy(modelCheckStatement(this.region));
 
     new CfnOutput(this, 'DeployRoleArn', { value: role.roleArn });
 
@@ -190,6 +205,7 @@ export class CicdStack extends Stack {
       malwarePlanStatusStatement(region, account),
       new PolicyStatement({ actions: ['sqs:SendMessage'], resources: [sqsArn(`${prefix}*`)] }),
       ...(props.testDataWrites ? [testDataStatement(region, account, `${prefix}*`)] : []),
+      ...(props.modelChecks ? [modelCheckStatement(region)] : []),
       // T14 (scripts/cleanup-log-groups.sh): log groups CDK's bucket helper leaves behind.
       new PolicyStatement({
         actions: ['logs:DescribeLogGroups'],

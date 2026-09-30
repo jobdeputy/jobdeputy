@@ -1,6 +1,6 @@
 # T08: Relevance filter
 
-- **Status:** in-progress (split into T08a–T08d)
+- **Status:** in-progress (split into T08a–T08e)
 - **Depends on:** T05, T07
 
 ## Goal
@@ -50,6 +50,7 @@ Cost at this scale: storage about $0.25 per GB-month (1,000 jobs ≈ 2 MB); writ
 | [T08b](t08b-llm-foundation.md) | LLM foundation on Strands, own keys, token usage | T08a |
 | [T08c](t08c-code-filter.md) | Code filter, per-company limit, expiry | T07 |
 | [T08d](t08d-llm-relevance.md) | LLM relevance scoring | T08b, T08c |
+| [T08e](t08e-live-effectiveness.md) | Research: how well prompts and models work on live data | T08b |
 
 ## Research
 

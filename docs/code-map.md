@@ -16,6 +16,7 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | How jobs are read from a page or board | `apps/worker/src/jobs/` |
 | Item attributes | the repository **and** `docs/data-model.md` (with a change-log line) |
 | CI permissions | `infra/lib/cicd-stack.ts` |
+| An LLM task, its prompt, or its limits | `packages/llm/src/tasks/<task>.ts`; eval cases in `packages/llm/eval/cases/`, baseline in `eval/baselines/` |
 
 ## apps/api/src: one Lambda per feature (API Gateway HTTP API)
 
@@ -63,8 +64,14 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | `db/src/document-repository.ts`, `preferences-repository.ts`, `profile-repository.ts` | T05 items, with counters and audit |
 | `db/src/usage-counters.ts`, `versioned.ts`, `audit-repository.ts` | exact caps; optimistic versions; audit entries and paging |
 | `db/src/account-repository.ts`, `crawl-settings-repository.ts`, `ping-repository.ts`, `client.ts` | deletion record; user crawl limit; ping; DynamoDB client and condition helpers |
-| `shared/src/*.ts` | Zod schemas and constants per feature (`auth`, `crawl`, `documents`, `profile`, `ping`), `http.ts` (problem details), `logger.ts` |
+| `shared/src/*.ts` | Zod schemas and constants per feature (`auth`, `crawl`, `documents`, `profile`, `ping`), `ai.ts` (the pinned platform model), `http.ts` (problem details), `logger.ts` |
 | `test-fixtures/src/index.ts` | synthetic PDF, DOCX, zip bomb, EICAR |
+| `llm/src/task.ts` | `defineTask`, `runTask`: 3 turns, token caps, timeout, strict zod output, `partial`, usage (the only Strands caller, 0009) |
+| `llm/src/models.ts` | `resolveModel`: the platform model on Bedrock in the cell Region, no SDK retries |
+| `llm/src/prompt.ts`, `llm/src/grounding.ts` | data blocks and the rules against prompt injection; keep only the IDs we sent (0010) |
+| `llm/src/stub-model.ts` | `@jobdeputy/llm/testing`: scripted model for unit and integration tests |
+| `llm/src/tasks/smoke.ts` | the fixed check Nightly and the eval run against the real model |
+| `llm/eval/` | eval harness (`harness.ts`), runner (`run.ts`, `pnpm --filter @jobdeputy/llm eval`), cases, saved baselines |
 
 ## infra
 

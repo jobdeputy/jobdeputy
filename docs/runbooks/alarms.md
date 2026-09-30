@@ -72,7 +72,7 @@ All queue alarms exist in shared stacks only: personal and PR stacks have no sub
 
 ## Nightly integration failed
 
-An email with the subject **"JobDeputy nightly integration FAILED (dev-iad)"**, or **"… DID NOT RUN (dev-iad)"**, with a link to the run. Nightly is scheduled for 02:23 UTC (off the hour; GitHub may still start it late).
+Nightly emails its result every night, scheduled for 02:23 UTC (off the hour; GitHub may still start it late). The email says **"JobDeputy nightly PASSED (dev-iad)"** when everything passed. Otherwise the subject is **"JobDeputy nightly: integration FAILED, model check PASSED (dev-iad)"**, with FAILED or DID NOT RUN for each part. The email has a link to the run.
 
 - **DID NOT RUN:** the tests were cancelled or never started, usually because two deploys queued while Nightly waited (it never overlaps a deploy of the same stack). Re-run it (step 4). If it happens often, look at what deploys at that hour.
 
@@ -80,6 +80,14 @@ An email with the subject **"JobDeputy nightly integration FAILED (dev-iad)"**, 
 2. **Something changed without a code change** (AWS behaviour, an expired setting, a quota): fix it and add a test that would have caught it.
 3. **The test itself is flaky:** that is a bug ([testing.md](../testing.md#rules-against-flaky-tests)). Fix it or remove it in the next PR; never just re-run until it passes.
 4. Re-run the workflow (Actions → Nightly → Run workflow) to confirm.
+
+## Nightly model check failed
+
+The email shows the eval table: calls, valid output, labels, injections resisted, and tokens, with the saved baseline. The check makes one real call per case to the platform model ([0010](../decisions/0010-platform-ai-model.md)) through `packages/llm`.
+
+- **An injection succeeded, or accuracy fell below the baseline:** the model or its behaviour changed with no code change. Run the eval locally 2 or 3 times (`AWS_PROFILE=jobdeputy-dev-iad pnpm --filter @jobdeputy/llm eval --runs 3`). If it repeats, open an issue and check the model on its provider page ([#49](https://github.com/jobdeputy/jobdeputy/issues/49) looks for replacements). Never update the baseline to make it pass.
+- **Did not finish, or `AccessDenied`:** the IAM grant or the cost guardrail no longer allows the pinned model, or Bedrock is down in the Region. Check `bedrock:InvokeModel` for `jobdeputy-github-deploy` (`infra/lib/cicd-stack.ts`) and the `jd-cost-guardrails` SCP.
+- **Throttled:** Bedrock quotas in dev. Re-run; if it repeats, check the Bedrock service quotas.
 
 **GitHub's 60-day rule:** GitHub disables scheduled workflows (Nightly, and the daily Integration cleanup) after 60 days with no commits. It emails the repository admins first. To re-enable: Actions → the workflow → **Enable workflow**. The AWS alarms and the dev reaper run in AWS and are not affected.
 

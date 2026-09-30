@@ -1,3 +1,4 @@
+import { PLATFORM_MODEL_ID } from '@jobdeputy/shared';
 import { App } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
@@ -162,5 +163,33 @@ describe('PR integration role (T11)', () => {
         ],
       },
     ]);
+  });
+
+  it('may invoke only the platform model, only in dev, from both roles (T08b)', () => {
+    const bedrockStatements = (modelChecks: boolean, env: string) => {
+      const stack = new CicdStack(new App(), 'cicd', {
+        env: { region: 'us-east-1', account: '111111111111' },
+        subjectPrefix: 'repo:x',
+        githubEnvironment: env,
+        testedStackName: `jobdeputy-${env}-iad`,
+        ...(modelChecks
+          ? { prEnvironment: 'pr', prStackPrefix: 'jobdeputy-dev-pr', modelChecks }
+          : {}),
+      });
+      return Object.values(Template.fromStack(stack).findResources('AWS::IAM::Policy')).flatMap(
+        (p) =>
+          p.Properties.PolicyDocument.Statement.filter((st: { Action: string | string[] }) =>
+            [st.Action].flat().some((a) => a.startsWith('bedrock:')),
+          ),
+      );
+    };
+    expect(bedrockStatements(false, 'prod')).toEqual([]);
+    const statement = {
+      Action: 'bedrock:InvokeModel',
+      Effect: 'Allow',
+      Resource: `arn:aws:bedrock:us-east-1::foundation-model/${PLATFORM_MODEL_ID}`,
+    };
+    // One for the deploy role (Nightly), one for the PR role (the eval on PRs).
+    expect(bedrockStatements(true, 'dev')).toEqual([statement, statement]);
   });
 });
