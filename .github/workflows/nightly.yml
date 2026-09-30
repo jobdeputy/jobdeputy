@@ -76,11 +76,11 @@ jobs:
           AWS_REGION: us-east-1
         run: |
           set +e
-          pnpm --filter @jobdeputy/llm eval --runs 1 --summary "$RUNNER_TEMP/eval.md"
+          pnpm --filter @jobdeputy/llm eval --runs 1 --summary-text "$RUNNER_TEMP/eval.txt"
           status=$?
           set -e
-          [ -s "$RUNNER_TEMP/eval.md" ] || echo "The model check did not finish (exit $status); see the run log." > "$RUNNER_TEMP/eval.md"
-          { echo 'summary<<EOF_SUMMARY'; cat "$RUNNER_TEMP/eval.md"; echo 'EOF_SUMMARY'; } >> "$GITHUB_OUTPUT"
+          [ -s "$RUNNER_TEMP/eval.txt" ] || echo "The model check did not finish (exit $status); see the run log." > "$RUNNER_TEMP/eval.txt"
+          { echo 'summary<<EOF_SUMMARY'; cat "$RUNNER_TEMP/eval.txt"; echo 'EOF_SUMMARY'; } >> "$GITHUB_OUTPUT"
           exit "$status"
 
   report:
@@ -113,6 +113,8 @@ jobs:
           }
           integration=$(verdict "$INTEGRATION")
           model=$(verdict "$MODEL")
+          # The raw result only when a part did not run (for example "cancelled").
+          why() { case "$1" in success|failure) ;; *) echo " ($1)" ;; esac; }
           if [ "$INTEGRATION" = "success" ] && [ "$MODEL" = "success" ]; then
             SUBJECT="JobDeputy nightly PASSED (dev-iad)"
             TODO="Nothing to do."
@@ -122,8 +124,8 @@ jobs:
           fi
           MESSAGE=$(printf '%s\n\n%s\n%s\n\n%s\n\n%s\n%s\n' \
             "Nightly run against jobdeputy-dev-iad." \
-            "Integration tests: ${integration} (${INTEGRATION})" \
-            "Real-model check: ${model} (${MODEL})" \
+            "Integration tests: ${integration}$(why "$INTEGRATION")" \
+            "Real-model check: ${model}$(why "$MODEL")" \
             "${MODEL_SUMMARY:-No model check result.}" \
             "Details: ${RUN_URL}" \
             "$TODO")
