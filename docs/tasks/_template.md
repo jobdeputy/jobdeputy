@@ -3,6 +3,7 @@
 - **Status:** planned | researching | awaiting-alignment | in-progress | in-review | done
 - **Depends on:** TNN
 - **Branch / PR:** —
+- **Files:** the main source files this task changed (so later tasks go straight to them)
 
 ## Goal
 

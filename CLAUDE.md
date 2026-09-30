@@ -12,6 +12,7 @@ JobDeputy discovers jobs from any URL a user gives, keeps the relevant ones, and
 
 | Need | Location |
 |---|---|
+| Which file does what (read first, instead of searching) | [docs/code-map.md](docs/code-map.md) |
 | Task board and current status | [docs/tasks/README.md](docs/tasks/README.md) |
 | One task's goal, research, decision, done criteria | `docs/tasks/tNN-*.md` |
 | Tables, attributes, and S3 paths | [docs/data-model.md](docs/data-model.md) |
@@ -39,7 +40,8 @@ Do not design ahead of the task that needs it. For example, the crawler's archit
 - User credentials (BYOT) are the user's: never log them, never share them across users.
 - **LLM and agent loops are capped at 3 iterations.** When the cap is hit, stop and return the best result so far, marked as partial. Every call has a maximum output token limit and a timeout, and job retries must not multiply LLM calls. See [0002](docs/decisions/0002-llm-loop-and-token-budget.md).
 - Every PR fills in the template: what changed, how it was tested and the proof, error cases, LLM and agent call safety, and security review.
-- Update the task file and task board status in the same PR as the work.
+- Update the task file and task board status in the same PR as the work, and [docs/code-map.md](docs/code-map.md) when a source file is added, moved, or split. Split a large file by feature when a task already changes it.
+- **Read code sparingly:** start from the code map, search (`grep -n`), then read only the lines needed; keep only the result lines of test and deploy output.
 - **Accounts are deleted only through `DELETE /me` or `scripts/request-account-deletion.sh`**, never in the Cognito console, so no data is orphaned ([runbook](docs/runbooks/account-deletion.md)). Every new table keyed by `userId` must be added to the deletion list in `infra/lib/cell-stack.ts` (an infra test enforces it).
 - **Schema changes are documented in the same PR:** update [docs/data-model.md](docs/data-model.md) and its change log whenever an attribute, item kind, or S3 path changes. New tables or key changes need a decision record ([0006](docs/decisions/0006-data-model.md)).
 

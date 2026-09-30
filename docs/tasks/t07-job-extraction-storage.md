@@ -1,6 +1,6 @@
 # T07: Job extraction, normalization, and storage
 
-- **Status:** in-progress
+- **Status:** done (T07d, LLM extraction, is planned separately)
 - **Depends on:** T06
 
 ## Goal
@@ -20,7 +20,7 @@ Each ships as its own PR that can be tested on its own.
 |---|---|---|
 | [T07a](t07a-job-readers.md) | Job readers: board detection, the four board feeds, schema.org, one normalized job. Pure code, nothing deployed. | done |
 | [T07b](t07b-jobs-storage.md) | `jobs` table, saving without duplicates, links to sources and crawls, `GET /me/jobs`, audit, test-site pages | done |
-| [T07c](t07c-paging-and-closed-jobs.md) | Paging within one crawl, per-crawl limits and `partial`, `closedAt` | in-review |
+| [T07c](t07c-paging-and-closed-jobs.md) | Paging within one crawl, per-crawl limits and `partial`, `closedAt` | done |
 | [T07d](t07d-llm-extraction.md) | LLM extraction for pages without structured data ([#41](https://github.com/jobdeputy/jobdeputy/issues/41)) | planned (own decision first) |
 
 ## Research
@@ -61,6 +61,6 @@ Agreed with the maintainer on 2026-09-29; recorded in [0008](../decisions/0008-j
 
 ## Done when
 
-- [ ] Extraction is tested against saved synthetic or permitted fixture pages.
-- [ ] Re-crawling the same page does not create duplicates.
+- [x] Extraction is tested against saved synthetic or permitted fixture pages.
+- [x] Re-crawling the same page does not create duplicates.
 - [ ] Any LLM extraction follows [0002](../decisions/0002-llm-loop-and-token-budget.md): at most 3 iterations, best result returned, calls per job capped (T07d).
