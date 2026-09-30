@@ -1,6 +1,6 @@
 # 0006: Data model (tables, keys, and schemas)
 
-- **Status:** Accepted; amended by [0007](0007-crawler.md) (`sourceId` is a URL hash; `events` renamed `audit`, built in T06)
+- **Status:** Accepted; amended by [0007](0007-crawler.md) (`sourceId` is a URL hash; `events` renamed `audit`, built in T06); amended by [0009](0009-llm-architecture-and-own-keys.md) (`ai-keys` table; AI usage counters)
 - **Date:** 2026-09-28
 - **Task:** t04
 

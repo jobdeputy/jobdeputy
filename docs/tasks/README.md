@@ -24,8 +24,12 @@ Every task goes through these statuses: `planned` → `researching` → `awaitin
 | T07a | [Job readers](t07a-job-readers.md) | done | T07 |
 | T07b | [Jobs table and storage](t07b-jobs-storage.md) | done | T07a |
 | T07c | [Paging, crawl limits, and closed jobs](t07c-paging-and-closed-jobs.md) | done | T07b |
-| T07d | [LLM extraction](t07d-llm-extraction.md) ([#41](https://github.com/jobdeputy/jobdeputy/issues/41)) | planned | T07b, AI credentials |
-| T08 | [Relevance filter](t08-relevance-filter.md) | planned | T05, T07 |
+| T07d | [LLM extraction](t07d-llm-extraction.md) ([#41](https://github.com/jobdeputy/jobdeputy/issues/41)) | planned | T07b, T08b |
+| T08 | [Relevance filter](t08-relevance-filter.md) | in-progress | T05, T07 |
+| T08a | [Platform AI model](t08a-ai-model.md) | planned | T08 |
+| T08b | [LLM foundation, own keys, and token usage](t08b-llm-foundation.md) | planned | T08a |
+| T08c | [Code filter, per-company limit, and expiry](t08c-code-filter.md) | planned | T07 |
+| T08d | [LLM relevance scoring](t08d-llm-relevance.md) | planned | T08b, T08c |
 | T09 | [User interface for the slice](t09-ui.md) | planned | T05, T06, T08 |
 | T10 | [End-to-end tests and hardening](t10-end-to-end-hardening.md) | planned | T09 |
 
@@ -41,7 +45,7 @@ Must be fixed before the prod launch. Tracked as GitHub issues with the [`releas
 | [#22](https://github.com/jobdeputy/jobdeputy/issues/22) | Production wiring: prod accounts, approval-gated deploys, prod alerts |
 | [#34](https://github.com/jobdeputy/jobdeputy/issues/34) | Safe prod deploys: gradual rollout with automatic rollback, error-rate 5xx alarm, a second alert channel, Lambda concurrency quotas |
 
-Deferred from T07: [#40](https://github.com/jobdeputy/jobdeputy/issues/40) (shared `companies` and `company-aliases` tables, built with company rules). Other tracked maintenance: [#23](https://github.com/jobdeputy/jobdeputy/issues/23) (Node.js 24 before 2027-04-30), [#24](https://github.com/jobdeputy/jobdeputy/issues/24) (CDK asset garbage collection), [#35](https://github.com/jobdeputy/jobdeputy/issues/35) (restore the dev account's Lambda concurrency limit, 10 → 1000).
+Deferred from T07: [#40](https://github.com/jobdeputy/jobdeputy/issues/40) (shared `companies` and `company-aliases` tables, built with company rules). AI quotas for premium users: [#47](https://github.com/jobdeputy/jobdeputy/issues/47). Other tracked maintenance: [#23](https://github.com/jobdeputy/jobdeputy/issues/23) (Node.js 24 before 2027-04-30), [#24](https://github.com/jobdeputy/jobdeputy/issues/24) (CDK asset garbage collection), [#35](https://github.com/jobdeputy/jobdeputy/issues/35) (restore the dev account's Lambda concurrency limit, 10 → 1000).
 
 ## Future (after this slice)
 
