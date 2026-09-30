@@ -15,6 +15,7 @@ Candidate jobs get a score and a short reason from an LLM, in their own queue an
   - Descriptions fetched for candidates only through the board's single-posting endpoint; a posting that answers 404 or 410 closes the job ([T08 carried over](t08-relevance-filter.md#carried-over-from-t07)).
   - The per-company limit re-ranked by score.
   - The run uses the user's choice (platform or their own key) and counts against the allowance ([0009](../decisions/0009-llm-architecture-and-own-keys.md)).
+  - The prompt-injection rules of [0010](../decisions/0010-platform-ai-model.md): exactly the given job IDs back, once each, and injection cases in the tests.
 - Out: ranking for application materials (later).
 
 ## Done when

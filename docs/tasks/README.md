@@ -26,7 +26,7 @@ Every task goes through these statuses: `planned` → `researching` → `awaitin
 | T07c | [Paging, crawl limits, and closed jobs](t07c-paging-and-closed-jobs.md) | done | T07b |
 | T07d | [LLM extraction](t07d-llm-extraction.md) ([#41](https://github.com/jobdeputy/jobdeputy/issues/41)) | planned | T07b, T08b |
 | T08 | [Relevance filter](t08-relevance-filter.md) | in-progress | T05, T07 |
-| T08a | [Platform AI model](t08a-ai-model.md) | planned | T08 |
+| T08a | [Platform AI model](t08a-ai-model.md) | done | T08 |
 | T08b | [LLM foundation, own keys, and token usage](t08b-llm-foundation.md) | planned | T08a |
 | T08c | [Code filter, per-company limit, and expiry](t08c-code-filter.md) | planned | T07 |
 | T08d | [LLM relevance scoring](t08d-llm-relevance.md) | planned | T08b, T08c |

@@ -1,6 +1,6 @@
 # 0005: Pre-launch cost guardrails ($20 hard stop)
 
-- **Status:** Accepted; amended by [0009](0009-llm-architecture-and-own-keys.md) (a KMS key per cell; Bedrock calls to one pinned model)
+- **Status:** Accepted; amended by [0009](0009-llm-architecture-and-own-keys.md) (a KMS key per cell; Bedrock calls to one pinned model), [0010](0010-platform-ai-model.md) (the pinned model)
 - **Date:** 2026-09-27
 - **Task:** t03
 
