@@ -1,8 +1,8 @@
 # T07c: Paging, crawl limits, and closed jobs
 
-- **Status:** in-review
+- **Status:** done
 - **Depends on:** T07b ([decision](t07-job-extraction-storage.md#decision), [0008](../decisions/0008-job-extraction.md))
-- **Branch / PR:** `t07c-paging-closed-jobs`
+- **Branch / PR:** `t07c-paging-closed-jobs`, [#45](https://github.com/jobdeputy/jobdeputy/pull/45) (merged)
 
 ## Goal
 
