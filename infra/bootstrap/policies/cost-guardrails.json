@@ -29,9 +29,7 @@
         "kafka:CreateCluster",
         "kafka:CreateClusterV2",
         "sagemaker:Create*",
-        "bedrock:*",
         "lambda:PutProvisionedConcurrencyConfig",
-        "kms:CreateKey",
         "secretsmanager:CreateSecret",
         "guardduty:CreateDetector",
         "config:PutConfigurationRecorder",
@@ -40,6 +38,26 @@
         "route53domains:*"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "DenyBedrockExceptPlatformModel",
+      "Effect": "Deny",
+      "Action": "bedrock:*",
+      "NotResource": [
+        "arn:aws:bedrock:us-east-1::foundation-model/mistral.ministral-3-14b-instruct",
+        "arn:aws:bedrock:ap-south-1::foundation-model/mistral.ministral-3-14b-instruct",
+        "arn:aws:bedrock:eu-west-2::foundation-model/mistral.ministral-3-14b-instruct"
+      ]
+    },
+    {
+      "Sid": "OnlyInvokePlatformModel",
+      "Effect": "Deny",
+      "NotAction": "bedrock:InvokeModel",
+      "Resource": [
+        "arn:aws:bedrock:us-east-1::foundation-model/mistral.ministral-3-14b-instruct",
+        "arn:aws:bedrock:ap-south-1::foundation-model/mistral.ministral-3-14b-instruct",
+        "arn:aws:bedrock:eu-west-2::foundation-model/mistral.ministral-3-14b-instruct"
+      ]
     },
     {
       "Sid": "DenyLeavingOrganization",

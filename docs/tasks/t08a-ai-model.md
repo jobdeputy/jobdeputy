@@ -1,8 +1,8 @@
 # T08a: Platform AI model
 
-- **Status:** planned
+- **Status:** done
 - **Depends on:** T08 ([0009](../decisions/0009-llm-architecture-and-own-keys.md))
-- **Branch / PR:** —
+- **Branch / PR:** `t08a-ai-model`
 
 ## Goal
 
@@ -34,14 +34,14 @@ First findings (2026-09-29, from `ListFoundationModels`, on-demand, in-Region):
 
 - A first estimate: scoring 50 candidates in 5 calls costs about $0.015 at the UK price for gpt-oss-120b.
 
-To do: test the candidates on samples, and estimate the monthly cost at the allowance (1 run per week, 4 per month per user).
+Tests (2026-09-29): 7 models through Strands in us-east-1, on relevance, extraction, and prompt-injection samples. Results are in [0010](../decisions/0010-platform-ai-model.md#options-considered). None needed a Marketplace subscription. The first call in the dev account waited for Bedrock's account verification (a few minutes).
 
 ## Decision
 
-Pending (0010).
+[0010](../decisions/0010-platform-ai-model.md): `mistral.ministral-3-14b-instruct` (fallback `openai.gpt-oss-120b-1:0`), plus prompt-injection rules for every LLM task. Follow-ups: new models monthly ([#49](https://github.com/jobdeputy/jobdeputy/issues/49)), injection review monthly ([#50](https://github.com/jobdeputy/jobdeputy/issues/50)), recommended models for own keys ([#51](https://github.com/jobdeputy/jobdeputy/issues/51)).
 
 ## Done when
 
-- [ ] Decision 0010 is accepted, with the model ID, the price in each Region, and the monthly cost at the allowance.
-- [ ] The guardrail exceptions are in place, and the guard tests in `infra/test/` allow exactly them.
-- [ ] Docs and task status updated.
+- [x] Decision 0010 is accepted, with the model ID, the price in each Region, and the monthly cost at the allowance.
+- [x] The guardrail exceptions are in the policy, and `infra/test/cost-guardrails.test.ts` allows exactly them. The maintainer applies them with `infra/bootstrap/02-guardrails.sh` after merge.
+- [x] Docs and task status updated.

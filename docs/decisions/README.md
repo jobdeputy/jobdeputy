@@ -8,11 +8,12 @@ Short records of choices that shape the project. Agents and contributors treat a
 | [0002](0002-llm-loop-and-token-budget.md) | LLM and agent loop limits (max 3) and token budget | Accepted |
 | [0003](0003-serverless-aws-stack.md) | Serverless AWS stack, async backbone, and CI/CD | Accepted |
 | [0004](0004-regional-cells-and-data-residency.md) | Regional cells and data residency (US, India, UK) | Accepted |
-| [0005](0005-pre-launch-cost-guardrails.md) | Pre-launch cost guardrails ($20 hard stop) | Accepted (amended by 0009) |
+| [0005](0005-pre-launch-cost-guardrails.md) | Pre-launch cost guardrails ($20 hard stop) | Accepted (amended by 0009, 0010) |
 | [0006](0006-data-model.md) | Data model: tables, keys, and schemas | Accepted (amended by 0007, 0008, 0009) |
 | [0007](0007-crawler.md) | Crawler: plain fetch, SSRF-safe, polite, and limited | Accepted |
 | [0008](0008-job-extraction.md) | Job extraction: job-board feeds and schema.org first, LLM later | Accepted |
 | [0009](0009-llm-architecture-and-own-keys.md) | LLM architecture: Strands agents, the user's own keys, and token usage | Accepted |
+| [0010](0010-platform-ai-model.md) | Platform AI model (Ministral 3 14B) and prompt-injection rules | Accepted |
 
 ## Template
 
