@@ -16,7 +16,7 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | How jobs are read from a page or board | `apps/worker/src/jobs/` |
 | Item attributes | the repository **and** `docs/data-model.md` (with a change-log line) |
 | CI permissions | `infra/lib/cicd-stack.ts` |
-| An LLM task, its prompt, or its limits | `packages/llm/src/tasks/<task>.ts`; eval cases in `packages/llm/eval/cases/`, baseline in `eval/baselines/` |
+| An LLM task, its prompt, or its limits | `packages/llm/src/tasks/<task>.ts` (raise its `version`, add it to `TASKS`); eval cases in `packages/llm/eval/cases/`, `eval/versions.json`, baseline in `eval/baselines/` |
 
 ## apps/api/src: one Lambda per feature (API Gateway HTTP API)
 
@@ -70,7 +70,8 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | `llm/src/models.ts` | `resolveModel`: the platform model on Bedrock in the cell Region, no SDK retries |
 | `llm/src/prompt.ts`, `llm/src/grounding.ts` | data blocks and the rules against prompt injection; keep only the IDs we sent (0010) |
 | `llm/src/stub-model.ts` | `@jobdeputy/llm/testing`: scripted model for unit and integration tests |
-| `llm/src/tasks/smoke.ts` | the fixed check Nightly and the eval run against the real model |
+| `llm/src/tasks/smoke.ts`, `llm/src/tasks/index.ts` | the fixed check Nightly and the eval run against the real model; `TASKS`, every task with a sample input |
+| `llm/src/fingerprint.ts` | hash of a task's prompt, schema, and limits; must match `eval/versions.json` for its version |
 | `llm/eval/` | eval harness (`harness.ts`), runner (`run.ts`, `pnpm --filter @jobdeputy/llm eval`), cases, saved baselines |
 
 ## infra

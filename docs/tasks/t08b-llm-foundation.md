@@ -19,7 +19,7 @@ Three PRs, each working on its own (agreed 2026-09-29):
   - The shared rules of [0010](../decisions/0010-platform-ai-model.md): data delimiters, the schema tool as the only tool, strict schemas, and a rejected-output count.
   - The platform model `mistral.ministral-3-14b-instruct` through Converse without streaming.
   - **Prompt quality:**
-    - prompts are versioned (`relevance@v1`), and every result stores the prompt version and model;
+    - prompts are versioned (`relevance@v1`), and every result stores the prompt version and model. A test fails if a task's prompt, schema, or limits change without a new version (a fingerprint in `eval/versions.json`), or if a version has no baseline;
     - the eval harness moves from [#49](https://github.com/jobdeputy/jobdeputy/issues/49) into `packages/llm/eval`, with a golden-set format and a saved baseline;
     - a PR that changes a prompt, schema, or model runs the eval against the baseline, posts the comparison on the PR, and fails on a regression.
     - The golden set itself (100–200 real, anonymised, labelled jobs and about 20 real careers pages) grows with real crawls in T08d and T07d.

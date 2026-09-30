@@ -41,7 +41,8 @@ Every feature PR adds integration tests for its own feature, and the **whole** s
 - **Eval against the real model:** `AWS_PROFILE=jobdeputy-dev-iad pnpm --filter @jobdeputy/llm eval`. It compares the result with the saved baseline for the prompt version (`packages/llm/eval/baselines/<task>@v<N>.json`) and fails on a regression; any successful injection always fails.
   - Integration runs it on a PR that changes `packages/llm` or the model ID, and posts the result on the PR.
   - Nightly runs it once and emails the result.
-- **A new prompt version** (`version` in the task) starts without a baseline. Save one with `--update-baseline` in the same PR, and say in the PR how it compares with the previous version. Never update a baseline to hide a regression.
+- **Prompt versions:** a change to a task's system prompt, prompt, schema, or limits needs a new `version`. `test/versions.test.ts` compares each task's fingerprint with `packages/llm/eval/versions.json` and fails with the line to add. Keep old entries.
+- **A new prompt version** starts without a baseline, and the same test fails until it has one. Save one with `--update-baseline` in the same PR, and say in the PR how it compares with the previous version. Never update a baseline to hide a regression.
 
 ## Test data clean-up
 
