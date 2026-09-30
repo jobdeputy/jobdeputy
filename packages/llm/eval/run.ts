@@ -4,16 +4,18 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { resolveModel } from '../src/models.js';
 import { smokeCases } from './cases/smoke.js';
-import { compare, type EvalReport, evalSmoke, summary } from './harness.js';
+import { compare, type EvalReport, evalSmoke, summary, summaryText } from './harness.js';
 
 // Runs the eval against the real platform model (costs money; about $0.001 for smoke with 2
 // runs). Used by PRs that change a prompt, schema, or model, and by Nightly.
-//   pnpm --filter @jobdeputy/llm eval [--runs 2] [--summary out.md] [--update-baseline]
+//   pnpm --filter @jobdeputy/llm eval [--runs 2] [--summary out.md] [--summary-text out.txt]
+//     [--update-baseline]
 
 const { values } = parseArgs({
   options: {
     runs: { type: 'string', default: '2' },
     summary: { type: 'string' },
+    'summary-text': { type: 'string' },
     'update-baseline': { type: 'boolean', default: false },
   },
 });
@@ -36,6 +38,10 @@ const result = compare(report, baseline);
 const text = summary(report, baseline, result);
 console.log(text);
 if (values.summary) writeFileSync(values.summary, `${text}\n`);
+// Plain text for the Nightly email (the Markdown table shows as raw pipes in mail).
+if (values['summary-text']) {
+  writeFileSync(values['summary-text'], `${summaryText(report, baseline, result)}\n`);
+}
 
 if (values['update-baseline']) {
   if (result.regressions.length > 0)
