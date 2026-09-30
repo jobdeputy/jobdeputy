@@ -24,7 +24,7 @@ Every table keyed by the user and both file prefixes, in one go (only a `DELETIO
 
 ```sh
 STACK=jobdeputy-dev-iad USER_ID=<user-id> PROFILE=jobdeputy-dev-iad
-for t in users preferences documents sources crawls audit usage jobs; do
+for t in users preferences documents sources crawls audit usage jobs ai-keys; do
   n=$(aws dynamodb query --table-name "$STACK-$t" --key-condition-expression "userId = :u" \
     --expression-attribute-values "{\":u\":{\"S\":\"$USER_ID\"}}" --select COUNT \
     --query Count --output text --profile "$PROFILE")

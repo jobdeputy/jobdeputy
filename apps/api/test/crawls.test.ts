@@ -9,6 +9,7 @@ import {
   TooManyActiveCrawlsError,
   VersionConflictError,
 } from '@jobdeputy/db';
+import type { AiKeyStatus, AiSource } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2, APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
 import { route as auditRoute } from '../src/audit.js';
@@ -59,7 +60,12 @@ function deps(over: Partial<CrawlsDeps['repo']> = {}) {
   let n = 0;
   const repo = {
     request: vi.fn(async (input: Parameters<CrawlsDeps['repo']['request']>[0]) =>
-      crawl({ crawlId: input.crawlId, sourceId: input.sourceId, url: input.normalizedUrl }),
+      crawl({
+        crawlId: input.crawlId,
+        sourceId: input.sourceId,
+        url: input.normalizedUrl,
+        ...(input.aiSource ? { aiSource: input.aiSource } : {}),
+      }),
     ),
     getSource: vi.fn(async (): Promise<Source | undefined> => undefined),
     getCrawl: vi.fn(async (): Promise<Crawl | undefined> => undefined),
@@ -82,10 +88,70 @@ function deps(over: Partial<CrawlsDeps['repo']> = {}) {
     newId: () => `01J8ZQ4Y3N5W6X7Y8Z9A0B1C${String(10 + (n++ % 90))}`,
     now: () => NOW,
     isBeingDeleted: vi.fn(async () => false),
+    aiDefault: vi.fn(async (): Promise<AiSource> => 'platform'),
+    aiKeyStatus: vi.fn(async (): Promise<AiKeyStatus | undefined> => undefined),
+    allowTestProvider: false,
   };
   return { d, repo, settings };
 }
 const body = (res: { body: string }) => JSON.parse(res.body);
+
+describe('POST /me/crawls: the AI model source (T08b2)', () => {
+  const postWith = (aiSource: unknown) =>
+    event('POST /me/crawls', {
+      body: JSON.stringify({ url: 'https://jobs.example.com/', aiSource }),
+    });
+  const sentSource = (repo: ReturnType<typeof deps>['repo']) =>
+    vi.mocked(repo.request).mock.calls[0]?.[0].aiSource;
+
+  it("uses the user's default when the crawl does not choose, stored as it is", async () => {
+    const { d, repo } = deps();
+    vi.mocked(d.aiDefault).mockResolvedValue('anthropic');
+    expect((await route(post('https://jobs.example.com/'), d)).statusCode).toBe(202);
+    expect(sentSource(repo)).toBe('anthropic');
+    // Not checked here: T08d stops the AI work with a reason if the key no longer works.
+    expect(d.aiKeyStatus).not.toHaveBeenCalled();
+  });
+
+  it('accepts the platform model, or a saved key that is valid or being checked', async () => {
+    for (const [aiSource, status] of [
+      ['platform', undefined],
+      ['openai', 'valid'],
+      ['anthropic', 'checking'],
+    ] as const) {
+      const { d, repo } = deps();
+      vi.mocked(d.aiKeyStatus).mockResolvedValue(status);
+      const res = await route(postWith(aiSource), d);
+      expect(res.statusCode).toBe(202);
+      expect(sentSource(repo)).toBe(aiSource);
+      expect(body(res).aiSource).toBe(aiSource);
+    }
+  });
+
+  it('refuses a key that is missing or invalid (422), and queues nothing', async () => {
+    for (const status of [undefined, 'invalid'] as const) {
+      const { d, repo } = deps();
+      vi.mocked(d.aiKeyStatus).mockResolvedValue(status);
+      const res = await route(postWith('openai'), d);
+      expect(res.statusCode).toBe(422);
+      expect(body(res).code).toBe('ai-key-not-usable');
+      expect(repo.request).not.toHaveBeenCalled();
+    }
+  });
+
+  it('refuses unknown sources, and the test provider outside dev', async () => {
+    for (const aiSource of ['gemini', 'stub', 42]) {
+      const { d, repo } = deps();
+      const res = await route(postWith(aiSource), d);
+      expect(res.statusCode).toBe(400);
+      expect(repo.request).not.toHaveBeenCalled();
+    }
+    const { d } = deps();
+    d.allowTestProvider = true;
+    vi.mocked(d.aiKeyStatus).mockResolvedValue('valid');
+    expect((await route(postWith('stub'), d)).statusCode).toBe(202);
+  });
+});
 
 describe('POST /me/crawls', () => {
   it('queues a crawl and answers at once with its ID (202)', async () => {

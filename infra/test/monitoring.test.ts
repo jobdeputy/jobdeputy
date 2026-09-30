@@ -42,7 +42,10 @@ describe('monitoring (T13)', () => {
     const names = alarmIds(stack('dev', 'jobdeputy-dev-iad')).map((id) =>
       id.replace(/[0-9A-F]{8}$/, ''),
     );
+    // T08b2 added the key-check dead-letter alarm: all 10 free alarms are now used, so a new
+    // queue must share an alarm (for example one alarm over every dead-letter queue).
     expect(names).toEqual([
+      'AiKeysKeyCheckPipelineDeadLetterAlarm',
       'ApiServerErrorAlarm',
       'CrawlPipelineBacklogAlarm',
       'CrawlPipelineDeadLetterAlarm',
@@ -53,6 +56,7 @@ describe('monitoring (T13)', () => {
       'PingPipelineDeadLetterAlarm',
       'TestDataReaperAlarm',
     ]);
+    expect(names.length).toBeLessThanOrEqual(10);
   });
 
   it("alarms when a worker queue backs up, above each queue's slowest normal path", () => {
@@ -74,7 +78,7 @@ describe('monitoring (T13)', () => {
 
   it('keeps each prod stack within the 10 free alarms (no reaper, test site, or ping)', () => {
     for (const cell of ['iad', 'bom', 'lhr']) {
-      expect(alarmIds(stack('prod', `jobdeputy-prod-${cell}`)).length, cell).toBe(7);
+      expect(alarmIds(stack('prod', `jobdeputy-prod-${cell}`)).length, cell).toBe(8);
     }
   });
 

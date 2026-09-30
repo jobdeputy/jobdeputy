@@ -18,6 +18,14 @@ export interface AsyncPipelineProps extends QueueWorkerProps {
   readonly messageKeys?: readonly string[];
   /** Extra conditions on the new item, for tables where only some inserts start work. */
   readonly newImageFilter?: Record<string, unknown>;
+  /**
+   * Which writes start work. Default: new items with status `queued`. T08b2: a key check
+   * starts on any write that sets status `checking` (a new key, a replaced key, a re-check).
+   */
+  readonly startWhen?: {
+    readonly eventNames: readonly ('INSERT' | 'MODIFY')[];
+    readonly status: string;
+  };
 }
 
 /**
@@ -73,8 +81,13 @@ export class AsyncPipeline extends Construct {
           filters: [
             {
               pattern: JSON.stringify({
-                eventName: ['INSERT'],
-                dynamodb: { NewImage: { status: { S: ['queued'] }, ...props.newImageFilter } },
+                eventName: props.startWhen?.eventNames ?? ['INSERT'],
+                dynamodb: {
+                  NewImage: {
+                    status: { S: [props.startWhen?.status ?? 'queued'] },
+                    ...props.newImageFilter,
+                  },
+                },
               }),
             },
           ],

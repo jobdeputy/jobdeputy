@@ -21,6 +21,7 @@ import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import type { Construct } from 'constructs';
 import { CELLS, type CellId } from '../config/cells.js';
 import type { StageName } from '../config/stages.js';
+import { AiKeys } from './constructs/ai-keys.js';
 import { AsyncPipeline } from './constructs/async-pipeline.js';
 import { Auth } from './constructs/auth.js';
 import { Documents } from './constructs/documents.js';
@@ -129,6 +130,8 @@ export class CellStack extends Stack {
     const usageTable = userTable('UsageTable', 'usage', 'sk', 'ttl');
     // T07b (0008): jobs found for the user, one item per posting.
     const jobsTable = userTable('JobsTable', 'jobs', 'jobId');
+    // T08b2 (0009): the user's own AI keys, encrypted (stream → key-check worker).
+    const aiKeysTable = userTable('AiKeysTable', 'ai-keys', 'provider', undefined, true);
     /**
      * Every table keyed by userId. Account deletion erases all of them; an infra test
      * fails if a table keyed by userId is missing here (T12).
@@ -142,6 +145,7 @@ export class CellStack extends Stack {
       { table: auditTable, sortKey: 'auditId' },
       { table: usageTable, sortKey: 'sk' },
       { table: jobsTable, sortKey: 'jobId' },
+      { table: aiKeysTable, sortKey: 'provider' },
     ];
     const documents = new Documents(this, 'Documents', {
       namePrefix: id,
@@ -388,6 +392,20 @@ export class CellStack extends Stack {
     documents.bucket.grantDelete(documentsApi.fn, `${DERIVED_PREFIX}*`);
     if (documentsApi.fn.role) documents.denyUnscannedDownloads(documentsApi.fn.role);
 
+    const aiKeys = new AiKeys(this, 'AiKeys', {
+      namePrefix: id,
+      stage: props.stage,
+      cell: props.cell,
+      table: aiKeysTable,
+      usageTable,
+      preferencesTable,
+      auditTable,
+      usersTable,
+      removalPolicy,
+      maxReceives: MAX_RECEIVES,
+      alarmTopic: sharedAlarms,
+    });
+
     const crawlTablesEnv = {
       CRAWLS_TABLE_NAME: crawlsTable.tableName,
       SOURCES_TABLE_NAME: sourcesTable.tableName,
@@ -415,8 +433,11 @@ export class CellStack extends Stack {
         ...crawlTablesEnv,
         PREFERENCES_TABLE_NAME: preferencesTable.tableName,
         CRAWL_LIMITS_PARAMETER: crawlLimits.parameterName,
+        ...aiKeys.env,
       },
     });
+    // T08b2: a key chosen for a crawl must exist and not be invalid (its status only).
+    aiKeysTable.grant(crawlsApi.fn, 'dynamodb:GetItem');
     usersTable.grant(crawlsApi.fn, 'dynamodb:GetItem');
     // Counting (in the request transaction) and reading today's use.
     usageTable.grant(crawlsApi.fn, 'dynamodb:GetItem', 'dynamodb:UpdateItem');
@@ -565,6 +586,17 @@ export class CellStack extends Stack {
       methods: [HttpMethod.GET, HttpMethod.PUT],
       integration: crawlsIntegration,
     });
+
+    const aiIntegration = new HttpLambdaIntegration('AiIntegration', aiKeys.api.fn);
+    const aiRoutes: [string, HttpMethod[]][] = [
+      ['/me/ai-keys', [HttpMethod.GET]],
+      ['/me/ai-keys/{provider}', [HttpMethod.PUT, HttpMethod.DELETE]],
+      ['/me/ai-keys/{provider}/check', [HttpMethod.POST]],
+      ['/me/ai-settings', [HttpMethod.GET, HttpMethod.PUT]],
+    ];
+    for (const [path, methods] of aiRoutes) {
+      httpApi.addRoutes({ path, methods, integration: aiIntegration });
+    }
 
     httpApi.addRoutes({
       path: '/me/audit',

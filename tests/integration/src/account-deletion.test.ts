@@ -32,7 +32,7 @@ afterAll(async () => {
 });
 
 describe('delete my account (deployed)', () => {
-  it('erases the profile, roles, résumés, crawls, jobs, and audit history, blocks further changes, and removes the login', async () => {
+  it('erases the profile, roles, résumés, crawls, jobs, AI keys, and audit history, blocks further changes, and removes the login', async () => {
     const token = user.accessToken;
     await callApi(api, 'PUT', 'me/profile', token, {
       version: 0,
@@ -66,6 +66,13 @@ describe('delete my account (deployed)', () => {
 
     // Something to erase in the jobs table.
     expect((await callApi(api, 'GET', 'me/jobs', token)).body.jobs).toHaveLength(2);
+    // And in ai-keys (T08b2; the dev-only stub provider makes no outside call).
+    const key = await callApi(api, 'PUT', 'me/ai-keys/stub', token, {
+      apiKey: `stub-deletion-${'x'.repeat(10)}-valid`,
+      modelId: 'stub-model',
+      consent: true,
+    });
+    expect(key.status).toBe(202);
 
     const res = await callApi(api, 'DELETE', 'me', await user.signIn(), {
       confirm: 'delete my account',
@@ -80,13 +87,14 @@ describe('delete my account (deployed)', () => {
     // The worker finishes in the background: the login and all data are gone.
     await waitFor(
       async () => {
-        const [profile, roles, docs, crawls, audit, jobs] = await Promise.all([
+        const [profile, roles, docs, crawls, audit, jobs, aiKeys] = await Promise.all([
           callApi(api, 'GET', 'me/profile', token),
           callApi(api, 'GET', 'me/roles', token),
           callApi(api, 'GET', 'me/documents', token),
           callApi(api, 'GET', 'me/crawls', token),
           callApi(api, 'GET', 'me/audit', token),
           callApi(api, 'GET', 'me/jobs', token),
+          callApi(api, 'GET', 'me/ai-keys', token),
         ]);
         const erased =
           profile.body.version === 0 &&
@@ -94,7 +102,8 @@ describe('delete my account (deployed)', () => {
           docs.body.documents?.length === 0 &&
           crawls.body.crawls?.length === 0 &&
           audit.body.entries?.length === 0 &&
-          jobs.body.jobs?.length === 0;
+          jobs.body.jobs?.length === 0 &&
+          aiKeys.body.keys?.length === 0;
         return erased ? true : undefined;
       },
       { timeoutMs: 120_000, intervalMs: 3_000 },

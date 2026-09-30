@@ -1,7 +1,13 @@
 import { createHash } from 'node:crypto';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { type CrawlErrorCode, type CrawlStatus, utcDay, utcMonth } from '@jobdeputy/shared';
+import {
+  type AiSource,
+  type CrawlErrorCode,
+  type CrawlStatus,
+  utcDay,
+  utcMonth,
+} from '@jobdeputy/shared';
 import { type AuditInput, auditItem, type Page, queryNewestFirst } from './audit-repository.js';
 import { cancelledAt, isConditionFailure } from './client.js';
 import { transactWrite } from './transact.js';
@@ -45,6 +51,8 @@ export interface Crawl {
   /** The normalized URL at crawl time. */
   url: string;
   trigger: 'user';
+  /** T08b2: where this crawl's AI work gets its model (used from T08d). */
+  aiSource?: AiSource;
   status: CrawlStatus;
   attempts: number;
   startedAt?: string;
@@ -181,6 +189,7 @@ export class CrawlRepository {
     dailyLimit: number;
     maxActive: number;
     replacing?: string;
+    aiSource?: AiSource;
   }): Promise<Crawl> {
     const at = this.now();
     const now = at.toISOString();
@@ -191,6 +200,7 @@ export class CrawlRepository {
       sourceId: input.sourceId,
       url: input.normalizedUrl,
       trigger: 'user',
+      ...(input.aiSource ? { aiSource: input.aiSource } : {}),
       status: 'queued',
       attempts: 0,
       ttl: Math.floor(at.getTime() / 1000) + CRAWL_TTL_SECONDS,

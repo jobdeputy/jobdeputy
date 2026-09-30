@@ -12,9 +12,11 @@
     "eval": "tsx eval/run.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.109.1",
     "@aws-sdk/client-bedrock-runtime": "3.1141.0",
     "@jobdeputy/shared": "workspace:*",
     "@strands-agents/sdk": "1.19.0",
+    "openai": "6.49.0",
     "zod": "4.6.5"
   },
   "devDependencies": {

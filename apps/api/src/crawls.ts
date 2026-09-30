@@ -1,6 +1,7 @@
 import {
   AccountRepository,
   ActiveCrawlError,
+  AiKeyRepository,
   type Crawl,
   CrawlRepository,
   CrawlSettingsRepository,
@@ -13,7 +14,11 @@ import {
 } from '@jobdeputy/db';
 import {
   ACTIVE_CRAWL_STATUSES,
+  type AiKeyStatus,
+  type AiProvider,
+  type AiSource,
   activeLimitMessage,
+  aiProvider,
   CRAWL_ERRORS,
   type CrawlLimitsConfig,
   callerFromEvent,
@@ -65,6 +70,11 @@ export interface CrawlsDeps {
   newId: () => string;
   now: () => number;
   isBeingDeleted: (userId: string) => Promise<boolean>;
+  /** T08b2: the user's default AI model source, and the status of one of their keys. */
+  aiDefault: (userId: string) => Promise<AiSource>;
+  aiKeyStatus: (userId: string, provider: AiProvider) => Promise<AiKeyStatus | undefined>;
+  /** Dev stacks only: the `stub` provider for integration tests. */
+  allowTestProvider: boolean;
 }
 
 function defaultDeps(): CrawlsDeps {
@@ -76,6 +86,8 @@ function defaultDeps(): CrawlsDeps {
     USAGE_TABLE_NAME,
     PREFERENCES_TABLE_NAME,
     CRAWL_LIMITS_PARAMETER,
+    AI_KEYS_TABLE_NAME,
+    ALLOW_TEST_AI_PROVIDER,
   } = process.env;
   if (
     !CRAWLS_TABLE_NAME ||
@@ -84,12 +96,18 @@ function defaultDeps(): CrawlsDeps {
     !USERS_TABLE_NAME ||
     !USAGE_TABLE_NAME ||
     !PREFERENCES_TABLE_NAME ||
-    !CRAWL_LIMITS_PARAMETER
+    !CRAWL_LIMITS_PARAMETER ||
+    !AI_KEYS_TABLE_NAME
   ) {
     throw new Error('Table and parameter names must be set');
   }
   const client = documentClient();
   const account = new AccountRepository(client, USERS_TABLE_NAME);
+  const aiKeys = new AiKeyRepository(client, {
+    aiKeys: AI_KEYS_TABLE_NAME,
+    usage: USAGE_TABLE_NAME,
+    preferences: PREFERENCES_TABLE_NAME,
+  });
   return {
     repo: new CrawlRepository(client, {
       crawls: CRAWLS_TABLE_NAME,
@@ -104,7 +122,42 @@ function defaultDeps(): CrawlsDeps {
     newId: ulid,
     now: Date.now,
     isBeingDeleted: (userId) => account.isBeingDeleted(userId),
+    aiDefault: async (userId) => (await aiKeys.getSettings(userId))?.defaultSource ?? 'platform',
+    aiKeyStatus: async (userId, provider) => (await aiKeys.get(userId, provider))?.status,
+    allowTestProvider: ALLOW_TEST_AI_PROVIDER === 'true',
   };
+}
+
+/**
+ * T08b2 (decision 0009): the model source for this crawl's AI work. A source the user chose
+ * for this crawl must be the platform or a saved key that is not invalid; the default is
+ * stored as it is, and T08d stops the AI work with a reason if its key no longer works
+ * (never falling back to the platform model silently). The crawl itself never needs AI.
+ */
+async function resolveAiSource(
+  userId: string,
+  requested: string | undefined,
+  deps: CrawlsDeps,
+  requestId: string,
+): Promise<AiSource | HttpResponse> {
+  if (requested === undefined) return deps.aiDefault(userId);
+  if (requested === 'platform') return 'platform';
+  const provider = aiProvider(requested, deps.allowTestProvider);
+  if (!provider) {
+    return problem(400, 'Invalid request', {
+      errors: [{ path: 'aiSource', message: 'Use platform or a provider you saved a key for' }],
+      requestId,
+    });
+  }
+  const status = await deps.aiKeyStatus(userId, provider);
+  if (status === undefined || status === 'invalid') {
+    return problem(422, 'Key not usable', {
+      detail: `Save a working ${provider} key first, or use the platform model.`,
+      code: 'ai-key-not-usable',
+      requestId,
+    });
+  }
+  return provider;
 }
 
 /** The limit that applies and why, plus today's use (`GET /me/crawl-settings`). */
@@ -135,6 +188,7 @@ export function crawlView(c: Crawl) {
     sourceId: c.sourceId,
     url: c.url,
     status: c.status,
+    ...(c.aiSource ? { aiSource: c.aiSource } : {}),
     attempts: c.attempts,
     ...(c.error ? { error: c.error } : {}),
     ...(c.lastError ? { lastError: c.lastError } : {}),
@@ -215,7 +269,13 @@ async function activeCrawlOf(userId: string, sourceId: string, deps: CrawlsDeps)
   return isActive(crawl, deps.now()) ? crawl : undefined;
 }
 
-async function submit(userId: string, rawUrl: string, deps: CrawlsDeps, requestId: string) {
+async function submit(
+  userId: string,
+  rawUrl: string,
+  aiSource: AiSource,
+  deps: CrawlsDeps,
+  requestId: string,
+) {
   const checked = parseCrawlUrl(rawUrl);
   if (!checked.ok) {
     return problem(400, 'This address cannot be crawled', {
@@ -252,6 +312,7 @@ async function submit(userId: string, rawUrl: string, deps: CrawlsDeps, requestI
         dailyLimit,
         maxActive: config.maxActive,
         ...(replacing !== undefined ? { replacing } : {}),
+        aiSource,
       });
       logger.info('Crawl queued', { crawlId, sourceId });
       return json(202, crawlView(crawl));
@@ -325,7 +386,9 @@ export async function route(event: Event, deps: CrawlsDeps): Promise<HttpRespons
       if (body === undefined) return problem(400, 'Body must be valid JSON', { requestId });
       const input = createCrawlInput.safeParse(body);
       if (!input.success) return validationProblem(input.error, requestId);
-      return submit(userId, input.data.url, deps, requestId);
+      const aiSource = await resolveAiSource(userId, input.data.aiSource, deps, requestId);
+      if (typeof aiSource === 'object') return aiSource;
+      return submit(userId, input.data.url, aiSource, deps, requestId);
     }
     case 'GET /me/crawls': {
       const query = pageQuery.safeParse(event.queryStringParameters ?? {});
