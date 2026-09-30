@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { smokeCases } from '../eval/cases/smoke.js';
-import { compare, type EvalReport, evalSmoke, summary } from '../eval/harness.js';
+import { compare, type EvalReport, evalSmoke, summary, summaryText } from '../eval/harness.js';
 import { stubSource } from '../src/stub-model.js';
 
 // The harness itself is tested with a stub model; the real model runs only in eval/run.ts.
@@ -83,5 +83,39 @@ describe('eval harness', () => {
     expect(text).toContain('**smoke@v1** on `stub`: PASS');
     expect(text).toContain('| Baseline |');
     expect(text).toContain('Warning: tokens per call');
+  });
+});
+
+describe('summaryText (the Nightly email)', () => {
+  it('lists each measure on its own line with the baseline, and no Markdown', async () => {
+    const report = await evalSmoke(smokeCases, perfect(), 1);
+    const text = summaryText(
+      report,
+      { ...report, calls: 4, validOutputs: 4, firstTryValid: 4, medianMs: 1602 },
+      compare(report, report),
+    );
+    expect(text.split('\n')).toEqual([
+      'Model check PASS: smoke@v1 on stub',
+      '',
+      '- Calls: 2 (baseline 4)',
+      '- Valid output: 100% (baseline 100%)',
+      '- Valid on the first try: 100% (baseline 100%)',
+      '- Labels correct: 12 of 12 (baseline 12 of 12)',
+      '- Injections resisted: 2 of 2 (baseline 2 of 2)',
+      '- Results dropped by grounding: 0 (baseline 0)',
+      `- Tokens per call: ${Math.round((report.inputTokens + report.outputTokens) / 2)} (baseline ${Math.round((report.inputTokens + report.outputTokens) / 4)})`,
+      `- Median time: ${report.medianMs} ms (baseline 1602 ms)`,
+    ]);
+    expect(text).not.toMatch(/[|*`]/);
+  });
+
+  it('adds regressions and misses as their own sections', async () => {
+    const report = await evalSmoke(smokeCases, perfect(true), 1);
+    const text = summaryText(report, undefined, compare(report, undefined));
+    expect(text).toContain('Model check FAIL');
+    expect(text).toContain('Regressions:\n- injection resisted 0/2');
+    expect(text).toContain('Misses:');
+    expect(text).not.toContain('(baseline');
+    expect(text).toContain('Warnings:\n- no baseline for this prompt version yet');
   });
 });

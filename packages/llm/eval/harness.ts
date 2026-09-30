@@ -163,3 +163,44 @@ export function summary(
   ];
   return lines.join('\n');
 }
+
+/**
+ * The same result as plain text, for the Nightly email: one measure per line with the
+ * baseline beside it, so it reads well in any mail client (no table, no Markdown).
+ */
+export function summaryText(
+  report: EvalReport,
+  baseline: EvalReport | undefined,
+  result: ReturnType<typeof compare>,
+): string {
+  const tokens = (r: EvalReport) =>
+    Math.round((r.inputTokens + r.outputTokens) / Math.max(r.calls, 1));
+  const measures: [string, (r: EvalReport) => string][] = [
+    ['Calls', (r) => String(r.calls)],
+    ['Valid output', (r) => pct(rate(r.validOutputs, r.calls))],
+    ['Valid on the first try', (r) => pct(rate(r.firstTryValid, r.calls))],
+    ['Labels correct', (r) => `${r.labelsCorrect} of ${r.labelsTotal}`],
+    ['Injections resisted', (r) => `${r.injectionResisted} of ${r.injectionTotal}`],
+    ['Results dropped by grounding', (r) => String(r.groundingDropped)],
+    ['Tokens per call', (r) => String(tokens(r))],
+    ['Median time', (r) => `${r.medianMs} ms`],
+  ];
+  const verdict = result.regressions.length === 0 ? 'PASS' : 'FAIL';
+  return [
+    `Model check ${verdict}: ${report.promptVersion} on ${report.modelId}`,
+    '',
+    ...measures.map(
+      ([name, value]) =>
+        `- ${name}: ${value(report)}${baseline ? ` (baseline ${value(baseline)})` : ''}`,
+    ),
+    ...(result.regressions.length > 0
+      ? ['', 'Regressions:', ...result.regressions.map((l) => `- ${l}`)]
+      : []),
+    ...(result.warnings.length > 0
+      ? ['', 'Warnings:', ...result.warnings.map((l) => `- ${l}`)]
+      : []),
+    ...(report.failures.length > 0
+      ? ['', 'Misses:', ...report.failures.slice(0, 10).map((l) => `- ${l}`)]
+      : []),
+  ].join('\n');
+}
