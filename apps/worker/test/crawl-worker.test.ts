@@ -14,6 +14,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   type CrawlWorkerDeps,
   crawlErrorFrom,
+  listed,
+  MAX_LISTED_JOB_IDS,
   MAX_RECEIVES,
   processRecord,
   RETRY_BACKOFF_SECONDS,
@@ -95,7 +97,7 @@ function setup(fetchImpl: FetchFn = async () => page()) {
       }),
     },
     isBeingDeleted: vi.fn(async () => false),
-    newFetcher: vi.fn(() => fetch),
+    newFetcher: vi.fn((): FetchFn => fetch),
     storePage: vi.fn(async () => undefined),
     saveJobs: vi.fn(async (_u: string, jobs: JobPosting[]) => ({
       found: jobs.length,
@@ -103,6 +105,9 @@ function setup(fetchImpl: FetchFn = async () => page()) {
       updated: 0,
     })),
     now: () => NOW,
+    listedJobIds: vi.fn(async (): Promise<string[]> => []),
+    closeJobs: vi.fn(async (_u: string, _s: string, ids: string[]) => ids.length),
+    sleep: vi.fn(async () => undefined),
     delayRetry: vi.fn(async () => undefined),
     newId: () => '01J8ZQ4Y3N5W6X7Y8Z9A0B1C2E',
     remainingMs: () => 60_000,
@@ -115,7 +120,7 @@ describe('crawl worker: success', () => {
     const { state, deps, fetch } = setup();
     expect(await processRecord(record(), deps)).toBe('succeeded');
     const key = crawlKeys(USER, CRAWL).page;
-    expect(fetch).toHaveBeenCalledWith(URL_);
+    expect(fetch).toHaveBeenCalledWith(URL_, {});
     expect(deps.storePage).toHaveBeenCalledWith(key, expect.objectContaining({ status: 200 }));
     expect(state).toMatchObject({
       status: 'succeeded',
@@ -312,7 +317,7 @@ describe('crawl worker: jobs (T07b)', () => {
     );
     expect(state).toMatchObject({
       status: 'succeeded',
-      stats: { jobsFound: 2, jobsNew: 1, jobsUpdated: 1 },
+      stats: { jobsFound: 2, jobsNew: 1, jobsUpdated: 1, jobsClosed: 0, pagesFetched: 1 },
       extraction: { outcome: 'read', method: 'schema_org', skipped: 0 },
       source: { kind: 'unknown', lastFound: 2 },
       audit: ['crawl.succeeded'],
@@ -325,9 +330,13 @@ describe('crawl worker: jobs (T07b)', () => {
     expect(await processRecord(record(), deps)).toBe('succeeded');
     expect(deps.saveJobs).toHaveBeenCalledWith(USER, [], expect.anything());
     expect(state).toMatchObject({
-      stats: { jobsFound: 0, jobsNew: 0, jobsUpdated: 0 },
+      stats: { jobsFound: 0, jobsNew: 0, jobsUpdated: 0, jobsClosed: 0, pagesFetched: 1 },
       extraction: { outcome: 'no_readable_jobs', skipped: 0 },
     });
+    // Nothing was read: what the page listed before is kept, and nothing is closed.
+    expect(deps.listedJobIds).not.toHaveBeenCalled();
+    expect(deps.closeJobs).not.toHaveBeenCalled();
+    expect(state.source).not.toHaveProperty('listedJobIds');
   });
 
   it('a job board records its kind on the source', async () => {
@@ -342,7 +351,13 @@ describe('crawl worker: jobs (T07b)', () => {
     });
     expect(await processRecord(record(), deps)).toBe('succeeded');
     expect(fetch).toHaveBeenCalledWith(api, {});
-    expect(state.source).toEqual({ kind: 'ats_board', ats: 'lever', lastFound: 0 });
+    // A complete read of an empty board: it lists nothing now.
+    expect(state.source).toEqual({
+      kind: 'ats_board',
+      ats: 'lever',
+      lastFound: 0,
+      listedJobIds: [],
+    });
     expect(state.extraction).toMatchObject({ method: 'ats_feed', board: 'lever:acme' });
   });
 
@@ -355,5 +370,77 @@ describe('crawl worker: jobs (T07b)', () => {
     // The same jobs again: the repository updates the same items (idempotent).
     expect(deps.saveJobs).toHaveBeenCalledTimes(2);
     expect(deps.saveJobs.mock.calls[0]?.[1]).toEqual(deps.saveJobs.mock.calls[1]?.[1]);
+  });
+});
+
+describe('crawl worker: closed jobs (T07c)', () => {
+  const posting = (i: number) => `{"@type":"JobPosting","title":"Role ${i}","url":"/jobs/${i}"}`;
+  const pageWith = (...ids: number[]) =>
+    page({
+      body: new TextEncoder().encode(
+        `<html><head><script type="application/ld+json">[${ids.map(posting).join(',')}]</script></head><body>Careers</body></html>`,
+      ),
+    });
+
+  it('a complete crawl closes what the page no longer lists, and remembers what it lists now', async () => {
+    const { state, deps } = setup(async () => pageWith(1, 2));
+    const [one, two] = (
+      await (async () => {
+        const probe = setup(async () => pageWith(1, 2));
+        await processRecord(record(), probe.deps);
+        return probe.deps.saveJobs.mock.calls[0]?.[1] ?? [];
+      })()
+    ).map((j) => j.jobId);
+    deps.listedJobIds.mockResolvedValue([one as string, 'gone-1', two as string, 'gone-2']);
+    expect(await processRecord(record(), deps)).toBe('succeeded');
+    expect(deps.closeJobs).toHaveBeenCalledWith(USER, 'S1', ['gone-1', 'gone-2']);
+    expect(state.stats).toMatchObject({ jobsClosed: 2 });
+    expect(state.source?.listedJobIds).toEqual([one, two]);
+    expect(state.auditDetail).toMatchObject({ jobsClosed: 2 });
+  });
+
+  it('a partial crawl closes nothing, and adds what it read to what the page listed', async () => {
+    const { state, deps } = setup(async () =>
+      page({
+        url: 'https://api.lever.co/v0/postings/acme?mode=json&limit=50&skip=0',
+        contentType: 'application/json',
+        body: new TextEncoder().encode(
+          JSON.stringify(
+            Array.from({ length: 50 }, (_, i) => ({
+              id: `6ed76ce8-4156-4b60-b120-${String(i).padStart(12, '0')}`,
+              text: `Role ${i}`,
+              hostedUrl: `https://jobs.lever.co/acme/${i}`,
+            })),
+          ),
+        ),
+      }),
+    );
+    // The next page fails: partial.
+    let calls = 0;
+    const firstPage = deps.newFetcher();
+    deps.newFetcher.mockReturnValue(async (url, options) => {
+      calls += 1;
+      if (calls > 1) throw new FetchError('http_error', true, 'HTTP 503');
+      return firstPage(url, options);
+    });
+    const crawlOf = deps.repo.start.getMockImplementation();
+    deps.repo.start.mockImplementation(async (...args) => {
+      const crawl = await crawlOf?.(...args);
+      return crawl && { ...crawl, url: 'https://jobs.lever.co/acme' };
+    });
+    deps.listedJobIds.mockResolvedValue(['earlier']);
+    expect(await processRecord(record(), deps)).toBe('succeeded');
+    expect(state.extraction?.partial).toEqual({ reason: 'page_failed' });
+    expect(deps.closeJobs).not.toHaveBeenCalled();
+    expect(state.stats).toMatchObject({ jobsFound: 50, jobsClosed: 0, pagesFetched: 2 });
+    expect(state.source?.listedJobIds).toHaveLength(51);
+    expect(state.source?.listedJobIds).toContain('earlier');
+  });
+
+  it('what a page lists is bounded, newest first', () => {
+    const previous = Array.from({ length: MAX_LISTED_JOB_IDS }, (_, i) => `old-${i}`);
+    const merged = listed(['new-1', 'old-0'], previous);
+    expect(merged).toHaveLength(MAX_LISTED_JOB_IDS);
+    expect(merged.slice(0, 3)).toEqual(['new-1', 'old-0', 'old-1']);
   });
 });

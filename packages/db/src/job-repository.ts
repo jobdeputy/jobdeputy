@@ -1,5 +1,6 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { isConditionFailure } from './client.js';
 
 /**
  * `jobs` (docs/data-model.md §8, decision 0008): jobs found for the user. Keys: `userId`,
@@ -44,7 +45,8 @@ export type JobStatus = 'new' | 'shortlisted' | 'dismissed' | 'applying' | 'appl
 export interface Job extends JobPosting {
   userId: string;
   type: 'job';
-  sourceIds: Set<string>;
+  /** Saved pages that currently list it; absent once none does (then `closedAt` is set). */
+  sourceIds?: Set<string>;
   firstCrawlId: string;
   lastCrawlId: string;
   firstSeenAt: string;
@@ -184,6 +186,62 @@ export class JobRepository {
       old.contentHash !== job.contentHash ||
       (job.descriptionHash !== undefined && old.descriptionHash !== job.descriptionHash);
     return changed ? 'updated' : 'unchanged';
+  }
+
+  /**
+   * T07c: jobs this source listed before and a complete crawl of it no longer lists. The
+   * source is removed from each job's `sourceIds`; a job no saved page lists any more is
+   * closed (`closedAt`). Safe to repeat, and to race a crawl of another source that lists
+   * the job again: closing requires `sourceIds` to still be empty. Returns how many closed.
+   */
+  async closeMissing(userId: string, sourceId: string, jobIds: string[]): Promise<number> {
+    const now = this.now().toISOString();
+    let closed = 0;
+    let next = 0;
+    const lane = async () => {
+      while (next < jobIds.length) {
+        const jobId = jobIds[next++] as string;
+        if (await this.dropSource(userId, sourceId, jobId, now)) closed += 1;
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(SAVE_CONCURRENCY, jobIds.length) }, lane));
+    return closed;
+  }
+
+  private async dropSource(userId: string, sourceId: string, jobId: string, now: string) {
+    try {
+      const res = await this.client.send(
+        new UpdateCommand({
+          TableName: this.table,
+          Key: { userId, jobId },
+          // An empty set is removed, so `sourceIds` is gone when no source lists the job.
+          UpdateExpression: 'DELETE #sourceIds :source SET updatedAt = :now',
+          ConditionExpression: 'attribute_exists(userId)',
+          ExpressionAttributeNames: { '#sourceIds': 'sourceIds' },
+          ExpressionAttributeValues: { ':source': new Set([sourceId]), ':now': now },
+          ReturnValues: 'ALL_NEW',
+        }),
+      );
+      if (res.Attributes?.sourceIds !== undefined || res.Attributes?.closedAt !== undefined) {
+        return false;
+      }
+      await this.client.send(
+        new UpdateCommand({
+          TableName: this.table,
+          Key: { userId, jobId },
+          UpdateExpression: 'SET #closedAt = :now, updatedAt = :now',
+          ConditionExpression:
+            'attribute_not_exists(#sourceIds) AND attribute_not_exists(#closedAt)',
+          ExpressionAttributeNames: { '#sourceIds': 'sourceIds', '#closedAt': 'closedAt' },
+          ExpressionAttributeValues: { ':now': now },
+        }),
+      );
+      return true;
+    } catch (error) {
+      // The job is gone, was listed again meanwhile, or is already closed.
+      if (isConditionFailure(error)) return false;
+      throw error;
+    }
   }
 
   async get(userId: string, jobId: string): Promise<Job | undefined> {

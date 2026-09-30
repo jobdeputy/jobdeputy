@@ -67,6 +67,8 @@ Every `TransactWriteItems` goes through `transactWrite` (`packages/db/src/transa
 | `crawls` + `audit` | `TransactWriteItems`: `UpdateItem` crawl with `#status IN (queued, running)` → `succeeded`/`failed`, `PutItem` audit entry | `userId`, `crawlId` / `auditId` | crawl worker; `POST /me/crawls` ending a stale crawl |
 | `sources` | `UpdateItem` with `activeCrawlId = :crawlId` (`REMOVE activeCrawlId`; after a success also `kind`, `ats`, `stats`) | `userId`, `sourceId` | crawl worker, after a crawl ends |
 | `jobs` | `UpdateItem` per job, no condition (idempotent): posting fields `SET`; first-seen and the user's own fields `if_not_exists`; `ADD sourceIds`; `REMOVE closedAt`; `ReturnValues: UPDATED_OLD` to count new and changed jobs. At most 10 at a time, 500 per crawl. | `userId`, `jobId` | crawl worker (T07b) |
+| `sources` | `GetItem` | `userId`, `sourceId` | crawl worker (T07c): which jobs the page listed before |
+| `jobs` | `UpdateItem` `DELETE sourceIds :source` with `attribute_exists(userId)`, returning the new item; if no source is left, `UpdateItem` `SET closedAt` with `attribute_not_exists(sourceIds) AND attribute_not_exists(closedAt)`. At most 10 at a time. | `userId`, `jobId` | crawl worker (T07c), for jobs a complete crawl no longer lists |
 | `jobs` | `Query`, key order, `Limit`, `ExclusiveStartKey` | `userId` | `GET /me/jobs` (paged) |
 | `jobs` | `GetItem` | `userId`, `jobId` | `GET /me/jobs/{jobId}` |
 | `audit` | `Query`, newest first, `Limit`, `ExclusiveStartKey` | `userId` | `GET /me/audit` (paged) |
@@ -154,13 +156,13 @@ Key: `userId`, `documentId` (ULID).
 
 Key: `userId`, `sourceId` (the first 32 hex characters of SHA-256 of `normalizedUrl`, [0007](decisions/0007-crawler.md): the same page cannot be saved twice by one user).
 
-`url` (as submitted), `normalizedUrl` (lowercase host, no fragment or tracking parameters), `label?`, `kind` (`ats_board` once a crawl read it as a job board, T07b; otherwise `unknown`; `company_careers`, `aggregator`, and `linkedin_search` later), `ats?` (`greenhouse`, `lever`, `ashby`, or `workday`; set by the crawl worker, T07b), `companyHint?` (`companyId`, for single-company pages), `companyConfirmed B`, `active B`, `schedule {type}` (`manual` now; `daily` later), `lastCrawlId?`, `lastCrawledAt?`, `activeCrawlId?` (T06b: set while a crawl of this page is queued or running, so a second submit returns it; replaced if that crawl is finished, missing, or older than 15 minutes), `stats? {lastFound}` (T07b: jobs read by the last successful crawl; `totalJobs` later).
+`url` (as submitted), `normalizedUrl` (lowercase host, no fragment or tracking parameters), `label?`, `kind` (`ats_board` once a crawl read it as a job board, T07b; otherwise `unknown`; `company_careers`, `aggregator`, and `linkedin_search` later), `ats?` (`greenhouse`, `lever`, `ashby`, or `workday`; set by the crawl worker, T07b), `companyHint?` (`companyId`, for single-company pages), `companyConfirmed B`, `active B`, `schedule {type}` (`manual` now; `daily` later), `lastCrawlId?`, `lastCrawledAt?`, `activeCrawlId?` (T06b: set while a crawl of this page is queued or running, so a second submit returns it; replaced if that crawl is finished, missing, or older than 15 minutes), `stats? {lastFound}` (T07b: jobs read by the last successful crawl; `totalJobs` later), `listedJobIds? SS` (T07c: the jobs this page lists as far as its crawls know: exactly what the last complete crawl read, plus what later partial crawls added; newest first, at most 2,000; absent when it lists none).
 
 ## 5. `crawls`: crawl runs (stream → crawl worker)
 
 Key: `userId`, `crawlId` (ULID).
 
-`sourceId`, `url` (the normalized URL at crawl time), `trigger` (`user`, `schedule`, or `redrive`), `status` (`queued`, `running`, `succeeded`, `failed`, or `cancelled`), `attempts N`, `startedAt?`, `finishedAt?`, `result? {finalUrl, httpStatus, contentType, bytes, s3Key}` (T06b: the fetched page; `s3Key` is never shown by the API), `stats? {jobsFound, jobsNew, jobsUpdated}` (T07b; `pagesFetched`, `jobsClosed` with T07c, `jobsRelevant`, `jobsOverLimit` later), `extraction? {outcome, method?, board?, skipped N, partial? {reason}}` (`outcome` `read` or `no_readable_jobs`; `method` `ats_feed` or `schema_org`; `board` for example `greenhouse:acme`; `reason` `max_jobs`) (T07b; only on `succeeded`), `error? {code, message}` (`code` from `CRAWL_ERRORS` in `packages/shared`), `lastError? {code, message}` (T06b: the latest retriable failure while a retry is pending), `llm {provider (byot or platform), model, calls, inputTokens, outputTokens}` (T07d), `ttl` (180 days).
+`sourceId`, `url` (the normalized URL at crawl time), `trigger` (`user`, `schedule`, or `redrive`), `status` (`queued`, `running`, `succeeded`, `failed`, or `cancelled`), `attempts N`, `startedAt?`, `finishedAt?`, `result? {finalUrl, httpStatus, contentType, bytes, s3Key}` (T06b: the fetched page; `s3Key` is never shown by the API), `stats? {jobsFound, jobsNew, jobsUpdated, pagesFetched, jobsClosed}` (T07b, T07c; `pagesFetched` counts requests, not robots.txt; `jobsRelevant`, `jobsOverLimit` later), `extraction? {outcome, method?, board?, skipped N, partial? {reason}}` (`outcome` `read` or `no_readable_jobs`; `method` `ats_feed` or `schema_org`; `board` for example `greenhouse:acme`; `reason` `max_jobs`, `max_pages`, `time_budget`, or `page_failed`) (T07b; only on `succeeded`), `error? {code, message}` (`code` from `CRAWL_ERRORS` in `packages/shared`), `lastError? {code, message}` (T06b: the latest retriable failure while a retry is pending), `llm {provider (byot or platform), model, calls, inputTokens, outputTokens}` (T07d), `ttl` (180 days).
 
 ## 6. `usage`: counters
 
@@ -230,11 +232,11 @@ So the same job is stored once per user, and a re-crawl updates it.
 
 | Attribute | Type | Required | Notes |
 |---|---|---|---|
-| `sourceIds` | SS | yes | Every saved page that listed it (a string set, so saving again adds nothing) |
+| `sourceIds` | SS | yes, until closed | The saved pages that currently list it (a string set, so saving again adds nothing). A complete crawl of a page that no longer lists it removes that page; absent once no page lists it. |
 | `firstCrawlId`, `lastCrawlId` | S | yes | |
 | `firstSeenAt`, `lastSeenAt` | S | yes | |
 | `extraction` | M | yes | `{method, version}`: `ats_feed` or `schema_org` now; `llm` later ([T07d](https://github.com/jobdeputy/jobdeputy/issues/41)) |
-| `closedAt` | S | no | Set when a complete crawl of the source no longer lists it (T07c), or its posting is gone when T08 fetches the description; removed if it is seen again |
+| `closedAt` | S | no | Set when no saved page lists it any more (T07c: after complete crawls, never partial ones), or its posting is gone when T08 fetches the description; removed when a crawl lists it again |
 
 ### Fit for the user (T08 and later)
 
@@ -362,3 +364,4 @@ Everything under `users/<userId>/` and `derived/users/<userId>/` goes with accou
 | 2026-09-29 | `ping-jobs` and `idempotency`: dev stacks only; `ping-jobs` items expire after 1 day (were 7), because they hold a user ID that account deletion does not reach | deep check |
 | 2026-09-29 | `jobs` layout: required and optional attributes, `dedupeKey` rules, `companyKey`, `locations` items `{text, city?, region?, country?}`, `salary` as a range, `description` as plain text (32,000 characters), `descriptionTruncated`; groups for relevance, résumé match, and generated materials; `companies` deferred ([0008](decisions/0008-job-extraction.md)); design only, table not built yet | docs |
 | 2026-09-29 | `jobs` table built (T07b): `sourceIds` is a string set; `descriptionHash` added and `contentHash` no longer covers the description; `descriptionTruncated` set with every description; a re-crawl never removes a posting field. `crawls`: `stats {jobsFound, jobsNew, jobsUpdated}` and `extraction`. `sources`: `kind` `ats_board`, `ats`, `stats {lastFound}`. | T07b |
+| 2026-09-29 | T07c: `crawls.stats` gains `pagesFetched` and `jobsClosed`; `extraction.partial.reason` gains `max_pages`, `time_budget`, `page_failed`; `sources.listedJobIds`; `jobs.sourceIds` means the pages that currently list the job, and is absent once it is closed | T07c |

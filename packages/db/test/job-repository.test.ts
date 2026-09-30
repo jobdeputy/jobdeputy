@@ -193,3 +193,69 @@ describe('JobRepository reads', () => {
     });
   });
 });
+
+describe('JobRepository.closeMissing (T07c)', () => {
+  const named = (name: string) => Object.assign(new Error(name), { name });
+
+  it('removes the source; closes a job no page lists any more', async () => {
+    const { c, send } = client((cmd) => {
+      const input = (cmd as UpdateCommand).input;
+      // After removing the source: j1 has none left; j2 is still listed by another page.
+      if (input.UpdateExpression?.startsWith('DELETE')) {
+        return {
+          Attributes:
+            input.Key?.jobId === 'j1'
+              ? { jobId: 'j1' }
+              : { jobId: 'j2', sourceIds: new Set(['S2']) },
+        };
+      }
+      return {};
+    });
+    expect(await repo(c).closeMissing(USER, 'S1', ['j1', 'j2'])).toBe(1);
+    const commands = send.mock.calls.map(([cmd]) => (cmd as UpdateCommand).input);
+    const drops = commands.filter((i) => i.UpdateExpression?.startsWith('DELETE'));
+    expect(drops.map((i) => i.Key?.jobId).sort()).toEqual(['j1', 'j2']);
+    expect(drops[0]).toMatchObject({
+      UpdateExpression: 'DELETE #sourceIds :source SET updatedAt = :now',
+      ConditionExpression: 'attribute_exists(userId)',
+      ExpressionAttributeValues: { ':source': new Set(['S1']) },
+    });
+    const closes = commands.filter((i) => i.UpdateExpression?.startsWith('SET #closedAt'));
+    expect(closes).toHaveLength(1);
+    expect(closes[0]).toMatchObject({
+      Key: { userId: USER, jobId: 'j1' },
+      // Not if another page listed it again meanwhile, or it is already closed.
+      ConditionExpression: 'attribute_not_exists(#sourceIds) AND attribute_not_exists(#closedAt)',
+      ExpressionAttributeValues: { ':now': NOW.toISOString() },
+    });
+  });
+
+  it('a job already closed, gone, or listed again meanwhile is not counted', async () => {
+    let n = 0;
+    const { c } = client((cmd) => {
+      const input = (cmd as UpdateCommand).input;
+      n += 1;
+      if (input.Key?.jobId === 'gone') throw named('ConditionalCheckFailedException');
+      if (input.UpdateExpression?.startsWith('DELETE')) {
+        return { Attributes: input.Key?.jobId === 'closed' ? { closedAt: 'x' } : {} };
+      }
+      // The close of `raced`: another crawl added a source back first.
+      throw named('ConditionalCheckFailedException');
+    });
+    expect(await repo(c).closeMissing(USER, 'S1', ['gone', 'closed', 'raced'])).toBe(0);
+    expect(n).toBe(4);
+  });
+
+  it('other failures are not hidden', async () => {
+    const { c } = client(() => {
+      throw new Error('InternalServerError');
+    });
+    await expect(repo(c).closeMissing(USER, 'S1', ['j1'])).rejects.toThrow('InternalServerError');
+  });
+
+  it('nothing to close sends nothing', async () => {
+    const { c, send } = client();
+    expect(await repo(c).closeMissing(USER, 'S1', [])).toBe(0);
+    expect(send).not.toHaveBeenCalled();
+  });
+});

@@ -376,6 +376,36 @@ describe('CrawlRepository.finish', () => {
     });
   });
 
+  it('remembers the jobs a page lists (T07c); an empty list is removed, not stored', async () => {
+    const finishWith = async (listedJobIds?: string[]) => {
+      const { c, send } = client();
+      await repo(c).finish(
+        crawl,
+        {
+          status: 'succeeded',
+          result,
+          source: {
+            kind: 'unknown',
+            lastFound: 0,
+            ...(listedJobIds !== undefined ? { listedJobIds } : {}),
+          },
+        },
+        audit('crawl.succeeded'),
+      );
+      return sent<UpdateCommand>(send, 1).input;
+    };
+    const some = await finishWith(['j1', 'j2']);
+    expect(some.UpdateExpression).toContain('#listed = :listed');
+    expect(some.ExpressionAttributeNames).toMatchObject({ '#listed': 'listedJobIds' });
+    expect(some.ExpressionAttributeValues?.[':listed']).toEqual(new Set(['j1', 'j2']));
+    const none = await finishWith([]);
+    expect(none.UpdateExpression).toMatch(/REMOVE activeCrawlId, #listed$/);
+    expect(none.ExpressionAttributeValues).not.toHaveProperty(':listed');
+    const unknown = await finishWith(undefined);
+    expect(unknown.UpdateExpression).not.toContain('#listed');
+    expect(unknown.ExpressionAttributeNames).not.toHaveProperty('#listed');
+  });
+
   it('fails with a trimmed error', async () => {
     const { c, send } = client();
     await repo(c).finish(

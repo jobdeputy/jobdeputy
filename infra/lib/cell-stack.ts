@@ -446,13 +446,15 @@ export class CellStack extends Stack {
         DOCUMENTS_BUCKET_NAME: documents.bucket.bucketName,
       },
     });
-    // T07b: creates or updates each job it read (one idempotent update per job).
+    // T07b: creates or updates each job it read (one idempotent update per job); T07c:
+    // closes jobs a page no longer lists (updates too, never deletes).
     jobsTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem');
     usersTable.grant(crawlWorker.fn, 'dynamodb:GetItem');
     crawlsTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem');
     // Frees the crawl's active slot when it ends (same transaction).
     usageTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem');
-    sourcesTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem');
+    // T07c: reads which jobs the page listed before (GetItem), to close the ones now gone.
+    sourcesTable.grant(crawlWorker.fn, 'dynamodb:GetItem', 'dynamodb:UpdateItem');
     auditTable.grant(crawlWorker.fn, 'dynamodb:PutItem');
     // Writes fetched pages only (tagged for the 30-day expiry); reads nothing from S3.
     crawlWorker.fn.addToRolePolicy(

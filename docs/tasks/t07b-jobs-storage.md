@@ -1,8 +1,8 @@
 # T07b: Jobs table and storage
 
-- **Status:** in-review
+- **Status:** done
 - **Depends on:** T07a ([decision](t07-job-extraction-storage.md#decision), [0008](../decisions/0008-job-extraction.md))
-- **Branch / PR:** `t07b-jobs-storage`
+- **Branch / PR:** `t07b-jobs-storage`, [#44](https://github.com/jobdeputy/jobdeputy/pull/44) (merged)
 
 ## Goal
 
