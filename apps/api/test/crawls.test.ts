@@ -4,6 +4,7 @@ import {
   type Crawl,
   type CrawlSettings,
   DailyLimitError,
+  PlatformAllowanceError,
   type Source,
   sourceIdFor,
   TooManyActiveCrawlsError,
@@ -82,8 +83,15 @@ function deps(over: Partial<CrawlsDeps['repo']> = {}) {
   const d: CrawlsDeps = {
     repo,
     settings,
-    limits: vi.fn(async () => ({ dailyDefault: 20, dailyMax: 50, maxActive: 3 })),
+    limits: vi.fn(async () => ({
+      dailyDefault: 20,
+      dailyMax: 50,
+      maxActive: 3,
+      platformRunsPerWeek: 1,
+      platformRunsPerMonth: 4,
+    })),
     usedToday: vi.fn(async () => 3),
+    platformRunsUsed: vi.fn(async () => ({ week: 1, month: 1 })),
     auditTable: 'Audit',
     newId: () => `01J8ZQ4Y3N5W6X7Y8Z9A0B1C${String(10 + (n++ % 90))}`,
     now: () => NOW,
@@ -137,6 +145,46 @@ describe('POST /me/crawls: the AI model source (T08b2)', () => {
       expect(body(res).code).toBe('ai-key-not-usable');
       expect(repo.request).not.toHaveBeenCalled();
     }
+  });
+
+  it('counts a free platform run only for platform crawls (T08b3)', async () => {
+    const platform = deps();
+    await route(postWith('platform'), platform.d);
+    expect(vi.mocked(platform.repo.request).mock.calls[0]?.[0].platformRuns).toEqual({
+      perWeek: 1,
+      perMonth: 4,
+    });
+    for (const [aiSource, status] of [
+      ['none', undefined],
+      ['openai', 'valid'],
+    ] as const) {
+      const { d, repo } = deps();
+      vi.mocked(d.aiKeyStatus).mockResolvedValue(status);
+      expect((await route(postWith(aiSource), d)).statusCode).toBe(202);
+      expect(vi.mocked(repo.request).mock.calls[0]?.[0].platformRuns).toBeUndefined();
+    }
+  });
+
+  it('refuses a platform crawl once the free runs are used up, saying when the next one comes', async () => {
+    const { d, repo } = deps();
+    vi.mocked(repo.request).mockRejectedValue(new PlatformAllowanceError());
+    const res = await route(postWith('platform'), d);
+    expect(res.statusCode).toBe(429);
+    expect(body(res).code).toBe('platform-ai-limit-reached');
+    // 2026-09-28 is a Monday: the week (1 used of 1) resets next Monday.
+    expect(body(res).detail).toContain('2026-10-05T00:00:00.000Z');
+    expect(body(res).detail).toContain('"none"');
+    expect(res.headers['retry-after']).toBe(String(7 * 24 * 60 * 60 - 12 * 60 * 60));
+  });
+
+  it('returns the running crawl of the same page instead of the allowance error (a duplicate)', async () => {
+    const { d, repo } = deps();
+    vi.mocked(repo.request).mockRejectedValue(new PlatformAllowanceError());
+    vi.mocked(repo.getSource).mockResolvedValue({ activeCrawlId: C1 } as Source);
+    vi.mocked(repo.getCrawl).mockResolvedValue(
+      crawl({ status: 'running', createdAt: new Date(NOW).toISOString() }),
+    );
+    expect((await route(postWith('platform'), d)).statusCode).toBe(200);
   });
 
   it('refuses unknown sources, and the test provider outside dev', async () => {
@@ -354,7 +402,13 @@ describe('daily crawl limit (T06c)', () => {
 
     // The admin lowered the maximum after the user chose 40.
     settings.get.mockResolvedValueOnce({ dailyLimit: 40 } as CrawlSettings);
-    vi.mocked(d.limits).mockResolvedValueOnce({ dailyDefault: 10, dailyMax: 30, maxActive: 3 });
+    vi.mocked(d.limits).mockResolvedValueOnce({
+      dailyDefault: 10,
+      dailyMax: 30,
+      maxActive: 3,
+      platformRunsPerWeek: 1,
+      platformRunsPerMonth: 4,
+    });
     await route(post(URL_), d);
     expect(vi.mocked(repo.request).mock.calls[1]?.[0].dailyLimit).toBe(30);
   });

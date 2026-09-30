@@ -91,6 +91,15 @@ The email shows the eval table: calls, valid output, labels, injections resisted
 
 **GitHub's 60-day rule:** GitHub disables scheduled workflows (Nightly, and the daily Integration cleanup) after 60 days with no commits. It emails the repository admins first. To re-enable: Actions → the workflow → **Enable workflow**. The AWS alarms and the dev reaper run in AWS and are not affected.
 
+## LLM tasks: rejected outputs or timeouts
+
+Alarms `…-LlmMonitoringRejectedOutputsAlarm` (10 or more model replies rejected as invalid output in an hour) and `…-LlmMonitoringTimeoutsAlarm` (5 or more task calls timed out in an hour), across all LLM tasks (T08b3). The dashboard `<stack>-llm` shows them per task (and in prod per model and prompt version).
+
+1. Open the dashboard: which task, and (prod) which model and prompt version?
+2. **Many rejected outputs:** the model's replies no longer fit the schema. Check a recent prompt, schema, or model change (its PR eval), and run the eval (`AWS_PROFILE=… pnpm --filter @jobdeputy/llm eval --runs 3`). Revert the change if the eval fails. Injected text in pages can also cause it: look for one site in the worker's logs.
+3. **Timeouts:** the provider is slow (Bedrock in the Region, or a user's provider for own keys). Check the AWS Health dashboard; own-key timeouts affect only those users.
+4. Nothing to fix in data: task calls that failed return `partial`, and nothing invalid is stored.
+
 ## Budget alerts ($5, $10, $15) and the $20 block
 
 **Meaning:** organization-wide spending reached the amount ([0005](../decisions/0005-pre-launch-cost-guardrails.md)). At $20, a deny-all policy (`budget-stop`) is attached to the Workloads OU automatically: deploys and running services stop.

@@ -22,8 +22,11 @@ export const AI_PROVIDERS = ['openai', 'anthropic'] as const;
 export const TEST_AI_PROVIDER = 'stub';
 export type AiProvider = (typeof AI_PROVIDERS)[number] | typeof TEST_AI_PROVIDER;
 
-/** Where an AI run's model comes from: the platform model or one of the user's keys. */
-export type AiSource = 'platform' | AiProvider;
+/**
+ * Where a crawl's AI work gets its model: the platform model (counted against the free
+ * allowance), one of the user's keys, or `none` (the free keyword filter only).
+ */
+export type AiSource = 'platform' | 'none' | AiProvider;
 
 export const AI_KEY_STATUSES = ['checking', 'valid', 'invalid'] as const;
 export type AiKeyStatus = (typeof AI_KEY_STATUSES)[number];
@@ -76,9 +79,44 @@ export function saveAiKeyInput(provider: AiProvider) {
 }
 
 export const aiSource = (allowTestProvider: boolean) =>
-  z.string().refine((value) => value === 'platform' || aiProvider(value, allowTestProvider), {
-    message: `Use platform or one of: ${AI_PROVIDERS.join(', ')}`,
-  }) as unknown as z.ZodType<AiSource>;
+  z
+    .string()
+    .refine(
+      (value) => value === 'platform' || value === 'none' || aiProvider(value, allowTestProvider),
+      { message: `Use platform, none, or one of: ${AI_PROVIDERS.join(', ')}` },
+    ) as unknown as z.ZodType<AiSource>;
+
+// T08b3 (0009): the free platform allowance counts ISO weeks (Monday 00:00 UTC) and calendar
+// months, in UTC.
+
+/** The ISO week of a moment, for example `2026-W40`. */
+export function isoWeek(at: Date): string {
+  const d = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()));
+  const weekday = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - weekday); // the Thursday of this week decides its year
+  const yearStart = Date.UTC(d.getUTCFullYear(), 0, 1);
+  const week = Math.ceil(((d.getTime() - yearStart) / 86_400_000 + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+}
+
+/** The next Monday 00:00 UTC. */
+export function nextIsoWeekStart(at: Date): Date {
+  const weekday = at.getUTCDay() || 7;
+  return new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate() + 8 - weekday));
+}
+
+/** The first day of the next month, 00:00 UTC. */
+export function nextUtcMonthStart(at: Date): Date {
+  return new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth() + 1, 1));
+}
+
+/** When the next free platform run is available, given which limits are used up. */
+export function nextPlatformRunAt(at: Date, weekUsedUp: boolean, monthUsedUp: boolean): Date {
+  const week = nextIsoWeekStart(at);
+  const month = nextUtcMonthStart(at);
+  if (monthUsedUp && weekUsedUp) return week > month ? week : month;
+  return monthUsedUp ? month : week;
+}
 
 /** `PUT /me/ai-settings`. */
 export const updateAiSettingsInput = (allowTestProvider: boolean) =>
@@ -86,3 +124,6 @@ export const updateAiSettingsInput = (allowTestProvider: boolean) =>
     defaultSource: aiSource(allowTestProvider),
     version: z.number().int().min(0),
   });
+
+/** T08b3: the CloudWatch namespace of LLM task metrics (written by packages/llm, read by infra). */
+export const LLM_METRICS_NAMESPACE = 'JobDeputy/LLM';

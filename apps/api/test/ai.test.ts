@@ -63,6 +63,15 @@ function deps(allowTestProvider = false) {
     newId: () => `01J8ZQ4Y3N5W6X7Y8Z9A0B1C${String(10 + (n++ % 90))}`,
     now: () => NOW,
     isBeingDeleted: vi.fn(async () => false),
+    usage: vi.fn<AiDeps['usage']>(async () => []),
+    platformRunsUsed: vi.fn<AiDeps['platformRunsUsed']>(async () => ({ week: 0, month: 0 })),
+    limits: vi.fn<AiDeps['limits']>(async () => ({
+      dailyDefault: 20,
+      dailyMax: 50,
+      maxActive: 1,
+      platformRunsPerWeek: 1,
+      platformRunsPerMonth: 4,
+    })),
   };
   return { d, keys };
 }
@@ -218,5 +227,51 @@ describe('/me/ai-settings', () => {
     expect((await route(putSettings({ defaultSource: 'stub', version: 0 }), d)).statusCode).toBe(
       400,
     );
+  });
+});
+
+describe('GET /me/ai-usage (T08b3)', () => {
+  const get = (month?: string) =>
+    event('GET /me/ai-usage', month ? { queryStringParameters: { month } } : {});
+  const ENTRY = {
+    keySource: 'platform' as const,
+    provider: 'bedrock',
+    modelId: 'mistral.ministral-3-14b-instruct',
+    calls: 3,
+    inputTokens: 1500,
+    outputTokens: 120,
+    runs: 1,
+    byTask: { relevance: { calls: 3, inputTokens: 1500, outputTokens: 120 } },
+  };
+
+  it('shows each model for this month, and the free runs left', async () => {
+    const { d } = deps();
+    vi.mocked(d.usage).mockResolvedValue([ENTRY]);
+    const res = await route(get(), d);
+    expect(res.statusCode).toBe(200);
+    expect(d.usage).toHaveBeenCalledWith('user-a', '2026-09');
+    expect(body(res)).toEqual({
+      month: '2026-09',
+      models: [ENTRY],
+      platformRuns: { perWeek: 1, perMonth: 4, usedThisWeek: 0, usedThisMonth: 0, available: true },
+    });
+  });
+
+  it('says when the next free run comes once they are used up', async () => {
+    const { d } = deps();
+    vi.mocked(d.platformRunsUsed).mockResolvedValue({ week: 1, month: 2 });
+    const res = await route(get('2026-08'), d);
+    expect(d.usage).toHaveBeenCalledWith('user-a', '2026-08');
+    // 2026-09-30 is a Wednesday: the next week starts on Monday 2026-10-05.
+    expect(body(res).platformRuns).toMatchObject({
+      available: false,
+      nextAvailableAt: '2026-10-05T00:00:00.000Z',
+    });
+  });
+
+  it('refuses a malformed month', async () => {
+    for (const month of ['2026-13', '2026-9', 'latest']) {
+      expect((await route(get(month), deps().d)).statusCode).toBe(400);
+    }
   });
 });

@@ -39,9 +39,9 @@ Which platform model to use is a separate decision ([T08a](../tasks/t08a-ai-mode
    - A key is used only for runs the user started ([0002](0002-llm-loop-and-token-budget.md) rule 5).
 3. **Keys are stored encrypted in DynamoDB** (table `ai-keys`, one item per user and provider), encrypted with the cell's KMS key using `userId` and `provider` as the encryption context. Only the key routes may encrypt, and only the LLM workers may decrypt. The table is a user table, so deleting the account deletes the keys. Cost: about $1 per month per KMS key, plus $0.03 per 10,000 requests.
 4. **Platform model allowance:** a user may start at most **1 platform AI run per week and 4 per month** (ISO weeks and calendar months, UTC).
-   - An AI run is all the LLM work of one operation the user started (for example, scoring one crawl's candidates), end to end. Each run still has its own call and token caps ([0002](0002-llm-loop-and-token-budget.md)).
-   - The allowance is counted in `usage` in the same transaction that starts the run, with exact caps, like the crawl limits.
-   - With the allowance used up and no key, the run uses the free code filter only; its jobs say so, and the API says when the next platform run is available.
+   - An AI run is all the LLM work of one crawl, over its whole life cycle (reading jobs, scoring, fetching descriptions), end to end. Each task call still has its own call and token caps ([0002](0002-llm-loop-and-token-budget.md)).
+   - **Amended by T08b3 (2026-09-30):** the run is counted when the user submits a crawl with the platform model, in `usage`, in the crawl request transaction, with exact caps like the crawl limits. A crawl that fails before its AI work gives the run back.
+   - With the allowance used up, a crawl with the platform model is refused (429 `platform-ai-limit-reached`, with when the next free run is available). The user can crawl with their own key, or with `aiSource: none` (the free keyword filter only). Previously this said the run would continue with the code filter only; the maintainer chose to refuse it up front instead, so it is clear before the crawl.
    - Runs with the user's own key do not count against it.
    - The limits live in SSM next to the crawl limits. Premium quotas are decided later ([#47](https://github.com/jobdeputy/jobdeputy/issues/47)).
 5. **All token use is recorded, for every user and every run:**
