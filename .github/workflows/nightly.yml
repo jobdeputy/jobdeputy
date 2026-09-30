@@ -1,8 +1,10 @@
 name: Nightly
 
 # T13: the full integration suite runs every night against the shared dev stack,
-# even when no code changes, so nothing can break silently. A failure emails the
-# alert list (the same addresses as the AWS alarms). See docs/runbooks/alarms.md.
+# even when no code changes, so nothing can break silently. T08b: one real call to the
+# platform model checks the LLM path (decision 0010). The result of both is emailed to
+# the alert list (the same addresses as the AWS alarms) every night, passed or not.
+# See docs/runbooks/alarms.md.
 #
 # GitHub disables scheduled workflows after 60 days without commits; it emails the
 # repository admins first, and one click re-enables it (runbook).
@@ -49,11 +51,43 @@ jobs:
           AWS_REGION: us-east-1
         run: pnpm test:integration
 
+  model-check:
+    name: Nightly real-model check (dev-iad)
+    runs-on: ubuntu-24.04
+    environment: dev
+    timeout-minutes: 10
+    outputs:
+      summary: ${{ steps.eval.outputs.summary }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Smoke eval against the platform model (includes injection cases)
+        id: eval
+        env:
+          AWS_REGION: us-east-1
+        run: |
+          set +e
+          pnpm --filter @jobdeputy/llm eval --runs 1 --summary "$RUNNER_TEMP/eval.md"
+          status=$?
+          set -e
+          [ -s "$RUNNER_TEMP/eval.md" ] || echo "The model check did not finish (exit $status); see the run log." > "$RUNNER_TEMP/eval.md"
+          { echo 'summary<<EOF_SUMMARY'; cat "$RUNNER_TEMP/eval.md"; echo 'EOF_SUMMARY'; } >> "$GITHUB_OUTPUT"
+          exit "$status"
+
   report:
-    name: Report a failed or skipped night
-    needs: integration
-    # Runs whatever happened to the tests; alerts unless they passed.
-    if: always() && needs.integration.result != 'success'
+    name: Email the nightly result
+    needs: [integration, model-check]
+    # Runs whatever happened, so a failed or skipped night is always reported.
+    if: always()
     runs-on: ubuntu-24.04
     environment: dev
     timeout-minutes: 5
@@ -65,17 +99,35 @@ jobs:
       - name: Email the alert list
         env:
           JD_ACCOUNT_DEV_IAD: ${{ secrets.JD_ACCOUNT_DEV_IAD }}
-          RESULT: ${{ needs.integration.result }}
+          INTEGRATION: ${{ needs.integration.result }}
+          MODEL: ${{ needs.model-check.result }}
+          MODEL_SUMMARY: ${{ needs.model-check.outputs.summary }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          if [ "$RESULT" = "failure" ]; then
-            SUBJECT="JobDeputy nightly integration FAILED (dev-iad)"
-            WHAT="failed"
+          verdict() {
+            case "$1" in
+              success) echo "PASSED" ;;
+              failure) echo "FAILED" ;;
+              *) echo "DID NOT RUN" ;;
+            esac
+          }
+          integration=$(verdict "$INTEGRATION")
+          model=$(verdict "$MODEL")
+          if [ "$INTEGRATION" = "success" ] && [ "$MODEL" = "success" ]; then
+            SUBJECT="JobDeputy nightly PASSED (dev-iad)"
+            TODO="Nothing to do."
           else
-            SUBJECT="JobDeputy nightly integration DID NOT RUN (dev-iad)"
-            WHAT="did not run (result: ${RESULT}; for example cancelled while waiting behind deploys)"
+            SUBJECT="JobDeputy nightly: integration ${integration}, model check ${model} (dev-iad)"
+            TODO="What to do: docs/runbooks/alarms.md (Nightly integration failed; Nightly model check failed)."
           fi
+          MESSAGE=$(printf '%s\n\n%s\n%s\n\n%s\n\n%s\n%s\n' \
+            "Nightly run against jobdeputy-dev-iad." \
+            "Integration tests: ${integration} (${INTEGRATION})" \
+            "Real-model check: ${model} (${MODEL})" \
+            "${MODEL_SUMMARY:-No model check result.}" \
+            "Details: ${RUN_URL}" \
+            "$TODO")
           aws sns publish \
             --topic-arn "arn:aws:sns:us-east-1:${JD_ACCOUNT_DEV_IAD}:jobdeputy-dev-iad-alarms" \
             --subject "$SUBJECT" \
-            --message "The nightly integration run against jobdeputy-dev-iad ${WHAT}. Details: ${RUN_URL} . What to do: docs/runbooks/alarms.md (Nightly integration failed)."
+            --message "$MESSAGE"

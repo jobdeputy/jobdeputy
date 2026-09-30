@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { platformModelArn } from '@jobdeputy/shared';
 import { describe, expect, it } from 'vitest';
 
 interface Statement {
@@ -16,9 +17,7 @@ const policy = JSON.parse(
 const bySid = (sid: string) => policy.Statement.find((s) => s.Sid === sid);
 
 // Decision 0010: the pinned platform model, in the three cell Regions.
-const platformModel = ['us-east-1', 'ap-south-1', 'eu-west-2'].map(
-  (r) => `arn:aws:bedrock:${r}::foundation-model/mistral.ministral-3-14b-instruct`,
-);
+const platformModel = ['us-east-1', 'ap-south-1', 'eu-west-2'].map((r) => platformModelArn(r));
 
 describe('cost guardrails SCP (decisions 0005, 0010)', () => {
   it('has only deny statements', () => {
