@@ -65,7 +65,7 @@ describe('delete my account (deployed)', () => {
     );
 
     // Something to erase in the jobs table.
-    expect((await callApi(api, 'GET', 'me/jobs', token)).body.jobs).toHaveLength(2);
+    expect((await callApi(api, 'GET', 'me/jobs?view=all', token)).body.jobs).toHaveLength(2);
     // And in ai-keys (T08b2; the dev-only stub provider makes no outside call).
     const key = await callApi(api, 'PUT', 'me/ai-keys/stub', token, {
       apiKey: `stub-deletion-${'x'.repeat(10)}-valid`,
@@ -93,7 +93,8 @@ describe('delete my account (deployed)', () => {
           callApi(api, 'GET', 'me/documents', token),
           callApi(api, 'GET', 'me/crawls', token),
           callApi(api, 'GET', 'me/audit', token),
-          callApi(api, 'GET', 'me/jobs', token),
+          // Hidden jobs too (T08c): every job must be gone.
+          callApi(api, 'GET', 'me/jobs?view=all', token),
           callApi(api, 'GET', 'me/ai-keys', token),
         ]);
         const erased =

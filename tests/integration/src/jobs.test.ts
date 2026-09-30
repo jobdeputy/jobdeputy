@@ -227,8 +227,8 @@ describe('jobs (deployed)', () => {
     expect(first.stats).toMatchObject({ jobsFound: 2, jobsRelevant: 1, jobsOverLimit: 0 });
     const titles = async (view?: string) =>
       (await callApi(api, 'GET', `me/jobs${view ? `?view=${view}` : ''}`, token)).body.jobs
-        // biome-ignore lint/suspicious/noExplicitAny: tests read arbitrary JSON responses.
         .map(
+          // biome-ignore lint/suspicious/noExplicitAny: tests read arbitrary JSON responses.
           (j: any) =>
             `${j.title}: ${j.fit.state} ${j.fit.reasons.join(',')} ${j.fit.limitState ?? '-'} ${j.hidden}`,
         )
