@@ -280,10 +280,12 @@ describe('saveSettings', () => {
     });
   });
 
-  it('needs no key for the platform model', async () => {
-    const { c, transactions } = client();
-    await repo(c).saveSettings(USER, 'platform', 0, AUDIT);
-    expect(transactions[0]).toHaveLength(2);
+  it('needs no key for the platform model or none', async () => {
+    for (const source of ['platform', 'none'] as const) {
+      const { c, transactions } = client();
+      await repo(c).saveSettings(USER, source, 0, AUDIT);
+      expect(transactions[0]).toHaveLength(2);
+    }
   });
 
   it('refuses a missing or invalid key', async () => {

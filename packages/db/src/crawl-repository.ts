@@ -5,6 +5,7 @@ import {
   type AiSource,
   type CrawlErrorCode,
   type CrawlStatus,
+  isoWeek,
   utcDay,
   utcMonth,
 } from '@jobdeputy/shared';
@@ -53,6 +54,11 @@ export interface Crawl {
   trigger: 'user';
   /** T08b2: where this crawl's AI work gets its model (used from T08d). */
   aiSource?: AiSource;
+  /**
+   * T08b3 (0009): the free platform run this crawl used, and the week and month it was
+   * counted in (a failed crawl gives it back to them).
+   */
+  aiRun?: PlatformRun;
   status: CrawlStatus;
   attempts: number;
   startedAt?: string;
@@ -68,6 +74,11 @@ export interface Crawl {
   createdAt: string;
   updatedAt: string;
   schemaVersion: 1;
+}
+
+export interface PlatformRun {
+  week: string;
+  month: string;
 }
 
 export interface CrawlResult {
@@ -139,6 +150,14 @@ export class DailyLimitError extends Error {
   override name = 'DailyLimitError';
 }
 
+/** T08b3: the free platform runs of this week or month are used up. */
+export class PlatformAllowanceError extends Error {
+  override name = 'PlatformAllowanceError';
+}
+
+/** `usage` `AIWEEK#` items expire 8 weeks after they start (the week is all that matters). */
+export const USAGE_WEEK_TTL_SECONDS = 8 * 7 * 24 * 60 * 60;
+
 /** Deterministic, so the same page is one source per user (0007). 128 bits of SHA-256. */
 export function sourceIdFor(normalizedUrl: string): string {
   return createHash('sha256').update(normalizedUrl).digest('hex').slice(0, 32);
@@ -190,9 +209,14 @@ export class CrawlRepository {
     maxActive: number;
     replacing?: string;
     aiSource?: AiSource;
+    /** T08b3: with the platform model, one free run is counted (exactly) against these. */
+    platformRuns?: { perWeek: number; perMonth: number };
   }): Promise<Crawl> {
     const at = this.now();
     const now = at.toISOString();
+    const aiRun: PlatformRun | undefined = input.platformRuns
+      ? { week: isoWeek(at), month: utcMonth(at) }
+      : undefined;
     const crawl: Crawl = {
       userId: input.userId,
       crawlId: input.crawlId,
@@ -201,6 +225,7 @@ export class CrawlRepository {
       url: input.normalizedUrl,
       trigger: 'user',
       ...(input.aiSource ? { aiSource: input.aiSource } : {}),
+      ...(aiRun ? { aiRun } : {}),
       status: 'queued',
       attempts: 0,
       ttl: Math.floor(at.getTime() / 1000) + CRAWL_TTL_SECONDS,
@@ -279,14 +304,24 @@ export class CrawlRepository {
             Update: {
               TableName: this.tables.usage,
               Key: { userId: input.userId, sk: `MONTH#${utcMonth(at)}` },
-              UpdateExpression:
-                'SET crawls = if_not_exists(crawls, :zero) + :one, #type = :month, createdAt = if_not_exists(createdAt, :now), updatedAt = :now, schemaVersion = :one',
+              // T08b3: a platform run is also counted here (a string set of crawl IDs, so a
+              // failed crawl can give its run back), only while the month has room.
+              UpdateExpression: `SET crawls = if_not_exists(crawls, :zero) + :one, #type = :month, createdAt = if_not_exists(createdAt, :now), updatedAt = :now, schemaVersion = :one${aiRun ? ' ADD platformRunIds :id' : ''}`,
+              ...(input.platformRuns
+                ? {
+                    ConditionExpression:
+                      'attribute_not_exists(platformRunIds) OR size(platformRunIds) < :perMonth',
+                  }
+                : {}),
               ExpressionAttributeNames: { '#type': 'type' },
               ExpressionAttributeValues: {
                 ':zero': 0,
                 ':one': 1,
                 ':month': 'usage_month',
                 ':now': now,
+                ...(input.platformRuns
+                  ? { ':id': new Set([input.crawlId]), ':perMonth': input.platformRuns.perMonth }
+                  : {}),
               },
             },
           },
@@ -308,6 +343,29 @@ export class CrawlRepository {
               },
             },
           },
+          ...(aiRun && input.platformRuns
+            ? [
+                {
+                  Update: {
+                    TableName: this.tables.usage,
+                    Key: { userId: input.userId, sk: `AIWEEK#${aiRun.week}` },
+                    UpdateExpression:
+                      'ADD platformRunIds :id SET #type = :week, #ttl = :ttl, createdAt = if_not_exists(createdAt, :now), updatedAt = :now, schemaVersion = :one',
+                    ConditionExpression:
+                      'attribute_not_exists(platformRunIds) OR size(platformRunIds) < :perWeek',
+                    ExpressionAttributeNames: { '#type': 'type', '#ttl': 'ttl' },
+                    ExpressionAttributeValues: {
+                      ':id': new Set([input.crawlId]),
+                      ':week': 'usage_week',
+                      ':ttl': Math.floor(at.getTime() / 1000) + USAGE_WEEK_TTL_SECONDS,
+                      ':now': now,
+                      ':one': 1,
+                      ':perWeek': input.platformRuns.perWeek,
+                    },
+                  },
+                },
+              ]
+            : []),
         ],
       });
     } catch (error) {
@@ -316,6 +374,9 @@ export class CrawlRepository {
       if (cancelledAt(error, SOURCE_ITEM)) throw new ActiveCrawlError();
       if (cancelledAt(error, DAY_ITEM)) throw new DailyLimitError();
       if (cancelledAt(error, ACTIVE_ITEM)) throw new TooManyActiveCrawlsError();
+      if (cancelledAt(error, MONTH_ITEM) || cancelledAt(error, WEEK_ITEM)) {
+        throw new PlatformAllowanceError();
+      }
       throw error;
     }
     return crawl;
@@ -424,7 +485,7 @@ export class CrawlRepository {
    * the source for the next crawl. False when the crawl was already finished.
    */
   async finish(
-    crawl: Pick<Crawl, 'userId' | 'crawlId' | 'sourceId'>,
+    crawl: Pick<Crawl, 'userId' | 'crawlId' | 'sourceId' | 'aiRun'>,
     outcome: FinishOutcome,
     audit: Omit<AuditInput, 'userId'>,
   ): Promise<boolean> {
@@ -479,6 +540,10 @@ export class CrawlRepository {
             },
           },
           releaseActive(this.tables.usage, userId, [crawlId], now),
+          // T08b3: a crawl that failed never reached its AI work: its free run is given back.
+          ...(outcome.status === 'failed' && crawl.aiRun
+            ? refundPlatformRun(this.tables.usage, userId, crawlId, crawl.aiRun, now)
+            : []),
         ],
       });
     } catch (error) {
@@ -548,7 +613,9 @@ function trimError(error: CrawlError): CrawlError {
 /** Positions in `request`'s transaction. */
 const SOURCE_ITEM = 0;
 const DAY_ITEM = 3;
+const MONTH_ITEM = 4;
 const ACTIVE_ITEM = 5;
+const WEEK_ITEM = 6;
 
 /** Removes crawls from the user's active set (idempotent; the set disappears when empty). */
 function releaseActive(table: string, userId: string, crawlIds: string[], now: string) {
@@ -577,4 +644,41 @@ export async function crawlsToday(
     }),
   );
   return Number(res.Item?.crawls ?? 0);
+}
+
+/** Takes the crawl's ID out of the week's and month's platform runs (idempotent). */
+function refundPlatformRun(
+  usage: string,
+  userId: string,
+  crawlId: string,
+  run: PlatformRun,
+  now: string,
+) {
+  return [`AIWEEK#${run.week}`, `MONTH#${run.month}`].map((sk) => ({
+    Update: {
+      TableName: usage,
+      Key: { userId, sk },
+      UpdateExpression: 'DELETE platformRunIds :id SET updatedAt = :now',
+      ExpressionAttributeValues: { ':id': new Set([crawlId]), ':now': now },
+    },
+  }));
+}
+
+/** The free platform runs used this week and month (T08b3), for limits and `GET /me/ai-usage`. */
+export async function platformRunsUsed(
+  client: DynamoDBDocumentClient,
+  usageTable: string,
+  userId: string,
+  at: Date,
+): Promise<{ week: number; month: number }> {
+  const [week, month] = await Promise.all(
+    [`AIWEEK#${isoWeek(at)}`, `MONTH#${utcMonth(at)}`].map((sk) =>
+      client.send(
+        new GetCommand({ TableName: usageTable, Key: { userId, sk }, ConsistentRead: true }),
+      ),
+    ),
+  );
+  const size = (item: Record<string, unknown> | undefined) =>
+    item?.platformRunIds instanceof Set ? item.platformRunIds.size : 0;
+  return { week: size(week?.Item), month: size(month?.Item) };
 }

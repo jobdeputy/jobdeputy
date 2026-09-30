@@ -44,7 +44,7 @@ const userIdOf = (token: string): string =>
 /** Submits a page and waits for its crawl to finish (the user has one crawl at a time). */
 // biome-ignore lint/suspicious/noExplicitAny: tests read arbitrary JSON responses.
 async function crawl(url: string): Promise<any> {
-  const res = await callApi(api, 'POST', 'me/crawls', user.accessToken, { url });
+  const res = await callApi(api, 'POST', 'me/crawls', user.accessToken, { url, aiSource: 'none' });
   expect(res.status, JSON.stringify(res.body)).toBe(202);
   const crawlId = res.body.crawlId as string;
   return waitFor(

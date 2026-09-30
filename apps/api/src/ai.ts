@@ -5,29 +5,36 @@ import {
   AiKeyNotUsableError,
   type AiKeyRepository,
   AiKeyRepository as AiKeys,
+  type AiUsageEntry,
   documentClient,
   KeyCheckLimitError,
+  listAiUsage,
+  platformRunsUsed,
   VersionConflictError,
 } from '@jobdeputy/db';
 import {
   type AiProvider,
   aiProvider,
+  type CrawlLimitsConfig,
   callerFromEvent,
   createLogger,
   type HttpResponse,
   json,
   KEY_CHECKS_PER_DAY,
+  nextPlatformRunAt,
   nextUtcMidnight,
   parseJsonBody,
   problem,
   saveAiKeyInput,
   updateAiSettingsInput,
+  utcMonth,
   validationProblem,
 } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, Context } from 'aws-lambda';
 import { ulid } from 'ulid';
 import { refuseWritesWhileDeleting } from './account-guard.js';
 import { type UserAudit, userAudit } from './audited.js';
+import { ssmCrawlLimits } from './crawl-limits.js';
 import { concurrentUpdateProblem } from './errors.js';
 
 // T08b2 (decision 0009): the user's own AI keys and AI settings. The key is encrypted here
@@ -48,6 +55,10 @@ export interface AiDeps {
   newId: () => string;
   now: () => number;
   isBeingDeleted: (userId: string) => Promise<boolean>;
+  /** T08b3: token use in a month, the free runs used now, and the admin limits. */
+  usage: (userId: string, month: string) => Promise<AiUsageEntry[]>;
+  platformRunsUsed: (userId: string) => Promise<{ week: number; month: number }>;
+  limits: () => Promise<CrawlLimitsConfig>;
 }
 
 function defaultDeps(): AiDeps {
@@ -59,6 +70,7 @@ function defaultDeps(): AiDeps {
     USERS_TABLE_NAME,
     AI_KEYS_KMS_KEY_ARN,
     ALLOW_TEST_AI_PROVIDER,
+    CRAWL_LIMITS_PARAMETER,
   } = process.env;
   if (
     !AI_KEYS_TABLE_NAME ||
@@ -66,7 +78,8 @@ function defaultDeps(): AiDeps {
     !PREFERENCES_TABLE_NAME ||
     !AUDIT_TABLE_NAME ||
     !USERS_TABLE_NAME ||
-    !AI_KEYS_KMS_KEY_ARN
+    !AI_KEYS_KMS_KEY_ARN ||
+    !CRAWL_LIMITS_PARAMETER
   ) {
     throw new Error('Table names and the KMS key must be set');
   }
@@ -96,6 +109,40 @@ function defaultDeps(): AiDeps {
     newId: ulid,
     now: Date.now,
     isBeingDeleted: (userId) => account.isBeingDeleted(userId),
+    usage: (userId, month) => listAiUsage(client, USAGE_TABLE_NAME, userId, month),
+    platformRunsUsed: (userId) => platformRunsUsed(client, USAGE_TABLE_NAME, userId, new Date()),
+    limits: ssmCrawlLimits(CRAWL_LIMITS_PARAMETER),
+  };
+}
+
+const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/**
+ * `GET /me/ai-usage?month=yyyy-mm` (T08b3, 0009): tokens per model (and per task) for a
+ * month, and the free platform runs left now. Tokens only; costs come later (#47).
+ */
+async function usageView(userId: string, month: string, deps: AiDeps) {
+  const [models, used, limits] = await Promise.all([
+    deps.usage(userId, month),
+    deps.platformRunsUsed(userId),
+    deps.limits(),
+  ]);
+  const weekUsedUp = used.week >= limits.platformRunsPerWeek;
+  const monthUsedUp = used.month >= limits.platformRunsPerMonth;
+  const now = new Date(deps.now());
+  return {
+    month,
+    models,
+    platformRuns: {
+      perWeek: limits.platformRunsPerWeek,
+      perMonth: limits.platformRunsPerMonth,
+      usedThisWeek: used.week,
+      usedThisMonth: used.month,
+      available: !weekUsedUp && !monthUsedUp,
+      ...(weekUsedUp || monthUsedUp
+        ? { nextAvailableAt: nextPlatformRunAt(now, weekUsedUp, monthUsedUp).toISOString() }
+        : {}),
+    },
   };
 }
 
@@ -228,6 +275,16 @@ export async function route(event: Event, deps: AiDeps): Promise<HttpResponse> {
   switch (event.routeKey) {
     case 'GET /me/ai-keys':
       return json(200, { keys: await deps.keys.list(userId), checksPerDay: KEY_CHECKS_PER_DAY });
+    case 'GET /me/ai-usage': {
+      const month = event.queryStringParameters?.month ?? utcMonth(new Date(deps.now()));
+      if (!MONTH.test(month)) {
+        return problem(400, 'Invalid request', {
+          errors: [{ path: 'month', message: 'Use yyyy-mm' }],
+          requestId,
+        });
+      }
+      return json(200, await usageView(userId, month, deps));
+    }
     case 'GET /me/ai-settings':
       return json(200, await settingsView(userId, deps));
     case 'PUT /me/ai-settings': {

@@ -42,6 +42,7 @@ describe('concurrent requests (deployed)', () => {
       [1, 2, 3, 4, 5, 6].map((n) =>
         callApi(api, 'POST', 'me/crawls', user.accessToken, {
           url: new URL(`test-site/unavailable?parallel=${n}`, testSite).href,
+          aiSource: 'none',
         }),
       ),
     );
@@ -61,7 +62,9 @@ describe('concurrent requests (deployed)', () => {
     const user = await newUser();
     const url = new URL('test-site/jobs?same=1', testSite).href;
     const results = await Promise.all(
-      [1, 2, 3, 4].map(() => callApi(api, 'POST', 'me/crawls', user.accessToken, { url })),
+      [1, 2, 3, 4].map(() =>
+        callApi(api, 'POST', 'me/crawls', user.accessToken, { url, aiSource: 'none' }),
+      ),
     );
     const statuses = results.map((r) => r.status);
     noServerErrors(statuses);

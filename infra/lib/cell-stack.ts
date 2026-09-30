@@ -25,6 +25,7 @@ import { AiKeys } from './constructs/ai-keys.js';
 import { AsyncPipeline } from './constructs/async-pipeline.js';
 import { Auth } from './constructs/auth.js';
 import { Documents } from './constructs/documents.js';
+import { LlmMonitoring } from './constructs/llm-monitoring.js';
 import { AppFunction } from './constructs/node-function.js';
 
 export interface CellStackProps extends StackProps {
@@ -392,20 +393,6 @@ export class CellStack extends Stack {
     documents.bucket.grantDelete(documentsApi.fn, `${DERIVED_PREFIX}*`);
     if (documentsApi.fn.role) documents.denyUnscannedDownloads(documentsApi.fn.role);
 
-    const aiKeys = new AiKeys(this, 'AiKeys', {
-      namePrefix: id,
-      stage: props.stage,
-      cell: props.cell,
-      table: aiKeysTable,
-      usageTable,
-      preferencesTable,
-      auditTable,
-      usersTable,
-      removalPolicy,
-      maxReceives: MAX_RECEIVES,
-      alarmTopic: sharedAlarms,
-    });
-
     const crawlTablesEnv = {
       CRAWLS_TABLE_NAME: crawlsTable.tableName,
       SOURCES_TABLE_NAME: sourcesTable.tableName,
@@ -421,9 +408,40 @@ export class CellStack extends Stack {
     const crawlLimits = new StringParameter(this, 'CrawlLimits', {
       parameterName: `/jobdeputy/${id}/crawl-limits`,
       description:
-        'Daily crawl limits: {"dailyDefault": N, "dailyMax": N}. Read live by the API (5-minute cache).',
-      stringValue: JSON.stringify(DEFAULT_CRAWL_LIMITS),
+        'Crawl limits: {"dailyDefault": N, "dailyMax": N, "maxActive": N, "platformRunsPerWeek": N, "platformRunsPerMonth": N}. Read live by the API (5-minute cache).',
+      // Unchanged since T06c on purpose: a new value here would overwrite the admin's live
+      // setting on the next deploy. Fields added later (the platform runs, T08b3) take
+      // their defaults until the admin sets them.
+      stringValue: JSON.stringify({
+        dailyDefault: DEFAULT_CRAWL_LIMITS.dailyDefault,
+        dailyMax: DEFAULT_CRAWL_LIMITS.dailyMax,
+        maxActive: DEFAULT_CRAWL_LIMITS.maxActive,
+      }),
     });
+
+    const aiKeys = new AiKeys(this, 'AiKeys', {
+      namePrefix: id,
+      stage: props.stage,
+      cell: props.cell,
+      table: aiKeysTable,
+      usageTable,
+      preferencesTable,
+      auditTable,
+      usersTable,
+      removalPolicy,
+      maxReceives: MAX_RECEIVES,
+      alarmTopic: sharedAlarms,
+      limitsParameter: crawlLimits,
+    });
+    // T08b3: the LLM dashboard and alarms, in shared stacks only (like the other alarms).
+    if (sharedAlarms) {
+      new LlmMonitoring(this, 'LlmMonitoring', {
+        namePrefix: id,
+        stage: props.stage,
+        alarmTopic: sharedAlarms,
+      });
+    }
+
     // T06b: POST /me/crawls → crawls table (queued) → stream → Pipe → queue → worker.
     const crawlsApi = new AppFunction(this, 'CrawlsApi', {
       entry: 'apps/api/src/crawls.ts',
@@ -593,6 +611,7 @@ export class CellStack extends Stack {
       ['/me/ai-keys/{provider}', [HttpMethod.PUT, HttpMethod.DELETE]],
       ['/me/ai-keys/{provider}/check', [HttpMethod.POST]],
       ['/me/ai-settings', [HttpMethod.GET, HttpMethod.PUT]],
+      ['/me/ai-usage', [HttpMethod.GET]],
     ];
     for (const [path, methods] of aiRoutes) {
       httpApi.addRoutes({ path, methods, integration: aiIntegration });

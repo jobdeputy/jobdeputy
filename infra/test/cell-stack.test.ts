@@ -276,6 +276,7 @@ describe('HTTP API (T04)', () => {
       'GET /me',
       'GET /me/ai-keys',
       'GET /me/ai-settings',
+      'GET /me/ai-usage',
       'GET /me/audit',
       'GET /me/crawl-settings',
       'GET /me/crawls',

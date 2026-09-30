@@ -25,10 +25,10 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | `me.ts` | `GET /me`, `DELETE /me` (account deletion request, T12) |
 | `profile.ts` | profile, search preferences, target roles |
 | `documents.ts` | résumé upload (presigned POST), list, rename, default, delete |
-| `crawls.ts` | `POST/GET /me/crawls` (with the crawl's `aiSource`), `GET /me/crawls/{id}`, `/me/crawl-settings`; replaces stale active crawls |
+| `crawls.ts` | `POST/GET /me/crawls` (with the crawl's `aiSource`; counts the free platform run, T08b3), `GET /me/crawls/{id}`, `/me/crawl-settings`; replaces stale active crawls |
 | `crawl-limits.ts` | admin crawl limits from SSM, cached 5 minutes |
 | `jobs.ts` | `GET /me/jobs`, `GET /me/jobs/{jobId}` (read-only) |
-| `ai.ts` | `/me/ai-keys` (save with consent, list, check, delete; encrypts the key with KMS), `/me/ai-settings` (T08b2) |
+| `ai.ts` | `/me/ai-keys` (save with consent, list, check, delete; encrypts the key with KMS), `/me/ai-settings` (T08b2), `GET /me/ai-usage` (T08b3) |
 | `audit.ts` | `GET /me/audit` |
 | `account-guard.ts` | 410 on writes while a deletion is pending |
 | `audited.ts`, `errors.ts` | audit entry builder; error-to-HTTP mapping (409 `try-again`) |
@@ -64,6 +64,7 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | `db/src/crawl-repository.ts` | sources, crawls, daily and active limits, finish |
 | `db/src/job-repository.ts` | save jobs (idempotent), close missing, list, get |
 | `db/src/document-repository.ts`, `preferences-repository.ts`, `profile-repository.ts` | T05 items, with counters and audit |
+| `db/src/ai-usage-repository.ts` | token use per month and model (`aiUsageUpdate` for the result transaction, `listAiUsage`) |
 | `db/src/ai-key-repository.ts` | `ai-keys` (save, check, delete, results; daily check limit) and `preferences` `AI_SETTINGS` |
 | `db/src/usage-counters.ts`, `versioned.ts`, `audit-repository.ts` | exact caps; optimistic versions; audit entries and paging |
 | `db/src/account-repository.ts`, `crawl-settings-repository.ts`, `ping-repository.ts`, `client.ts` | deletion record; user crawl limit; ping; DynamoDB client and condition helpers |
@@ -71,6 +72,7 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | `test-fixtures/src/index.ts` | synthetic PDF, DOCX, zip bomb, EICAR |
 | `llm/src/task.ts` | `defineTask`, `runTask`: 3 turns, token caps, timeout, strict zod output, `partial`, usage (the only Strands caller, 0009) |
 | `llm/src/models.ts` | `resolveModel`: the platform model on Bedrock in the cell Region, or the user's OpenAI or Anthropic key; no client retries |
+| `llm/src/metrics.ts` | `recordTaskMetrics`: one Embedded Metric Format line per task call (no user IDs) |
 | `llm/src/key-check.ts`, `llm/src/logging.ts` | one small call checks a user's key (and the dev-only `stub`); Strands logs with keys masked |
 | `llm/src/prompt.ts`, `llm/src/grounding.ts` | data blocks and the rules against prompt injection; keep only the IDs we sent (0010) |
 | `llm/src/stub-model.ts` | `@jobdeputy/llm/testing`: scripted model for unit and integration tests |
@@ -85,7 +87,7 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | `bin/app.ts`, `lib/build-app.ts`, `config/` | which stacks exist per stage, cell, and owner |
 | `lib/cell-stack.ts` | everything in one Region cell: tables, Lambdas, grants, routes, pipelines, alarms |
 | `lib/keys-stack.ts` | the cell's KMS key for own AI keys, in its own stack (kept on delete); its ARN in SSM |
-| `lib/constructs/` | `ai-keys` (key API, key-check worker, KMS grants), `async-pipeline` (stream → Pipe → queue → worker), `queue-worker`, `auth`, `documents` (bucket, malware scan), `node-function` |
+| `lib/constructs/` | `ai-keys` (key API, key-check worker, KMS grants), `llm-monitoring` (LLM dashboard, alarms, `llmMetricsEnvironment`), `async-pipeline` (stream → Pipe → queue → worker), `queue-worker`, `auth`, `documents` (bucket, malware scan), `node-function` |
 | `lib/cicd-stack.ts` | GitHub OIDC roles (deploy, PR integration) |
 | `lib/guards.ts` | cost and Region guard checks |
 
