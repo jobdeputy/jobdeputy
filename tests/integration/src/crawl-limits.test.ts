@@ -57,6 +57,7 @@ describe('daily crawl limits (deployed)', () => {
     for (const n of [1, 2]) {
       const ok = await callApi(api, 'POST', 'me/crawls', token, {
         url: new URL(`test-site/jobs?page=${n}`, testSite).href,
+        aiSource: 'none',
       });
       expect(ok.status, JSON.stringify(ok.body)).toBe(202);
       await waitFor(
@@ -69,6 +70,7 @@ describe('daily crawl limits (deployed)', () => {
     }
     const refused = await callApi(api, 'POST', 'me/crawls', token, {
       url: new URL('test-site/jobs?page=3', testSite).href,
+      aiSource: 'none',
     });
     expect(refused.status).toBe(429);
     expect(refused.body).toMatchObject({

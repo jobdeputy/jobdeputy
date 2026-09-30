@@ -8,6 +8,8 @@ import {
   crawlsToday,
   DailyLimitError,
   documentClient,
+  PlatformAllowanceError,
+  platformRunsUsed,
   sourceIdFor,
   TooManyActiveCrawlsError,
   VersionConflictError,
@@ -29,6 +31,7 @@ import {
   effectiveDailyLimit,
   type HttpResponse,
   json,
+  nextPlatformRunAt,
   nextUtcMidnight,
   pageQuery,
   parseCrawlUrl,
@@ -66,6 +69,8 @@ export interface CrawlsDeps {
   /** The admin's default and maximum (T06c), cached for at most 5 minutes. */
   limits: () => Promise<CrawlLimitsConfig>;
   usedToday: (userId: string) => Promise<number>;
+  /** T08b3: the free platform runs used this week and month. */
+  platformRunsUsed: (userId: string) => Promise<{ week: number; month: number }>;
   auditTable: string;
   newId: () => string;
   now: () => number;
@@ -119,6 +124,7 @@ function defaultDeps(): CrawlsDeps {
     auditTable: AUDIT_TABLE_NAME,
     limits: ssmCrawlLimits(CRAWL_LIMITS_PARAMETER),
     usedToday: (userId) => crawlsToday(client, USAGE_TABLE_NAME, userId, new Date()),
+    platformRunsUsed: (userId) => platformRunsUsed(client, USAGE_TABLE_NAME, userId, new Date()),
     newId: ulid,
     now: Date.now,
     isBeingDeleted: (userId) => account.isBeingDeleted(userId),
@@ -141,7 +147,7 @@ async function resolveAiSource(
   requestId: string,
 ): Promise<AiSource | HttpResponse> {
   if (requested === undefined) return deps.aiDefault(userId);
-  if (requested === 'platform') return 'platform';
+  if (requested === 'platform' || requested === 'none') return requested;
   const provider = aiProvider(requested, deps.allowTestProvider);
   if (!provider) {
     return problem(400, 'Invalid request', {
@@ -269,6 +275,32 @@ async function activeCrawlOf(userId: string, sourceId: string, deps: CrawlsDeps)
   return isActive(crawl, deps.now()) ? crawl : undefined;
 }
 
+/**
+ * T08b3 (0009): the free platform AI runs are used up. The crawl is refused; the user can
+ * choose their own key or no AI, or wait until the next free run.
+ */
+async function platformAllowanceProblem(
+  userId: string,
+  config: CrawlLimitsConfig,
+  deps: CrawlsDeps,
+  requestId: string,
+): Promise<HttpResponse> {
+  const used = await deps.platformRunsUsed(userId);
+  const at = new Date(deps.now());
+  const nextAt = nextPlatformRunAt(
+    at,
+    used.week >= config.platformRunsPerWeek,
+    used.month >= config.platformRunsPerMonth,
+  );
+  const res = problem(429, 'Free AI runs used up', {
+    detail: `You've used your free AI runs (${config.platformRunsPerWeek} a week, ${config.platformRunsPerMonth} a month). The next one is available at ${nextAt.toISOString()}. Until then, crawl with your own key, or with aiSource "none" (keyword filter only).`,
+    code: 'platform-ai-limit-reached',
+    requestId,
+  });
+  const seconds = Math.max(1, Math.ceil((nextAt.getTime() - at.getTime()) / 1000));
+  return { ...res, headers: { ...res.headers, 'retry-after': String(seconds) } };
+}
+
 async function submit(
   userId: string,
   rawUrl: string,
@@ -313,16 +345,31 @@ async function submit(
         maxActive: config.maxActive,
         ...(replacing !== undefined ? { replacing } : {}),
         aiSource,
+        ...(aiSource === 'platform'
+          ? {
+              platformRuns: {
+                perWeek: config.platformRunsPerWeek,
+                perMonth: config.platformRunsPerMonth,
+              },
+            }
+          : {}),
       });
       logger.info('Crawl queued', { crawlId, sourceId });
       return json(202, crawlView(crawl));
     } catch (error) {
-      if (error instanceof DailyLimitError || error instanceof TooManyActiveCrawlsError) {
+      if (
+        error instanceof DailyLimitError ||
+        error instanceof TooManyActiveCrawlsError ||
+        error instanceof PlatformAllowanceError
+      ) {
         // DynamoDB does not always report every failed condition of a transaction, so a
         // duplicate of a page already in progress can surface as a limit. The same page
         // always gets its running crawl (200), and is never counted (seen on real AWS).
         const running = await activeCrawlOf(userId, sourceId, deps);
         if (running) return json(200, crawlView(running));
+      }
+      if (error instanceof PlatformAllowanceError) {
+        return platformAllowanceProblem(userId, config, deps, requestId);
       }
       if (error instanceof DailyLimitError) {
         const used = await deps.usedToday(userId);

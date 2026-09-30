@@ -16,7 +16,7 @@ Users see all of it in `GET /me/crawl-settings`: the limit that applies, the def
 ```sh
 aws ssm put-parameter --overwrite \
   --name /jobdeputy/jobdeputy-dev-iad/crawl-limits \
-  --value '{"dailyDefault":20,"dailyMax":50,"maxActive":1}' \
+  --value '{"dailyDefault":20,"dailyMax":50,"maxActive":1,"platformRunsPerWeek":1,"platformRunsPerMonth":4}' \
   --profile jobdeputy-dev-iad
 ```
 
@@ -24,6 +24,8 @@ aws ssm put-parameter --overwrite \
   - An invalid value is ignored: the API uses the built-in defaults (20 and 50) and logs an error (`Invalid crawl limits setting`).
 - **When it takes effect:** within 5 minutes (the API's cache). Nothing needs restarting.
 - **Check it:** sign in and call `GET /me/crawl-settings`. `defaultLimit` and `maxAllowed` show the new values.
+
+- **Free platform AI runs** (T08b3, [0009](../decisions/0009-llm-architecture-and-own-keys.md)): `platformRunsPerWeek` (0 to 100, default 1) and `platformRunsPerMonth` (0 to 400, default 4) per user. A run is one crawl's AI work with the platform model, counted when it is submitted (ISO weeks from Monday 00:00 UTC; calendar months). Past either, a platform crawl gets 429 `platform-ai-limit-reached`; the user can use their own key or `aiSource: none`. If left out, the defaults apply. Set 0 to stop free AI runs (for example if the platform model costs too much).
 
 ## Notes
 

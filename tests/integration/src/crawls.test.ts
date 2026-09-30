@@ -26,7 +26,7 @@ afterAll(async () => {
 const site = (page: string) => new URL(`test-site/${page}`, testSite).href;
 
 async function submit(url: string): Promise<string> {
-  const res = await callApi(api, 'POST', 'me/crawls', user.accessToken, { url });
+  const res = await callApi(api, 'POST', 'me/crawls', user.accessToken, { url, aiSource: 'none' });
   expect(res.status, JSON.stringify(res.body)).toBe(202);
   expect(res.body.status).toBe('queued');
   return res.body.crawlId as string;
@@ -78,7 +78,10 @@ describe('crawls (deployed)', () => {
       ['http://127.0.0.1/', 'blocked_address'],
       ['https://www.linkedin.com/jobs', 'login_required'],
     ]) {
-      const res = await callApi(api, 'POST', 'me/crawls', user.accessToken, { url });
+      const res = await callApi(api, 'POST', 'me/crawls', user.accessToken, {
+        url,
+        aiSource: 'none',
+      });
       expect(res.status, url).toBe(400);
       expect(res.body.code, url).toBe(code);
     }
@@ -134,6 +137,7 @@ describe('crawls (deployed)', () => {
     const crawlId = await submit(url);
     const again = await callApi(api, 'POST', 'me/crawls', user.accessToken, {
       url: `${url}#same-page`,
+      aiSource: 'none',
     });
     expect(again.status).toBe(200);
     expect(again.body.crawlId).toBe(crawlId);

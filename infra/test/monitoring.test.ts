@@ -42,8 +42,8 @@ describe('monitoring (T13)', () => {
     const names = alarmIds(stack('dev', 'jobdeputy-dev-iad')).map((id) =>
       id.replace(/[0-9A-F]{8}$/, ''),
     );
-    // T08b2 added the key-check dead-letter alarm: all 10 free alarms are now used, so a new
-    // queue must share an alarm (for example one alarm over every dead-letter queue).
+    // T08b2 added the key-check dead-letter alarm (all 10 free alarms used); T08b3 adds the
+    // two LLM alarms, paid (about $0.10 each a month), agreed on 2026-09-30.
     expect(names).toEqual([
       'AiKeysKeyCheckPipelineDeadLetterAlarm',
       'ApiServerErrorAlarm',
@@ -53,10 +53,12 @@ describe('monitoring (T13)', () => {
       'DeletionPipelineDeadLetterAlarm',
       'DocumentsBacklogAlarm',
       'DocumentsDeadLetterAlarm',
+      'LlmMonitoringRejectedOutputsAlarm',
+      'LlmMonitoringTimeoutsAlarm',
       'PingPipelineDeadLetterAlarm',
       'TestDataReaperAlarm',
     ]);
-    expect(names.length).toBeLessThanOrEqual(10);
+    expect(names.filter((n) => !n.startsWith('LlmMonitoring')).length).toBeLessThanOrEqual(10);
   });
 
   it("alarms when a worker queue backs up, above each queue's slowest normal path", () => {
@@ -78,7 +80,7 @@ describe('monitoring (T13)', () => {
 
   it('keeps each prod stack within the 10 free alarms (no reaper, test site, or ping)', () => {
     for (const cell of ['iad', 'bom', 'lhr']) {
-      expect(alarmIds(stack('prod', `jobdeputy-prod-${cell}`)).length, cell).toBe(8);
+      expect(alarmIds(stack('prod', `jobdeputy-prod-${cell}`)).length, cell).toBe(10);
     }
   });
 

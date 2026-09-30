@@ -1,8 +1,8 @@
 # T08b: LLM foundation, own keys, and token usage
 
-- **Status:** in-progress (T08b1 done in #53; T08b2 in review in #54; next T08b3)
+- **Status:** in-review (T08b1 #53 and T08b2 #54 done; T08b3 in #55)
 - **Depends on:** T08a ([0009](../decisions/0009-llm-architecture-and-own-keys.md))
-- **Branch / PR:** T08b1 `t08b1-llm-package` (#53); T08b2 `t08b2-own-keys` (#54)
+- **Branch / PR:** T08b1 `t08b1-llm-package` (#53); T08b2 `t08b2-own-keys` (#54); T08b3 `t08b3-allowance-usage` (#55)
 - **Files:** `packages/llm/src/`, `packages/llm/eval/`, `infra/lib/cicd-stack.ts`, `.github/workflows/nightly.yml`; T08b2: `apps/api/src/ai.ts`, `apps/worker/src/key-check-worker.ts`, `packages/db/src/ai-key-repository.ts`, `packages/llm/src/key-check.ts`, `infra/lib/keys-stack.ts`, `infra/lib/constructs/ai-keys.ts`
 
 ## Goal
@@ -40,11 +40,12 @@ Three PRs, each working on its own (agreed 2026-09-29):
   - **A dev-only `stub` provider** for integration tests: a key ending in `-valid` passes, anything else fails, and no call leaves AWS. The real providers are unit-tested with fake clients.
   - **AI settings:** `GET/PUT /me/ai-settings` (`defaultSource`: `platform` or a provider with a saved key). `POST /me/crawls` takes an optional `aiSource`, stored on the crawl for T08d; an own key must be saved and not invalid. Deleting the default key resets the default to `platform`.
   - Account deletion removes `ai-keys`. Update `data-model.md`, `code-map.md`, and the account-deletion runbook.
-- **T08b3: allowance and usage.**
-  - The platform allowance (1 run per week, 4 per month), counted exactly in `usage` in the transaction that starts a run. Its limits live in SSM next to the crawl limits.
-  - Token usage in `usage`: per month, key source, provider, model, and task. Also recorded on each run.
-  - `GET /me/ai-usage`.
-  - CloudWatch metrics per task, model, and prompt version, without user IDs: schema failures, grounding rejections, partial results, timeouts, tokens, latency, score spread. A dashboard and alarms.
+- **T08b3: allowance and usage** (details agreed with the maintainer on 2026-09-30).
+  - **The free platform allowance** (1 run per ISO week, 4 per calendar month, UTC). One run covers one crawl's whole life cycle (all its AI work). It is counted when a crawl with the platform model is submitted, exactly, in the crawl request transaction. Once used up, a platform crawl is refused (429 `platform-ai-limit-reached`, with when the next one comes); the user can use their own key or `aiSource: none` (keyword filter only). A crawl that fails before its AI work gives the run back. The limits are in the crawl limits SSM setting (`platformRunsPerWeek`, `platformRunsPerMonth`). Decision 0009 is amended.
+  - **Token usage** in `usage` `AI#<month>#<keySource>#<provider>#<modelId>`, per task too. `aiUsageUpdate` goes into the transaction that stores a result (T08d), so a retry never counts twice.
+  - **`GET /me/ai-usage?month=`:** each model, and the free runs used and left.
+  - **Metrics** (`recordTaskMetrics`, Embedded Metric Format, no user IDs): calls, rejected outputs, partial results, timeouts, tokens, latency, grounding rejections, score spread. Dev records totals and per task; prod also per model, prompt version, and key source (no compromise on detail in prod). Details are in the same log line for Logs Insights.
+  - **A dashboard** (`<stack>-llm`) and **2 alarms** on the totals (rejected outputs, timeouts; paid, about $0.20 a month, agreed), in shared stacks only.
 - Out:
   - Google and Bedrock API keys (later).
   - Costs in the usage response ([#47](https://github.com/jobdeputy/jobdeputy/issues/47)).
@@ -74,6 +75,6 @@ See [0009](../decisions/0009-llm-architecture-and-own-keys.md). The split into t
 - [x] T08b1: the eval runs through `runTask`, compares against a baseline, and fails on a regression.
 - [x] T08b1: Nightly runs one real-model check and emails the result every night.
 - [x] T08b2: keys are never returned, logged, or audited. IAM is proven with `simulate-principal-policy`: only the key routes encrypt, and only the LLM workers decrypt.
-- [ ] T08b3: the allowance holds under concurrent runs (exact caps).
-- [ ] T08b3: usage shows each model separately; metrics, a dashboard, and alarms are in place.
-- [ ] Integration uses the stub model.
+- [x] T08b3: the allowance holds under concurrent runs (exact caps).
+- [x] T08b3: usage shows each model separately; metrics, a dashboard, and alarms are in place.
+- [x] Integration uses the stub model (the dev-only `stub` provider; no paid model on PRs).

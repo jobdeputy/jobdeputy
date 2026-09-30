@@ -23,6 +23,8 @@ export interface AiKeysProps {
   readonly removalPolicy: RemovalPolicy;
   readonly maxReceives: number;
   readonly alarmTopic?: ITopic | undefined;
+  /** T08b3: the crawl limits setting, which holds the free platform runs per week and month. */
+  readonly limitsParameter: StringParameter;
 }
 
 /** KMS may only be used with both parts of the encryption context: this user and provider. */
@@ -66,8 +68,19 @@ export class AiKeys extends Construct {
       entry: 'apps/api/src/ai.ts',
       timeout: Duration.seconds(10),
       removalPolicy: props.removalPolicy,
-      environment: { ...tablesEnv, AI_KEYS_KMS_KEY_ARN: this.keyArn },
+      environment: {
+        ...tablesEnv,
+        AI_KEYS_KMS_KEY_ARN: this.keyArn,
+        CRAWL_LIMITS_PARAMETER: props.limitsParameter.parameterName,
+      },
     });
+    // T08b3: GET /me/ai-usage reads the free-run limits (this one parameter, GetParameter only).
+    this.api.fn.addToRolePolicy(
+      new PolicyStatement({
+        actions: ['ssm:GetParameter'],
+        resources: [props.limitsParameter.parameterArn],
+      }),
+    );
     // Save and re-check (UpdateItem), delete, list; a default needs a usable key (ConditionCheckItem).
     props.table.grant(
       this.api.fn,
@@ -77,8 +90,14 @@ export class AiKeys extends Construct {
       'dynamodb:DeleteItem',
       'dynamodb:ConditionCheckItem',
     );
-    // The daily check counter, counted in the same transaction.
-    props.usageTable.grant(this.api.fn, 'dynamodb:UpdateItem', 'dynamodb:GetItem');
+    // The daily check counter, counted in the same transaction; GET /me/ai-usage reads the
+    // month's token use (Query) and the free runs used (GetItem).
+    props.usageTable.grant(
+      this.api.fn,
+      'dynamodb:UpdateItem',
+      'dynamodb:GetItem',
+      'dynamodb:Query',
+    );
     // AI_SETTINGS: saved with its version; reset (or checked) when its key is deleted.
     props.preferencesTable.grant(
       this.api.fn,

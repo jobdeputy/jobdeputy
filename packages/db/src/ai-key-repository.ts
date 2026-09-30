@@ -358,7 +358,7 @@ export class AiKeyRepository {
     audit: AuditWrite,
   ): Promise<AiSettings> {
     const keyCheck =
-      defaultSource === 'platform'
+      defaultSource === 'platform' || defaultSource === 'none'
         ? []
         : [
             {
