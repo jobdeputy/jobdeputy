@@ -184,6 +184,9 @@ importers:
       '@aws-sdk/client-cognito-identity-provider':
         specifier: 3.1141.0
         version: 3.1141.0
+      '@aws-sdk/client-kms':
+        specifier: 3.1141.0
+        version: 3.1141.0
       '@aws-sdk/client-s3':
         specifier: 3.1141.0
         version: 3.1141.0
@@ -227,6 +230,9 @@ importers:
       '@aws-sdk/client-dynamodb':
         specifier: 3.1141.0
         version: 3.1141.0
+      '@aws-sdk/client-kms':
+        specifier: 3.1141.0
+        version: 3.1141.0
       '@aws-sdk/client-s3':
         specifier: 3.1141.0
         version: 3.1141.0
@@ -239,6 +245,9 @@ importers:
       '@jobdeputy/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@jobdeputy/llm':
+        specifier: workspace:*
+        version: link:../../packages/llm
       '@jobdeputy/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -310,6 +319,9 @@ importers:
 
   packages/llm:
     dependencies:
+      '@anthropic-ai/sdk':
+        specifier: 0.109.1
+        version: 0.109.1(zod@4.6.5)
       '@aws-sdk/client-bedrock-runtime':
         specifier: 3.1141.0
         version: 3.1141.0
@@ -318,7 +330,10 @@ importers:
         version: link:../shared
       '@strands-agents/sdk':
         specifier: 1.19.0
-        version: 1.19.0(@aws-sdk/client-s3@3.1141.0)(@modelcontextprotocol/sdk@1.31.0(zod@4.6.5))(@opentelemetry/api@1.9.1)(@smithy/types@4.19.0)(express@5.2.1)(zod@4.6.5)
+        version: 1.19.0(@anthropic-ai/sdk@0.109.1(zod@4.6.5))(@aws-sdk/client-s3@3.1141.0)(@modelcontextprotocol/sdk@1.31.0(zod@4.6.5))(@opentelemetry/api@1.9.1)(@smithy/types@4.19.0)(express@5.2.1)(openai@6.49.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(zod@4.6.5))(zod@4.6.5)
+      openai:
+        specifier: 6.49.0
+        version: 6.49.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(zod@4.6.5)
       zod:
         specifier: 4.6.5
         version: 4.6.5
@@ -367,6 +382,15 @@ importers:
         version: link:../../packages/test-fixtures
 
 packages:
+
+  '@anthropic-ai/sdk@0.109.1':
+    resolution: {integrity: sha512-q9OnEKLr5H9nxSuXdgDgJhxfYMiE+AaUEBze2Gk91UcaaLnsN+Lx5fbCYywiqurU/APLdwv23x03Wm6WN3EBsg==}
+    hasBin: true
+    peerDependencies:
+      zod: ^3.25.0 || ^4.0.0
+    peerDependenciesMeta:
+      zod:
+        optional: true
 
   '@aws-cdk/asset-awscli-v1@2.2.292':
     resolution: {integrity: sha512-d4aMFsAFj19FtxVyw8IzlUKv5Zu4sIvgnEjI2IU6IWBJgVbJ4aFnadANqYa+6MwB1CQbGOg0jh8WE77M+Nb/9A==}
@@ -443,6 +467,10 @@ packages:
 
   '@aws-sdk/client-guardduty@3.1141.0':
     resolution: {integrity: sha512-Y/sPZdzB403WFRmnjuLzu2BMwC3VbGOaPwhvwrdaDzQpRlW+yWZouPIlstav14XFLX1amAJU62zLpwrAg5OdFw==}
+    engines: {node: '>=20.0.0'}
+
+  '@aws-sdk/client-kms@3.1141.0':
+    resolution: {integrity: sha512-dfdarFBC2U0j0oyb3PQPdQX0m/jrjNXmxD162OU/Ln+ZGUIAHYseeqo5XqgITKYM+83NnSzv3QpWmuELI7nirQ==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/client-s3@3.1141.0':
@@ -572,6 +600,10 @@ packages:
   '@aws/lambda-invoke-store@0.3.0':
     resolution: {integrity: sha512-sl4Bm6yiMNYrZKkqqDFWN0UfnWhlS8ivKxrYl+6t0gCLrqr8y3B2IqZZbFRkfaVVp7C/baApyh71P+LeE1A2sQ==}
     engines: {node: '>=18.0.0'}
+
+  '@babel/runtime@7.29.7':
+    resolution: {integrity: sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==}
+    engines: {node: '>=6.9.0'}
 
   '@biomejs/biome@2.5.14':
     resolution: {integrity: sha512-0FabLIjd4M/dm8VFI86RMaLLdgepzbdfiAL2R8cr7V81OYYrP1w7Z73KfAwPK5h9SrEBXTzNG2y+mBwPo9xRnw==}
@@ -941,6 +973,9 @@ packages:
   '@smithy/types@4.19.0':
     resolution: {integrity: sha512-r7jh49VJxGerfAcTQA6gXcKc+98zOp/tqRwzYjgOE+iSQsP6cEU1hq2QzbuipmP68QtYdY9wKEhiCQZIzHgZ4Q==}
     engines: {node: '>=18.0.0'}
+
+  '@stablelib/base64@1.0.1':
+    resolution: {integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==}
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
@@ -1368,6 +1403,9 @@ packages:
   fast-deep-equal@3.1.3:
     resolution: {integrity: sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==}
 
+  fast-sha256@1.3.0:
+    resolution: {integrity: sha512-n11RGP/lrWEFI/bWdygLxhI+pVeo1ZYIVwvvPkW7azl/rOy+F3HYRZ2K5zeE9mmkhQppyv9sQFx0JM9UabnpPQ==}
+
   fast-uri@3.1.8:
     resolution: {integrity: sha512-GZMtZUTNRpOVIECoXwLNZS5xUGE+mVNbTB8h/7Rwh2TFWcBQiPzTgyZi05BF9UMZKkLJv8XBRJTlU7zg8+ZfMg==}
 
@@ -1464,6 +1502,10 @@ packages:
 
   jose@6.2.12:
     resolution: {integrity: sha512-9NiFmJEex0sy2Dk58j2UGBSHgUs2ypF9eZSu4L6vjOX3Dp96Sw1F3uL+H+D1sx02jZZdzUT0HgvCy59CuvXcWw==}
+
+  json-schema-to-ts@3.1.1:
+    resolution: {integrity: sha512-+DWg8jCJG2TEnpy7kOm/7/AxaYoaRbjVB4LFZLySZlWn8exGs3A4OLJR966cVvU26N7X9TWxl+Jsw7dzAqKT6g==}
+    engines: {node: '>=16'}
 
   json-schema-traverse@1.0.0:
     resolution: {integrity: sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug==}
@@ -1619,6 +1661,26 @@ packages:
   once@1.4.0:
     resolution: {integrity: sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==}
 
+  openai@6.49.0:
+    resolution: {integrity: sha512-aYCc0C6L864eR6WSYIwQGyXriw/nIyZx0ObvhzOEVuk0zoBDpynjSbrionWI7q65B5H8jJX0DXR9snEzM6bfPg==}
+    peerDependencies:
+      '@aws-sdk/credential-provider-node': '>=3.972.0 <4'
+      '@smithy/hash-node': '>=4.3.0 <5'
+      '@smithy/signature-v4': '>=5.4.0 <6'
+      ws: ^8.18.0
+      zod: ^3.25 || ^4.0
+    peerDependenciesMeta:
+      '@aws-sdk/credential-provider-node':
+        optional: true
+      '@smithy/hash-node':
+        optional: true
+      '@smithy/signature-v4':
+        optional: true
+      ws:
+        optional: true
+      zod:
+        optional: true
+
   option@0.2.4:
     resolution: {integrity: sha512-pkEqbDyl8ou5cpq+VsnQbe/WlEy5qS7xPzMS1U55OCG9KPvwFD46zDbxQIj3egJSFc3D+XhYOPUzz49zQAVy7A==}
 
@@ -1737,6 +1799,9 @@ packages:
   sprintf-js@1.0.3:
     resolution: {integrity: sha512-D9cPgkvLlV3t3IzL0D0YLvGA9Ahk4PcvVwUbN0dSGr1aP0Nrt4AEnTUbuGvquEC0mA64Gqt1fzirlRs5ibXx8g==}
 
+  standardwebhooks@1.1.1:
+    resolution: {integrity: sha512-bCbX9ZEyFkWPsRz7Bl3NuQUJohmwGSev/yhr7vhaGPlc4AfIrspIRa6cPTBuI1ItmrTDJ4d/S2hCsfe4+vQGnQ==}
+
   statuses@2.0.2:
     resolution: {integrity: sha512-DvEy55V3DB7uknRo+4iOGT5fP1slR8wQohVdknigZPMpMstaKJQWhwiYBACJE3Ul2pTnATihhBYnRhZQHGBiRw==}
     engines: {node: '>= 0.8'}
@@ -1762,6 +1827,9 @@ packages:
   toidentifier@1.0.1:
     resolution: {integrity: sha512-o5sSPKEkg/DIQNmH43V0/uerLrpzVedkUh8tGNvaeXpfpuwjKenlSox/2O/BTlZUtEe+JG7s5YhEz608PlAHRA==}
     engines: {node: '>=0.6'}
+
+  ts-algebra@2.0.0:
+    resolution: {integrity: sha512-FPAhNPFMrkwz76P7cdjdmiShwMynZYN6SgOujD1urY4oNm80Ou9oMdmbR45LotcKOXoy7wSmHkRFE6Mxbrhefw==}
 
   tslib@2.8.1:
     resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
@@ -1934,6 +2002,13 @@ packages:
 
 snapshots:
 
+  '@anthropic-ai/sdk@0.109.1(zod@4.6.5)':
+    dependencies:
+      json-schema-to-ts: 3.1.1
+      standardwebhooks: 1.1.1
+    optionalDependencies:
+      zod: 4.6.5
+
   '@aws-cdk/asset-awscli-v1@2.2.292': {}
 
   '@aws-cdk/asset-node-proxy-agent-v6@2.1.3': {}
@@ -2028,6 +2103,17 @@ snapshots:
       tslib: 2.8.1
 
   '@aws-sdk/client-guardduty@3.1141.0':
+    dependencies:
+      '@aws-sdk/core': 3.978.1
+      '@aws-sdk/credential-provider-node': 3.972.84
+      '@aws-sdk/types': 3.974.6
+      '@smithy/core': 3.35.0
+      '@smithy/fetch-http-handler': 5.8.0
+      '@smithy/node-http-handler': 4.12.1
+      '@smithy/types': 4.19.0
+      tslib: 2.8.1
+
+  '@aws-sdk/client-kms@3.1141.0':
     dependencies:
       '@aws-sdk/core': 3.978.1
       '@aws-sdk/credential-provider-node': 3.972.84
@@ -2311,6 +2397,8 @@ snapshots:
 
   '@aws/lambda-invoke-store@0.3.0': {}
 
+  '@babel/runtime@7.29.7': {}
+
   '@biomejs/biome@2.5.14':
     optionalDependencies:
       '@biomejs/cli-darwin-arm64': 2.5.14
@@ -2543,9 +2631,11 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
+  '@stablelib/base64@1.0.1': {}
+
   '@standard-schema/spec@1.1.0': {}
 
-  '@strands-agents/sdk@1.19.0(@aws-sdk/client-s3@3.1141.0)(@modelcontextprotocol/sdk@1.31.0(zod@4.6.5))(@opentelemetry/api@1.9.1)(@smithy/types@4.19.0)(express@5.2.1)(zod@4.6.5)':
+  '@strands-agents/sdk@1.19.0(@anthropic-ai/sdk@0.109.1(zod@4.6.5))(@aws-sdk/client-s3@3.1141.0)(@modelcontextprotocol/sdk@1.31.0(zod@4.6.5))(@opentelemetry/api@1.9.1)(@smithy/types@4.19.0)(express@5.2.1)(openai@6.49.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(zod@4.6.5))(zod@4.6.5)':
     dependencies:
       '@aws-sdk/client-bedrock-runtime': 3.1141.0
       '@modelcontextprotocol/sdk': 1.31.0(zod@4.6.5)
@@ -2556,9 +2646,11 @@ snapshots:
       yaml: 2.9.1
       zod: 4.6.5
     optionalDependencies:
+      '@anthropic-ai/sdk': 0.109.1(zod@4.6.5)
       '@aws-sdk/client-s3': 3.1141.0
       '@smithy/types': 4.19.0
       express: 5.2.1
+      openai: 6.49.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(zod@4.6.5)
 
   '@types/aws-lambda@8.10.163': {}
 
@@ -2860,6 +2952,8 @@ snapshots:
 
   fast-deep-equal@3.1.3: {}
 
+  fast-sha256@1.3.0: {}
+
   fast-uri@3.1.8: {}
 
   fdir@6.5.0(picomatch@4.0.7):
@@ -2945,6 +3039,11 @@ snapshots:
   isexe@2.0.0: {}
 
   jose@6.2.12: {}
+
+  json-schema-to-ts@3.1.1:
+    dependencies:
+      '@babel/runtime': 7.29.7
+      ts-algebra: 2.0.0
 
   json-schema-traverse@1.0.0: {}
 
@@ -3070,6 +3169,12 @@ snapshots:
   once@1.4.0:
     dependencies:
       wrappy: 1.0.2
+
+  openai@6.49.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(zod@4.6.5):
+    optionalDependencies:
+      '@aws-sdk/credential-provider-node': 3.972.84
+      '@smithy/signature-v4': 5.7.4
+      zod: 4.6.5
 
   option@0.2.4: {}
 
@@ -3228,6 +3333,11 @@ snapshots:
 
   sprintf-js@1.0.3: {}
 
+  standardwebhooks@1.1.1:
+    dependencies:
+      '@stablelib/base64': 1.0.1
+      fast-sha256: 1.3.0
+
   statuses@2.0.2: {}
 
   std-env@4.2.0: {}
@@ -3246,6 +3356,8 @@ snapshots:
       picomatch: 4.0.7
 
   toidentifier@1.0.1: {}
+
+  ts-algebra@2.0.0: {}
 
   tslib@2.8.1: {}
 

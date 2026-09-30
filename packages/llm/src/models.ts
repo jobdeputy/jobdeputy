@@ -1,6 +1,8 @@
 import { PLATFORM_MODEL_ID } from '@jobdeputy/shared';
 import type { Model } from '@strands-agents/sdk';
+import { AnthropicModel } from '@strands-agents/sdk/models/anthropic';
 import { BedrockModel } from '@strands-agents/sdk/models/bedrock';
+import { OpenAIModel } from '@strands-agents/sdk/models/openai';
 
 export { PLATFORM_MODEL_ID };
 
@@ -9,6 +11,9 @@ export const CELL_REGIONS = ['us-east-1', 'ap-south-1', 'eu-west-2'] as const;
 export type CellRegion = (typeof CELL_REGIONS)[number];
 
 export type KeySource = 'platform' | 'own';
+
+/** Providers with a real model behind a user's key (the dev-only `stub` has none). */
+export type OwnKeyProvider = 'openai' | 'anthropic';
 
 /**
  * A model for one run: labels for usage tracking, and a factory that builds a fresh Strands
@@ -21,10 +26,16 @@ export interface ModelSource {
   create(options: { maxTokens: number }): Model;
 }
 
-export type ModelChoice = { source: 'platform'; region: string };
+export type ModelChoice =
+  | { source: 'platform'; region: string }
+  | { source: 'own'; provider: OwnKeyProvider; modelId: string; apiKey: string };
 
-/** The model for a run (decision 0009). T08b2 adds the user's own OpenAI and Anthropic keys. */
+/** A backstop per HTTP request to a provider; each task call also has its own timeout. */
+export const PROVIDER_REQUEST_TIMEOUT_MS = 60_000;
+
+/** The model for a run (decision 0009): the platform model, or the user's own key. */
 export function resolveModel(choice: ModelChoice): ModelSource {
+  if (choice.source === 'own') return ownModel(choice);
   const region = choice.region;
   if (!CELL_REGIONS.includes(region as CellRegion)) throw new Error(`not a cell Region: ${region}`);
   return {
@@ -43,4 +54,24 @@ export function resolveModel(choice: ModelChoice): ModelSource {
         clientConfig: { maxAttempts: 1 },
       }),
   };
+}
+
+/**
+ * The user's own key. The provider clients must not retry either (the queue owns retries),
+ * and the key is passed only to the client, never logged.
+ */
+function ownModel(choice: Extract<ModelChoice, { source: 'own' }>): ModelSource {
+  const { provider, modelId, apiKey } = choice;
+  const clientConfig = { maxRetries: 0, timeout: PROVIDER_REQUEST_TIMEOUT_MS };
+  const create = ({ maxTokens }: { maxTokens: number }): Model => {
+    switch (provider) {
+      case 'openai':
+        return new OpenAIModel({ api: 'chat', modelId, apiKey, maxTokens, clientConfig });
+      case 'anthropic':
+        return new AnthropicModel({ modelId, apiKey, maxTokens, clientConfig });
+      default:
+        throw new Error(`unknown provider: ${String(provider)}`);
+    }
+  };
+  return { keySource: 'own', provider, modelId, create };
 }

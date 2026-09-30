@@ -32,6 +32,7 @@ What is deployed today, per cell. Every table is DynamoDB on-demand (`PAY_PER_RE
 | `<stack>-audit` | `userId` (S) | `auditId` (S) | — | `ttl` (1 year) | prod only | dev: deleted; prod: kept | T06b |
 | `<stack>-usage` | `userId` (S) | `sk` (S) | — | `ttl` (`DAY#` items only: 7 days) | prod only | dev: deleted; prod: kept | T06c |
 | `<stack>-jobs` | `userId` (S) | `jobId` (S) | — | — | prod only | dev: deleted; prod: kept | T07b |
+| `<stack>-ai-keys` | `userId` (S) | `provider` (S) | `NEW_IMAGE` → Pipe (inserts and updates with `status = checking`; sends `userId` and `provider`) → queue | — | prod only | dev: deleted; prod: kept | T08b2 |
 | `<stack>-ping-jobs` | `id` (S) | — | `NEW_IMAGE` → Pipe → queue | `ttl` (1 day) | — | **dev stacks only** (deleted with the stack) | T04 |
 | `<stack>-idempotency` | `id` (S) | — | — | `expiration` | — | **dev stacks only** (used by the ping worker only) | T04 |
 
@@ -72,6 +73,11 @@ Every `TransactWriteItems` goes through `transactWrite` (`packages/db/src/transa
 | `jobs` | `Query`, key order, `Limit`, `ExclusiveStartKey` | `userId` | `GET /me/jobs` (paged) |
 | `jobs` | `GetItem` | `userId`, `jobId` | `GET /me/jobs/{jobId}` |
 | `audit` | `Query`, newest first, `Limit`, `ExclusiveStartKey` | `userId` | `GET /me/audit` (paged) |
+| `ai-keys` + `audit` + `usage` | `TransactWriteItems`: `UpdateItem` key (`status = checking`, new `checkId`; a re-check with `attribute_exists(userId)`), `PutItem` audit entry, `UpdateItem` `DAY#<date>` with `attribute_not_exists(keyChecks) OR keyChecks < :max` | `userId`, `provider` | `PUT /me/ai-keys/{provider}`, `POST /me/ai-keys/{provider}/check` (T08b2; a failed day condition is 429) |
+| `ai-keys` + `audit` + `preferences` | `GetItem` `AI_SETTINGS`; `TransactWriteItems`: `DeleteItem` with `attribute_exists(userId)`, `PutItem` audit entry, and either `UpdateItem` `AI_SETTINGS` back to `platform` with `version = :seen` (it was this key) or `ConditionCheck` `defaultSource <> :provider`; read again at most 3 times | `userId`, `provider` | `DELETE /me/ai-keys/{provider}` |
+| `ai-keys` | `Query` (consistent; the API drops `ciphertext`) / `GetItem` | `userId` (/ `provider`) | `GET /me/ai-keys`; `POST /me/crawls` (status of a chosen key); key-check worker |
+| `ai-keys` + `audit` | `TransactWriteItems`: `UpdateItem` result with `checkId = :checkId AND #status = checking`, `PutItem` audit entry (`ai_key.checked`) | `userId`, `provider` | key-check worker |
+| `preferences` + `audit` (+ `ai-keys`) | `GetItem`, then `TransactWriteItems`: `PutItem` with `attribute_not_exists(userId)` or `version = :expected`, `PutItem` audit entry, and for a provider `ConditionCheck` the key with `attribute_exists(userId) AND #status <> invalid` | `userId`, `sk = AI_SETTINGS` | `GET` and `PUT /me/ai-settings` |
 | `ping-jobs` | `PutItem` / `GetItem` / conditional `UpdateItem` | `id` | ping API and worker |
 | `idempotency` | Powertools reads and writes | `id` | ping worker |
 
@@ -138,6 +144,7 @@ Work history and education are prefilled from the parsed résumé, and the user 
 | `SEARCH` | `version`, `locations L<{city?, region?, country}>`, `workplace L` (`onsite`, `hybrid`, `remote`), `employmentTypes L` (`full_time`, `contract`, …), `minSalary?` (money), `seniority L`, `excludeKeywords L` |
 | `ROLE#<roleId>` | `roleId` (ULID), `version`, `title`, `altTitles L`, `seniority L`, `locations? L` (overrides `SEARCH`), `mustHave L`, `exclude L`, `resumeDocumentId?`, `priority N`, `active B` |
 | `COMPANY_RULE#<companyId>` | `mode` (`limit`, `block`, or `prefer`), `maxJobs N`, `windowDays N` (default 30), `countsOn` (`found` now; `applied` later), `extraCompanyIds L`, `note?`. The sort key `COMPANY_RULE#*` is the user's default for companies they did not list. |
+| `AI_SETTINGS` | T08b2: `version`, `defaultSource` (`platform`, `openai`, or `anthropic`; `stub` in dev stacks). A provider needs a saved key that is not `invalid`; deleting that key sets it back to `platform`. |
 | `CRAWL_SETTINGS` | T06c: `version`, `dailyLimit?` (the user's own daily crawl limit, 1 to the admin maximum; absent = the admin default). The limit applied is `min(dailyLimit ?? default, maximum)`, so an admin lowering the maximum always wins. |
 | `APPLY_SETTINGS` | `mode` (`off`, `review_each`, or `auto_within_rules`; default `review_each`; `auto_within_rules` arrives in Phase 2), `dailyMax N`, `alwaysReview L` (for example `cover_letter`, `custom_questions`), `quietHours? {start, end, timezone}`, `notify {email B}` |
 
@@ -162,14 +169,14 @@ Key: `userId`, `sourceId` (the first 32 hex characters of SHA-256 of `normalized
 
 Key: `userId`, `crawlId` (ULID).
 
-`sourceId`, `url` (the normalized URL at crawl time), `trigger` (`user`, `schedule`, or `redrive`), `status` (`queued`, `running`, `succeeded`, `failed`, or `cancelled`), `attempts N`, `startedAt?`, `finishedAt?`, `result? {finalUrl, httpStatus, contentType, bytes, s3Key}` (T06b: the fetched page; `s3Key` is never shown by the API), `stats? {jobsFound, jobsNew, jobsUpdated, pagesFetched, jobsClosed}` (T07b, T07c; `pagesFetched` counts requests, not robots.txt; `jobsRelevant`, `jobsOverLimit` later), `extraction? {outcome, method?, board?, skipped N, partial? {reason}}` (`outcome` `read` or `no_readable_jobs`; `method` `ats_feed` or `schema_org`; `board` for example `greenhouse:acme`; `reason` `max_jobs`, `max_pages`, `time_budget`, or `page_failed`) (T07b; only on `succeeded`), `error? {code, message}` (`code` from `CRAWL_ERRORS` in `packages/shared`), `lastError? {code, message}` (T06b: the latest retriable failure while a retry is pending), `llm {provider (byot or platform), model, calls, inputTokens, outputTokens}` (T07d), `ttl` (180 days).
+`sourceId`, `url` (the normalized URL at crawl time), `trigger` (`user`, `schedule`, or `redrive`), `aiSource?` (T08b2: where the crawl's AI work gets its model: `platform` or a provider; the user's choice for this crawl, else their default at the time), `status` (`queued`, `running`, `succeeded`, `failed`, or `cancelled`), `attempts N`, `startedAt?`, `finishedAt?`, `result? {finalUrl, httpStatus, contentType, bytes, s3Key}` (T06b: the fetched page; `s3Key` is never shown by the API), `stats? {jobsFound, jobsNew, jobsUpdated, pagesFetched, jobsClosed}` (T07b, T07c; `pagesFetched` counts requests, not robots.txt; `jobsRelevant`, `jobsOverLimit` later), `extraction? {outcome, method?, board?, skipped N, partial? {reason}}` (`outcome` `read` or `no_readable_jobs`; `method` `ats_feed` or `schema_org`; `board` for example `greenhouse:acme`; `reason` `max_jobs`, `max_pages`, `time_budget`, or `page_failed`) (T07b; only on `succeeded`), `error? {code, message}` (`code` from `CRAWL_ERRORS` in `packages/shared`), `lastError? {code, message}` (T06b: the latest retriable failure while a retry is pending), `llm {provider (byot or platform), model, calls, inputTokens, outputTokens}` (T07d), `ttl` (180 days).
 
 ## 6. `usage`: counters
 
 | `sk` | Attributes |
 |---|---|
 | `COMPANY#<companyId>` | `count N`, `windowStart`, `windowDays N`, `countsOn` |
-| `DAY#<yyyy-mm-dd>` | `crawls N` (T06c), `applications N`, `ttl` (7 days). Enforces daily caps. Days are UTC. |
+| `DAY#<yyyy-mm-dd>` | `crawls N` (T06c), `keyChecks N` (T08b2: key saves and re-checks, at most 5), `applications N`, `ttl` (7 days). Enforces daily caps. Days are UTC. |
 | `MONTH#<yyyy-mm>` | `crawls N` (T06c), `llmCalls N`, `inputTokens N`, `outputTokens N`, `applications N` |
 | `ROLES` | `itemCount N`: the user's target roles. Counted in the same transaction as each create (only while fewer than 10) and delete; corrected once if it ever disagrees with the roles that exist. |
 | `DOCUMENTS` | `itemCount N`, `defaultDocumentId?`: counted like `ROLES` (cap 10). A first upload becomes the default only if it claims `defaultDocumentId` in its transaction; a default switch requires the marker it read; deleting the default frees it. Pending uploads expire without running code, so a count or marker that disagrees with the documents that exist is corrected once, then the create retried. |
@@ -317,9 +324,16 @@ Key: `userId`, `sk`. Values are encrypted in the application before they are wri
 
 | `sk` | Attributes |
 |---|---|
-| `AI_KEY#<provider>` | `ciphertext`, `last4`, `status`, `lastUsedAt?` |
 | `SITE_LOGIN#<domain>` | `username`, `ciphertext` (password), `createdBy` (`user` or `automation`, for example a Workday account created while applying), `lastLoginAt?` |
 | `SENSITIVE` | `ciphertext` of `dateOfBirth` and the voluntary equal-opportunity answers (gender, ethnicity, veteran status, disability). Equal-opportunity answers default to "decline to answer". |
+
+## 16. `ai-keys`: the user's own AI keys (T08b2, [0009](decisions/0009-llm-architecture-and-own-keys.md))
+
+Key: `userId`, `provider` (`openai`, `anthropic`; `stub` in dev stacks only, for integration tests). Replaces the planned `vault` `AI_KEY#<provider>` item.
+
+`ciphertext B` (the key encrypted with the cell's KMS key from the keys stack, encryption context `{userId, provider}`; only the key API encrypts, only the key-check worker and later the LLM workers decrypt; never returned or logged), `last4`, `modelId`, `status` (`checking`, `valid`, or `invalid`), `reason?` (why `invalid`: `rejected`, `model-not-found`, `no-credit`, `model-refused`, or `check-failed`), `checkId` (the current check; a result is recorded only for it), `consentAt` (the user agreed to send job data to the provider when saving), `checkedAt?`.
+
+Audit entries: `ai_key.saved`, `ai_key.check_requested`, `ai_key.checked` (system), `ai_key.deleted`, `ai_settings.changed`. None holds the key or its last 4 characters.
 
 ## 14–15. Infrastructure
 
@@ -365,3 +379,4 @@ Everything under `users/<userId>/` and `derived/users/<userId>/` goes with accou
 | 2026-09-29 | `jobs` layout: required and optional attributes, `dedupeKey` rules, `companyKey`, `locations` items `{text, city?, region?, country?}`, `salary` as a range, `description` as plain text (32,000 characters), `descriptionTruncated`; groups for relevance, résumé match, and generated materials; `companies` deferred ([0008](decisions/0008-job-extraction.md)); design only, table not built yet | docs |
 | 2026-09-29 | `jobs` table built (T07b): `sourceIds` is a string set; `descriptionHash` added and `contentHash` no longer covers the description; `descriptionTruncated` set with every description; a re-crawl never removes a posting field. `crawls`: `stats {jobsFound, jobsNew, jobsUpdated}` and `extraction`. `sources`: `kind` `ats_board`, `ats`, `stats {lastFound}`. | T07b |
 | 2026-09-29 | T07c: `crawls.stats` gains `pagesFetched` and `jobsClosed`; `extraction.partial.reason` gains `max_pages`, `time_budget`, `page_failed`; `sources.listedJobIds`; `jobs.sourceIds` means the pages that currently list the job, and is absent once it is closed | T07c |
+| 2026-09-30 | `ai-keys` table (the user's own keys, encrypted with the cell's KMS key from its keys stack; replaces `vault` `AI_KEY#`); `preferences` `AI_SETTINGS`; `usage` `DAY#` `keyChecks`; `crawls.aiSource` | T08b2 |

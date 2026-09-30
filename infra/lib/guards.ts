@@ -15,9 +15,14 @@ export const FORBIDDEN_RESOURCE_TYPES: readonly string[] = [
   'AWS::RDS::DBCluster',
   'AWS::ElastiCache::CacheCluster',
   'AWS::OpenSearchService::Domain',
-  'AWS::KMS::Key',
   'AWS::SecretsManager::Secret',
 ];
+
+/**
+ * Decisions 0009 and 0010: one KMS key per cell ($1 a month), only in the cell's keys stack
+ * (named `…-keys`), and kept when that stack is deleted.
+ */
+export const KEYS_STACK_SUFFIX = '-keys';
 
 /** Decision 0005: logs are kept 14 days before launch. */
 export const MAX_LOG_RETENTION_DAYS = 14;
@@ -49,6 +54,22 @@ export function checkGuards(app: App): GuardViolation[] {
     for (const other of ALL_REGIONS.filter((r) => r !== region)) {
       if (text.includes(other)) {
         violations.push({ stack, message: `Template references another cell Region: ${other}.` });
+      }
+    }
+
+    const kmsKeys = Object.entries(template.Resources ?? {}).filter(
+      ([, r]) => r.Type === 'AWS::KMS::Key',
+    );
+    if (kmsKeys.length > 0 && !stack.endsWith(KEYS_STACK_SUFFIX)) {
+      violations.push({ stack, message: 'KMS keys are only allowed in a cell keys stack.' });
+    }
+    if (kmsKeys.length > 1) {
+      violations.push({ stack, message: 'A keys stack has at most one KMS key.' });
+    }
+    for (const [logicalId, key] of kmsKeys) {
+      const retained = (key as { DeletionPolicy?: string }).DeletionPolicy === 'Retain';
+      if (!retained) {
+        violations.push({ stack, message: `${logicalId}: a KMS key must be kept on delete.` });
       }
     }
 

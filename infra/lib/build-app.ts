@@ -7,6 +7,7 @@ import {
 import { CELLS } from '../config/cells.js';
 import { accountEnvVar, isStageName, STAGES, type StageName } from '../config/stages.js';
 import { CellStack } from './cell-stack.js';
+import { KeysStack } from './keys-stack.js';
 
 export interface BuildAppOptions {
   readonly stage: StageName;
@@ -45,16 +46,28 @@ export function buildApp(options: BuildAppOptions): App {
   for (const cell of STAGES[stage].cells) {
     const account = env[accountEnvVar(stage, cell)];
     const id = owner ? `jobdeputy-${stage}-${owner}-${cell}` : `jobdeputy-${stage}-${cell}`;
-    new CellStack(app, id, {
+    const stackEnv = { region: CELLS[cell].region, ...(account ? { account } : {}) };
+    // T08b2: the cell's KMS key, in its own stack. Personal and PR stacks use the shared one.
+    const keys = owner
+      ? undefined
+      : new KeysStack(app, `jobdeputy-${stage}-${cell}-keys`, {
+          stage,
+          cell,
+          env: stackEnv,
+          crossRegionReferences: false,
+        });
+    const cellStack = new CellStack(app, id, {
       stage,
       cell,
       ...(owner ? { owner } : {}),
       alertEmails: parseAlertEmails(env.JD_ALERT_EMAIL),
-      env: { region: CELLS[cell].region, ...(account ? { account } : {}) },
+      env: stackEnv,
       // Decision 0004: never share values across Regions.
       crossRegionReferences: false,
       ...(options.cliCredentials ? { synthesizer: cliSynthesizer() } : {}),
     });
+    // The cell reads the key's ARN from SSM at deploy time, so the key must exist first.
+    if (keys) cellStack.addDependency(keys);
   }
   return app;
 }

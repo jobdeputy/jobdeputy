@@ -120,6 +120,8 @@ export const CRAWL_PAGE_RETENTION_DAYS = 30;
 /** `POST /me/crawls`. */
 export const createCrawlInput = z.strictObject({
   url: z.string().max(MAX_URL_LENGTH),
+  /** T08b2: the model for this crawl's AI work (`platform` or a provider); the API checks it. */
+  aiSource: z.string().max(20).optional(),
 });
 
 export const crawlId = ulidId;

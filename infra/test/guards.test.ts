@@ -1,6 +1,7 @@
-import { App, Stack } from 'aws-cdk-lib';
+import { App, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { CfnNatGateway } from 'aws-cdk-lib/aws-ec2';
+import { Key } from 'aws-cdk-lib/aws-kms';
 import { Bucket, type CfnBucket } from 'aws-cdk-lib/aws-s3';
 import { describe, expect, it } from 'vitest';
 import { buildApp } from '../lib/build-app.js';
@@ -10,7 +11,11 @@ describe('Region cells (decision 0004)', () => {
   it('dev deploys only the US cell', () => {
     const app = buildApp({ stage: 'dev', env: {} });
     const stacks = app.synth().stacks.map((s) => [s.stackName, s.environment.region]);
-    expect(stacks).toEqual([['jobdeputy-dev-iad', 'us-east-1']]);
+    // T08b2: the cell and its keys stack (the KMS key), in the same Region.
+    expect(stacks).toEqual([
+      ['jobdeputy-dev-iad-keys', 'us-east-1'],
+      ['jobdeputy-dev-iad', 'us-east-1'],
+    ]);
   });
 
   it('prod has one stack per cell, each in its own Region', () => {
@@ -20,14 +25,17 @@ describe('Region cells (decision 0004)', () => {
     );
     expect(stacks).toEqual({
       'jobdeputy-prod-iad': 'us-east-1',
+      'jobdeputy-prod-iad-keys': 'us-east-1',
       'jobdeputy-prod-bom': 'ap-south-1',
+      'jobdeputy-prod-bom-keys': 'ap-south-1',
       'jobdeputy-prod-lhr': 'eu-west-2',
+      'jobdeputy-prod-lhr-keys': 'eu-west-2',
     });
   });
 
   it('uses account IDs only from the environment', () => {
     const app = buildApp({ stage: 'dev', env: { JD_ACCOUNT_DEV_IAD: '111111111111' } });
-    expect(app.synth().stacks[0]?.environment.account).toBe('111111111111');
+    for (const stack of app.synth().stacks) expect(stack.environment.account).toBe('111111111111');
   });
 
   it('names personal stacks after their owner, dev only', () => {
@@ -39,6 +47,61 @@ describe('Region cells (decision 0004)', () => {
 
   it.each(['dev', 'prod'] as const)('%s passes every guard', (stage) => {
     expect(checkGuards(buildApp({ stage, env: {} }))).toEqual([]);
+  });
+});
+
+describe('KMS keys (decisions 0009, 0010)', () => {
+  const keyIn = (stackName: string, keys: number, removalPolicy = RemovalPolicy.RETAIN) => {
+    const app = new App();
+    const stack = new Stack(app, stackName, { env: { region: 'us-east-1' } });
+    for (let i = 0; i < keys; i++) new Key(stack, `Key${i}`, { removalPolicy });
+    return checkGuards(app).map((v) => v.message);
+  };
+
+  it('allows one retained key in a keys stack', () => {
+    expect(keyIn('jobdeputy-dev-iad-keys', 1)).toEqual([]);
+  });
+
+  it('refuses a key anywhere else, a second key, and a key not kept on delete', () => {
+    expect(keyIn('jobdeputy-dev-iad', 1)).toContain(
+      'KMS keys are only allowed in a cell keys stack.',
+    );
+    expect(keyIn('jobdeputy-dev-iad-keys', 2)).toContain('A keys stack has at most one KMS key.');
+    expect(keyIn('jobdeputy-dev-iad-keys', 1, RemovalPolicy.DESTROY)).toEqual([
+      expect.stringMatching(/^Key0\w*: a KMS key must be kept on delete\.$/),
+    ]);
+  });
+
+  it('gives each real cell exactly one retained key with rotation, in its keys stack', () => {
+    for (const stage of ['dev', 'prod'] as const) {
+      for (const artifact of buildApp({ stage, env: {} }).synth().stacks) {
+        const keys = Object.values(
+          (
+            artifact.template as {
+              Resources: Record<
+                string,
+                {
+                  Type: string;
+                  DeletionPolicy?: string;
+                  Properties: { EnableKeyRotation?: boolean };
+                }
+              >;
+            }
+          ).Resources,
+        ).filter((r) => r.Type === 'AWS::KMS::Key');
+        const isKeys = artifact.stackName.endsWith('-keys');
+        expect(keys.length, artifact.stackName).toBe(isKeys ? 1 : 0);
+        for (const key of keys) {
+          expect(key.DeletionPolicy).toBe('Retain');
+          expect(key.Properties.EnableKeyRotation).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('never gives personal or PR stacks their own key', () => {
+    const app = buildApp({ stage: 'dev', owner: 'pr42', env: {} });
+    expect(app.synth().stacks.map((s) => s.stackName)).toEqual(['jobdeputy-dev-pr42-iad']);
   });
 });
 

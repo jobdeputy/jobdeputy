@@ -1,9 +1,9 @@
 # T08b: LLM foundation, own keys, and token usage
 
-- **Status:** in-progress (T08b1)
+- **Status:** in-progress (T08b1 done in #53; T08b2 in review in #54; next T08b3)
 - **Depends on:** T08a ([0009](../decisions/0009-llm-architecture-and-own-keys.md))
-- **Branch / PR:** T08b1 `t08b1-llm-package` (#53)
-- **Files:** `packages/llm/src/`, `packages/llm/eval/`, `infra/lib/cicd-stack.ts`, `.github/workflows/nightly.yml`
+- **Branch / PR:** T08b1 `t08b1-llm-package` (#53); T08b2 `t08b2-own-keys` (#54)
+- **Files:** `packages/llm/src/`, `packages/llm/eval/`, `infra/lib/cicd-stack.ts`, `.github/workflows/nightly.yml`; T08b2: `apps/api/src/ai.ts`, `apps/worker/src/key-check-worker.ts`, `packages/db/src/ai-key-repository.ts`, `packages/llm/src/key-check.ts`, `infra/lib/keys-stack.ts`, `infra/lib/constructs/ai-keys.ts`
 
 ## Goal
 
@@ -24,13 +24,21 @@ Three PRs, each working on its own (agreed 2026-09-29):
     - a PR that changes a prompt, schema, or model runs the eval against the baseline, posts the comparison on the PR, and fails on a regression.
     - The golden set itself (100–200 real, anonymised, labelled jobs and about 20 real careers pages) grows with real crawls in T08d and T07d.
   - **Nightly real-model check:** one real call to the platform model (with an injection case). The dev CI role may invoke only that model. Nightly emails the result (pass or fail, tokens, time) every night, not only on failure.
-- **T08b2: own keys.**
+- **T08b2: own keys** (details agreed with the maintainer on 2026-09-30).
   - The OpenAI and Anthropic providers in `resolveModel` (client retries off).
-  - OpenAI and Anthropic keys in the `ai-keys` table, encrypted with the cell's KMS key (encryption context `userId` and `provider`).
-  - Routes to save, check, delete, and list keys (last 4 characters and status only). Audit entries never contain the key.
-  - Consent to send job data to the provider.
-  - AI settings: the default model source (platform or a key), and a choice per run.
-  - The shared dev cell creates the KMS key and publishes its ARN in SSM. Per-PR stacks read that ARN and never create a key.
+  - **KMS key in its own stack per cell** (`jobdeputy-<stage>-<cell>-keys`, kept on delete, rotation on). Deleting or replacing a cell stack must never make stored keys unreadable. The key's ARN is in SSM; the cell stack reads it. Personal and per-PR stacks use the shared dev key and never create one.
+    - The dev keys stack is deployed once by hand; after that, Deploy dev (`--all`) keeps it up to date.
+    - Not an AWS managed key: those are usable only by their AWS service, so anyone who can read the table would see keys in plain text. Not Secrets Manager: $0.40 per key per month.
+  - **Keys** in the `ai-keys` table, encrypted by the API with the cell's KMS key (encryption context `userId` and `provider`).
+    - Only the key API may encrypt, and only the key-check worker (and later the LLM workers) may decrypt.
+  - **Routes:**
+    - `PUT /me/ai-keys/{provider}` (`apiKey`, `modelId`, `consent: true`) and `GET /me/ai-keys` (provider, last 4 characters, model, status, when checked);
+    - `POST /me/ai-keys/{provider}/check` and `DELETE /me/ai-keys/{provider}`;
+    - audit entries never contain the key.
+  - **Checked asynchronously:** saving or re-checking a key sets `status: checking`. The table stream starts the key-check worker, which decrypts the key and makes one call of at most 1 output token. The status becomes `valid` or `invalid` (with a reason).
+  - **At most 5 key checks per user per day,** counted exactly in `usage`, so nobody can use the app to test stolen keys.
+  - **A dev-only `stub` provider** for integration tests: a key ending in `-valid` passes, anything else fails, and no call leaves AWS. The real providers are unit-tested with fake clients.
+  - **AI settings:** `GET/PUT /me/ai-settings` (`defaultSource`: `platform` or a provider with a saved key). `POST /me/crawls` takes an optional `aiSource`, stored on the crawl for T08d; an own key must be saved and not invalid. Deleting the default key resets the default to `platform`.
   - Account deletion removes `ai-keys`. Update `data-model.md`, `code-map.md`, and the account-deletion runbook.
 - **T08b3: allowance and usage.**
   - The platform allowance (1 run per week, 4 per month), counted exactly in `usage` in the transaction that starts a run. Its limits live in SSM next to the crawl limits.
@@ -65,7 +73,7 @@ See [0009](../decisions/0009-llm-architecture-and-own-keys.md). The split into t
 - [x] T08b1: a fixed worst-case number of calls and tokens per task call, stated in the PR.
 - [x] T08b1: the eval runs through `runTask`, compares against a baseline, and fails on a regression.
 - [x] T08b1: Nightly runs one real-model check and emails the result every night.
-- [ ] T08b2: keys are never returned, logged, or audited. IAM is proven with `simulate-principal-policy`: only the key routes encrypt, and only the LLM workers decrypt.
+- [x] T08b2: keys are never returned, logged, or audited. IAM is proven with `simulate-principal-policy`: only the key routes encrypt, and only the LLM workers decrypt.
 - [ ] T08b3: the allowance holds under concurrent runs (exact caps).
 - [ ] T08b3: usage shows each model separately; metrics, a dashboard, and alarms are in place.
 - [ ] Integration uses the stub model.
