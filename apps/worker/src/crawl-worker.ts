@@ -4,13 +4,19 @@ import { ChangeMessageVisibilityCommand, SQSClient } from '@aws-sdk/client-sqs';
 import {
   AccountRepository,
   type AuditInput,
+  type ClosedJob,
+  CompanyLimitRepository,
   type CrawlError,
   CrawlRepository,
+  CrawlSettingsRepository,
   documentClient,
   type JobPosting,
   JobRepository,
+  PreferencesRepository,
+  ProfileRepository,
   type SaveContext,
   type SaveStats,
+  ssmCrawlLimits,
 } from '@jobdeputy/db';
 import {
   CRAWL_ERRORS,
@@ -18,12 +24,14 @@ import {
   crawlKeys,
   crawlMessage,
   createLogger,
+  effectiveCompanyJobsLimit,
 } from '@jobdeputy/shared';
 import type { Context, SQSBatchResponse, SQSEvent, SQSRecord } from 'aws-lambda';
 import { ulid } from 'ulid';
 import { withDeadline } from './deadline.js';
 import { createFetcher, FetchError, type FetchedPage } from './fetch/fetcher.js';
 import { type FetchFn, readJobs } from './jobs/crawl-jobs.js';
+import { type FitInputs, fitJobs, type ShownStore } from './relevance/fit.js';
 
 const logger = createLogger('crawl-worker');
 
@@ -44,8 +52,24 @@ export interface CrawlWorkerDeps {
   saveJobs: (userId: string, jobs: JobPosting[], context: SaveContext) => Promise<SaveStats>;
   /** T07c: the jobs the source listed as of its earlier crawls. */
   listedJobIds: (userId: string, sourceId: string) => Promise<string[]>;
-  /** T07c: the source no longer lists these; closes the ones no page lists. Returns how many closed. */
-  closeJobs: (userId: string, sourceId: string, jobIds: string[]) => Promise<number>;
+  /**
+   * T07c: the source no longer lists these; closes the ones no page lists, which expire
+   * at `expiresAt` if untouched (T08c). Returns the jobs closed.
+   */
+  closeJobs: (
+    userId: string,
+    sourceId: string,
+    jobIds: string[],
+    expiresAt: number,
+  ) => Promise<ClosedJob[]>;
+  /** T08c: the user's roles, search settings, and limits, for the code filter. */
+  fitInputs: (userId: string) => Promise<FitInputs>;
+  /** T08c: each company's shown jobs (`usage` `COMPANY#`). */
+  shown: ShownStore & {
+    release: (userId: string, companyKey: string, jobIds: string[]) => Promise<void>;
+  };
+  /** T08c: jobs pushed out of their company's shown list by this crawl. */
+  markOverLimit: (userId: string, jobIds: string[], expiresAt: number) => Promise<void>;
   /** Waits between requests to one host. */
   sleep: (ms: number) => Promise<void>;
   now: () => Date;
@@ -149,19 +173,31 @@ export async function processRecord(
       deps.remainingMs() - SAFETY_MARGIN_MS,
     );
     const key = crawlKeys(userId, crawlId).page;
-    const { saved, closed, listedJobIds } = await withDeadline(
+    const { saved, closed, listedJobIds, fit } = await withDeadline(
       (async () => {
-        const saved = await deps.saveJobs(userId, jobs, { sourceId: crawl.sourceId, crawlId });
-        if (extraction.outcome !== 'read') return { saved, closed: 0 };
+        // T08c: filter every job, rank each company's candidates, then save with the result.
+        const inputs = await deps.fitInputs(userId);
+        const expiresAt = Math.floor(deps.now().getTime() / 1000) + inputs.expiryDays * 86_400;
+        const fit = await fitJobs(userId, jobs, inputs, deps.shown);
+        const context = { sourceId: crawl.sourceId, crawlId, expiresAt };
+        const saved = await deps.saveJobs(userId, fit.jobs, context);
+        await deps.markOverLimit(userId, fit.pushedOut, expiresAt);
+        if (extraction.outcome !== 'read') return { saved, closed: 0, fit };
         // T07c: what this page lists now. Only a complete crawl can tell a job is gone;
         // a partial one keeps what it knew and adds what it read.
         const seen = jobs.map((j) => j.jobId);
         const previous = await deps.listedJobIds(userId, crawl.sourceId);
-        if (!complete) return { saved, closed: 0, listedJobIds: listed(seen, previous) };
+        if (!complete) return { saved, closed: 0, fit, listedJobIds: listed(seen, previous) };
         const current = new Set(seen);
         const missing = previous.filter((id) => !current.has(id));
-        const closed = await deps.closeJobs(userId, crawl.sourceId, missing);
-        return { saved, closed, listedJobIds: seen };
+        const closedJobs = await deps.closeJobs(userId, crawl.sourceId, missing, expiresAt);
+        // Closed jobs free their places in their company's shown list.
+        const byCompany = new Map<string, string[]>();
+        for (const j of closedJobs)
+          byCompany.set(j.companyKey, [...(byCompany.get(j.companyKey) ?? []), j.jobId]);
+        for (const [companyKey, ids] of byCompany)
+          await deps.shown.release(userId, companyKey, ids);
+        return { saved, closed: closedJobs.length, fit, listedJobIds: seen };
       })(),
       deps.remainingMs() - SAFETY_MARGIN_MS,
     );
@@ -170,6 +206,8 @@ export async function processRecord(
       jobsNew: saved.created,
       jobsUpdated: saved.updated,
       jobsClosed: closed,
+      jobsRelevant: fit.relevant,
+      jobsOverLimit: fit.overLimit,
       pagesFetched: requests,
     };
     await deps.repo.finish(
@@ -197,6 +235,8 @@ export async function processRecord(
         jobsFound: saved.found,
         jobsNew: saved.created,
         jobsClosed: closed,
+        jobsRelevant: fit.relevant,
+        jobsOverLimit: fit.overLimit,
       }),
     );
     logger.info('Crawl succeeded', {
@@ -263,6 +303,9 @@ function defaultDeps(): CrawlWorkerDeps {
     USERS_TABLE_NAME,
     JOBS_TABLE_NAME,
     DOCUMENTS_BUCKET_NAME,
+    PREFERENCES_TABLE_NAME,
+    USAGE_TABLE_NAME,
+    CRAWL_LIMITS_PARAMETER,
   } = process.env;
   if (
     !CRAWLS_TABLE_NAME ||
@@ -270,9 +313,12 @@ function defaultDeps(): CrawlWorkerDeps {
     !AUDIT_TABLE_NAME ||
     !USERS_TABLE_NAME ||
     !JOBS_TABLE_NAME ||
-    !DOCUMENTS_BUCKET_NAME
+    !DOCUMENTS_BUCKET_NAME ||
+    !PREFERENCES_TABLE_NAME ||
+    !USAGE_TABLE_NAME ||
+    !CRAWL_LIMITS_PARAMETER
   ) {
-    throw new Error('Table and bucket names must be set');
+    throw new Error('Table, bucket, and parameter names must be set');
   }
   const client = documentClient();
   const account = new AccountRepository(client, USERS_TABLE_NAME);
@@ -282,8 +328,13 @@ function defaultDeps(): CrawlWorkerDeps {
     sources: SOURCES_TABLE_NAME,
     audit: AUDIT_TABLE_NAME,
     // Counting happens at submit; the worker only frees the crawl's active slot when it ends.
-    usage: process.env.USAGE_TABLE_NAME ?? '',
+    usage: USAGE_TABLE_NAME,
   });
+  const preferences = new PreferencesRepository(client, PREFERENCES_TABLE_NAME);
+  const profiles = new ProfileRepository(client, USERS_TABLE_NAME);
+  const crawlSettings = new CrawlSettingsRepository(client, PREFERENCES_TABLE_NAME);
+  const shown = new CompanyLimitRepository(client, USAGE_TABLE_NAME);
+  const limits = ssmCrawlLimits(CRAWL_LIMITS_PARAMETER);
   const s3 = new S3Client({});
   const sqs = new SQSClient({});
   return {
@@ -298,7 +349,29 @@ function defaultDeps(): CrawlWorkerDeps {
       const source = await crawls.getSource(userId, sourceId);
       return [...(source?.listedJobIds ?? [])];
     },
-    closeJobs: (userId, sourceId, jobIds) => jobs.closeMissing(userId, sourceId, jobIds),
+    closeJobs: (userId, sourceId, jobIds, expiresAt) =>
+      jobs.closeMissing(userId, sourceId, jobIds, expiresAt),
+    fitInputs: async (userId) => {
+      const [roles, search, profile, settings, config] = await Promise.all([
+        preferences.listRoles(userId),
+        preferences.getSearch(userId),
+        profiles.get(userId),
+        crawlSettings.get(userId),
+        limits(),
+      ]);
+      return {
+        profile: {
+          roles: roles.filter((r) => r.active),
+          ...(search ? { search } : {}),
+          ...(profile?.headline ? { headline: profile.headline } : {}),
+          skills: profile?.skills ?? [],
+        },
+        companyLimit: effectiveCompanyJobsLimit(config, settings?.companyJobsLimit),
+        expiryDays: config.jobExpiryDays,
+      };
+    },
+    shown,
+    markOverLimit: (userId, jobIds, expiresAt) => jobs.markOverLimit(userId, jobIds, expiresAt),
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     now: () => new Date(),
     storePage: async (key, page) => {

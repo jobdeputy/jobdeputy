@@ -12,6 +12,8 @@ A user can complete the flow in the browser: profile, submit a URL, watch the cr
 - In: profile page, URL submission, crawl status with live or polled updates, job list and job detail, empty, loading, and error states, basic accessibility.
 - Out: materials generation UI.
 
+- Carried over from T08c: when the user acts on a job (shortlist, star, apply), remove its `ttl` in the same write (the crawl never sets one on a job whose `status` is not `new`); a dismissed job keeps a small record without the description until 7 days after it closes. `GET /me/jobs` shows only shown jobs unless `view=all`; its pages can be short. Sorting by score or date needs an index.
+
 ## Research
 
 To do. Hosting is decided (S3 and CloudFront per [0003](../decisions/0003-serverless-aws-stack.md)), and the UI talks to the user's home-Region API ([0004](../decisions/0004-regional-cells-and-data-residency.md)). For status updates, compare polling (the default), the API Gateway WebSocket API, and AppSync subscriptions. API Gateway HTTP APIs do not support server-sent events.

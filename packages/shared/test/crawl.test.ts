@@ -5,7 +5,9 @@ import {
   crawlLimitsConfig,
   DEFAULT_CRAWL_LIMITS,
   dailyLimitMessage,
+  effectiveCompanyJobsLimit,
   effectiveDailyLimit,
+  jobsPageQuery,
   MAX_URL_LENGTH,
   nextUtcMidnight,
   parseCrawlUrl,
@@ -158,5 +160,40 @@ describe('daily limit helpers (T06c)', () => {
     expect(dailyLimitMessage(20, 20)).toBe(
       "You've used 20 of 20 crawls today. Resets at 00:00 UTC.",
     );
+  });
+});
+
+describe('jobs per company and expiry (T08c)', () => {
+  it('a setting saved before T08c gets 10 per company and 7 days', () => {
+    expect(crawlLimitsConfig.parse({ dailyDefault: 20, dailyMax: 50 })).toMatchObject({
+      companyJobsDefault: 10,
+      companyJobsMax: 10,
+      jobExpiryDays: 7,
+    });
+  });
+
+  it('validates the admin values', () => {
+    const with_ = (over: object) =>
+      crawlLimitsConfig.safeParse({ ...DEFAULT_CRAWL_LIMITS, ...over }).success;
+    expect(with_({ companyJobsDefault: 11, companyJobsMax: 10 })).toBe(false);
+    expect(with_({ companyJobsDefault: 0 })).toBe(false);
+    expect(with_({ companyJobsMax: 101 })).toBe(false);
+    expect(with_({ jobExpiryDays: 0 })).toBe(false);
+    expect(with_({ jobExpiryDays: 91 })).toBe(false);
+    expect(with_({ companyJobsDefault: 5, companyJobsMax: 20, jobExpiryDays: 30 })).toBe(true);
+  });
+
+  it("uses the user's own limit up to the maximum, else the default", () => {
+    const config = { companyJobsDefault: 10, companyJobsMax: 10 };
+    expect(effectiveCompanyJobsLimit(config)).toBe(10);
+    expect(effectiveCompanyJobsLimit(config, null)).toBe(10);
+    expect(effectiveCompanyJobsLimit(config, 3)).toBe(3);
+    expect(effectiveCompanyJobsLimit({ companyJobsDefault: 5, companyJobsMax: 8 }, 20)).toBe(8);
+  });
+
+  it('lists shown jobs unless all are asked for', () => {
+    expect(jobsPageQuery.parse({}).view).toBe('shown');
+    expect(jobsPageQuery.parse({ view: 'all' }).view).toBe('all');
+    expect(jobsPageQuery.safeParse({ view: 'hidden' }).success).toBe(false);
   });
 });

@@ -6,8 +6,10 @@ import type {
   CrawlStats,
   FinishOutcome,
   JobPosting,
+  ShownJobs,
   SourceUpdate,
 } from '@jobdeputy/db';
+import { ShownConflictError } from '@jobdeputy/db';
 import { CRAWL_ERRORS, crawlKeys } from '@jobdeputy/shared';
 import type { SQSRecord } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
@@ -23,11 +25,14 @@ import {
 } from '../src/crawl-worker.js';
 import { FetchError, type FetchedPage } from '../src/fetch/fetcher.js';
 import type { FetchFn } from '../src/jobs/crawl-jobs.js';
+import { type FitInputs, SHOWN_ATTEMPTS } from '../src/relevance/fit.js';
 
 const USER = '0f8fad5b-d9cb-469f-a165-70867728950e';
 const CRAWL = '01J8ZQ4Y3N5W6X7Y8Z9A0B1C2D';
 const URL_ = 'https://jobs.example.com/careers';
 const NOW = new Date('2026-09-29T12:00:00Z');
+/** T08c: hidden jobs expire 7 days after NOW (epoch seconds). */
+const EXPIRES_AT = NOW.getTime() / 1000 + 7 * 86_400;
 
 function record(receiveCount = 1, body: unknown = { userId: USER, crawlId: CRAWL }): SQSRecord {
   return {
@@ -53,8 +58,11 @@ function page(over: Partial<FetchedPage> = {}): FetchedPage {
   };
 }
 
+/** No roles: every job is a candidate (T08c); the filter itself is tested on its own. */
+const NO_ROLES: FitInputs = { profile: { roles: [], skills: [] }, companyLimit: 10, expiryDays: 7 };
+
 /** An in-memory crawl with the same transition rules as the DynamoDB repository. */
-function setup(fetchImpl: FetchFn = async () => page()) {
+function setup(fetchImpl: FetchFn = async () => page(), fitInputs: FitInputs = NO_ROLES) {
   const state: {
     status: Crawl['status'];
     attempts: number;
@@ -70,6 +78,7 @@ function setup(fetchImpl: FetchFn = async () => page()) {
   const crawl = (): Crawl =>
     ({ userId: USER, crawlId: CRAWL, sourceId: 'S1', url: URL_, ...state }) as unknown as Crawl;
   const fetch = vi.fn(fetchImpl);
+  const shown = new Map<string, ShownJobs>();
   const deps = {
     repo: {
       start: vi.fn(async () => {
@@ -106,7 +115,18 @@ function setup(fetchImpl: FetchFn = async () => page()) {
     })),
     now: () => NOW,
     listedJobIds: vi.fn(async (): Promise<string[]> => []),
-    closeJobs: vi.fn(async (_u: string, _s: string, ids: string[]) => ids.length),
+    closeJobs: vi.fn(async (_u: string, _s: string, ids: string[], _e: number) =>
+      ids.map((jobId) => ({ jobId, companyKey: 'site:example.com' })),
+    ),
+    fitInputs: vi.fn(async (): Promise<FitInputs> => fitInputs),
+    shown: {
+      get: vi.fn(async (_u: string, key: string) => shown.get(key) ?? { shown: {}, version: 0 }),
+      put: vi.fn(async (_u: string, key: string, list: ShownJobs['shown'], version: number) => {
+        shown.set(key, { shown: list, version: version + 1 });
+      }),
+      release: vi.fn(async () => undefined),
+    },
+    markOverLimit: vi.fn(async () => undefined),
     sleep: vi.fn(async () => undefined),
     delayRetry: vi.fn(async () => undefined),
     newId: () => '01J8ZQ4Y3N5W6X7Y8Z9A0B1C2E',
@@ -310,14 +330,30 @@ describe('crawl worker: jobs (T07b)', () => {
     expect(deps.saveJobs).toHaveBeenCalledWith(
       USER,
       [
-        expect.objectContaining({ title: 'Engineer', jobUrl: 'https://jobs.example.com/jobs/1' }),
+        expect.objectContaining({
+          title: 'Engineer',
+          jobUrl: 'https://jobs.example.com/jobs/1',
+          // No roles (T08c): kept, and within the company's limit.
+          fit: {
+            filter: expect.objectContaining({ state: 'candidate', reasons: ['no_target_roles'] }),
+            limitState: 'counted',
+          },
+        }),
         expect.objectContaining({ title: 'Designer' }),
       ],
-      { sourceId: 'S1', crawlId: CRAWL },
+      { sourceId: 'S1', crawlId: CRAWL, expiresAt: EXPIRES_AT },
     );
     expect(state).toMatchObject({
       status: 'succeeded',
-      stats: { jobsFound: 2, jobsNew: 1, jobsUpdated: 1, jobsClosed: 0, pagesFetched: 1 },
+      stats: {
+        jobsFound: 2,
+        jobsNew: 1,
+        jobsUpdated: 1,
+        jobsClosed: 0,
+        jobsRelevant: 2,
+        jobsOverLimit: 0,
+        pagesFetched: 1,
+      },
       extraction: { outcome: 'read', method: 'schema_org', skipped: 0 },
       source: { kind: 'unknown', lastFound: 2 },
       audit: ['crawl.succeeded'],
@@ -373,6 +409,106 @@ describe('crawl worker: jobs (T07b)', () => {
   });
 });
 
+describe('crawl worker: relevance and the company limit (T08c)', () => {
+  const twoJobs = () =>
+    page({
+      body: new TextEncoder().encode(
+        '<html><head><script type="application/ld+json">[{"@type":"JobPosting","title":"Senior Engineer","url":"/jobs/1","datePosted":"2026-09-20"},{"@type":"JobPosting","title":"Designer","url":"/jobs/2","datePosted":"2026-09-21"},{"@type":"JobPosting","title":"Engineer","url":"/jobs/3","datePosted":"2026-09-22"}]</script></head><body>Careers</body></html>',
+      ),
+    });
+  const role = {
+    roleId: 'R1',
+    title: 'Engineer',
+    altTitles: [],
+    seniority: [],
+    exclude: [],
+    priority: 50,
+  };
+  const saved = (deps: ReturnType<typeof setup>['deps']) =>
+    Object.fromEntries((deps.saveJobs.mock.calls[0]?.[1] ?? []).map((j) => [j.title, j.fit]));
+
+  it('marks each job kept or dropped, with why, and counts them', async () => {
+    const inputs = { profile: { roles: [role], skills: [] }, companyLimit: 10, expiryDays: 7 };
+    const { state, deps } = setup(async () => twoJobs(), inputs);
+    expect(await processRecord(record(), deps)).toBe('succeeded');
+    expect(saved(deps)).toEqual({
+      'Senior Engineer': {
+        filter: {
+          state: 'candidate',
+          roleIds: ['R1'],
+          reasons: ['title_match'],
+          priority: 50,
+          version: 1,
+        },
+        limitState: 'counted',
+      },
+      Designer: {
+        filter: {
+          state: 'not_relevant',
+          roleIds: [],
+          reasons: ['title_no_match'],
+          priority: 50,
+          version: 1,
+        },
+      },
+      Engineer: expect.objectContaining({ limitState: 'counted' }),
+    });
+    expect(state.stats).toMatchObject({ jobsFound: 3, jobsRelevant: 2, jobsOverLimit: 0 });
+    expect(state.auditDetail).toMatchObject({ jobsRelevant: 2, jobsOverLimit: 0 });
+  });
+
+  it('shows at most the limit per company, newest first, and hides the rest', async () => {
+    const inputs = { profile: { roles: [role], skills: [] }, companyLimit: 1, expiryDays: 7 };
+    const { state, deps } = setup(async () => twoJobs(), inputs);
+    expect(await processRecord(record(), deps)).toBe('succeeded');
+    const fit = saved(deps);
+    expect(fit.Engineer?.limitState).toBe('counted');
+    expect(fit['Senior Engineer']?.limitState).toBe('over_limit');
+    expect(fit.Designer).not.toHaveProperty('limitState');
+    expect(state.stats).toMatchObject({ jobsRelevant: 2, jobsOverLimit: 1 });
+    // The company's list now holds the one shown job.
+    const [, company, list, version] = deps.shown.put.mock.calls[0] ?? [];
+    expect(company).toBe('site:jobs.example.com');
+    expect(Object.values(list ?? {})).toEqual([{ p: 50, t: '2026-09-22T00:00:00.000Z' }]);
+    expect(version).toBe(0);
+  });
+
+  it('a better job pushes out one another page listed', async () => {
+    const inputs = {
+      profile: { roles: [{ ...role, priority: 90 }], skills: [] },
+      companyLimit: 2,
+      expiryDays: 7,
+    };
+    const { deps } = setup(async () => twoJobs(), inputs);
+    deps.shown.get.mockResolvedValueOnce({ shown: { elsewhere: { p: 50 } }, version: 4 });
+    expect(await processRecord(record(), deps)).toBe('succeeded');
+    expect(deps.markOverLimit).toHaveBeenCalledWith(USER, ['elsewhere'], EXPIRES_AT);
+    expect(deps.shown.put).toHaveBeenCalledWith(
+      USER,
+      'site:jobs.example.com',
+      expect.anything(),
+      4,
+    );
+  });
+
+  it('reads the list again when another crawl changed it meanwhile', async () => {
+    const { deps } = setup(async () => twoJobs());
+    deps.shown.put.mockRejectedValueOnce(new ShownConflictError('site:jobs.example.com'));
+    expect(await processRecord(record(), deps)).toBe('succeeded');
+    expect(deps.shown.get).toHaveBeenCalledTimes(2);
+    expect(deps.shown.put).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up after repeated conflicts, and the crawl retries', async () => {
+    const { state, deps } = setup(async () => twoJobs());
+    deps.shown.put.mockRejectedValue(new ShownConflictError('site:jobs.example.com'));
+    await expect(processRecord(record(1), deps)).rejects.toThrow(RetryLaterError);
+    expect(deps.shown.put).toHaveBeenCalledTimes(SHOWN_ATTEMPTS);
+    expect(deps.saveJobs).not.toHaveBeenCalled();
+    expect(state.status).toBe('running');
+  });
+});
+
 describe('crawl worker: closed jobs (T07c)', () => {
   const posting = (i: number) => `{"@type":"JobPosting","title":"Role ${i}","url":"/jobs/${i}"}`;
   const pageWith = (...ids: number[]) =>
@@ -393,8 +529,10 @@ describe('crawl worker: closed jobs (T07c)', () => {
     ).map((j) => j.jobId);
     deps.listedJobIds.mockResolvedValue([one as string, 'gone-1', two as string, 'gone-2']);
     expect(await processRecord(record(), deps)).toBe('succeeded');
-    expect(deps.closeJobs).toHaveBeenCalledWith(USER, 'S1', ['gone-1', 'gone-2']);
+    expect(deps.closeJobs).toHaveBeenCalledWith(USER, 'S1', ['gone-1', 'gone-2'], EXPIRES_AT);
     expect(state.stats).toMatchObject({ jobsClosed: 2 });
+    // T08c: closed jobs free their places in their company's shown list.
+    expect(deps.shown.release).toHaveBeenCalledWith(USER, 'site:example.com', ['gone-1', 'gone-2']);
     expect(state.source?.listedJobIds).toEqual([one, two]);
     expect(state.auditDetail).toMatchObject({ jobsClosed: 2 });
   });

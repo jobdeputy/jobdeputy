@@ -179,9 +179,25 @@ describe('crawl limits (T06c)', () => {
     expect(JSON.stringify(ssm[0]?.Resource)).toMatch(/:parameter",{"Ref":"CrawlLimits/);
 
     const worker = statementsFor('CrawlWorkerFn');
-    // Only to free the crawl's active slot when it ends; counting happens at submit.
-    expect(actionsOn(worker, 'UsageTable')).toEqual(['dynamodb:UpdateItem']);
-    expect(actionsOn(worker, 'PreferencesTable')).toEqual([]);
+    // Frees the crawl's active slot when it ends (counting happens at submit); T08c: the
+    // company's shown jobs. Never a delete, a query, or a scan.
+    expect(actionsOn(worker, 'UsageTable')).toEqual([
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+      'dynamodb:UpdateItem',
+    ]);
+    // T08c: reads the roles, search settings, and own limits; never writes them.
+    expect(actionsOn(worker, 'PreferencesTable')).toEqual(['dynamodb:GetItem', 'dynamodb:Query']);
+    const workerSsm = worker.filter((s) => [s.Action].flat().some((a) => a.startsWith('ssm:')));
+    expect(workerSsm.flatMap((s) => [s.Action].flat())).toEqual(['ssm:GetParameter']);
+    expect(JSON.stringify(workerSsm[0]?.Resource)).toMatch(/:parameter",{"Ref":"CrawlLimits/);
+  });
+
+  it('T08c: jobs expire through the table time to live, not a delete permission', () => {
+    t.hasResourceProperties('AWS::DynamoDB::Table', {
+      TableName: Match.stringLikeRegexp('-jobs$'),
+      TimeToLiveSpecification: { AttributeName: 'ttl', Enabled: true },
+    });
   });
 });
 

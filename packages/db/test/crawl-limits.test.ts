@@ -13,6 +13,9 @@ describe('cachedCrawlLimits', () => {
       maxActive: 1,
       platformRunsPerWeek: 1,
       platformRunsPerMonth: 4,
+      companyJobsDefault: 10,
+      companyJobsMax: 10,
+      jobExpiryDays: 7,
     });
     now = LIMITS_CACHE_MS - 1;
     await limits();
@@ -28,6 +31,9 @@ describe('cachedCrawlLimits', () => {
       maxActive: 1,
       platformRunsPerWeek: 1,
       platformRunsPerMonth: 4,
+      companyJobsDefault: 10,
+      companyJobsMax: 10,
+      jobExpiryDays: 7,
     });
   });
 
@@ -56,6 +62,9 @@ describe('cachedCrawlLimits', () => {
       maxActive: 1,
       platformRunsPerWeek: 1,
       platformRunsPerMonth: 4,
+      companyJobsDefault: 10,
+      companyJobsMax: 10,
+      jobExpiryDays: 7,
     });
   });
 });

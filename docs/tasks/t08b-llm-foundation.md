@@ -1,6 +1,6 @@
 # T08b: LLM foundation, own keys, and token usage
 
-- **Status:** in-review (T08b1 #53 and T08b2 #54 done; T08b3 in #55)
+- **Status:** done (T08b1 #53, T08b2 #54, T08b3 #55)
 - **Depends on:** T08a ([0009](../decisions/0009-llm-architecture-and-own-keys.md))
 - **Branch / PR:** T08b1 `t08b1-llm-package` (#53); T08b2 `t08b2-own-keys` (#54); T08b3 `t08b3-allowance-usage` (#55)
 - **Files:** `packages/llm/src/`, `packages/llm/eval/`, `infra/lib/cicd-stack.ts`, `.github/workflows/nightly.yml`; T08b2: `apps/api/src/ai.ts`, `apps/worker/src/key-check-worker.ts`, `packages/db/src/ai-key-repository.ts`, `packages/llm/src/key-check.ts`, `infra/lib/keys-stack.ts`, `infra/lib/constructs/ai-keys.ts`

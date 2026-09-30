@@ -1,6 +1,6 @@
 # Code map
 
-Where each part of the code lives, so you can open the right file instead of searching. Read this first. **Update it in the same PR** when you add, move, or split a source file.
+Where each part of the code lives, so you can open the right file instead of searching. Read this first. **Update it in the same PR** when you add, move, or split a source file (`infra/test/docs-code-map.test.ts` fails otherwise).
 
 Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/`, `infra/test/`, and deployed tests in `tests/integration/src/`.
 
@@ -14,6 +14,7 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | How an item is read or written | `packages/db/src/<feature>-repository.ts`; every transaction goes through `transact.ts` |
 | What a crawl fetches or refuses | `apps/worker/src/fetch/` |
 | How jobs are read from a page or board | `apps/worker/src/jobs/` |
+| Which crawled jobs are kept or shown, and why | `apps/worker/src/relevance/` (the code filter, the per-company limit) |
 | Item attributes | the repository **and** `docs/data-model.md` (with a change-log line) |
 | CI permissions | `infra/lib/cicd-stack.ts` |
 | An LLM task, its prompt, or its limits | `packages/llm/src/tasks/<task>.ts` (raise its `version`, add it to `TASKS`); eval cases in `packages/llm/eval/cases/`, `eval/versions.json`, baseline in `eval/baselines/` |
@@ -25,9 +26,8 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | `me.ts` | `GET /me`, `DELETE /me` (account deletion request, T12) |
 | `profile.ts` | profile, search preferences, target roles |
 | `documents.ts` | résumé upload (presigned POST), list, rename, default, delete |
-| `crawls.ts` | `POST/GET /me/crawls` (with the crawl's `aiSource`; counts the free platform run, T08b3), `GET /me/crawls/{id}`, `/me/crawl-settings`; replaces stale active crawls |
-| `crawl-limits.ts` | admin crawl limits from SSM, cached 5 minutes |
-| `jobs.ts` | `GET /me/jobs`, `GET /me/jobs/{jobId}` (read-only) |
+| `crawls.ts` | `POST/GET /me/crawls` (with the crawl's `aiSource`; counts the free platform run, T08b3), `GET /me/crawls/{id}`, `/me/crawl-settings` (daily and, T08c, jobs-per-company limits); replaces stale active crawls |
+| `jobs.ts` | `GET /me/jobs` (shown jobs, or `view=all`, with each job's `fit` and why), `GET /me/jobs/{jobId}` (read-only) |
 | `ai.ts` | `/me/ai-keys` (save with consent, list, check, delete; encrypts the key with KMS), `/me/ai-settings` (T08b2), `GET /me/ai-usage` (T08b3) |
 | `audit.ts` | `GET /me/audit` |
 | `account-guard.ts` | 410 on writes while a deletion is pending |
@@ -40,7 +40,7 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 
 | File | Role |
 |---|---|
-| `crawl-worker.ts` | crawl queue: fetch, read jobs, save, close missing jobs, finish |
+| `crawl-worker.ts` | crawl queue: fetch, read jobs, filter and rank them (T08c), save, close missing jobs, finish |
 | `document-worker.ts`, `extract.ts` | résumé processing after the malware scan; PDF/DOCX text |
 | `key-check-worker.ts` | ai-keys queue: decrypts a key, one check call, records `valid` or `invalid` (T08b2) |
 | `deletion-worker.ts` | erases every user table and S3 prefix (T12) |
@@ -55,6 +55,8 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | `jobs/boards.ts`, `jobs/feeds.ts` | job-board detection and requests; readers for Greenhouse, Lever, Ashby, Workday |
 | `jobs/schema-org.ts` | schema.org `JobPosting` |
 | `jobs/job.ts`, `jobs/text.ts` | the normalized job, dedupe key, hashes; HTML to text, limits |
+| `relevance/code-filter.ts` | T08c: the free code filter: title, level, place, workplace, type, salary, excluded words against the roles; `candidate` or `not_relevant`, with reasons |
+| `relevance/company-limit.ts`, `relevance/fit.ts` | T08c: ranking each company's candidates within the limit (`counted`, `over_limit`); the crawl's filter-then-rank step |
 
 ## packages
 
@@ -62,12 +64,14 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 |---|---|
 | `db/src/transact.ts` | `transactWrite`: retries conflicts with jitter, then `ConcurrentUpdateError` |
 | `db/src/crawl-repository.ts` | sources, crawls, daily and active limits, finish |
-| `db/src/job-repository.ts` | save jobs (idempotent), close missing, list, get |
+| `db/src/job-repository.ts` | save jobs (idempotent, with the filter verdict and expiry), close missing, mark over the limit, list (shown or all), get |
+| `db/src/company-limit-repository.ts` | T08c: `usage` `COMPANY#`: each company's shown jobs, replaced at the version read |
+| `db/src/crawl-limits.ts` | the admin crawl limits from SSM, cached 5 minutes (API and crawl worker) |
 | `db/src/document-repository.ts`, `preferences-repository.ts`, `profile-repository.ts` | T05 items, with counters and audit |
 | `db/src/ai-usage-repository.ts` | token use per month and model (`aiUsageUpdate` for the result transaction, `listAiUsage`) |
 | `db/src/ai-key-repository.ts` | `ai-keys` (save, check, delete, results; daily check limit) and `preferences` `AI_SETTINGS` |
 | `db/src/usage-counters.ts`, `versioned.ts`, `audit-repository.ts` | exact caps; optimistic versions; audit entries and paging |
-| `db/src/account-repository.ts`, `crawl-settings-repository.ts`, `ping-repository.ts`, `client.ts` | deletion record; user crawl limit; ping; DynamoDB client and condition helpers |
+| `db/src/account-repository.ts`, `crawl-settings-repository.ts`, `ping-repository.ts`, `client.ts` | deletion record; user crawl and jobs-per-company limits; ping; DynamoDB client and condition helpers |
 | `shared/src/*.ts` | Zod schemas and constants per feature (`auth`, `crawl`, `documents`, `profile`, `ping`), `ai.ts` (the pinned platform model; own-key providers, schemas, and limits), `http.ts` (problem details), `logger.ts` |
 | `test-fixtures/src/index.ts` | synthetic PDF, DOCX, zip bomb, EICAR |
 | `llm/src/task.ts` | `defineTask`, `runTask`: 3 turns, token caps, timeout, strict zod output, `partial`, usage (the only Strands caller, 0009) |

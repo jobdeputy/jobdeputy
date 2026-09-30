@@ -71,6 +71,9 @@ function deps(allowTestProvider = false) {
       maxActive: 1,
       platformRunsPerWeek: 1,
       platformRunsPerMonth: 4,
+      companyJobsDefault: 10,
+      companyJobsMax: 10,
+      jobExpiryDays: 7,
     })),
   };
   return { d, keys };

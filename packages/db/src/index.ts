@@ -3,6 +3,8 @@ export * from './ai-key-repository.js';
 export * from './ai-usage-repository.js';
 export * from './audit-repository.js';
 export * from './client.js';
+export * from './company-limit-repository.js';
+export * from './crawl-limits.js';
 export * from './crawl-repository.js';
 export * from './crawl-settings-repository.js';
 export * from './document-repository.js';

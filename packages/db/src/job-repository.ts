@@ -38,7 +38,30 @@ export interface JobPosting {
   descriptionHash?: string;
   postedAt?: string;
   extraction: { method: string; version: number };
+  /** T08c: what the code filter and the company limit decided in this crawl. */
+  fit?: JobFit;
 }
+
+/** T08c: the code filter's verdict, and why (docs/data-model.md §8). */
+export interface JobFilterResult {
+  state: 'candidate' | 'not_relevant';
+  roleIds: string[];
+  reasons: string[];
+  priority: number;
+  version: number;
+}
+
+export type LimitState = 'counted' | 'over_limit';
+
+export interface JobFit {
+  filter: JobFilterResult;
+  /** Candidates only: shown within the company's limit, or not. */
+  limitState?: LimitState;
+}
+
+/** Hidden jobs expire (T08c): the filter dropped them, or the company limit did. */
+export const isHidden = (fit: JobFit) =>
+  fit.filter.state === 'not_relevant' || fit.limitState === 'over_limit';
 
 export type JobStatus = 'new' | 'shortlisted' | 'dismissed' | 'applying' | 'applied' | 'archived';
 
@@ -52,6 +75,10 @@ export interface Job extends JobPosting {
   firstSeenAt: string;
   lastSeenAt: string;
   closedAt?: string;
+  filter?: JobFilterResult;
+  limitState?: LimitState;
+  /** Epoch seconds: DynamoDB deletes the job after this (T08c, hidden or closed and untouched). */
+  ttl?: number;
   status: JobStatus;
   starred: boolean;
   notes?: string;
@@ -82,6 +109,14 @@ const OPTIONAL_POSTING = [
 export interface SaveContext {
   sourceId: string;
   crawlId: string;
+  /** T08c: epoch seconds a job hidden now is deleted at (kept if it was already hidden). */
+  expiresAt?: number;
+}
+
+/** A job a crawl closed, so its company's shown list can free its place. */
+export interface ClosedJob {
+  jobId: string;
+  companyKey: string;
 }
 
 export interface SaveStats {
@@ -164,6 +199,25 @@ export class JobRepository {
     bind('status', 'new', true);
     bind('starred', false, true);
 
+    // Seen again: open (T07c closes jobs a complete crawl no longer lists).
+    const remove = ['#closedAt'];
+    const { fit } = job;
+    const hides = fit !== undefined && isHidden(fit) && context.expiresAt !== undefined;
+    if (fit) {
+      bind('filter', fit.filter);
+      if (fit.limitState) bind('limitState', fit.limitState);
+      else {
+        names['#limitState'] = 'limitState';
+        remove.push('#limitState');
+      }
+      // Hidden: expires 7 days after it was first hidden, not after every crawl. Shown: kept.
+      if (hides) bind('ttl', context.expiresAt, true);
+      else if (!isHidden(fit)) {
+        names['#ttl'] = 'ttl';
+        remove.push('#ttl');
+      }
+    }
+
     names['#sourceIds'] = 'sourceIds';
     names['#closedAt'] = 'closedAt';
     values[':source'] = new Set([context.sourceId]);
@@ -172,8 +226,7 @@ export class JobRepository {
       new UpdateCommand({
         TableName: this.table,
         Key: { userId, jobId: job.jobId },
-        // Seen again: open (T07c closes jobs a complete crawl no longer lists).
-        UpdateExpression: `SET ${set.join(', ')} ADD #sourceIds :source REMOVE #closedAt`,
+        UpdateExpression: `SET ${set.join(', ')} ADD #sourceIds :source REMOVE ${remove.join(', ')}`,
         ExpressionAttributeNames: names,
         ExpressionAttributeValues: values,
         ReturnValues: 'UPDATED_OLD',
@@ -181,6 +234,23 @@ export class JobRepository {
     );
     // `type` is set on every save: no old value means the item did not exist.
     const old = res.Attributes;
+    // A job the user acted on is their history: never expired by the filter (T09 sets status).
+    if (hides && old?.status !== undefined && old.status !== 'new') {
+      await this.client
+        .send(
+          new UpdateCommand({
+            TableName: this.table,
+            Key: { userId, jobId: job.jobId },
+            UpdateExpression: 'REMOVE #ttl',
+            ConditionExpression: 'attribute_exists(userId) AND #status <> :new',
+            ExpressionAttributeNames: { '#ttl': 'ttl', '#status': 'status' },
+            ExpressionAttributeValues: { ':new': 'new' },
+          }),
+        )
+        .catch((error) => {
+          if (!isConditionFailure(error)) throw error;
+        });
+    }
     if (old?.type === undefined) return 'created';
     const changed =
       old.contentHash !== job.contentHash ||
@@ -192,23 +262,37 @@ export class JobRepository {
    * T07c: jobs this source listed before and a complete crawl of it no longer lists. The
    * source is removed from each job's `sourceIds`; a job no saved page lists any more is
    * closed (`closedAt`). Safe to repeat, and to race a crawl of another source that lists
-   * the job again: closing requires `sourceIds` to still be empty. Returns how many closed.
+   * the job again: closing requires `sourceIds` to still be empty. T08c: a closed job the
+   * user never acted on (`status` `new`) expires at `expiresAt`. Returns the jobs closed.
    */
-  async closeMissing(userId: string, sourceId: string, jobIds: string[]): Promise<number> {
+  async closeMissing(
+    userId: string,
+    sourceId: string,
+    jobIds: string[],
+    expiresAt?: number,
+  ): Promise<ClosedJob[]> {
     const now = this.now().toISOString();
-    let closed = 0;
+    const closed: ClosedJob[] = [];
     let next = 0;
     const lane = async () => {
       while (next < jobIds.length) {
         const jobId = jobIds[next++] as string;
-        if (await this.dropSource(userId, sourceId, jobId, now)) closed += 1;
+        const job = await this.dropSource(userId, sourceId, jobId, now, expiresAt);
+        if (job) closed.push(job);
       }
     };
     await Promise.all(Array.from({ length: Math.min(SAVE_CONCURRENCY, jobIds.length) }, lane));
     return closed;
   }
 
-  private async dropSource(userId: string, sourceId: string, jobId: string, now: string) {
+  /** Returns the job when this closed it, or nothing when it was not closed now. */
+  private async dropSource(
+    userId: string,
+    sourceId: string,
+    jobId: string,
+    now: string,
+    expiresAt?: number,
+  ): Promise<ClosedJob | undefined> {
     try {
       const res = await this.client.send(
         new UpdateCommand({
@@ -222,26 +306,73 @@ export class JobRepository {
           ReturnValues: 'ALL_NEW',
         }),
       );
-      if (res.Attributes?.sourceIds !== undefined || res.Attributes?.closedAt !== undefined) {
-        return false;
-      }
+      const job = res.Attributes;
+      if (job?.sourceIds !== undefined || job?.closedAt !== undefined) return undefined;
+      // Untouched by the user: expires (kept sooner if it was already hidden). Else kept.
+      const expires = expiresAt !== undefined && job?.status === 'new';
       await this.client.send(
         new UpdateCommand({
           TableName: this.table,
           Key: { userId, jobId },
-          UpdateExpression: 'SET #closedAt = :now, updatedAt = :now',
+          UpdateExpression: `SET #closedAt = :now, updatedAt = :now${expires ? ', #ttl = if_not_exists(#ttl, :ttl)' : ''}`,
           ConditionExpression:
             'attribute_not_exists(#sourceIds) AND attribute_not_exists(#closedAt)',
-          ExpressionAttributeNames: { '#sourceIds': 'sourceIds', '#closedAt': 'closedAt' },
-          ExpressionAttributeValues: { ':now': now },
+          ExpressionAttributeNames: {
+            '#sourceIds': 'sourceIds',
+            '#closedAt': 'closedAt',
+            ...(expires ? { '#ttl': 'ttl' } : {}),
+          },
+          ExpressionAttributeValues: { ':now': now, ...(expires ? { ':ttl': expiresAt } : {}) },
         }),
       );
-      return true;
+      return { jobId, companyKey: String(job?.companyKey ?? '') };
     } catch (error) {
       // The job is gone, was listed again meanwhile, or is already closed.
-      if (isConditionFailure(error)) return false;
+      if (isConditionFailure(error)) return undefined;
       throw error;
     }
+  }
+
+  /**
+   * T08c: jobs another crawl pushed out of their company's shown list. Hidden, so they
+   * expire at `expiresAt` unless the user acted on them. Missing jobs are skipped.
+   */
+  async markOverLimit(userId: string, jobIds: string[], expiresAt: number): Promise<void> {
+    const now = this.now().toISOString();
+    let next = 0;
+    const lane = async () => {
+      while (next < jobIds.length) {
+        const jobId = jobIds[next++] as string;
+        for (const expires of [true, false]) {
+          try {
+            await this.client.send(
+              new UpdateCommand({
+                TableName: this.table,
+                Key: { userId, jobId },
+                UpdateExpression: `SET #limitState = :over, updatedAt = :now${expires ? ', #ttl = if_not_exists(#ttl, :ttl)' : ''}`,
+                ConditionExpression: expires
+                  ? 'attribute_exists(userId) AND #status = :new'
+                  : 'attribute_exists(userId)',
+                ExpressionAttributeNames: {
+                  '#limitState': 'limitState',
+                  ...(expires ? { '#ttl': 'ttl', '#status': 'status' } : {}),
+                },
+                ExpressionAttributeValues: {
+                  ':over': 'over_limit',
+                  ':now': now,
+                  ...(expires ? { ':ttl': expiresAt, ':new': 'new' } : {}),
+                },
+              }),
+            );
+            break;
+          } catch (error) {
+            // Not `new` (the user acted on it): mark it without an expiry. Gone: skip.
+            if (!isConditionFailure(error)) throw error;
+          }
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(SAVE_CONCURRENCY, jobIds.length) }, lane));
   }
 
   async get(userId: string, jobId: string): Promise<Job | undefined> {
@@ -253,18 +384,36 @@ export class JobRepository {
 
   /**
    * One page of the user's jobs, in key order (stable, not by time: `jobId` is a hash).
-   * Sorting and filtering by relevance come with T08 and the interface (T09).
+   * `shown` (T08c) leaves out jobs the filter or the company limit hid; then a page can
+   * hold fewer than `limit` jobs (even none) and still have a next one. Sorting comes
+   * with the interface (T09).
    */
   async list(
     userId: string,
     limit: number,
     after?: string,
+    view: 'shown' | 'all' = 'all',
   ): Promise<{ items: Job[]; next?: string }> {
+    const shown = view === 'shown';
     const res = await this.client.send(
       new QueryCommand({
         TableName: this.table,
         KeyConditionExpression: 'userId = :u',
-        ExpressionAttributeValues: { ':u': userId },
+        ...(shown
+          ? {
+              FilterExpression:
+                '(attribute_not_exists(#filter.#state) OR #filter.#state <> :dropped) AND (attribute_not_exists(#limitState) OR #limitState <> :over)',
+              ExpressionAttributeNames: {
+                '#filter': 'filter',
+                '#state': 'state',
+                '#limitState': 'limitState',
+              },
+            }
+          : {}),
+        ExpressionAttributeValues: {
+          ':u': userId,
+          ...(shown ? { ':dropped': 'not_relevant', ':over': 'over_limit' } : {}),
+        },
         Limit: limit,
         ...(after !== undefined ? { ExclusiveStartKey: { userId, jobId: after } } : {}),
       }),
