@@ -42,45 +42,88 @@ describe('monitoring (T13)', () => {
     const names = alarmIds(stack('dev', 'jobdeputy-dev-iad')).map((id) =>
       id.replace(/[0-9A-F]{8}$/, ''),
     );
-    // T08b2 added the key-check dead-letter alarm (all 10 free alarms used); T08b3 adds the
-    // two LLM alarms, paid (about $0.10 each a month), agreed on 2026-09-30.
+    // T08d1: one queue health check replaced the 8 queue alarms (dead letters and backlogs),
+    // so new queues add no alarm. The two LLM alarms (T08b3) are back within the free 10.
     expect(names).toEqual([
-      'AiKeysKeyCheckPipelineDeadLetterAlarm',
       'ApiServerErrorAlarm',
-      'CrawlPipelineBacklogAlarm',
-      'CrawlPipelineDeadLetterAlarm',
-      'DeletionPipelineBacklogAlarm',
-      'DeletionPipelineDeadLetterAlarm',
-      'DocumentsBacklogAlarm',
-      'DocumentsDeadLetterAlarm',
       'LlmMonitoringRejectedOutputsAlarm',
       'LlmMonitoringTimeoutsAlarm',
-      'PingPipelineDeadLetterAlarm',
+      'QueueHealthCheckerErrorAlarm',
       'TestDataReaperAlarm',
     ]);
-    expect(names.filter((n) => !n.startsWith('LlmMonitoring')).length).toBeLessThanOrEqual(10);
+    expect(names.length).toBeLessThanOrEqual(10);
   });
 
-  it("alarms when a worker queue backs up, above each queue's slowest normal path", () => {
+  /** The checker's watched queues, as its environment lists them (resolved names). */
+  const watched = (t: Template) => {
+    const [fn] = Object.values(t.findResources('AWS::Lambda::Function')).filter(
+      (f) => f.Properties.Environment?.Variables?.WATCHED_QUEUES,
+    );
+    // A join of text and queue URLs: the text alone holds the names and limits.
+    const parts: unknown[] =
+      fn?.Properties.Environment.Variables.WATCHED_QUEUES['Fn::Join'][1] ?? [];
+    const text = parts.filter((p) => typeof p === 'string').join('');
+    const names = [...text.matchAll(/"name":"([a-z-]+)"/g)].map((m) => m[1]);
+    const backlogs = [...text.matchAll(/"name":"([a-z-]+)"[^}]*?"backlogAfterSeconds":(\d+)/g)].map(
+      (m) => [m[1], Number(m[2])],
+    );
+    return { names: names.sort(), backlogs: backlogs.sort() };
+  };
+
+  it("checks every worker queue, and a backlog above each queue's slowest normal path", () => {
     const t = stack('dev', 'jobdeputy-dev-iad');
-    const backlog = Object.entries(t.findResources('AWS::CloudWatch::Alarm'))
-      .filter(([id]) => id.includes('BacklogAlarm'))
-      .map(([id, a]) => [
-        id.replace(/BacklogAlarm.*/, ''),
-        a.Properties.MetricName,
-        a.Properties.Threshold,
-      ])
-      .sort();
-    expect(backlog).toEqual([
-      ['CrawlPipeline', 'ApproximateAgeOfOldestMessage', 15 * 60],
-      ['DeletionPipeline', 'ApproximateAgeOfOldestMessage', 60 * 60],
-      ['Documents', 'ApproximateAgeOfOldestMessage', 30 * 60],
+    const { names, backlogs } = watched(t);
+    expect(names).toEqual([
+      'account-deletions',
+      'crawls',
+      'document-scans',
+      'key-checks',
+      'ping-jobs',
     ]);
+    expect(backlogs).toEqual([
+      ['account-deletions', 60 * 60],
+      ['crawls', 15 * 60],
+      ['document-scans', 30 * 60],
+    ]);
+    // Every 5 minutes; a missed run is not retried (the next one comes soon).
+    t.hasResourceProperties('AWS::Events::Rule', {
+      ScheduleExpression: 'rate(5 minutes)',
+      Targets: [Match.objectLike({ RetryPolicy: { MaximumRetryAttempts: 0 } })],
+    });
+  });
+
+  it('gives the checker only the reads and writes it makes', () => {
+    const t = stack('dev', 'jobdeputy-dev-iad');
+    const [role] = Object.entries(t.findResources('AWS::IAM::Policy')).filter(([id]) =>
+      id.startsWith('QueueHealthChecker'),
+    );
+    const statements = (role?.[1].Properties.PolicyDocument.Statement ?? []) as {
+      Action: string | string[];
+      Resource: unknown;
+    }[];
+    const actions = [...new Set(statements.flatMap((s) => [s.Action].flat()))].sort();
+    expect(actions).toEqual([
+      'sns:Publish',
+      'sqs:GetQueueAttributes',
+      'ssm:GetParameter',
+      'ssm:PutParameter',
+    ]);
+    const ssm = statements.filter((s) => [s.Action].flat().some((a) => a.startsWith('ssm:')));
+    expect(JSON.stringify(ssm.map((s) => s.Resource))).toMatch(/QueueHealthState/);
+    // Five queues and their dead-letter queues: counts only.
+    const sqs = statements.filter((s) => [s.Action].flat().includes('sqs:GetQueueAttributes'));
+    expect(sqs.flatMap((s) => [s.Resource].flat())).toHaveLength(10);
+  });
+
+  it('has no queue health check in personal, PR, or (for now) any stack without alarms', () => {
+    expect(watched(stack('dev', 'jobdeputy-dev-pr42-iad', 'pr42')).names).toEqual([]);
   });
 
   it('keeps each prod stack within the 10 free alarms (no reaper, test site, or ping)', () => {
     for (const cell of ['iad', 'bom', 'lhr']) {
-      expect(alarmIds(stack('prod', `jobdeputy-prod-${cell}`)).length, cell).toBe(10);
+      expect(alarmIds(stack('prod', `jobdeputy-prod-${cell}`)).length, cell).toBeLessThanOrEqual(
+        10,
+      );
     }
   });
 

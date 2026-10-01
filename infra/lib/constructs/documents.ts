@@ -11,9 +11,9 @@ import { SqsQueue } from 'aws-cdk-lib/aws-events-targets';
 import { CfnMalwareProtectionPlan } from 'aws-cdk-lib/aws-guardduty';
 import { Effect, type IRole, PolicyStatement, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
 import { BlockPublicAccess, Bucket, BucketEncryption, ObjectOwnership } from 'aws-cdk-lib/aws-s3';
-import type { ITopic } from 'aws-cdk-lib/aws-sns';
 import { Construct } from 'constructs';
 import { AppFunction } from './node-function.js';
+import type { QueueHealth } from './queue-health.js';
 import { addQueueWorker } from './queue-worker.js';
 
 export interface DocumentsProps {
@@ -23,7 +23,7 @@ export interface DocumentsProps {
   readonly auditTable: Table;
   readonly removalPolicy: RemovalPolicy;
   /** Shared stacks only (see addQueueWorker). */
-  readonly alarmTopic?: ITopic | undefined;
+  readonly health?: QueueHealth | undefined;
 }
 
 const WORKER_TIMEOUT = Duration.seconds(60);
@@ -149,9 +149,9 @@ export class Documents extends Construct {
       workerTimeout: WORKER_TIMEOUT,
       maxReceives: DOCUMENT_MAX_RECEIVES,
       maxConcurrency: 2,
-      alarmTopic: props.alarmTopic,
+      health: props.health,
       // Normal worst case: 3 attempts, each after a 6-minute visibility timeout.
-      backlogAlarmAfter: Duration.minutes(30),
+      backlogAfter: Duration.minutes(30),
     });
 
     // Only scan results for this bucket; the message is GuardDuty's event (bucket, key, ETag, result).

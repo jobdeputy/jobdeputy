@@ -1,6 +1,6 @@
 # T08c: Code filter, per-company limit, and expiry
 
-- **Status:** in-review
+- **Status:** done
 - **Depends on:** T07 ([T08 direction](t08-relevance-filter.md#agreed-direction-2026-09-29-before-research))
 - **Branch / PR:** `t08c-code-filter` ([#58](https://github.com/jobdeputy/jobdeputy/pull/58))
 

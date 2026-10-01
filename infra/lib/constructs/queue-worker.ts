@@ -1,11 +1,9 @@
 import { Duration } from 'aws-cdk-lib';
-import { Alarm, ComparisonOperator, TreatMissingData } from 'aws-cdk-lib/aws-cloudwatch';
-import { SnsAction } from 'aws-cdk-lib/aws-cloudwatch-actions';
 import type { IFunction } from 'aws-cdk-lib/aws-lambda';
 import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
-import type { ITopic } from 'aws-cdk-lib/aws-sns';
 import { Queue, QueueEncryption } from 'aws-cdk-lib/aws-sqs';
 import type { Construct } from 'constructs';
+import type { QueueHealth } from './queue-health.js';
 
 export interface QueueWorkerProps {
   readonly queueName: string;
@@ -17,15 +15,15 @@ export interface QueueWorkerProps {
   /** Maximum concurrent worker invocations (SQS event source, minimum 2). */
   readonly maxConcurrency: number;
   /**
-   * Where alarms go. Shared stacks only: personal and PR stacks have no subscribers,
-   * and alarms there would use up the account's 10 free alarms (review, 2026-09-29).
+   * T08d1: the queue health check that watches this queue (dead letters, and a backlog
+   * past `backlogAfter`). Shared stacks only: personal and PR stacks have no subscribers.
    */
-  readonly alarmTopic?: ITopic | undefined;
+  readonly health?: QueueHealth | undefined;
   /**
-   * Alarm when the oldest message has waited this long: the worker is stuck, throttled,
-   * or failing slowly. Longer than the slowest normal path (retries and delays).
+   * A backlog when messages have waited this long without a break: the worker is stuck,
+   * throttled, or failing slowly. Longer than the slowest normal path (retries and delays).
    */
-  readonly backlogAlarmAfter?: Duration;
+  readonly backlogAfter?: Duration;
 }
 
 export interface QueueWorker {
@@ -34,7 +32,8 @@ export interface QueueWorker {
 }
 
 /**
- * Queue → worker with a dead-letter queue and a "not empty" alarm (decision 0003).
+ * Queue → worker with a dead-letter queue, watched by the queue health check (decision
+ * 0003; T08d1).
  * Created directly in `scope`, so the construct IDs stay stable for existing stacks.
  */
 export function addQueueWorker(scope: Construct, props: QueueWorkerProps): QueueWorker {
@@ -61,32 +60,7 @@ export function addQueueWorker(scope: Construct, props: QueueWorkerProps): Queue
     }),
   );
 
-  if (props.alarmTopic) {
-    new Alarm(scope, 'DeadLetterAlarm', {
-      alarmDescription: `Messages in ${props.queueName}-dlq: work failed after all retries.`,
-      metric: deadLetterQueue.metricApproximateNumberOfMessagesVisible({
-        period: Duration.minutes(5),
-      }),
-      threshold: 1,
-      evaluationPeriods: 1,
-      comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-      treatMissingData: TreatMissingData.NOT_BREACHING,
-    }).addAlarmAction(new SnsAction(props.alarmTopic));
-
-    if (props.backlogAlarmAfter) {
-      new Alarm(scope, 'BacklogAlarm', {
-        alarmDescription: `${props.queueName}: a message has waited over ${props.backlogAlarmAfter.toMinutes()} minutes (worker stuck or throttled). See docs/runbooks/alarms.md.`,
-        metric: queue.metricApproximateAgeOfOldestMessage({
-          period: Duration.minutes(5),
-          statistic: 'Maximum',
-        }),
-        threshold: props.backlogAlarmAfter.toSeconds(),
-        evaluationPeriods: 1,
-        comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-        treatMissingData: TreatMissingData.NOT_BREACHING,
-      }).addAlarmAction(new SnsAction(props.alarmTopic));
-    }
-  }
+  props.health?.watch(props.queueName, queue, deadLetterQueue, props.backlogAfter);
 
   return { queue, deadLetterQueue };
 }

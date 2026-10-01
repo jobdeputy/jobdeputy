@@ -1,7 +1,6 @@
 import { Duration, type RemovalPolicy } from 'aws-cdk-lib';
 import type { Table } from 'aws-cdk-lib/aws-dynamodb';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
-import type { ITopic } from 'aws-cdk-lib/aws-sns';
 import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 import type { CellId } from '../../config/cells.js';
@@ -9,6 +8,7 @@ import type { StageName } from '../../config/stages.js';
 import { aiKeysKeyParameter } from '../keys-stack.js';
 import { AsyncPipeline } from './async-pipeline.js';
 import { AppFunction } from './node-function.js';
+import type { QueueHealth } from './queue-health.js';
 
 export interface AiKeysProps {
   readonly namePrefix: string;
@@ -22,7 +22,7 @@ export interface AiKeysProps {
   readonly usersTable: Table;
   readonly removalPolicy: RemovalPolicy;
   readonly maxReceives: number;
-  readonly alarmTopic?: ITopic | undefined;
+  readonly health?: QueueHealth | undefined;
   /** T08b3: the crawl limits setting, which holds the free platform runs per week and month. */
   readonly limitsParameter: StringParameter;
 }
@@ -130,9 +130,9 @@ export class AiKeys extends Construct {
       workerTimeout: Duration.seconds(30),
       maxReceives: props.maxReceives,
       maxConcurrency: 2,
-      // The dead-letter alarm only: the 10 free alarms are all used (0005). A stuck check
-      // stays visible to the user as `checking`, and they can check again.
-      alarmTopic: props.alarmTopic,
+      // Dead letters only, no backlog limit: a stuck check stays visible to the user as
+      // `checking`, and they can check again.
+      health: props.health,
       queueName: `${props.namePrefix}-key-checks`,
     });
   }

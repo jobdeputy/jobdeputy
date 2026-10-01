@@ -27,6 +27,7 @@ import { Auth } from './constructs/auth.js';
 import { Documents } from './constructs/documents.js';
 import { LlmMonitoring } from './constructs/llm-monitoring.js';
 import { AppFunction } from './constructs/node-function.js';
+import { QueueHealth } from './constructs/queue-health.js';
 
 export interface CellStackProps extends StackProps {
   readonly stage: StageName;
@@ -81,6 +82,14 @@ export class CellStack extends Stack {
      * workers' alarms follow the same rule (sharedAlarms).
      */
     const sharedAlarms = props.owner ? undefined : alarmTopic;
+    // T08d1: one scheduled check watches every worker queue, instead of an alarm per queue.
+    const queueHealth = sharedAlarms
+      ? new QueueHealth(this, 'QueueHealth', {
+          namePrefix: id,
+          alarmTopic: sharedAlarms,
+          removalPolicy,
+        })
+      : undefined;
     const alarm = (logicalId: string, metric: IMetric, description: string) =>
       new Alarm(this, logicalId, {
         alarmDescription: description,
@@ -154,7 +163,7 @@ export class CellStack extends Stack {
       table: documentsTable,
       auditTable,
       removalPolicy,
-      alarmTopic: sharedAlarms,
+      health: queueHealth,
     });
 
     // T13, every stage: reserved test domains (example.com, *.test, …) can never become
@@ -233,7 +242,7 @@ export class CellStack extends Stack {
         workerTimeout: WORKER_TIMEOUT,
         maxReceives: MAX_RECEIVES,
         maxConcurrency: 2,
-        alarmTopic: sharedAlarms,
+        health: queueHealth,
         queueName: `${id}-ping-jobs`,
       });
       ping = { table: pingTable, api, pipeline };
@@ -295,10 +304,10 @@ export class CellStack extends Stack {
       workerTimeout: Duration.seconds(120),
       maxReceives: 3,
       maxConcurrency: 2,
-      alarmTopic: sharedAlarms,
+      health: queueHealth,
       // Deletion is a legal obligation. Normal worst case: 3 attempts, 12-minute
       // visibility each, and the final sweep's 15-minute delay.
-      backlogAlarmAfter: Duration.hours(1),
+      backlogAfter: Duration.hours(1),
       queueName: `${id}-account-deletions`,
     });
     // The worker schedules its one final sweep on its own queue.
@@ -431,7 +440,7 @@ export class CellStack extends Stack {
       usersTable,
       removalPolicy,
       maxReceives: MAX_RECEIVES,
-      alarmTopic: sharedAlarms,
+      health: queueHealth,
       limitsParameter: crawlLimits,
     });
     // T08b3: the LLM dashboard and alarms, in shared stacks only (like the other alarms).
@@ -521,9 +530,9 @@ export class CellStack extends Stack {
       workerTimeout: CRAWL_WORKER_TIMEOUT,
       maxReceives: MAX_RECEIVES,
       maxConcurrency: 2,
-      alarmTopic: sharedAlarms,
+      health: queueHealth,
       // Normal worst case: about 6 minutes (3 attempts with 30 s and 120 s waits).
-      backlogAlarmAfter: Duration.minutes(15),
+      backlogAfter: Duration.minutes(15),
       queueName: `${id}-crawls`,
     });
 

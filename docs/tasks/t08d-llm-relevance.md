@@ -1,8 +1,8 @@
 # T08d: LLM relevance scoring
 
-- **Status:** planned
+- **Status:** in-progress (T08d1 in review)
 - **Depends on:** T08b, T08c
-- **Branch / PR:** —
+- **Branch / PR:** T08d1 `t08d1-queue-health`
 
 ## Goal
 
@@ -17,13 +17,27 @@ Candidate jobs get a score and a short reason from an LLM, in their own queue an
   - Candidates only (`filter.state = candidate`); T08c's `filter.roleIds` and `reasons` go into the prompt as hints, never as the answer.
   - The run uses the user's choice (platform or their own key) and counts against the allowance ([0009](../decisions/0009-llm-architecture-and-own-keys.md)).
   - The prompt-injection rules of [0010](../decisions/0010-platform-ai-model.md): exactly the given job IDs back, once each, and injection cases in the tests.
-  - **Alarms:** after T08b2, shared dev uses all 10 free CloudWatch alarms. Before adding the relevance queue, merge alarms (for example one metric-math alarm over every dead-letter queue), so no new alarm costs money ([0005](../decisions/0005-pre-launch-cost-guardrails.md)).
+  - **Alarms:** after T08b2, shared dev uses all 10 free CloudWatch alarms (12 with T08b3's two paid LLM alarms). A new queue must not add a paid alarm ([0005](../decisions/0005-pre-launch-cost-guardrails.md)); see the decision below (T08d1).
   - **Use T08b3's parts:** `aiUsageUpdate` in the transaction that stores each result (so a retry never counts twice, `runs: 1` on the run's first call), `recordTaskMetrics` after each task call (with `groundingRejections` and `scoreSpread`), `llmMetricsEnvironment(stage)` on the worker, and the crawl's `llm {keySource, provider, model, calls, inputTokens, outputTokens}`. A platform run was already counted at submit (`crawls.aiRun`).
   - A crawl's `aiSource` (T08b2) picks the model. If its key is missing or invalid, the AI work stops with that reason; it never falls back to the platform model silently.
 - Out: ranking for application materials (later).
+
+## Decision (agreed with the maintainer, 2026-10-01)
+
+1. **Three PRs:**
+   - **T08d1, queue health check:** merging alarms with metric math does not save money: a metric-math alarm is billed per metric in its expression, a Metrics Insights alarm per metric it reads (never in the free tier), and a composite alarm costs $0.50 a month ([CloudWatch pricing](https://aws.amazon.com/cloudwatch/pricing/), checked 2026-10-01). Instead, one scheduled Lambda (every 5 minutes, free tier) reads every worker queue's waiting and dead-letter counts (free SQS attributes) and emails the alarm topic when a queue's health changes. It replaces the 8 queue alarms (dev: 12 alarms → 5, all free), new queues add nothing, and its own errors keep one alarm. A backlog is "messages waiting without a break past the queue's limit": the age of the oldest message is only a CloudWatch metric, and reading it costs money.
+   - **T08d2, scoring:** the relevance queue and worker, the `relevance` task, ranking by score, usage.
+   - **T08d3, descriptions:** fetched for candidates only through the board's single-posting endpoint; 404 or 410 closes the job.
+2. **How a run starts:** a second Pipe on the crawls stream passes crawls that end `succeeded` with `aiSource` not `none` and `jobsRelevant > 0`. No new table; one run is one crawl (the allowance counted at submit).
+3. **Fixed worst case per crawl:** at most **50 candidates** (admin setting; shown ones first), in batches of **10 jobs per task call**, so at most 5 task calls × 3 turns = **15 model calls**. Each job: title, company, places, type, and the first 1,500 characters of its description.
+4. **Profile sent to the model:** roles, search settings, headline, skills, and the first ~6,000 characters of the default résumé's text. With the user's own key the résumé goes to that provider, so the consent text shown when the key is saved must say so.
+5. **Skip unchanged jobs:** each score is stored with a hash of its inputs (job `contentHash` and `descriptionHash`, the profile and roles, and the prompt version); a re-crawl scores only jobs whose hash changed.
+6. **Output:** `relevance {score 0–100, bestRoleId?, reasons (at most 3 short ones), model, promptVersion, inputsHash, scoredAt}`. Code checks exactly the given job IDs come back, once each, and that `bestRoleId` is one of the user's roles ([0010](../decisions/0010-platform-ai-model.md)).
+7. **The score decides:** the per-company ranking uses it, and a score **below 30** (admin setting) hides the job as `not_relevant` (reason `llm_low_score`), expiring like other hidden jobs. Jobs not scored (over the cap, or the run failed) keep their T08c verdict.
 
 ## Done when
 
 - [ ] Relevance is tested with synthetic profiles and jobs and a stub model, including edge cases.
 - [ ] Each stored job shows why it matched.
 - [ ] A fixed worst-case number of calls per crawl, stated in the PR.
+- [ ] T08d1: every worker queue is watched by the queue health check, and shared dev stays within the 10 free alarms.

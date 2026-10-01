@@ -80,12 +80,10 @@ describe('async pipeline (T04)', () => {
     });
   });
 
-  it('alarms on a non-empty dead-letter queue', () => {
-    t.hasResourceProperties('AWS::CloudWatch::Alarm', {
-      MetricName: 'ApproximateNumberOfMessagesVisible',
-      Threshold: 1,
-      AlarmActions: [Match.anyValue()],
-    });
+  it('watches dead-letter queues with the queue health check, not a CloudWatch alarm each (T08d1)', () => {
+    expect(JSON.stringify(t.findResources('AWS::CloudWatch::Alarm'))).not.toContain(
+      'ApproximateNumberOfMessagesVisible',
+    );
   });
 
   it('subscribes alert emails only when given through the environment', () => {

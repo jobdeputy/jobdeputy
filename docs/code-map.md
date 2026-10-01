@@ -45,6 +45,7 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | `key-check-worker.ts` | ai-keys queue: decrypts a key, one check call, records `valid` or `invalid` (T08b2) |
 | `deletion-worker.ts` | erases every user table and S3 prefix (T12) |
 | `test-data-reaper.ts` | dev only: requests deletion of old test users |
+| `queue-health.ts` | T08d1: every 5 minutes, checks each worker queue (dead letters, backlog) and emails the alarm topic on changes |
 | `ping-worker.ts` | dev only: T04 async test |
 | `deadline.ts` | stop before Lambda's timeout |
 | `fetch/fetcher.ts` | the only way to fetch: limits, redirects, robots.txt, login detection, failure classes |
@@ -91,7 +92,7 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | `bin/app.ts`, `lib/build-app.ts`, `config/` | which stacks exist per stage, cell, and owner |
 | `lib/cell-stack.ts` | everything in one Region cell: tables, Lambdas, grants, routes, pipelines, alarms |
 | `lib/keys-stack.ts` | the cell's KMS key for own AI keys, in its own stack (kept on delete); its ARN in SSM |
-| `lib/constructs/` | `ai-keys` (key API, key-check worker, KMS grants), `llm-monitoring` (LLM dashboard, alarms, `llmMetricsEnvironment`), `async-pipeline` (stream → Pipe → queue → worker), `queue-worker`, `auth`, `documents` (bucket, malware scan), `node-function` |
+| `lib/constructs/` | `ai-keys` (key API, key-check worker, KMS grants), `llm-monitoring` (LLM dashboard, alarms, `llmMetricsEnvironment`), `async-pipeline` (stream → Pipe → queue → worker), `queue-worker`, `queue-health` (the scheduled check that watches every queue; T08d1), `auth`, `documents` (bucket, malware scan), `node-function` |
 | `lib/cicd-stack.ts` | GitHub OIDC roles (deploy, PR integration) |
 | `lib/guards.ts` | cost and Region guard checks |
 
