@@ -29,8 +29,16 @@ import type { Context, SQSBatchResponse, SQSEvent, SQSRecord } from 'aws-lambda'
 import { ulid } from 'ulid';
 import { withDeadline } from './deadline.js';
 import { createFetcher, FetchError, type FetchedPage } from './fetch/fetcher.js';
+import type { Board } from './jobs/boards.js';
 import { type FetchFn, readJobs } from './jobs/crawl-jobs.js';
-import { type FitInputs, fitInputsLoader, fitJobs, type ShownStore } from './relevance/fit.js';
+import { type DescriptionReading, readDescriptions } from './jobs/descriptions.js';
+import {
+  type FitInputs,
+  type FitResult,
+  fitInputsLoader,
+  fitJobs,
+  type ShownStore,
+} from './relevance/fit.js';
 
 const logger = createLogger('crawl-worker');
 
@@ -61,6 +69,10 @@ export interface CrawlWorkerDeps {
     jobIds: string[],
     expiresAt: number,
   ) => Promise<ClosedJob[]>;
+  /** T08d3: which of these jobs already have a description. */
+  withDescription: (userId: string, jobIds: string[]) => Promise<Set<string>>;
+  /** T08d3: closes jobs whose posting is gone (404 or 410). Returns the jobs closed. */
+  closeGone: (userId: string, jobIds: string[], expiresAt: number) => Promise<ClosedJob[]>;
   /** T08c: the user's roles, search settings, and limits, for the code filter. */
   fitInputs: (userId: string) => Promise<FitInputs>;
   /** T08c: each company's shown jobs (`usage` `COMPANY#`). */
@@ -101,6 +113,37 @@ export function crawlErrorFrom(error: FetchError): CrawlError {
     code: error.code,
     message: error.message === base ? base : `${base} (${error.message})`,
   };
+}
+
+/**
+ * T08d3: reads the postings of the top `max` candidates that have no description, in the
+ * list or stored from an earlier crawl. Nothing to read: undefined.
+ */
+async function describeCandidates(
+  userId: string,
+  board: Board,
+  fit: FitResult,
+  max: number,
+  fetch: FetchFn,
+  deps: CrawlWorkerDeps,
+): Promise<DescriptionReading | undefined> {
+  const byId = new Map(fit.jobs.map((j) => [j.jobId, j]));
+  const missing = fit.ranked.slice(0, max).flatMap((id) => {
+    const job = byId.get(id);
+    return job && job.description === undefined ? [job] : [];
+  });
+  if (missing.length === 0) return undefined;
+  const stored = await deps.withDescription(
+    userId,
+    missing.map((j) => j.jobId),
+  );
+  const todo = missing.filter((j) => !stored.has(j.jobId));
+  if (todo.length === 0) return undefined;
+  return readDescriptions(board, todo, fetch, {
+    now: deps.now(),
+    remainingMs: deps.remainingMs,
+    sleep: deps.sleep,
+  });
 }
 
 export async function processRecord(
@@ -159,10 +202,12 @@ export async function processRecord(
     throw new RetryLaterError(reason);
   };
 
+  // One fetcher for the crawl: it remembers robots.txt for the descriptions too.
+  const fetch = deps.newFetcher();
   try {
     const { page, jobs, extraction, board, requests, complete } = await withDeadline(
       (async () => {
-        const reading = await readJobs(crawl.url, deps.newFetcher(), {
+        const reading = await readJobs(crawl.url, fetch, {
           now: deps.now(),
           sleep: deps.sleep,
         });
@@ -172,33 +217,51 @@ export async function processRecord(
       deps.remainingMs() - SAFETY_MARGIN_MS,
     );
     const key = crawlKeys(userId, crawlId).page;
-    const { saved, closed, listedJobIds, fit, inputs } = await withDeadline(
+    const { saved, closed, listedJobIds, fit, inputs, described } = await withDeadline(
       (async () => {
         // T08c: filter every job, rank each company's candidates, then save with the result.
         const inputs = await deps.fitInputs(userId);
         const expiresAt = Math.floor(deps.now().getTime() / 1000) + inputs.expiryDays * 86_400;
         const fit = await fitJobs(userId, jobs, inputs, deps.shown);
+        // T08d3: the top candidates' descriptions, where the board's list has none.
+        const described = board
+          ? await describeCandidates(userId, board, fit, inputs.relevanceMaxJobs, fetch, deps)
+          : undefined;
+        const found = described
+          ? fit.jobs.map((j) => ({ ...j, ...described.descriptions.get(j.jobId) }))
+          : fit.jobs;
         const context = { sourceId: crawl.sourceId, crawlId, expiresAt };
-        const saved = await deps.saveJobs(userId, fit.jobs, context);
+        const saved = await deps.saveJobs(userId, found, context);
         await deps.markOverLimit(userId, fit.pushedOut, expiresAt);
-        if (extraction.outcome !== 'read') return { saved, closed: 0, fit, inputs };
+        // Closed jobs free their places in their company's shown list.
+        const release = async (closedJobs: ClosedJob[]) => {
+          const byCompany = new Map<string, string[]>();
+          for (const j of closedJobs)
+            byCompany.set(j.companyKey, [...(byCompany.get(j.companyKey) ?? []), j.jobId]);
+          for (const [companyKey, ids] of byCompany)
+            await deps.shown.release(userId, companyKey, ids);
+        };
+        if (described && described.gone.length > 0) {
+          await release(await deps.closeGone(userId, described.gone, expiresAt));
+        }
+        const done = {
+          saved,
+          fit,
+          inputs,
+          described,
+          listedJobIds: undefined as string[] | undefined,
+        };
+        if (extraction.outcome !== 'read') return { ...done, closed: 0 };
         // T07c: what this page lists now. Only a complete crawl can tell a job is gone;
         // a partial one keeps what it knew and adds what it read.
         const seen = jobs.map((j) => j.jobId);
         const previous = await deps.listedJobIds(userId, crawl.sourceId);
-        if (!complete) {
-          return { saved, closed: 0, fit, inputs, listedJobIds: listed(seen, previous) };
-        }
+        if (!complete) return { ...done, closed: 0, listedJobIds: listed(seen, previous) };
         const current = new Set(seen);
         const missing = previous.filter((id) => !current.has(id));
         const closedJobs = await deps.closeJobs(userId, crawl.sourceId, missing, expiresAt);
-        // Closed jobs free their places in their company's shown list.
-        const byCompany = new Map<string, string[]>();
-        for (const j of closedJobs)
-          byCompany.set(j.companyKey, [...(byCompany.get(j.companyKey) ?? []), j.jobId]);
-        for (const [companyKey, ids] of byCompany)
-          await deps.shown.release(userId, companyKey, ids);
-        return { saved, closed: closedJobs.length, fit, inputs, listedJobIds: seen };
+        await release(closedJobs);
+        return { ...done, closed: closedJobs.length, listedJobIds: seen };
       })(),
       deps.remainingMs() - SAFETY_MARGIN_MS,
     );
@@ -210,7 +273,9 @@ export async function processRecord(
       jobsRelevant: fit.relevant,
       jobsOverLimit: fit.overLimit,
       pagesFetched: requests,
+      ...(described ? { descriptions: described.stats } : {}),
     };
+    const gone = new Set(described?.gone);
     await deps.repo.finish(
       crawl,
       {
@@ -225,7 +290,11 @@ export async function processRecord(
         stats,
         // T08d: what the LLM scores next, when this crawl has an AI source.
         ...(crawl.aiSource && crawl.aiSource !== 'none'
-          ? { candidates: fit.ranked.slice(0, inputs.relevanceMaxJobs) }
+          ? {
+              candidates: fit.ranked
+                .filter((id) => !gone.has(id))
+                .slice(0, inputs.relevanceMaxJobs),
+            }
           : {}),
         extraction,
         source: {
@@ -356,6 +425,8 @@ function defaultDeps(): CrawlWorkerDeps {
     },
     closeJobs: (userId, sourceId, jobIds, expiresAt) =>
       jobs.closeMissing(userId, sourceId, jobIds, expiresAt),
+    withDescription: (userId, jobIds) => jobs.withDescription(userId, jobIds),
+    closeGone: (userId, jobIds, expiresAt) => jobs.closeGone(userId, jobIds, expiresAt),
     fitInputs: fitInputsLoader({ preferences, profiles, crawlSettings, limits }),
     shown,
     markOverLimit: (userId, jobIds, expiresAt) => jobs.markOverLimit(userId, jobIds, expiresAt),

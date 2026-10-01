@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import type {
   Crawl,
   CrawlError,
@@ -123,6 +124,10 @@ function setup(fetchImpl: FetchFn = async () => page(), fitInputs: FitInputs = N
     listedJobIds: vi.fn(async (): Promise<string[]> => []),
     closeJobs: vi.fn(async (_u: string, _s: string, ids: string[], _e: number) =>
       ids.map((jobId) => ({ jobId, companyKey: 'site:example.com' })),
+    ),
+    withDescription: vi.fn(async (_u: string, _ids: string[]) => new Set<string>()),
+    closeGone: vi.fn(async (_u: string, ids: string[], _e: number) =>
+      ids.map((jobId) => ({ jobId, companyKey: 'greenhouse:acme' })),
     ),
     fitInputs: vi.fn(async (): Promise<FitInputs> => fitInputs),
     shown: {
@@ -557,6 +562,76 @@ describe('crawl worker: relevance and the company limit (T08c)', () => {
     expect(deps.shown.put).toHaveBeenCalledTimes(SHOWN_ATTEMPTS);
     expect(deps.saveJobs).not.toHaveBeenCalled();
     expect(state.status).toBe('running');
+  });
+});
+
+describe('crawl worker: descriptions (T08d3)', () => {
+  const fixture = (name: string) =>
+    readFileSync(new URL(`./fixtures/jobs/${name}`, import.meta.url), 'utf8');
+  const json = (url: string, body: string) =>
+    page({ url, contentType: 'application/json', body: new TextEncoder().encode(body) });
+  const LIST = 'https://boards-api.greenhouse.io/v1/boards/acme/jobs';
+
+  /** A Greenhouse board of two jobs: one posting reads, the other is gone. */
+  function board(aiSource = 'platform') {
+    const ctx = setup(async (url) => {
+      if (url === LIST) return json(url, fixture('greenhouse-list.json'));
+      if (url === `${LIST}/4001001`) return json(url, fixture('greenhouse-job.json'));
+      if (url === `${LIST}/4001002`) throw new FetchError('not_found', false);
+      throw new Error(`unexpected ${url}`);
+    });
+    const start = ctx.deps.repo.start.getMockImplementation();
+    ctx.deps.repo.start.mockImplementation(async (...args) => {
+      const crawl = await start?.(...args);
+      return (
+        crawl && ({ ...crawl, url: 'https://job-boards.greenhouse.io/acme', aiSource } as Crawl)
+      );
+    });
+    const saved = () => ctx.deps.saveJobs.mock.calls[0]?.[1] ?? [];
+    const idOf = (externalId: string) => saved().find((j) => j.externalId === externalId)?.jobId;
+    return { ...ctx, saved, idOf };
+  }
+
+  it("reads each candidate's posting, saves its description, and closes a gone one", async () => {
+    const { state, deps, fetch, saved, idOf } = board();
+    expect(await processRecord(record(), deps)).toBe('succeeded');
+    expect(fetch).toHaveBeenCalledWith(`${LIST}/4001001`);
+    expect(saved().find((j) => j.externalId === '4001001')?.description).toBeTruthy();
+    expect(saved().find((j) => j.externalId === '4001002')?.description).toBeUndefined();
+    const gone = idOf('4001002');
+    expect(deps.closeGone).toHaveBeenCalledWith(USER, [gone], EXPIRES_AT);
+    expect(deps.shown.release).toHaveBeenCalledWith(USER, 'greenhouse:acme', [gone]);
+    expect(state.stats?.descriptions).toEqual({ fetched: 1, gone: 1, failed: 0, skipped: 0 });
+    // A gone job is never scored.
+    const outcome = deps.repo.finish.mock.calls[0]?.[1];
+    const candidates = outcome?.status === 'succeeded' ? outcome.candidates : undefined;
+    expect(candidates).toEqual([idOf('4001001')]);
+  });
+
+  it('skips jobs that already have a stored description, and crawls without AI read them too', async () => {
+    const probe = board('none');
+    await processRecord(record(), probe.deps);
+    const stored = probe.idOf('4001001') as string;
+    const { state, deps, fetch } = board('none');
+    deps.withDescription.mockResolvedValue(new Set([stored]));
+    await processRecord(record(), deps);
+    expect(fetch.mock.calls.map((c) => c[0])).toEqual([LIST, `${LIST}/4001002`]);
+    expect(state.stats?.descriptions).toEqual({ fetched: 0, gone: 1, failed: 0, skipped: 0 });
+  });
+
+  it('a page without a board reads nothing more', async () => {
+    const { state, deps, fetch } = setup(async () =>
+      page({
+        body: new TextEncoder().encode(
+          '<script type="application/ld+json">{"@type":"JobPosting","title":"Engineer","url":"/jobs/1"}</script>',
+        ),
+      }),
+    );
+    await processRecord(record(), deps);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(deps.withDescription).not.toHaveBeenCalled();
+    expect(state.stats).toMatchObject({ jobsRelevant: 1 });
+    expect(state.stats?.descriptions).toBeUndefined();
   });
 });
 

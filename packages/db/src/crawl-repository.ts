@@ -150,6 +150,20 @@ export interface CrawlStats {
   jobsRelevant?: number;
   /** T08c: kept jobs hidden by the per-company limit. */
   jobsOverLimit?: number;
+  /** T08d3: candidates' descriptions read from their own posting. */
+  descriptions?: DescriptionStats;
+}
+
+/** T08d3: postings read for candidates whose board list has no description. */
+export interface DescriptionStats {
+  /** Read, with a description. */
+  fetched: number;
+  /** Answered 404 or 410: the job was closed. */
+  gone: number;
+  /** Any other answer: the job keeps no description until a later crawl. */
+  failed: number;
+  /** Not tried: the crawl's request limit or time ran out. */
+  skipped: number;
 }
 
 /** Why a crawl saved only part of what it could have read (0008). */

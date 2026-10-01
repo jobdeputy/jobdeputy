@@ -500,7 +500,8 @@ export class CellStack extends Stack {
     });
     // T07b: creates or updates each job it read (one idempotent update per job); T07c:
     // closes jobs a page no longer lists (updates too, never deletes; T08c: expiry does).
-    jobsTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem');
+    // T08d3: reads which candidates already have a description (BatchGetItem).
+    jobsTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem', 'dynamodb:BatchGetItem');
     // The deletion record, and (T08c) the profile's headline and skills for the filter.
     usersTable.grant(crawlWorker.fn, 'dynamodb:GetItem');
     crawlsTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem');

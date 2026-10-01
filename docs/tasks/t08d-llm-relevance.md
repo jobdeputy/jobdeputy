@@ -1,8 +1,8 @@
 # T08d: LLM relevance scoring
 
-- **Status:** in-progress (T08d1 done; T08d2 in review)
+- **Status:** done (T08d1, T08d2, T08d3)
 - **Depends on:** T08b, T08c
-- **Branch / PR:** T08d1 `t08d1-queue-health` ([#59](https://github.com/jobdeputy/jobdeputy/pull/59)); T08d2 `t08d2-relevance-scoring`
+- **Branch / PR:** T08d1 `t08d1-queue-health` ([#59](https://github.com/jobdeputy/jobdeputy/pull/59)); T08d2 `t08d2-relevance-scoring` ([#60](https://github.com/jobdeputy/jobdeputy/pull/60)); T08d3 `t08d3-descriptions`
 
 ## Goal
 
@@ -46,9 +46,19 @@ Candidate jobs get a score and a short reason from an LLM, in their own queue an
 - **Eval:** `relevance@v1` cases are the smoke eval's synthetic people and jobs with roles, search settings, and résumé text; the eval runs them through `scoreRelevance` like the worker. Baseline on the platform model: 22/22 labels, 4/4 injections resisted, every output valid on the first try.
 - **Consent:** saving an own key now says the profile and résumé text go to the provider too.
 
+## T08d3 notes (agreed 2026-10-01)
+
+- **Where:** the crawl worker, which already fetches with the address checks, robots.txt, and the host gap. The relevance worker, which holds users' keys, stays off the open web, and crawls without AI get descriptions too.
+- **Which jobs:** the top `relevanceMaxJobs` candidates (the same ones a scoring run takes) whose list entry has no description and whose stored job has none (one `BatchGetItem` projecting `descriptionHash`). Greenhouse by `externalId`; Workday by the path in the job's link; Lever and Ashby lists already carry descriptions.
+- **Limits (`DESCRIPTION_LIMITS`):** at most 50 postings, one host gap (1 s) apart, while 30 s of the Lambda's time stays for saving and finishing. What is not read waits for the next crawl; nothing here fails the crawl or makes it partial.
+- **Answers:** a description is saved with the job (its `descriptionHash` changes the job's relevance inputs); 404 or 410 closes the job after the save, frees its place in the company's shown list, and leaves it out of `candidates`; a 403 or 429 stops the reading; other failures leave the job without a description. Counted in `stats.descriptions`.
+- **Known limits:** a board that still lists a gone posting opens the job again on the next crawl, which reads it and closes it again (one request). A description is not read again when it changes, the keyword filter does not re-run on it, and the Workday posting's fuller places stay unused.
+- **Tests:** unit tests only. Boards are recognised by their real hosts, so a deployed test would call Greenhouse or Workday itself.
+
 ## Done when
 
 - [x] Relevance is tested with synthetic profiles and jobs and a stub model, including edge cases (T08d2).
 - [x] Each stored job shows why it matched (`relevance.reasons`, `GET /me/jobs`; T08d2).
 - [x] A fixed worst-case number of calls per crawl, stated in the PR (6 task calls, 18 model calls; T08d2).
 - [x] T08d1: every worker queue is watched by the queue health check, and shared dev stays within the 10 free alarms.
+- [x] T08d3: candidates without a description get one from their posting, within fixed limits; a gone posting closes the job.
