@@ -49,7 +49,7 @@ export const TASKS: TaskEntry[] = [
         employmentType: 'full_time',
         salary: '50000-60000 GBP per year',
         description: 'Sample description.',
-        hints: ['matched r1 (title_match)'],
+        hints: ['matches target role "Sample role" (title_match)'],
       },
     ],
   }),

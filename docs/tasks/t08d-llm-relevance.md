@@ -55,6 +55,14 @@ Candidate jobs get a score and a short reason from an LLM, in their own queue an
 - **Known limits:** a board that still lists a gone posting opens the job again on the next crawl, which reads it and closes it again (one request). A description is not read again when it changes, the keyword filter does not re-run on it, and the Workday posting's fuller places stay unused.
 - **Tests:** unit tests only. Boards are recognised by their real hosts, so a deployed test would call Greenhouse or Workday itself.
 
+## Reasons fix: `relevance@v2` (#62, 2026-10-01)
+
+- **Found:** on shared dev the platform model wrote reasons such as "matches target role r1": the keyword filter's hint (`matched r1 (title_match)`) put the short ID right beside the job.
+- **Prompt:** reasons are read by the job seeker; a role is named by its title, never by an ID, and a reason gives only what the profile or the job states. The hint names roles by title (`matches target role "Backend Engineer" (title_match)`); `bestRoleId` keeps the short ID.
+- **Check:** a reason that quotes, as a whole word in any case, an ID sent in that call (`j1`, `r1`) is dropped and counted as a grounding rejection; the score stays. Only sent IDs count, so text such as "R2 database" passes.
+- **Eval:** "reasons quoting an ID" (from the raw output, before the drop) is shown in the summary; a rate more than 5 points above the baseline is a regression.
+- **Stored scores:** the new version changes every `inputsHash`, so a candidate is scored again on its next crawl; jobs that are no longer candidates keep their `relevance@v1` reasons.
+
 ## Done when
 
 - [x] Relevance is tested with synthetic profiles and jobs and a stub model, including edge cases (T08d2).

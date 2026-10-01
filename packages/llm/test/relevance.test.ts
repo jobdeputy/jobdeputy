@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { relevanceCases } from '../eval/cases/relevance.js';
-import { evalRelevance } from '../eval/harness.js';
+import { compare, evalRelevance } from '../eval/harness.js';
 import { stubSource } from '../src/stub-model.js';
 import { runTask } from '../src/task.js';
 import {
@@ -150,13 +150,42 @@ describe('evalRelevance', () => {
     });
     const report = await evalRelevance(relevanceCases, source, 1);
     expect(report).toMatchObject({
-      promptVersion: 'relevance@v1',
+      promptVersion: 'relevance@v2',
       calls: 2,
       labelsCorrect: report.labelsTotal,
       injectionResisted: report.injectionTotal,
       groundingDropped: 2,
+      reasonsTotal: 0,
+      reasonsWithIds: 0,
       failures: [],
     });
+  });
+
+  it('counts reasons quoting an ID, and fails when they rise above the baseline', async () => {
+    const source = (reason: string) =>
+      stubSource((_, messages) => {
+        const text = JSON.stringify(messages);
+        const testCase = relevanceCases.find((c) => text.includes(c.input.profile.headline ?? '?'));
+        if (!testCase) throw new Error('unknown case');
+        return {
+          tool: {
+            results: testCase.input.jobs.map((job) => ({
+              id: job.id,
+              score: testCase.expected[job.id] ? 30 : 29,
+              reasons: [reason],
+            })),
+          },
+        };
+      });
+    const clean = await evalRelevance(relevanceCases, source('Fits the target role'), 1);
+    const quoting = await evalRelevance(relevanceCases, source('Matches target role R1.'), 1);
+    expect(quoting.reasonsWithIds).toBe(quoting.reasonsTotal);
+    expect(quoting.reasonsTotal).toBeGreaterThan(0);
+    expect(quoting.failures).toContain('reason quotes an ID: Matches target role R1.');
+    expect(compare(clean, clean).regressions).toEqual([]);
+    expect(compare(quoting, clean).regressions).toEqual([
+      'reasons quoting an ID 100% (baseline 0%)',
+    ]);
   });
 });
 
@@ -230,6 +259,30 @@ describe('scoreRelevance', () => {
       { id: 'j2', score: 5, reasons: [] },
     ]);
     expect(rejections).toBe(3);
+  });
+
+  it('drops reasons quoting an ID sent in the call (#62), keeping the score', async () => {
+    const scored: unknown[] = [];
+    let rejections = 0;
+    const source = stubSource(() => ({
+      tool: {
+        results: [
+          { id: 'j1', score: 80, reasons: ['Matches target role r1.', 'Backend work in Pune'] },
+          { id: 'j2', score: 40, reasons: ['Like J2', 'Needs R2 database skills', 'See j10'] },
+        ],
+      },
+    }));
+    await scoreRelevance(input().profile, jobs(2), source, {
+      onCall: async (call) => {
+        scored.push(...call.scored);
+        rejections += call.groundingRejections;
+      },
+    });
+    expect(scored).toEqual([
+      { id: 'j1', score: 80, reasons: ['Backend work in Pune'] },
+      { id: 'j2', score: 40, reasons: ['Needs R2 database skills', 'See j10'] },
+    ]);
+    expect(rejections).toBe(2);
   });
 
   it('stops when canStart says so, and when storing a call fails', async () => {

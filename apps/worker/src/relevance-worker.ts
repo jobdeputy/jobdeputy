@@ -194,7 +194,7 @@ export async function processRecord(
   try {
     await scoreRelevance(
       user.profile,
-      [...short].map(([id, job]) => modelJob(job, id, user.roleIds)),
+      [...short].map(([id, job]) => modelJob(job, id, user)),
       model,
       {
         // A fixed worst case per crawl, across retries too (RELEVANCE_MAX_CALLS task calls).

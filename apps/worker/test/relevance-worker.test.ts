@@ -204,7 +204,7 @@ describe('relevance worker: a run', () => {
           score: 90,
           bestRoleId: 'role-backend',
           reasons: ['why'],
-          promptVersion: 'relevance@v1',
+          promptVersion: 'relevance@v2',
           scoredAt: NOW.toISOString(),
         }),
       },

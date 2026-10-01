@@ -1,7 +1,12 @@
 import { groundResults } from '../src/grounding.js';
 import type { ModelSource } from '../src/models.js';
 import { promptVersion, runTask, type Task, type TaskResult } from '../src/task.js';
-import { relevanceTask, scoreRelevance } from '../src/tasks/relevance.js';
+import {
+  idPattern,
+  type RelevanceOutput,
+  relevanceTask,
+  scoreRelevance,
+} from '../src/tasks/relevance.js';
 import { type SmokeOutput, smokeTask } from '../src/tasks/smoke.js';
 import type { RelevanceCase } from './cases/relevance.js';
 import type { SmokeCase } from './cases/smoke.js';
@@ -22,6 +27,9 @@ export interface EvalReport {
   injectionResisted: number;
   injectionTotal: number;
   groundingDropped: number;
+  /** Relevance (#62): reasons returned, and those quoting a short ID (dropped before storing). */
+  reasonsTotal?: number;
+  reasonsWithIds?: number;
   inputTokens: number;
   outputTokens: number;
   medianMs: number;
@@ -84,15 +92,19 @@ export async function evalRelevance(
   minScore = 30,
 ): Promise<EvalReport> {
   const report = emptyReport(promptVersion(relevanceTask as Task<unknown, unknown>), source);
+  report.reasonsTotal = 0;
+  report.reasonsWithIds = 0;
   const durations: number[] = [];
   for (let run = 0; run < runs; run++) {
     for (const testCase of cases) {
+      const roles = testCase.input.profile.roles.map((r) => r.id);
       const answers = new Map<string, boolean>();
       await scoreRelevance(testCase.input.profile, testCase.input.jobs, source, {
-        onCall: async ({ result, scored, groundingRejections }) => {
+        onCall: async ({ result, sent, scored, groundingRejections }) => {
           addCall(report, durations, result);
           if (result.status !== 'ok')
             report.failures.push(`${testCase.id}#${run}: ${result.reason}`);
+          else countReasons(report, result.output, [...sent, ...roles]);
           report.groundingDropped += groundingRejections;
           for (const s of scored) answers.set(s.id, s.score >= minScore);
         },
@@ -104,6 +116,20 @@ export async function evalRelevance(
   }
   report.medianMs = median(durations);
   return report;
+}
+
+/** Counts the reasons in the model's raw output, and those quoting an ID sent in the call. */
+function countReasons(report: EvalReport, output: RelevanceOutput, ids: string[]): void {
+  const pattern = idPattern(ids);
+  for (const result of output.results) {
+    for (const reason of result.reasons) {
+      report.reasonsTotal = (report.reasonsTotal ?? 0) + 1;
+      if (pattern.test(reason)) {
+        report.reasonsWithIds = (report.reasonsWithIds ?? 0) + 1;
+        report.failures.push(`reason quotes an ID: ${reason}`);
+      }
+    }
+  }
 }
 
 function emptyReport(version: string, source: ModelSource): EvalReport {
@@ -168,7 +194,7 @@ function median(values: number[]): number {
   return sorted[Math.floor(sorted.length / 2)] ?? 0;
 }
 
-const rate = (part: number, total: number) => (total === 0 ? 1 : part / total);
+const rate = (part: number, total: number, none = 1) => (total === 0 ? none : part / total);
 
 /** How far a quality rate may fall below the baseline before it counts as a regression. */
 export const TOLERANCE = 0.05;
@@ -200,6 +226,15 @@ export function compare(report: EvalReport, baseline: EvalReport | undefined) {
       rate(baseline.labelsCorrect, baseline.labelsTotal),
     ],
   ];
+  if (report.reasonsTotal !== undefined) {
+    const now = rate(report.reasonsWithIds ?? 0, report.reasonsTotal, 0);
+    const before = baseline.reasonsTotal
+      ? rate(baseline.reasonsWithIds ?? 0, baseline.reasonsTotal, 0)
+      : 0;
+    if (now > before + TOLERANCE) {
+      regressions.push(`reasons quoting an ID ${pct(now)} (baseline ${pct(before)})`);
+    }
+  }
   for (const [name, now, before] of checks) {
     if (now < before - TOLERANCE) regressions.push(`${name} ${pct(now)} (baseline ${pct(before)})`);
   }
@@ -230,6 +265,12 @@ export function summary(
     `| Now ${row(report)}`,
     ...(baseline ? [`| Baseline ${row(baseline)}`] : []),
     '',
+    ...(report.reasonsTotal !== undefined
+      ? [
+          `Reasons quoting an ID: ${report.reasonsWithIds ?? 0} of ${report.reasonsTotal}${baseline?.reasonsTotal !== undefined ? ` (baseline ${baseline.reasonsWithIds ?? 0} of ${baseline.reasonsTotal})` : ''}`,
+          '',
+        ]
+      : []),
     ...result.regressions.map((line) => `- Regression: ${line}`),
     ...result.warnings.map((line) => `- Warning: ${line}`),
     ...report.failures.slice(0, 10).map((line) => `- Miss: ${line}`),
@@ -255,6 +296,14 @@ export function summaryText(
     ['Labels correct', (r) => `${r.labelsCorrect} of ${r.labelsTotal}`],
     ['Injections resisted', (r) => `${r.injectionResisted} of ${r.injectionTotal}`],
     ['Results dropped by grounding', (r) => String(r.groundingDropped)],
+    ...(report.reasonsTotal !== undefined
+      ? [
+          [
+            'Reasons quoting an ID',
+            (r: EvalReport) => `${r.reasonsWithIds ?? 0} of ${r.reasonsTotal ?? 0}`,
+          ] as [string, (r: EvalReport) => string],
+        ]
+      : []),
     ['Tokens per call', (r) => String(tokens(r))],
     ['Median time', (r) => `${r.medianMs} ms`],
   ];

@@ -47,7 +47,7 @@ export interface RelevanceJob {
   employmentType?: string | undefined;
   salary?: string | undefined;
   description?: string | undefined;
-  /** The keyword filter's hints (T08c), for example `matched r1 (title_match)`. */
+  /** The keyword filter's hints (T08c), for example `matches target role "Backend Engineer" (title_match)`. */
   hints: string[];
 }
 
@@ -114,7 +114,7 @@ function jobText(job: RelevanceJob): string {
 
 export const relevanceTask = defineTask<RelevanceInput, RelevanceOutput>({
   name: 'relevance',
-  version: 1,
+  version: 2,
   system: `You score how well each job fits a job seeker, from 0 to 100.
 - 80-100: the kind of role they want, at their level, somewhere and in a way they can work, and they have most of the skills it asks for.
 - 50-79: a good fit with some gaps.
@@ -123,6 +123,7 @@ export const relevanceTask = defineTask<RelevanceInput, RelevanceOutput>({
 Judge only from the profile, target roles, search settings, and résumé given, and from what the job says. Details a job does not give are not evidence against it.
 The keyword filter's notes are hints from a simple word match, not the answer.
 For every job return its id, its score, bestRoleId (the id of the target role it fits best; leave it out when none fits), and up to 3 short reasons (at most 15 words each) about this job and this person.
+The job seeker reads the reasons: name a target role by its title, never by its id, and never write an id such as r1 or j1. Give only reasons the profile or the job states; do not guess what job seekers usually want.
 Return every job id exactly once.`,
   schema: relevanceOutput,
   limits: { maxTokens: 1_500, totalTokens: 40_000, timeoutMs: 60_000 },
@@ -154,6 +155,16 @@ export interface ScoredJob {
   reasons: string[];
 }
 
+/**
+ * Finds the short IDs sent in a call (`j1`, `r1`) quoted as whole words, in any case. A reason
+ * that quotes one is not for the user's eyes (#62); real text such as "R2 database" passes.
+ */
+export function idPattern(ids: readonly string[]): RegExp {
+  if (ids.length === 0) return /(?!)/;
+  const words = ids.map((id) => id.replace(/[^A-Za-z0-9]/g, '\\$&'));
+  return new RegExp(`(?<![A-Za-z0-9])(?:${words.join('|')})(?![A-Za-z0-9])`, 'i');
+}
+
 /** One finished task call, handed to the caller to store before the next one starts. */
 export interface RelevanceCall {
   result: TaskResult<RelevanceOutput>;
@@ -161,7 +172,7 @@ export interface RelevanceCall {
   sent: string[];
   /** Grounded results: IDs that were sent, each once, with a known role or none. */
   scored: ScoredJob[];
-  /** Results dropped (unknown or repeated IDs) plus roles that were not given. */
+  /** Results dropped (unknown or repeated IDs), unknown roles, and reasons quoting an ID. */
   groundingRejections: number;
 }
 
@@ -190,6 +201,7 @@ export async function scoreRelevance(
   const scored = new Set<string>();
   const call = async (batch: RelevanceJob[]) => {
     const sent = batch.map((j) => j.id);
+    const ids = idPattern([...sent, ...roleIds]);
     const result = await runTask(relevanceTask, { profile, jobs: batch }, source);
     let groundingRejections = 0;
     const kept: ScoredJob[] = [];
@@ -199,11 +211,13 @@ export async function scoreRelevance(
       for (const r of grounded.kept) {
         const known = r.bestRoleId != null && roleIds.has(r.bestRoleId);
         if (r.bestRoleId != null && !known) groundingRejections += 1;
+        const reasons = r.reasons.filter((reason) => !ids.test(reason));
+        groundingRejections += r.reasons.length - reasons.length;
         kept.push({
           id: r.id,
           score: r.score,
           ...(known ? { bestRoleId: r.bestRoleId as string } : {}),
-          reasons: r.reasons,
+          reasons,
         });
       }
     }

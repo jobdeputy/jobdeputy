@@ -60,10 +60,15 @@ export function modelProfile(user: FilterProfile, resume?: string): ModelProfile
   return { profile, roleIds, hash: sha(profile) };
 }
 
-/** One job as the model sees it, with the keyword filter's verdict as a hint. */
-export function modelJob(job: Job, id: string, roleIds: Map<string, string>): RelevanceJob {
-  const shortRole = new Map([...roleIds].map(([short, roleId]) => [roleId, short]));
-  const matched = (job.filter?.roleIds ?? []).flatMap((r) => shortRole.get(r) ?? []);
+/**
+ * One job as the model sees it, with the keyword filter's verdict as a hint. The hint names
+ * roles by title (#62): with the short ID beside it, the model quoted it in its reasons.
+ */
+export function modelJob(job: Job, id: string, user: ModelProfile): RelevanceJob {
+  const titles = new Map(
+    user.profile.roles.map((r) => [user.roleIds.get(r.id), `"${r.title}"`] as const),
+  );
+  const matched = (job.filter?.roleIds ?? []).flatMap((r) => titles.get(r) ?? []);
   const reasons = (job.filter?.reasons ?? []).join(', ');
   const salary = job.salary
     ? `${[job.salary.min, job.salary.max].filter((n) => n !== undefined).join('-')} ${job.salary.currency} per ${job.salary.period}`
@@ -79,7 +84,7 @@ export function modelJob(job: Job, id: string, roleIds: Map<string, string>): Re
     description: job.description,
     hints:
       matched.length > 0
-        ? [`matched ${matched.join(', ')} (${reasons})`]
+        ? [`matches target role ${matched.join(', ')} (${reasons})`]
         : reasons
           ? [reasons]
           : [],
