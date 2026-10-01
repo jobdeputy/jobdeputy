@@ -366,6 +366,53 @@ export class JobRepository {
   }
 
   /**
+   * T08d3: jobs whose posting answered 404 or 410 while its board still lists it. Closed
+   * like a job no page lists (a later crawl that lists it opens it again); untouched by
+   * the user (`status` `new`), it expires at `expiresAt`. Returns the jobs closed now.
+   */
+  async closeGone(userId: string, jobIds: string[], expiresAt: number): Promise<ClosedJob[]> {
+    const now = this.now().toISOString();
+    const closed: ClosedJob[] = [];
+    await this.eachJob(jobIds, async (jobId) => {
+      try {
+        const res = await this.client.send(
+          new UpdateCommand({
+            TableName: this.table,
+            Key: { userId, jobId },
+            UpdateExpression: 'SET #closedAt = :now, updatedAt = :now',
+            ConditionExpression: 'attribute_exists(userId) AND attribute_not_exists(#closedAt)',
+            ExpressionAttributeNames: { '#closedAt': 'closedAt' },
+            ExpressionAttributeValues: { ':now': now },
+            ReturnValues: 'ALL_NEW',
+          }),
+        );
+        const job = res.Attributes;
+        closed.push({ jobId, companyKey: String(job?.companyKey ?? '') });
+        if (job?.status !== 'new') return;
+        await this.client.send(
+          new UpdateCommand({
+            TableName: this.table,
+            Key: { userId, jobId },
+            UpdateExpression: 'SET #ttl = if_not_exists(#ttl, :ttl)',
+            // Not when it was opened again or acted on meanwhile.
+            ConditionExpression: '#closedAt = :now AND #status = :new',
+            ExpressionAttributeNames: {
+              '#ttl': 'ttl',
+              '#closedAt': 'closedAt',
+              '#status': 'status',
+            },
+            ExpressionAttributeValues: { ':ttl': expiresAt, ':now': now, ':new': 'new' },
+          }),
+        );
+      } catch (error) {
+        // Deleted, already closed, or changed meanwhile.
+        if (!isConditionFailure(error)) throw error;
+      }
+    });
+    return closed;
+  }
+
+  /**
    * T08c: jobs another crawl pushed out of their company's shown list. Hidden, so they
    * expire at `expiresAt` unless the user acted on them. Missing jobs are skipped.
    */
@@ -473,7 +520,25 @@ export class JobRepository {
 
   /** T08d: the given jobs (missing ones left out), read consistently. */
   async getMany(userId: string, jobIds: string[]): Promise<Job[]> {
-    const found: Job[] = [];
+    return (await this.batchGet(userId, jobIds, { ConsistentRead: true })) as unknown as Job[];
+  }
+
+  /** T08d3: which of these jobs already have a description (missing jobs have none). */
+  async withDescription(userId: string, jobIds: string[]): Promise<Set<string>> {
+    const found = await this.batchGet(userId, jobIds, {
+      ProjectionExpression: 'jobId, descriptionHash',
+    });
+    return new Set(
+      found.filter((j) => j.descriptionHash !== undefined).map((j) => String(j.jobId)),
+    );
+  }
+
+  private async batchGet(
+    userId: string,
+    jobIds: string[],
+    options: { ConsistentRead?: boolean; ProjectionExpression?: string },
+  ): Promise<Record<string, unknown>[]> {
+    const found: Record<string, unknown>[] = [];
     for (let i = 0; i < jobIds.length; i += BATCH_GET_MAX) {
       let keys: Record<string, unknown>[] = jobIds
         .slice(i, i + BATCH_GET_MAX)
@@ -481,11 +546,9 @@ export class JobRepository {
       for (let attempt = 1; keys.length > 0; attempt++) {
         if (attempt > BATCH_GET_ATTEMPTS) throw new Error('jobs not read after retries');
         const res = await this.client.send(
-          new BatchGetCommand({
-            RequestItems: { [this.table]: { Keys: keys, ConsistentRead: true } },
-          }),
+          new BatchGetCommand({ RequestItems: { [this.table]: { Keys: keys, ...options } } }),
         );
-        found.push(...((res.Responses?.[this.table] ?? []) as Job[]));
+        found.push(...(res.Responses?.[this.table] ?? []));
         // Throttled reads come back unprocessed: wait a little and read them again.
         keys = res.UnprocessedKeys?.[this.table]?.Keys ?? [];
         if (keys.length > 0) await new Promise((r) => setTimeout(r, 50 * 2 ** attempt));

@@ -101,8 +101,12 @@ describe('crawl pipeline (T06b)', () => {
     expect(actionsOn(worker, 'SourcesTable')).toEqual(['dynamodb:GetItem', 'dynamodb:UpdateItem']);
     expect(actionsOn(worker, 'AuditTable')).toEqual(['dynamodb:PutItem']);
     expect(actionsOn(worker, 'UsersTable')).toEqual(['dynamodb:GetItem']);
-    // T07b: one update per job; never a read, a delete, or a scan.
-    expect(actionsOn(worker, 'JobsTable')).toEqual(['dynamodb:UpdateItem']);
+    // T07b: one update per job; T08d3: a batch read of which have descriptions. Never a
+    // delete, a query, or a scan.
+    expect(actionsOn(worker, 'JobsTable')).toEqual([
+      'dynamodb:BatchGetItem',
+      'dynamodb:UpdateItem',
+    ]);
     const s3 = worker.filter((s) => [s.Action].flat().some((a) => a.startsWith('s3:')));
     expect(s3.flatMap((s) => [s.Action].flat()).sort()).toEqual([
       's3:PutObject',

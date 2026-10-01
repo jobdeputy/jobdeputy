@@ -471,3 +471,61 @@ describe('JobRepository.getMany (T08d)', () => {
     expect(send).toHaveBeenCalledTimes(3);
   });
 });
+
+describe('JobRepository.withDescription (T08d3)', () => {
+  it('reads only the ID and the description hash, and returns the jobs that have one', async () => {
+    const { c, send } = client(() => ({
+      Responses: { Jobs: [{ jobId: 'a', descriptionHash: 'h' }, { jobId: 'b' }] },
+    }));
+    expect([...(await repo(c).withDescription(USER, ['a', 'b', 'missing']))]).toEqual(['a']);
+    const sent = send.mock.calls[0]?.[0] as
+      | { input: { RequestItems: Record<string, unknown> } }
+      | undefined;
+    const req = sent?.input.RequestItems.Jobs;
+    expect(req).toMatchObject({ ProjectionExpression: 'jobId, descriptionHash' });
+    expect(req).not.toHaveProperty('ConsistentRead');
+  });
+});
+
+describe('JobRepository.closeGone (T08d3)', () => {
+  const failed = () => Object.assign(new Error('c'), { name: 'ConditionalCheckFailedException' });
+
+  it('closes an open job, and an untouched one expires', async () => {
+    const { c, send } = client((cmd) =>
+      (cmd as UpdateCommand).input.ReturnValues
+        ? { Attributes: { jobId: 'a', companyKey: 'greenhouse:acme', status: 'new' } }
+        : {},
+    );
+    expect(await repo(c).closeGone(USER, ['a'], 123)).toEqual([
+      { jobId: 'a', companyKey: 'greenhouse:acme' },
+    ]);
+    const [close, expire] = send.mock.calls.map((call) => (call[0] as UpdateCommand).input);
+    expect(close).toMatchObject({
+      UpdateExpression: 'SET #closedAt = :now, updatedAt = :now',
+      ConditionExpression: 'attribute_exists(userId) AND attribute_not_exists(#closedAt)',
+    });
+    expect(expire).toMatchObject({
+      UpdateExpression: 'SET #ttl = if_not_exists(#ttl, :ttl)',
+      ExpressionAttributeValues: expect.objectContaining({ ':ttl': 123 }),
+    });
+  });
+
+  it('a job the user acted on is kept; a missing or closed one is skipped', async () => {
+    const { c, send } = client((cmd) => {
+      const key = (cmd as UpdateCommand).input.Key?.jobId;
+      if (key === 'missing') throw failed();
+      return { Attributes: { jobId: key, companyKey: 'k', status: 'shortlisted' } };
+    });
+    expect(await repo(c).closeGone(USER, ['kept', 'missing'], 123)).toEqual([
+      { jobId: 'kept', companyKey: 'k' },
+    ]);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it('other errors are thrown', async () => {
+    const { c } = client(() => {
+      throw new Error('throttled');
+    });
+    await expect(repo(c).closeGone(USER, ['a'], 123)).rejects.toThrow('throttled');
+  });
+});

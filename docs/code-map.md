@@ -55,6 +55,7 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | `jobs/crawl-jobs.ts` | what one crawl reads: order of sources, paging, `CRAWL_LIMITS`, partial reasons |
 | `jobs/read-page.ts` | a fetched page: board redirect, schema.org, embedded board |
 | `jobs/boards.ts`, `jobs/feeds.ts` | job-board detection and requests; readers for Greenhouse, Lever, Ashby, Workday |
+| `jobs/descriptions.ts` | T08d3: reads top candidates' postings for the descriptions a board list leaves out; `DESCRIPTION_LIMITS`; 404/410 is gone |
 | `jobs/schema-org.ts` | schema.org `JobPosting` |
 | `jobs/job.ts`, `jobs/text.ts` | the normalized job, dedupe key, hashes; HTML to text, limits |
 | `relevance/code-filter.ts` | T08c: the free code filter: title, level, place, workplace, type, salary, excluded words against the roles; `candidate` or `not_relevant`, with reasons |
