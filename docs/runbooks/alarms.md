@@ -4,9 +4,20 @@ Alarm emails go to the addresses in the `JD_ALERT_EMAIL` secret (GitHub `dev` en
 
 AWS profile for all commands below: `--profile jobdeputy-dev-iad` (dev) or the prod account's profile.
 
+## Queue health emails
+
+Since T08d1 one check watches every worker queue, instead of a CloudWatch alarm per queue (a metric-math alarm is billed per metric, so merging alarms saved nothing). The `QueueHealth` checker runs every 5 minutes in shared stacks and emails the alarm topic **only when a queue's health changes**:
+
+- Subject `[<stack>] Queue health: N queue(s) need attention`: one line per new problem: dead letters (below), or a backlog (further below).
+- Subject `[<stack>] Queue health: all queues back to normal`: the problems are gone (for example after a redrive).
+
+A problem that stays is not emailed again. It reads only free SQS counts, so a "backlog" means messages have been **waiting to be received without a break** for longer than the queue's limit (the age of the oldest message is a paid metric to read). Its memory is the SSM parameter `/jobdeputy/<stack>/queue-health` (do not edit; deleting it only means the current problems are emailed again).
+
+**`…QueueHealthCheckerErrorAlarm…`** (a CloudWatch alarm): the checker itself failed, so queues are not being watched. Read the `QueueHealthChecker` function's logs (an AWS error, a queue it may not read, or a bad state value). Fix it; until then, check the dead-letter queues in the SQS console.
+
 ## Dead-letter queue not empty
 
-`…PingPipelineDeadLetterAlarm…`, `…DocumentsDeadLetterAlarm…`, `…DeletionPipelineDeadLetterAlarm…`, `…CrawlPipelineDeadLetterAlarm…`
+Queue health line: `<queue>: N message(s) in the dead-letter queue (work failed after all retries).`
 
 **Meaning:** a job failed 3 times and was parked in the dead-letter queue (DLQ). Nothing is lost; the message waits there for 14 days.
 
@@ -31,16 +42,16 @@ AWS profile for all commands below: `--profile jobdeputy-dev-iad` (dev) or the p
 
 ## Queue backed up
 
-`…CrawlPipelineBacklogAlarm…`, `…DocumentsBacklogAlarm…`, `…DeletionPipelineBacklogAlarm…`
+Queue health line: `<queue>: messages have been waiting for over N minutes (worker stuck, throttled, or not running).`
 
-**Meaning:** a message has waited longer than that queue's slowest normal path (crawls 15 minutes, documents 30, account deletions 60). The worker is stuck, throttled, or failing slowly; users see crawls stuck in `queued`, résumés stuck in `pending`, or, for deletions, data not yet erased.
+**Meaning:** messages have waited, without a break, longer than that queue's slowest normal path (crawls 15 minutes, documents 30, account deletions 60; key checks and ping jobs are checked for dead letters only). The worker is stuck, throttled, or failing slowly; users see crawls stuck in `queued`, résumés stuck in `pending`, or, for deletions, data not yet erased.
 
 1. **Is the worker running?** Check its Lambda metrics: `Throttles` (the account's concurrency limit, #35), `Errors`, and `Duration` near the timeout.
 2. **Throttled:** raise the account's concurrency limit, or find what else is using it (a burst of API calls, another stack's tests).
 3. **Errors:** read the worker's logs, as for a dead-letter alarm above. Messages that keep failing will reach the DLQ.
 4. **Account deletions: same day.** When the queue drains, check each affected account with [account-deletion.md](account-deletion.md#checking-that-an-account-is-gone).
 
-All queue alarms exist in shared stacks only: personal and PR stacks have no subscribers.
+The queue health check exists in shared stacks only: personal and PR stacks have no subscribers.
 
 **Not alarmed on purpose:** the sign-up check (`PreSignUp`) refuses reserved test domains by throwing an error (Cognito requires this), so its error count includes every refusal, including the Nightly test's. It is 10 lines of pure logic, unit-tested and exercised nightly; alarming only on unexpected errors would need a paid custom metric.
 
