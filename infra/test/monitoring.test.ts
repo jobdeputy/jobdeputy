@@ -79,11 +79,13 @@ describe('monitoring (T13)', () => {
       'document-scans',
       'key-checks',
       'ping-jobs',
+      'relevance',
     ]);
     expect(backlogs).toEqual([
       ['account-deletions', 60 * 60],
       ['crawls', 15 * 60],
       ['document-scans', 30 * 60],
+      ['relevance', 30 * 60],
     ]);
     // Every 5 minutes; a missed run is not retried (the next one comes soon).
     t.hasResourceProperties('AWS::Events::Rule', {
@@ -110,9 +112,9 @@ describe('monitoring (T13)', () => {
     ]);
     const ssm = statements.filter((s) => [s.Action].flat().some((a) => a.startsWith('ssm:')));
     expect(JSON.stringify(ssm.map((s) => s.Resource))).toMatch(/QueueHealthState/);
-    // Five queues and their dead-letter queues: counts only.
+    // Six queues and their dead-letter queues: counts only.
     const sqs = statements.filter((s) => [s.Action].flat().includes('sqs:GetQueueAttributes'));
-    expect(sqs.flatMap((s) => [s.Resource].flat())).toHaveLength(10);
+    expect(sqs.flatMap((s) => [s.Resource].flat())).toHaveLength(12);
   });
 
   it('has no queue health check in personal, PR, or (for now) any stack without alarms', () => {

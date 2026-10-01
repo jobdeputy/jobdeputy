@@ -26,7 +26,8 @@ export interface RetryOptions {
   random?: () => number;
 }
 
-function reasons(error: unknown): string[] | undefined {
+/** The code of each item of a cancelled transaction, or undefined for any other error. */
+export function cancellationCodes(error: unknown): string[] | undefined {
   if (!(error instanceof Error) || error.name !== 'TransactionCanceledException') return undefined;
   const list = (error as Error & { CancellationReasons?: { Code?: string }[] }).CancellationReasons;
   return (list ?? []).map((r) => r.Code ?? 'None');
@@ -34,7 +35,7 @@ function reasons(error: unknown): string[] | undefined {
 
 /** Only a pure conflict is retried: a failed condition is an answer, not a race to wait out. */
 export function isTransactionConflict(error: unknown): boolean {
-  const codes = reasons(error) ?? [];
+  const codes = cancellationCodes(error) ?? [];
   return codes.includes('TransactionConflict') && !codes.includes('ConditionalCheckFailed');
 }
 

@@ -168,6 +168,13 @@ export const crawlLimitsConfig = z
     companyJobsMax: z.number().int().min(1).max(100).default(10),
     /** T08c: days before a hidden job (not relevant, over the limit, closed) is deleted. */
     jobExpiryDays: z.number().int().min(1).max(90).default(7),
+    /**
+     * T08d: candidates the LLM scores per crawl (shown ones first); the rest keep T08c's
+     * verdict. At most 50: the fixed worst case of model calls per crawl depends on it.
+     */
+    relevanceMaxJobs: z.number().int().min(1).max(50).default(50),
+    /** T08d: a score below this hides the job (`not_relevant`, reason `llm_low_score`). */
+    relevanceMinScore: z.number().int().min(0).max(100).default(30),
   })
   .refine((c) => c.dailyDefault <= c.dailyMax, 'dailyDefault must not exceed dailyMax')
   .refine(
@@ -186,6 +193,8 @@ export const DEFAULT_CRAWL_LIMITS: CrawlLimitsConfig = {
   companyJobsDefault: 10,
   companyJobsMax: 10,
   jobExpiryDays: 7,
+  relevanceMaxJobs: 50,
+  relevanceMinScore: 30,
 };
 
 /**

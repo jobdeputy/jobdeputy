@@ -1,5 +1,5 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { BatchGetCommand, GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { isConditionFailure } from './client.js';
 
 /**
@@ -59,6 +59,33 @@ export interface JobFit {
   limitState?: LimitState;
 }
 
+/**
+ * T08d: the LLM's score for the job and what it was scored on (docs/data-model.md §8). A
+ * re-crawl scores the job again only when `inputsHash` changes.
+ */
+export interface JobRelevance {
+  /** 0–100. */
+  score: number;
+  /** One of the user's roles, when one fits. */
+  bestRoleId?: string;
+  /** At most 3 short reasons, from the model. */
+  reasons: string[];
+  model: string;
+  promptVersion: string;
+  /** Over the job's content and description hashes, the profile, and the prompt version. */
+  inputsHash: string;
+  scoredAt: string;
+}
+
+/** T08d: what a scoring run decided for one job. */
+export interface RelevanceDecision {
+  jobId: string;
+  /** Scored too low: the filter's verdict becomes `not_relevant` with these reasons. */
+  hide?: { reasons: string[] };
+  /** Otherwise: shown within its company's limit, or not. */
+  limitState?: LimitState;
+}
+
 /** Hidden jobs expire (T08c): the filter dropped them, or the company limit did. */
 export const isHidden = (fit: JobFit) =>
   fit.filter.state === 'not_relevant' || fit.limitState === 'over_limit';
@@ -77,6 +104,8 @@ export interface Job extends JobPosting {
   closedAt?: string;
   filter?: JobFilterResult;
   limitState?: LimitState;
+  /** T08d: the LLM's score, when it has scored the job. */
+  relevance?: JobRelevance;
   /** Epoch seconds: DynamoDB deletes the job after this (T08c, hidden or closed and untouched). */
   ttl?: number;
   status: JobStatus;
@@ -130,6 +159,9 @@ export interface SaveStats {
 
 /** Writes at the same time while saving one crawl's jobs: fast, and gentle on the table. */
 export const SAVE_CONCURRENCY = 10;
+/** DynamoDB's limit of keys per BatchGetItem. */
+const BATCH_GET_MAX = 100;
+const BATCH_GET_ATTEMPTS = 4;
 
 export class JobRepository {
   constructor(
@@ -338,41 +370,128 @@ export class JobRepository {
    * expire at `expiresAt` unless the user acted on them. Missing jobs are skipped.
    */
   async markOverLimit(userId: string, jobIds: string[], expiresAt: number): Promise<void> {
-    const now = this.now().toISOString();
+    await this.eachJob(jobIds, (jobId) =>
+      this.hideOrShow(userId, jobId, { set: { limitState: 'over_limit' } }, expiresAt),
+    );
+  }
+
+  /**
+   * T08d: applies a scoring run's decisions. A job scored too low gets the filter's
+   * `not_relevant` verdict; the others their place in the company's limit. Hidden jobs
+   * expire at `expiresAt` unless the user acted on them (T08c's rule); shown ones never
+   * expire. Missing jobs are skipped; repeating is harmless.
+   */
+  async applyRelevance(
+    userId: string,
+    decisions: RelevanceDecision[],
+    expiresAt: number,
+  ): Promise<void> {
+    const byId = new Map(decisions.map((d) => [d.jobId, d]));
+    await this.eachJob([...byId.keys()], (jobId) => {
+      const d = byId.get(jobId) as RelevanceDecision;
+      if (d.hide) {
+        return this.hideOrShow(
+          userId,
+          jobId,
+          {
+            set: { 'filter.state': 'not_relevant', 'filter.reasons': d.hide.reasons },
+            remove: ['limitState'],
+          },
+          expiresAt,
+        );
+      }
+      if (d.limitState === 'over_limit') {
+        return this.hideOrShow(userId, jobId, { set: { limitState: 'over_limit' } }, expiresAt);
+      }
+      return this.hideOrShow(userId, jobId, {
+        set: { limitState: 'counted' },
+        remove: ['ttl'],
+      });
+    });
+  }
+
+  /** Runs `write` for each job, SAVE_CONCURRENCY at a time. */
+  private async eachJob(jobIds: string[], write: (jobId: string) => Promise<void>) {
     let next = 0;
     const lane = async () => {
-      while (next < jobIds.length) {
-        const jobId = jobIds[next++] as string;
-        for (const expires of [true, false]) {
-          try {
-            await this.client.send(
-              new UpdateCommand({
-                TableName: this.table,
-                Key: { userId, jobId },
-                UpdateExpression: `SET #limitState = :over, updatedAt = :now${expires ? ', #ttl = if_not_exists(#ttl, :ttl)' : ''}`,
-                ConditionExpression: expires
-                  ? 'attribute_exists(userId) AND #status = :new'
-                  : 'attribute_exists(userId)',
-                ExpressionAttributeNames: {
-                  '#limitState': 'limitState',
-                  ...(expires ? { '#ttl': 'ttl', '#status': 'status' } : {}),
-                },
-                ExpressionAttributeValues: {
-                  ':over': 'over_limit',
-                  ':now': now,
-                  ...(expires ? { ':ttl': expiresAt, ':new': 'new' } : {}),
-                },
-              }),
-            );
-            break;
-          } catch (error) {
-            // Not `new` (the user acted on it): mark it without an expiry. Gone: skip.
-            if (!isConditionFailure(error)) throw error;
-          }
-        }
-      }
+      while (next < jobIds.length) await write(jobIds[next++] as string);
     };
     await Promise.all(Array.from({ length: Math.min(SAVE_CONCURRENCY, jobIds.length) }, lane));
+  }
+
+  /**
+   * Sets (and removes) fields on an existing job. With `expiresAt` the job is hidden: it
+   * expires then if the user never acted on it (`status` `new`), else it is kept. Missing
+   * jobs are skipped. Paths like `filter.state` set one field of a map.
+   */
+  private async hideOrShow(
+    userId: string,
+    jobId: string,
+    change: { set: Record<string, unknown>; remove?: string[] },
+    expiresAt?: number,
+  ): Promise<void> {
+    const names: Record<string, string> = {};
+    const values: Record<string, unknown> = { ':now': this.now().toISOString() };
+    const path = (field: string) =>
+      field
+        .split('.')
+        .map((part) => {
+          names[`#${part}`] = part;
+          return `#${part}`;
+        })
+        .join('.');
+    const sets = Object.entries(change.set).map(([field, value], i) => {
+      values[`:v${i}`] = value;
+      return `${path(field)} = :v${i}`;
+    });
+    sets.push('updatedAt = :now');
+    const removes = (change.remove ?? []).map(path);
+    for (const expires of expiresAt === undefined ? [false] : [true, false]) {
+      try {
+        await this.client.send(
+          new UpdateCommand({
+            TableName: this.table,
+            Key: { userId, jobId },
+            UpdateExpression: `SET ${[...sets, ...(expires ? [`${path('ttl')} = if_not_exists(#ttl, :ttl)`] : [])].join(', ')}${removes.length > 0 ? ` REMOVE ${removes.join(', ')}` : ''}`,
+            ConditionExpression: expires
+              ? `attribute_exists(userId) AND ${path('status')} = :new`
+              : 'attribute_exists(userId)',
+            ExpressionAttributeNames: names,
+            ExpressionAttributeValues: {
+              ...values,
+              ...(expires ? { ':ttl': expiresAt, ':new': 'new' } : {}),
+            },
+          }),
+        );
+        return;
+      } catch (error) {
+        // Not `new` (the user acted on it): change it without an expiry. Gone: skip.
+        if (!isConditionFailure(error)) throw error;
+      }
+    }
+  }
+
+  /** T08d: the given jobs (missing ones left out), read consistently. */
+  async getMany(userId: string, jobIds: string[]): Promise<Job[]> {
+    const found: Job[] = [];
+    for (let i = 0; i < jobIds.length; i += BATCH_GET_MAX) {
+      let keys: Record<string, unknown>[] = jobIds
+        .slice(i, i + BATCH_GET_MAX)
+        .map((jobId) => ({ userId, jobId }));
+      for (let attempt = 1; keys.length > 0; attempt++) {
+        if (attempt > BATCH_GET_ATTEMPTS) throw new Error('jobs not read after retries');
+        const res = await this.client.send(
+          new BatchGetCommand({
+            RequestItems: { [this.table]: { Keys: keys, ConsistentRead: true } },
+          }),
+        );
+        found.push(...((res.Responses?.[this.table] ?? []) as Job[]));
+        // Throttled reads come back unprocessed: wait a little and read them again.
+        keys = res.UnprocessedKeys?.[this.table]?.Keys ?? [];
+        if (keys.length > 0) await new Promise((r) => setTimeout(r, 50 * 2 ** attempt));
+      }
+    }
+    return found;
   }
 
   async get(userId: string, jobId: string): Promise<Job | undefined> {

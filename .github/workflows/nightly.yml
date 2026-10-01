@@ -70,7 +70,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
-      - name: Smoke eval against the platform model (includes injection cases)
+      - name: Eval of every task against the platform model (includes injection cases)
         id: eval
         env:
           AWS_REGION: us-east-1

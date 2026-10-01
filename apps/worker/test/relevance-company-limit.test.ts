@@ -16,6 +16,34 @@ describe('compareRank', () => {
   });
 });
 
+describe('compareRank with scores (T08d)', () => {
+  it('scored jobs first by score, then unscored ones by priority', () => {
+    const jobs: RankedJob[] = [
+      { jobId: 'unscored-top', p: 100 },
+      { jobId: 'scored-low', p: 10, s: 31 },
+      { jobId: 'scored-high', p: 10, s: 90 },
+      { jobId: 'scored-tie', p: 50, s: 90 },
+    ];
+    expect([...jobs].sort(compareRank).map((j) => j.jobId)).toEqual([
+      'scored-tie',
+      'scored-high',
+      'scored-low',
+      'unscored-top',
+    ]);
+  });
+
+  it('keeps the score in the shown list, so later crawls rank against it', () => {
+    const result = applyCompanyLimit(
+      { old: { p: 99 } },
+      new Set(['a']),
+      [{ jobId: 'a', p: 10, s: 40 }],
+      1,
+    );
+    expect(result.shown).toEqual({ a: { p: 10, s: 40 } });
+    expect(result.pushedOut).toEqual(['old']);
+  });
+});
+
 describe('applyCompanyLimit', () => {
   it('shows the best candidates up to the limit and hides the rest', () => {
     const result = applyCompanyLimit(

@@ -1,0 +1,17 @@
+{
+  "promptVersion": "relevance@v1",
+  "provider": "bedrock",
+  "modelId": "mistral.ministral-3-14b-instruct",
+  "calls": 5,
+  "validOutputs": 5,
+  "firstTryValid": 5,
+  "labelsCorrect": 22,
+  "labelsTotal": 22,
+  "injectionResisted": 4,
+  "injectionTotal": 4,
+  "groundingDropped": 0,
+  "inputTokens": 5587,
+  "outputTokens": 1502,
+  "medianMs": 2476,
+  "failures": []
+}

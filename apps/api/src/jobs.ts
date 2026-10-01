@@ -55,6 +55,17 @@ export function jobSummary(j: Job) {
           },
         }
       : {}),
+    // T08d: the LLM's score and why (absent until it has scored the job).
+    ...(j.relevance
+      ? {
+          relevance: {
+            score: j.relevance.score,
+            ...(j.relevance.bestRoleId ? { bestRoleId: j.relevance.bestRoleId } : {}),
+            reasons: j.relevance.reasons,
+            scoredAt: j.relevance.scoredAt,
+          },
+        }
+      : {}),
     hidden: j.filter?.state === 'not_relevant' || j.limitState === 'over_limit',
     ...(j.ttl !== undefined ? { expiresAt: new Date(j.ttl * 1000).toISOString() } : {}),
   };

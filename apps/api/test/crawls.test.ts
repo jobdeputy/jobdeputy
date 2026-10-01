@@ -14,7 +14,7 @@ import type { AiKeyStatus, AiSource } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2, APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
 import { route as auditRoute } from '../src/audit.js';
-import { type CrawlsDeps, route, STALE_CRAWL_MS } from '../src/crawls.js';
+import { type CrawlsDeps, crawlView, route, STALE_CRAWL_MS } from '../src/crawls.js';
 import { concurrentUpdateProblem } from '../src/errors.js';
 import { PAGES, handler as testSite } from '../src/test-site.js';
 
@@ -92,6 +92,8 @@ function deps(over: Partial<CrawlsDeps['repo']> = {}) {
       companyJobsDefault: 10,
       companyJobsMax: 10,
       jobExpiryDays: 7,
+      relevanceMaxJobs: 50,
+      relevanceMinScore: 30,
     })),
     usedToday: vi.fn(async () => 3),
     platformRunsUsed: vi.fn(async () => ({ week: 1, month: 1 })),
@@ -414,6 +416,8 @@ describe('daily crawl limit (T06c)', () => {
       companyJobsDefault: 10,
       companyJobsMax: 10,
       jobExpiryDays: 7,
+      relevanceMaxJobs: 50,
+      relevanceMinScore: 30,
     });
     await route(post(URL_), d);
     expect(vi.mocked(repo.request).mock.calls[1]?.[0].dailyLimit).toBe(30);
@@ -829,5 +833,44 @@ describe('dev test site', () => {
     process.env.STAGE = 'prod';
     expect((await visit('jobs')).statusCode).toBe(404);
     delete process.env.STAGE;
+  });
+});
+
+describe('crawlView: AI scoring (T08d)', () => {
+  it('shows the run, why it stopped, and the tokens used; never the candidate list', () => {
+    const stats = { candidates: 3, scored: 2, reused: 0, unscored: 1, hidden: 1, overLimit: 0 };
+    const view = crawlView(
+      crawl({
+        candidates: ['j1', 'j2', 'j3'],
+        relevance: {
+          status: 'failed',
+          startedAt: '2026-10-01T06:00:00.000Z',
+          finishedAt: '2026-10-01T06:00:09.000Z',
+          calls: 1,
+          sent: ['j1', 'j2'],
+          reason: 'model_unavailable',
+          stats,
+        },
+        llm: {
+          keySource: 'platform',
+          provider: 'bedrock',
+          model: 'mistral.ministral-3-14b-instruct',
+          calls: 1,
+          inputTokens: 1200,
+          outputTokens: 300,
+        },
+      }),
+    );
+    expect(view.relevance).toEqual({
+      status: 'failed',
+      error: {
+        code: 'model_unavailable',
+        message: 'The AI model was unavailable, so some jobs were not scored. Crawl again later.',
+      },
+      stats,
+      finishedAt: '2026-10-01T06:00:09.000Z',
+    });
+    expect(view.llm).toMatchObject({ calls: 1, inputTokens: 1200, outputTokens: 300 });
+    expect(view).not.toHaveProperty('candidates');
   });
 });

@@ -8,8 +8,8 @@ import { isConditionFailure } from './client.js';
  * if nobody changed it meanwhile (`version`), so two crawls at once stay exact.
  */
 export interface ShownJobs {
-  /** jobId → what it was ranked by: role priority `p`, `postedAt` `t`. */
-  shown: Record<string, { p: number; t?: string }>;
+  /** jobId → what it was ranked by: role priority `p`, `postedAt` `t`, T08d LLM score `s`. */
+  shown: Record<string, { p: number; t?: string; s?: number }>;
   /** 0 when the item does not exist yet. */
   version: number;
 }

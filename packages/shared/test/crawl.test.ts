@@ -163,6 +163,25 @@ describe('daily limit helpers (T06c)', () => {
   });
 });
 
+describe('LLM scoring limits (T08d)', () => {
+  it('a setting saved before T08d scores at most 50 jobs and hides below 30', () => {
+    expect(crawlLimitsConfig.parse({ dailyDefault: 20, dailyMax: 50 })).toMatchObject({
+      relevanceMaxJobs: 50,
+      relevanceMinScore: 30,
+    });
+  });
+
+  it('validates the admin values', () => {
+    const with_ = (over: object) =>
+      crawlLimitsConfig.safeParse({ ...DEFAULT_CRAWL_LIMITS, ...over }).success;
+    expect(with_({ relevanceMaxJobs: 0 })).toBe(false);
+    expect(with_({ relevanceMaxJobs: 51 })).toBe(false);
+    expect(with_({ relevanceMinScore: -1 })).toBe(false);
+    expect(with_({ relevanceMinScore: 101 })).toBe(false);
+    expect(with_({ relevanceMaxJobs: 20, relevanceMinScore: 0 })).toBe(true);
+  });
+});
+
 describe('jobs per company and expiry (T08c)', () => {
   it('a setting saved before T08c gets 10 per company and 7 days', () => {
     expect(crawlLimitsConfig.parse({ dailyDefault: 20, dailyMax: 50 })).toMatchObject({

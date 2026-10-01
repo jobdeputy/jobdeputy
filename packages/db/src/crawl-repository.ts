@@ -6,6 +6,7 @@ import {
   type CrawlErrorCode,
   type CrawlStatus,
   isoWeek,
+  type RelevanceError,
   utcDay,
   utcMonth,
 } from '@jobdeputy/shared';
@@ -66,6 +67,15 @@ export interface Crawl {
   result?: CrawlResult;
   /** T07b: what the crawl read and saved. */
   stats?: CrawlStats;
+  /**
+   * T08d: the candidates the LLM scores, best first (shown ones, then the rest), at most
+   * the admin's `relevanceMaxJobs`.
+   */
+  candidates?: string[];
+  /** T08d: the scoring of the candidates (only crawls with an AI source and candidates). */
+  relevance?: CrawlRelevance;
+  /** T08d: the model and tokens this crawl's AI work used. */
+  llm?: CrawlLlm;
   extraction?: CrawlExtraction;
   error?: CrawlError;
   /** The last retriable failure, while a retry is pending. */
@@ -74,6 +84,45 @@ export interface Crawl {
   createdAt: string;
   updatedAt: string;
   schemaVersion: 1;
+}
+
+/** T08d: why a scoring run stopped without scoring (shown to the user). */
+export type RelevanceFailure = 'key_missing' | 'key_invalid' | 'key_rejected' | 'model_unavailable';
+
+export interface RelevanceStats {
+  /** Candidates still open and kept by the filter when the run started. */
+  candidates: number;
+  /** Scored by the model in this run. */
+  scored: number;
+  /** Scored before with the same inputs: that score was used again. */
+  reused: number;
+  /** Not scored (the model left them out, or the run stopped early): T08c's verdict stays. */
+  unscored: number;
+  /** Scored below the admin's `relevanceMinScore`: hidden. */
+  hidden: number;
+  /** Scored, but over the company's limit. */
+  overLimit: number;
+}
+
+export interface CrawlRelevance {
+  status: 'running' | 'done' | 'failed';
+  startedAt: string;
+  finishedAt?: string;
+  /** Task calls stored so far; a run makes at most a fixed number, across retries too. */
+  calls: number;
+  /** Jobs sent to the model in this run: a retried message never sends them again. */
+  sent: string[];
+  reason?: RelevanceFailure;
+  stats?: RelevanceStats;
+}
+
+export interface CrawlLlm {
+  keySource: 'platform' | 'own';
+  provider: string;
+  model: string;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
 }
 
 export interface PlatformRun {
@@ -182,6 +231,7 @@ export type FinishOutcome =
       status: 'succeeded';
       result: CrawlResult;
       stats?: CrawlStats;
+      candidates?: string[];
       extraction?: CrawlExtraction;
       source?: SourceUpdate;
     }
@@ -502,6 +552,7 @@ export class CrawlRepository {
       outcome.status === 'succeeded'
         ? {
             ...(outcome.stats ? { ':stats': outcome.stats } : {}),
+            ...(outcome.candidates?.length ? { ':candidates': outcome.candidates } : {}),
             ...(outcome.extraction ? { ':extraction': outcome.extraction } : {}),
           }
         : {};
