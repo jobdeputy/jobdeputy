@@ -72,14 +72,13 @@ describe('modelProfile', () => {
 });
 
 describe('modelJob', () => {
-  it("passes the filter's verdict as a hint, with the short role ID", () => {
-    const { roleIds } = modelProfile(user);
-    expect(modelJob(job, 'j1', roleIds)).toMatchObject({
+  it("passes the filter's verdict as a hint, naming the role by its title", () => {
+    expect(modelJob(job, 'j1', modelProfile(user))).toMatchObject({
       id: 'j1',
       company: 'Acme',
       places: ['Leeds, UK'],
       salary: '70000-80000 GBP per year',
-      hints: ['matched r1 (title_match)'],
+      hints: ['matches target role "Backend Engineer" (title_match)'],
     });
   });
 });
