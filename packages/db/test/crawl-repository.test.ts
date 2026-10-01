@@ -570,7 +570,12 @@ describe('CrawlSettingsRepository', () => {
 
   it("saves the user's limit with its audit entry in one transaction", async () => {
     const { c, send } = client((cmd) => (cmd instanceof GetCommand ? {} : {}));
-    const saved = await new CrawlSettingsRepository(c, 'Prefs', () => NOW).save(USER, 5, 0, change);
+    const saved = await new CrawlSettingsRepository(c, 'Prefs', () => NOW).save(
+      USER,
+      { dailyLimit: 5 },
+      0,
+      change,
+    );
     expect(saved).toMatchObject({
       sk: 'CRAWL_SETTINGS',
       type: 'crawl_settings',
@@ -591,7 +596,7 @@ describe('CrawlSettingsRepository', () => {
     );
     const saved = await new CrawlSettingsRepository(c, 'Prefs', () => NOW).save(
       USER,
-      null,
+      {},
       2,
       change,
     );
@@ -607,7 +612,7 @@ describe('CrawlSettingsRepository', () => {
   it('refuses a stale version before writing, and a concurrent save at write time', async () => {
     const { c, send } = client(() => ({ Item: { version: 3 } }));
     await expect(
-      new CrawlSettingsRepository(c, 'Prefs').save(USER, 5, 2, change),
+      new CrawlSettingsRepository(c, 'Prefs').save(USER, { dailyLimit: 5 }, 2, change),
     ).rejects.toBeInstanceOf(VersionConflictError);
     expect(send).toHaveBeenCalledTimes(1);
 
@@ -618,7 +623,7 @@ describe('CrawlSettingsRepository', () => {
       });
     });
     await expect(
-      new CrawlSettingsRepository(racing, 'Prefs').save(USER, 5, 0, change),
+      new CrawlSettingsRepository(racing, 'Prefs').save(USER, { dailyLimit: 5 }, 0, change),
     ).rejects.toBeInstanceOf(VersionConflictError);
   });
 });

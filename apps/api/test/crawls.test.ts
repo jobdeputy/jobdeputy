@@ -89,6 +89,9 @@ function deps(over: Partial<CrawlsDeps['repo']> = {}) {
       maxActive: 3,
       platformRunsPerWeek: 1,
       platformRunsPerMonth: 4,
+      companyJobsDefault: 10,
+      companyJobsMax: 10,
+      jobExpiryDays: 7,
     })),
     usedToday: vi.fn(async () => 3),
     platformRunsUsed: vi.fn(async () => ({ week: 1, month: 1 })),
@@ -408,6 +411,9 @@ describe('daily crawl limit (T06c)', () => {
       maxActive: 3,
       platformRunsPerWeek: 1,
       platformRunsPerMonth: 4,
+      companyJobsDefault: 10,
+      companyJobsMax: 10,
+      jobExpiryDays: 7,
     });
     await route(post(URL_), d);
     expect(vi.mocked(repo.request).mock.calls[1]?.[0].dailyLimit).toBe(30);
@@ -441,6 +447,10 @@ describe('daily crawl limit (T06c)', () => {
       resetsAt: '2026-09-29T00:00:00.000Z',
       maxActive: 3,
       activeNow: 0,
+      companyJobsLimit: 10,
+      customCompanyJobsLimit: null,
+      companyJobsDefault: 10,
+      companyJobsMax: 10,
       version: 2,
     });
   });
@@ -458,7 +468,7 @@ describe('daily crawl limit (T06c)', () => {
     const { d, settings } = deps();
     const res = await route(put({ version: 0, dailyLimit: 5 }), d);
     expect(res.statusCode).toBe(200);
-    expect(settings.save).toHaveBeenCalledWith('user-a', 5, 0, {
+    expect(settings.save).toHaveBeenCalledWith('user-a', { dailyLimit: 5 }, 0, {
       table: 'Audit',
       entry: expect.objectContaining({
         name: 'crawl_limit.changed',
@@ -473,13 +483,59 @@ describe('daily crawl limit (T06c)', () => {
     const { d, settings } = deps();
     settings.get.mockResolvedValue({ dailyLimit: 5, version: 1 } as CrawlSettings);
     await route(put({ version: 1, dailyLimit: null }), d);
-    expect(settings.save).toHaveBeenCalledWith('user-a', null, 1, {
+    expect(settings.save).toHaveBeenCalledWith('user-a', {}, 1, {
       table: 'Audit',
       entry: expect.objectContaining({
         summary: 'Daily crawl limit set back to the default (20)',
         detail: { from: 5, to: 'default' },
       }),
     });
+  });
+
+  it('T08c: saves a jobs-per-company limit; leaving it out keeps the current one', async () => {
+    const { d, settings } = deps();
+    settings.get.mockResolvedValue({ companyJobsLimit: 3, version: 1 } as CrawlSettings);
+    await route(put({ version: 1, dailyLimit: null }), d);
+    expect(settings.save).toHaveBeenLastCalledWith(
+      'user-a',
+      { companyJobsLimit: 3 },
+      1,
+      expect.anything(),
+    );
+
+    await route(put({ version: 1, dailyLimit: 5, companyJobsLimit: 4 }), d);
+    expect(settings.save).toHaveBeenLastCalledWith(
+      'user-a',
+      { dailyLimit: 5, companyJobsLimit: 4 },
+      1,
+      {
+        table: 'Audit',
+        entry: expect.objectContaining({
+          detail: { from: 'default', to: 5, companyJobsFrom: 3, companyJobsTo: 4 },
+        }),
+      },
+    );
+
+    await route(put({ version: 1, dailyLimit: null, companyJobsLimit: null }), d);
+    expect(settings.save).toHaveBeenLastCalledWith('user-a', {}, 1, expect.anything());
+  });
+
+  it('T08c: shows the jobs-per-company limit that applies', async () => {
+    const { d, settings } = deps();
+    settings.get.mockResolvedValue({ companyJobsLimit: 4, version: 1 } as CrawlSettings);
+    const res = await route(event('GET /me/crawl-settings'), d);
+    expect(body(res)).toMatchObject({ companyJobsLimit: 4, customCompanyJobsLimit: 4 });
+  });
+
+  it('T08c: refuses a jobs-per-company limit above the admin maximum (422)', async () => {
+    const { d, settings } = deps();
+    const res = await route(put({ version: 0, dailyLimit: null, companyJobsLimit: 11 }), d);
+    expect(res.statusCode).toBe(422);
+    expect(body(res)).toMatchObject({
+      code: 'limit-above-maximum',
+      detail: 'The most you can choose is 10 jobs per company.',
+    });
+    expect(settings.save).not.toHaveBeenCalled();
   });
 
   it('refuses a limit above the admin maximum (422)', async () => {
@@ -499,6 +555,8 @@ describe('daily crawl limit (T06c)', () => {
     ['a fraction', { version: 0, dailyLimit: 2.5 }],
     ['text', { version: 0, dailyLimit: 'ten' }],
     ['extra fields', { version: 0, dailyLimit: 5, maxAllowed: 1000 }],
+    ['a company limit of zero', { version: 0, dailyLimit: 5, companyJobsLimit: 0 }],
+    ['a fractional company limit', { version: 0, dailyLimit: 5, companyJobsLimit: 1.5 }],
   ])('rejects %s', async (_, payload) => {
     const { d } = deps();
     expect((await route(put(payload), d)).statusCode).toBe(400);

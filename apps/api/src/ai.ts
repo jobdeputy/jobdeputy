@@ -10,6 +10,7 @@ import {
   KeyCheckLimitError,
   listAiUsage,
   platformRunsUsed,
+  ssmCrawlLimits,
   VersionConflictError,
 } from '@jobdeputy/db';
 import {
@@ -34,7 +35,6 @@ import type { APIGatewayProxyEventV2WithJWTAuthorizer, Context } from 'aws-lambd
 import { ulid } from 'ulid';
 import { refuseWritesWhileDeleting } from './account-guard.js';
 import { type UserAudit, userAudit } from './audited.js';
-import { ssmCrawlLimits } from './crawl-limits.js';
 import { concurrentUpdateProblem } from './errors.js';
 
 // T08b2 (decision 0009): the user's own AI keys and AI settings. The key is encrypted here

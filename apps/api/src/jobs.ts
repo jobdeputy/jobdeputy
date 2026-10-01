@@ -44,6 +44,19 @@ export function jobSummary(j: Job) {
     ...(j.closedAt ? { closedAt: j.closedAt } : {}),
     status: j.status,
     starred: j.starred,
+    // T08c: whether it is shown, and why it was kept or dropped (absent before its first filter).
+    ...(j.filter
+      ? {
+          fit: {
+            state: j.filter.state,
+            roleIds: j.filter.roleIds,
+            reasons: j.filter.reasons,
+            ...(j.limitState ? { limitState: j.limitState } : {}),
+          },
+        }
+      : {}),
+    hidden: j.filter?.state === 'not_relevant' || j.limitState === 'over_limit',
+    ...(j.ttl !== undefined ? { expiresAt: new Date(j.ttl * 1000).toISOString() } : {}),
   };
 }
 
@@ -64,7 +77,11 @@ export function jobView(j: Job) {
 
 type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
 
-/** The caller's jobs (T07b). Read-only for now: the user's own changes come with the interface (T09). */
+/**
+ * The caller's jobs (T07b). Read-only for now: the user's own changes come with the
+ * interface (T09). T08c: the list shows only jobs not hidden by the filter or the
+ * company limit, unless `view=all`; a page can then be short and still have a next one.
+ */
 export async function route(event: Event, deps: JobsDeps): Promise<HttpResponse> {
   const requestId = event.requestContext.requestId;
   const caller = callerFromEvent(event);
@@ -74,7 +91,8 @@ export async function route(event: Event, deps: JobsDeps): Promise<HttpResponse>
     case 'GET /me/jobs': {
       const query = jobsPageQuery.safeParse(event.queryStringParameters ?? {});
       if (!query.success) return validationProblem(query.error, requestId);
-      const page = await deps.repo.list(caller.userId, query.data.limit, query.data.cursor);
+      const { limit, cursor, view } = query.data;
+      const page = await deps.repo.list(caller.userId, limit, cursor, view);
       return json(200, {
         jobs: page.items.map(jobSummary),
         ...(page.next !== undefined ? { nextCursor: page.next } : {}),

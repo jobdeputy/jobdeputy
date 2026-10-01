@@ -129,8 +129,9 @@ export class CellStack extends Stack {
     const auditTable = userTable('AuditTable', 'audit', 'auditId', 'ttl');
     // T06c: counters (DAY# items expire after a week).
     const usageTable = userTable('UsageTable', 'usage', 'sk', 'ttl');
-    // T07b (0008): jobs found for the user, one item per posting.
-    const jobsTable = userTable('JobsTable', 'jobs', 'jobId');
+    // T07b (0008): jobs found for the user, one item per posting. T08c: hidden jobs, and
+    // closed ones the user never acted on, expire (`ttl`, free deletes).
+    const jobsTable = userTable('JobsTable', 'jobs', 'jobId', 'ttl');
     // T08b2 (0009): the user's own AI keys, encrypted (stream → key-check worker).
     const aiKeysTable = userTable('AiKeysTable', 'ai-keys', 'provider', undefined, true);
     /**
@@ -408,7 +409,7 @@ export class CellStack extends Stack {
     const crawlLimits = new StringParameter(this, 'CrawlLimits', {
       parameterName: `/jobdeputy/${id}/crawl-limits`,
       description:
-        'Crawl limits: {"dailyDefault": N, "dailyMax": N, "maxActive": N, "platformRunsPerWeek": N, "platformRunsPerMonth": N}. Read live by the API (5-minute cache).',
+        'Crawl limits: {"dailyDefault": N, "dailyMax": N, "maxActive": N, "platformRunsPerWeek": N, "platformRunsPerMonth": N, "companyJobsDefault": N, "companyJobsMax": N, "jobExpiryDays": N}. Read live by the API and the crawl worker (5-minute cache).',
       // Unchanged since T06c on purpose: a new value here would overwrite the admin's live
       // setting on the next deploy. Fields added later (the platform runs, T08b3) take
       // their defaults until the admin sets them.
@@ -483,15 +484,25 @@ export class CellStack extends Stack {
         ...crawlTablesEnv,
         JOBS_TABLE_NAME: jobsTable.tableName,
         DOCUMENTS_BUCKET_NAME: documents.bucket.bucketName,
+        PREFERENCES_TABLE_NAME: preferencesTable.tableName,
+        CRAWL_LIMITS_PARAMETER: crawlLimits.parameterName,
       },
     });
     // T07b: creates or updates each job it read (one idempotent update per job); T07c:
-    // closes jobs a page no longer lists (updates too, never deletes).
+    // closes jobs a page no longer lists (updates too, never deletes; T08c: expiry does).
     jobsTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem');
+    // The deletion record, and (T08c) the profile's headline and skills for the filter.
     usersTable.grant(crawlWorker.fn, 'dynamodb:GetItem');
     crawlsTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem');
-    // Frees the crawl's active slot when it ends (same transaction).
-    usageTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem');
+    // Frees the crawl's active slot when it ends (same transaction). T08c: each company's
+    // shown jobs (`COMPANY#`): read, replaced at the version read, places freed.
+    usageTable.grant(crawlWorker.fn, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem');
+    // T08c: the user's roles (Query), search settings, and own limits, for the filter.
+    preferencesTable.grant(crawlWorker.fn, 'dynamodb:GetItem', 'dynamodb:Query');
+    // T08c: the admin's jobs-per-company limit and expiry days.
+    crawlWorker.fn.addToRolePolicy(
+      new PolicyStatement({ actions: ['ssm:GetParameter'], resources: [crawlLimits.parameterArn] }),
+    );
     // T07c: reads which jobs the page listed before (GetItem), to close the ones now gone.
     sourcesTable.grant(crawlWorker.fn, 'dynamodb:GetItem', 'dynamodb:UpdateItem');
     auditTable.grant(crawlWorker.fn, 'dynamodb:PutItem');

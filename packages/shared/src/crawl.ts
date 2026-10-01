@@ -139,6 +139,8 @@ export const jobId = z.string().regex(/^[0-9a-f]{32}$/, 'Not a job ID');
 export const jobsPageQuery = z.strictObject({
   limit: z.coerce.number().int().min(1).max(50).default(20),
   cursor: jobId.optional(),
+  /** T08c: `shown` (default) hides jobs the filter or the company limit dropped; `all` lists them too. */
+  view: z.enum(['shown', 'all']).default('shown'),
 });
 
 /** Queue message from the crawls Pipe: the crawl's key only. */
@@ -161,8 +163,17 @@ export const crawlLimitsConfig = z
     /** T08b3 (0009): free platform AI runs per user (one run = one crawl's AI work). */
     platformRunsPerWeek: z.number().int().min(0).max(100).default(1),
     platformRunsPerMonth: z.number().int().min(0).max(400).default(4),
+    /** T08c: jobs shown per company (the rest are `over_limit`); a user may choose fewer. */
+    companyJobsDefault: z.number().int().min(1).max(100).default(10),
+    companyJobsMax: z.number().int().min(1).max(100).default(10),
+    /** T08c: days before a hidden job (not relevant, over the limit, closed) is deleted. */
+    jobExpiryDays: z.number().int().min(1).max(90).default(7),
   })
-  .refine((c) => c.dailyDefault <= c.dailyMax, 'dailyDefault must not exceed dailyMax');
+  .refine((c) => c.dailyDefault <= c.dailyMax, 'dailyDefault must not exceed dailyMax')
+  .refine(
+    (c) => c.companyJobsDefault <= c.companyJobsMax,
+    'companyJobsDefault must not exceed companyJobsMax',
+  );
 export type CrawlLimitsConfig = z.infer<typeof crawlLimitsConfig>;
 
 /** Used when the admin setting is missing or invalid (and as the initial setting). */
@@ -172,12 +183,19 @@ export const DEFAULT_CRAWL_LIMITS: CrawlLimitsConfig = {
   maxActive: 1,
   platformRunsPerWeek: 1,
   platformRunsPerMonth: 4,
+  companyJobsDefault: 10,
+  companyJobsMax: 10,
+  jobExpiryDays: 7,
 };
 
-/** `PUT /me/crawl-settings`: `dailyLimit: null` goes back to the admin default. */
+/**
+ * `PUT /me/crawl-settings`: `null` goes back to the admin default. `companyJobsLimit`
+ * (T08c) left out keeps the user's current choice.
+ */
 export const updateCrawlSettingsInput = z.strictObject({
   version: z.number().int().min(0),
   dailyLimit: z.number().int().min(1).max(1000).nullable(),
+  companyJobsLimit: z.number().int().min(1).max(100).nullable().optional(),
 });
 
 /** The limit that applies: the user's own (if any) or the default, never above the maximum. */
@@ -186,6 +204,14 @@ export function effectiveDailyLimit(
   userLimit?: number | null,
 ): number {
   return Math.min(userLimit ?? config.dailyDefault, config.dailyMax);
+}
+
+/** T08c: jobs shown per company: the user's own limit (if any) or the default, never above the maximum. */
+export function effectiveCompanyJobsLimit(
+  config: Pick<CrawlLimitsConfig, 'companyJobsDefault' | 'companyJobsMax'>,
+  userLimit?: number | null,
+): number {
+  return Math.min(userLimit ?? config.companyJobsDefault, config.companyJobsMax);
 }
 
 /** Days reset at 00:00 UTC. */

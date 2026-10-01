@@ -11,6 +11,7 @@ import {
   PlatformAllowanceError,
   platformRunsUsed,
   sourceIdFor,
+  ssmCrawlLimits,
   TooManyActiveCrawlsError,
   VersionConflictError,
 } from '@jobdeputy/db';
@@ -28,6 +29,7 @@ import {
   createCrawlInput,
   createLogger,
   dailyLimitMessage,
+  effectiveCompanyJobsLimit,
   effectiveDailyLimit,
   type HttpResponse,
   json,
@@ -43,7 +45,6 @@ import {
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, Context } from 'aws-lambda';
 import { ulid } from 'ulid';
 import { refuseWritesWhileDeleting } from './account-guard.js';
-import { ssmCrawlLimits } from './crawl-limits.js';
 import { concurrentUpdateProblem } from './errors.js';
 
 const logger = createLogger('api-crawls');
@@ -183,6 +184,11 @@ async function settingsView(userId: string, deps: CrawlsDeps) {
     resetsAt: nextUtcMidnight(new Date(deps.now())).toISOString(),
     maxActive: config.maxActive,
     activeNow: active.length,
+    // T08c: jobs shown per company.
+    companyJobsLimit: effectiveCompanyJobsLimit(config, settings?.companyJobsLimit),
+    customCompanyJobsLimit: settings?.companyJobsLimit ?? null,
+    companyJobsDefault: config.companyJobsDefault,
+    companyJobsMax: config.companyJobsMax,
     version: settings?.version ?? 0,
   };
 }
@@ -461,7 +467,7 @@ export async function route(event: Event, deps: CrawlsDeps): Promise<HttpRespons
       const input = updateCrawlSettingsInput.safeParse(body);
       if (!input.success) return validationProblem(input.error, requestId);
       const config = await deps.limits();
-      const { dailyLimit, version } = input.data;
+      const { dailyLimit, companyJobsLimit, version } = input.data;
       if (dailyLimit !== null && dailyLimit > config.dailyMax) {
         return problem(422, 'Limit too high', {
           detail: `The most you can choose is ${config.dailyMax} crawls a day.`,
@@ -469,22 +475,55 @@ export async function route(event: Event, deps: CrawlsDeps): Promise<HttpRespons
           requestId,
         });
       }
-      const previous = (await deps.settings.get(userId))?.dailyLimit;
-      try {
-        await deps.settings.save(userId, dailyLimit, version, {
-          table: deps.auditTable,
-          entry: {
-            auditId: deps.newId(),
-            name: 'crawl_limit.changed',
-            entity: { type: 'crawl_settings', id: 'CRAWL_SETTINGS' },
-            actor: 'user',
-            summary:
-              dailyLimit === null
-                ? `Daily crawl limit set back to the default (${config.dailyDefault})`
-                : `Daily crawl limit set to ${dailyLimit}`,
-            detail: { from: previous ?? 'default', to: dailyLimit ?? 'default' },
-          },
+      if (
+        companyJobsLimit !== undefined &&
+        companyJobsLimit !== null &&
+        companyJobsLimit > config.companyJobsMax
+      ) {
+        return problem(422, 'Limit too high', {
+          detail: `The most you can choose is ${config.companyJobsMax} jobs per company.`,
+          code: 'limit-above-maximum',
+          requestId,
         });
+      }
+      const current = await deps.settings.get(userId);
+      const previous = current?.dailyLimit;
+      // Left out: the user's current choice stays (T08c).
+      const companyJobs =
+        companyJobsLimit === undefined
+          ? current?.companyJobsLimit
+          : (companyJobsLimit ?? undefined);
+      const detail: Record<string, string | number> = {
+        from: previous ?? 'default',
+        to: dailyLimit ?? 'default',
+      };
+      if (companyJobsLimit !== undefined) {
+        detail.companyJobsFrom = current?.companyJobsLimit ?? 'default';
+        detail.companyJobsTo = companyJobsLimit ?? 'default';
+      }
+      try {
+        await deps.settings.save(
+          userId,
+          {
+            ...(dailyLimit !== null ? { dailyLimit } : {}),
+            ...(companyJobs !== undefined ? { companyJobsLimit: companyJobs } : {}),
+          },
+          version,
+          {
+            table: deps.auditTable,
+            entry: {
+              auditId: deps.newId(),
+              name: 'crawl_limit.changed',
+              entity: { type: 'crawl_settings', id: 'CRAWL_SETTINGS' },
+              actor: 'user',
+              summary:
+                dailyLimit === null
+                  ? `Daily crawl limit set back to the default (${config.dailyDefault})`
+                  : `Daily crawl limit set to ${dailyLimit}`,
+              detail,
+            },
+          },
+        );
       } catch (error) {
         if (error instanceof VersionConflictError) {
           return problem(409, 'Conflict', {

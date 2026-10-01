@@ -1,4 +1,4 @@
-# Runbook: changing the daily crawl limits
+# Runbook: changing the crawl limits
 
 Each user may start a limited number of crawls per day (UTC), and have a limited number **in progress at once** (`maxActive`, admin level only). Two levels decide the daily number ([0007](../decisions/0007-crawler.md), [T06c](../tasks/t06c-crawl-limits.md)):
 
@@ -16,7 +16,7 @@ Users see all of it in `GET /me/crawl-settings`: the limit that applies, the def
 ```sh
 aws ssm put-parameter --overwrite \
   --name /jobdeputy/jobdeputy-dev-iad/crawl-limits \
-  --value '{"dailyDefault":20,"dailyMax":50,"maxActive":1,"platformRunsPerWeek":1,"platformRunsPerMonth":4}' \
+  --value '{"dailyDefault":20,"dailyMax":50,"maxActive":1,"platformRunsPerWeek":1,"platformRunsPerMonth":4,"companyJobsDefault":10,"companyJobsMax":10,"jobExpiryDays":7}' \
   --profile jobdeputy-dev-iad
 ```
 
@@ -26,6 +26,9 @@ aws ssm put-parameter --overwrite \
 - **Check it:** sign in and call `GET /me/crawl-settings`. `defaultLimit` and `maxAllowed` show the new values.
 
 - **Free platform AI runs** (T08b3, [0009](../decisions/0009-llm-architecture-and-own-keys.md)): `platformRunsPerWeek` (0 to 100, default 1) and `platformRunsPerMonth` (0 to 400, default 4) per user. A run is one crawl's AI work with the platform model, counted when it is submitted (ISO weeks from Monday 00:00 UTC; calendar months). Past either, a platform crawl gets 429 `platform-ai-limit-reached`; the user can use their own key or `aiSource: none`. If left out, the defaults apply. Set 0 to stop free AI runs (for example if the platform model costs too much).
+
+- **Jobs shown per company** (T08c, [T08 direction](../tasks/t08-relevance-filter.md)): `companyJobsDefault` and `companyJobsMax` (1 to 100, both 10 if left out; the default can't be above the maximum). A user may choose fewer (`companyJobsLimit` in `PUT /me/crawl-settings`); the rest are hidden as `over_limit`. A lower value applies from each company's next crawl.
+- **Days before a hidden job is deleted** (T08c): `jobExpiryDays` (1 to 90, default 7). Applies to jobs hidden or closed from then on; a job already hidden keeps its date. The crawl worker reads the setting too (same 5-minute cache).
 
 ## Notes
 

@@ -97,6 +97,10 @@ export interface CrawlStats {
   pagesFetched?: number;
   /** T07c: jobs closed because this complete crawl no longer listed them. */
   jobsClosed?: number;
+  /** T08c: jobs the code filter kept (`candidate`), shown or not. */
+  jobsRelevant?: number;
+  /** T08c: kept jobs hidden by the per-company limit. */
+  jobsOverLimit?: number;
 }
 
 /** Why a crawl saved only part of what it could have read (0008). */

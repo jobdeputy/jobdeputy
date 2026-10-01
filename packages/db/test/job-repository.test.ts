@@ -191,6 +191,22 @@ describe('JobRepository reads', () => {
       ExclusiveStartKey: { userId: USER, jobId: 'j0' },
       ExpressionAttributeValues: { ':u': USER },
     });
+    expect(cmd.input).not.toHaveProperty('FilterExpression');
+  });
+
+  it('T08c: `shown` leaves out jobs the filter or the company limit hid', async () => {
+    const { c, send } = client(() => ({ Items: [] }));
+    await repo(c).list(USER, 20, undefined, 'shown');
+    expect(firstSent<QueryCommand>(send).input).toMatchObject({
+      FilterExpression:
+        '(attribute_not_exists(#filter.#state) OR #filter.#state <> :dropped) AND (attribute_not_exists(#limitState) OR #limitState <> :over)',
+      ExpressionAttributeNames: {
+        '#filter': 'filter',
+        '#state': 'state',
+        '#limitState': 'limitState',
+      },
+      ExpressionAttributeValues: { ':u': USER, ':dropped': 'not_relevant', ':over': 'over_limit' },
+    });
   });
 });
 
@@ -205,13 +221,15 @@ describe('JobRepository.closeMissing (T07c)', () => {
         return {
           Attributes:
             input.Key?.jobId === 'j1'
-              ? { jobId: 'j1' }
+              ? { jobId: 'j1', companyKey: 'greenhouse:acme', status: 'new' }
               : { jobId: 'j2', sourceIds: new Set(['S2']) },
         };
       }
       return {};
     });
-    expect(await repo(c).closeMissing(USER, 'S1', ['j1', 'j2'])).toBe(1);
+    expect(await repo(c).closeMissing(USER, 'S1', ['j1', 'j2'])).toEqual([
+      { jobId: 'j1', companyKey: 'greenhouse:acme' },
+    ]);
     const commands = send.mock.calls.map(([cmd]) => (cmd as UpdateCommand).input);
     const drops = commands.filter((i) => i.UpdateExpression?.startsWith('DELETE'));
     expect(drops.map((i) => i.Key?.jobId).sort()).toEqual(['j1', 'j2']);
@@ -242,7 +260,7 @@ describe('JobRepository.closeMissing (T07c)', () => {
       // The close of `raced`: another crawl added a source back first.
       throw named('ConditionalCheckFailedException');
     });
-    expect(await repo(c).closeMissing(USER, 'S1', ['gone', 'closed', 'raced'])).toBe(0);
+    expect(await repo(c).closeMissing(USER, 'S1', ['gone', 'closed', 'raced'])).toEqual([]);
     expect(n).toBe(4);
   });
 
@@ -255,7 +273,129 @@ describe('JobRepository.closeMissing (T07c)', () => {
 
   it('nothing to close sends nothing', async () => {
     const { c, send } = client();
-    expect(await repo(c).closeMissing(USER, 'S1', [])).toBe(0);
+    expect(await repo(c).closeMissing(USER, 'S1', [])).toEqual([]);
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it('T08c: a closed job the user never acted on expires; one they acted on is kept', async () => {
+    const { c, send } = client((cmd) => {
+      const input = (cmd as UpdateCommand).input;
+      if (input.UpdateExpression?.startsWith('DELETE')) {
+        const status = input.Key?.jobId === 'untouched' ? 'new' : 'shortlisted';
+        return { Attributes: { companyKey: 'greenhouse:acme', status } };
+      }
+      return {};
+    });
+    await repo(c).closeMissing(USER, 'S1', ['untouched', 'acted'], 1_800_000_000);
+    const closes = send.mock.calls
+      .map(([cmd]) => (cmd as UpdateCommand).input)
+      .filter((i) => i.UpdateExpression?.startsWith('SET #closedAt'));
+    const byJob = Object.fromEntries(closes.map((i) => [i.Key?.jobId, i]));
+    expect(byJob.untouched).toMatchObject({
+      // Kept sooner if it was already hidden.
+      UpdateExpression: 'SET #closedAt = :now, updatedAt = :now, #ttl = if_not_exists(#ttl, :ttl)',
+      ExpressionAttributeNames: { '#ttl': 'ttl' },
+      ExpressionAttributeValues: { ':ttl': 1_800_000_000 },
+    });
+    expect(byJob.acted?.UpdateExpression).toBe('SET #closedAt = :now, updatedAt = :now');
+    expect(byJob.acted?.ExpressionAttributeNames).not.toHaveProperty('#ttl');
+  });
+});
+
+describe('JobRepository.save: fit (T08c)', () => {
+  const EXPIRES = 1_800_000_000;
+  const filter = (state: 'candidate' | 'not_relevant') => ({
+    state,
+    roleIds: state === 'candidate' ? ['R1'] : [],
+    reasons: [state === 'candidate' ? 'title_match' : 'title_no_match'],
+    priority: 50,
+    version: 1,
+  });
+  const saveOne = async (
+    fit: NonNullable<JobPosting['fit']>,
+    old: Record<string, unknown> = {},
+  ) => {
+    const { c, send } = client((cmd) =>
+      (cmd as UpdateCommand).input.UpdateExpression?.startsWith('SET') ? { Attributes: old } : {},
+    );
+    await repo(c).save(USER, [posting({ fit })], { ...CONTEXT, expiresAt: EXPIRES });
+    return { first: readable(firstSent<UpdateCommand>(send)), send };
+  };
+
+  it('a shown job stores the verdict and never expires', async () => {
+    const { first } = await saveOne({ filter: filter('candidate'), limitState: 'counted' });
+    expect(first.byName.filter?.value).toEqual(filter('candidate'));
+    expect(first.byName.limitState?.value).toBe('counted');
+    expect(first.byName).not.toHaveProperty('ttl');
+    expect(first.expression).toMatch(/REMOVE #closedAt, #ttl$/);
+  });
+
+  it('a dropped job expires 7 days after it was first hidden (not after every crawl)', async () => {
+    const { first } = await saveOne({ filter: filter('not_relevant') });
+    expect(first.byName.ttl).toEqual({ value: EXPIRES, onlyIfMissing: true });
+    // Not a candidate: not ranked for its company.
+    expect(first.expression).toMatch(/REMOVE #closedAt, #limitState$/);
+  });
+
+  it('a job over its company limit is hidden and expires too', async () => {
+    const { first } = await saveOne({ filter: filter('candidate'), limitState: 'over_limit' });
+    expect(first.byName.limitState?.value).toBe('over_limit');
+    expect(first.byName.ttl).toEqual({ value: EXPIRES, onlyIfMissing: true });
+  });
+
+  it('a hidden job the user acted on keeps no expiry (their history)', async () => {
+    const { send } = await saveOne(
+      { filter: filter('not_relevant') },
+      { type: 'job', status: 'applied' },
+    );
+    expect(send).toHaveBeenCalledTimes(2);
+    const fix = (send.mock.calls[1]?.[0] as UpdateCommand | undefined)?.input;
+    expect(fix).toMatchObject({
+      UpdateExpression: 'REMOVE #ttl',
+      ConditionExpression: 'attribute_exists(userId) AND #status <> :new',
+    });
+  });
+
+  it('an untouched hidden job needs no second write', async () => {
+    const { send } = await saveOne(
+      { filter: filter('not_relevant') },
+      { type: 'job', status: 'new' },
+    );
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('JobRepository.markOverLimit (T08c)', () => {
+  const named = (name: string) => Object.assign(new Error(name), { name });
+
+  it('hides and expires untouched jobs; acted-on ones are hidden without expiry; gone ones skipped', async () => {
+    const { c, send } = client((cmd) => {
+      const input = (cmd as UpdateCommand).input;
+      const withTtl = input.UpdateExpression?.includes('#ttl');
+      if (input.Key?.jobId === 'acted' && withTtl) throw named('ConditionalCheckFailedException');
+      if (input.Key?.jobId === 'gone') throw named('ConditionalCheckFailedException');
+      return {};
+    });
+    await repo(c).markOverLimit(USER, ['untouched', 'acted', 'gone'], 1_800_000_000);
+    const inputs = send.mock.calls.map(([cmd]) => (cmd as UpdateCommand).input);
+    expect(inputs.filter((i) => i.Key?.jobId === 'untouched')).toEqual([
+      expect.objectContaining({
+        UpdateExpression:
+          'SET #limitState = :over, updatedAt = :now, #ttl = if_not_exists(#ttl, :ttl)',
+        ConditionExpression: 'attribute_exists(userId) AND #status = :new',
+      }),
+    ]);
+    expect(inputs.filter((i) => i.Key?.jobId === 'acted').map((i) => i.UpdateExpression)).toEqual([
+      'SET #limitState = :over, updatedAt = :now, #ttl = if_not_exists(#ttl, :ttl)',
+      'SET #limitState = :over, updatedAt = :now',
+    ]);
+    expect(inputs.filter((i) => i.Key?.jobId === 'gone')).toHaveLength(2);
+  });
+
+  it('other failures are not hidden', async () => {
+    const { c } = client(() => {
+      throw new Error('InternalServerError');
+    });
+    await expect(repo(c).markOverLimit(USER, ['j1'], 1)).rejects.toThrow('InternalServerError');
   });
 });

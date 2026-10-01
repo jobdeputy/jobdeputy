@@ -65,7 +65,8 @@ describe('GET /me/jobs', () => {
     const d = deps();
     const res = await route(event('GET /me/jobs', { queryStringParameters: { limit: '5' } }), d);
     expect(res.statusCode).toBe(200);
-    expect(d.repo.list).toHaveBeenCalledWith('user-a', 5, undefined);
+    // Hidden jobs are left out unless asked for (T08c).
+    expect(d.repo.list).toHaveBeenCalledWith('user-a', 5, undefined, 'shown');
     const body = JSON.parse(res.body as string);
     expect(body.nextCursor).toBe(J1);
     expect(body.jobs[0]).toMatchObject({
@@ -74,7 +75,10 @@ describe('GET /me/jobs', () => {
       companyName: 'Acme',
       hasDescription: true,
       status: 'new',
+      hidden: false,
     });
+    // Not filtered yet (found before T08c): no verdict to show.
+    expect(body.jobs[0]).not.toHaveProperty('fit');
     for (const hidden of ['description', 'userId', 'contentHash', 'descriptionHash', 'dedupeKey']) {
       expect(body.jobs[0], hidden).not.toHaveProperty(hidden);
     }
@@ -83,11 +87,58 @@ describe('GET /me/jobs', () => {
   it('pages with a job-ID cursor, and refuses a bad one (400)', async () => {
     const d = deps();
     await route(event('GET /me/jobs', { queryStringParameters: { cursor: J1 } }), d);
-    expect(d.repo.list).toHaveBeenCalledWith('user-a', 20, J1);
-    for (const query of [{ cursor: 'not-a-job' }, { limit: '51' }, { other: 'x' }]) {
+    expect(d.repo.list).toHaveBeenCalledWith('user-a', 20, J1, 'shown');
+    for (const query of [
+      { cursor: 'not-a-job' },
+      { limit: '51' },
+      { other: 'x' },
+      { view: 'hidden' },
+    ]) {
       const res = await route(event('GET /me/jobs', { queryStringParameters: query }), d);
       expect(res.statusCode, JSON.stringify(query)).toBe(400);
     }
+  });
+});
+
+describe('GET /me/jobs: fit (T08c)', () => {
+  const filter = (state: 'candidate' | 'not_relevant', reasons: string[]) => ({
+    state,
+    roleIds: state === 'candidate' ? ['R1'] : [],
+    reasons,
+    priority: 50,
+    version: 1,
+  });
+
+  it('view=all also lists hidden jobs, each saying why, and when it expires', async () => {
+    const d = deps({
+      list: vi.fn(async () => ({
+        items: [
+          job({ filter: filter('candidate', ['title_match']), limitState: 'counted' }),
+          job({ filter: filter('not_relevant', ['place', 'seniority']), ttl: 1_790_000_000 }),
+          job({
+            filter: filter('candidate', ['title_match']),
+            limitState: 'over_limit',
+            ttl: 1_790_000_000,
+          }),
+        ],
+      })),
+    });
+    const res = await route(event('GET /me/jobs', { queryStringParameters: { view: 'all' } }), d);
+    expect(d.repo.list).toHaveBeenCalledWith('user-a', 20, undefined, 'all');
+    const [shown, dropped, over] = JSON.parse(res.body as string).jobs;
+    expect(shown).toMatchObject({
+      hidden: false,
+      fit: { state: 'candidate', roleIds: ['R1'], reasons: ['title_match'], limitState: 'counted' },
+    });
+    expect(shown).not.toHaveProperty('expiresAt');
+    expect(dropped).toMatchObject({
+      hidden: true,
+      fit: { state: 'not_relevant', reasons: ['place', 'seniority'] },
+      expiresAt: '2026-09-21T14:13:20.000Z',
+    });
+    expect(dropped.fit).not.toHaveProperty('limitState');
+    expect(dropped.fit).not.toHaveProperty('priority');
+    expect(over).toMatchObject({ hidden: true, fit: { limitState: 'over_limit' } });
   });
 });
 
