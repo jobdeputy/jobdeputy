@@ -14,7 +14,7 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | How an item is read or written | `packages/db/src/<feature>-repository.ts`; every transaction goes through `transact.ts` |
 | What a crawl fetches or refuses | `apps/worker/src/fetch/` |
 | How jobs are read from a page or board | `apps/worker/src/jobs/` |
-| Which crawled jobs are kept or shown, and why | `apps/worker/src/relevance/` (the code filter, the per-company limit) |
+| Which crawled jobs are kept or shown, and why | `apps/worker/src/relevance/` (the code filter, the per-company limit), `apps/worker/src/relevance-worker.ts` (the LLM score, T08d) |
 | Item attributes | the repository **and** `docs/data-model.md` (with a change-log line) |
 | CI permissions | `infra/lib/cicd-stack.ts` |
 | An LLM task, its prompt, or its limits | `packages/llm/src/tasks/<task>.ts` (raise its `version`, add it to `TASKS`); eval cases in `packages/llm/eval/cases/`, `eval/versions.json`, baseline in `eval/baselines/` |
@@ -45,6 +45,7 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | `key-check-worker.ts` | ai-keys queue: decrypts a key, one check call, records `valid` or `invalid` (T08b2) |
 | `deletion-worker.ts` | erases every user table and S3 prefix (T12) |
 | `test-data-reaper.ts` | dev only: requests deletion of old test users |
+| `relevance-worker.ts` | T08d: relevance queue: scores a crawl's candidates with the LLM (stored per call with its tokens), hides low scores, ranks each company by score |
 | `queue-health.ts` | T08d1: every 5 minutes, checks each worker queue (dead letters, backlog) and emails the alarm topic on changes |
 | `ping-worker.ts` | dev only: T04 async test |
 | `deadline.ts` | stop before Lambda's timeout |
@@ -57,7 +58,8 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | `jobs/schema-org.ts` | schema.org `JobPosting` |
 | `jobs/job.ts`, `jobs/text.ts` | the normalized job, dedupe key, hashes; HTML to text, limits |
 | `relevance/code-filter.ts` | T08c: the free code filter: title, level, place, workplace, type, salary, excluded words against the roles; `candidate` or `not_relevant`, with reasons |
-| `relevance/company-limit.ts`, `relevance/fit.ts` | T08c: ranking each company's candidates within the limit (`counted`, `over_limit`); the crawl's filter-then-rank step |
+| `relevance/company-limit.ts`, `relevance/fit.ts` | T08c: ranking each company's candidates within the limit (`counted`, `over_limit`; by score first since T08d); the crawl's filter-then-rank step; the loader of roles, profile, and limits both workers use |
+| `relevance/llm-inputs.ts` | T08d: the user and each job as the model sees them (short IDs), and the inputs hash that skips unchanged jobs |
 
 ## packages
 
@@ -67,6 +69,7 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | `db/src/crawl-repository.ts` | sources, crawls, daily and active limits, finish |
 | `db/src/job-repository.ts` | save jobs (idempotent, with the filter verdict and expiry), close missing, mark over the limit, list (shown or all), get |
 | `db/src/company-limit-repository.ts` | T08c: `usage` `COMPANY#`: each company's shown jobs, replaced at the version read |
+| `db/src/relevance-repository.ts` | T08d: a crawl's scoring run: start, each task call with its tokens and scores in one transaction, end with an audit entry |
 | `db/src/crawl-limits.ts` | the admin crawl limits from SSM, cached 5 minutes (API and crawl worker) |
 | `db/src/document-repository.ts`, `preferences-repository.ts`, `profile-repository.ts` | T05 items, with counters and audit |
 | `db/src/ai-usage-repository.ts` | token use per month and model (`aiUsageUpdate` for the result transaction, `listAiUsage`) |
@@ -82,6 +85,8 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | `llm/src/prompt.ts`, `llm/src/grounding.ts` | data blocks and the rules against prompt injection; keep only the IDs we sent (0010) |
 | `llm/src/stub-model.ts` | `@jobdeputy/llm/testing`: scripted model for unit and integration tests |
 | `llm/src/tasks/smoke.ts`, `llm/src/tasks/index.ts` | the fixed check Nightly and the eval run against the real model; `TASKS`, every task with a sample input |
+| `llm/src/tasks/relevance.ts` | T08d: the `relevance` task (score 0–100, best role, reasons) and `scoreRelevance` (batches of 10, one follow-up, at most 6 task calls) |
+| `llm/src/tasks/relevance-stub.ts` | T08d: dev stacks only: the `stub` provider's fixed relevance answers, for integration tests |
 | `llm/src/fingerprint.ts` | hash of a task's prompt, schema, and limits; must match `eval/versions.json` for its version |
 | `llm/eval/` | eval harness (`harness.ts`), runner (`run.ts`, `pnpm --filter @jobdeputy/llm eval`), cases, saved baselines |
 
@@ -92,7 +97,7 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | `bin/app.ts`, `lib/build-app.ts`, `config/` | which stacks exist per stage, cell, and owner |
 | `lib/cell-stack.ts` | everything in one Region cell: tables, Lambdas, grants, routes, pipelines, alarms |
 | `lib/keys-stack.ts` | the cell's KMS key for own AI keys, in its own stack (kept on delete); its ARN in SSM |
-| `lib/constructs/` | `ai-keys` (key API, key-check worker, KMS grants), `llm-monitoring` (LLM dashboard, alarms, `llmMetricsEnvironment`), `async-pipeline` (stream → Pipe → queue → worker), `queue-worker`, `queue-health` (the scheduled check that watches every queue; T08d1), `auth`, `documents` (bucket, malware scan), `node-function` |
+| `lib/constructs/` | `ai-keys` (key API, key-check worker, KMS grants), `llm-monitoring` (LLM dashboard, alarms, `llmMetricsEnvironment`), `async-pipeline` (stream → Pipe → queue → worker), `queue-worker`, `queue-health` (the scheduled check that watches every queue; T08d1), `relevance` (T08d: the relevance worker, its Pipe on the crawls stream, its grants), `auth`, `documents` (bucket, malware scan), `node-function` |
 | `lib/cicd-stack.ts` | GitHub OIDC roles (deploy, PR integration) |
 | `lib/guards.ts` | cost and Region guard checks |
 

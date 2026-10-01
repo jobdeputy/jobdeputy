@@ -1,8 +1,8 @@
 # T08d: LLM relevance scoring
 
-- **Status:** in-progress (T08d1 in review)
+- **Status:** in-progress (T08d1 done; T08d2 in review)
 - **Depends on:** T08b, T08c
-- **Branch / PR:** T08d1 `t08d1-queue-health`
+- **Branch / PR:** T08d1 `t08d1-queue-health` ([#59](https://github.com/jobdeputy/jobdeputy/pull/59)); T08d2 `t08d2-relevance-scoring`
 
 ## Goal
 
@@ -29,15 +29,26 @@ Candidate jobs get a score and a short reason from an LLM, in their own queue an
    - **T08d2, scoring:** the relevance queue and worker, the `relevance` task, ranking by score, usage.
    - **T08d3, descriptions:** fetched for candidates only through the board's single-posting endpoint; 404 or 410 closes the job.
 2. **How a run starts:** a second Pipe on the crawls stream passes crawls that end `succeeded` with `aiSource` not `none` and `jobsRelevant > 0`. No new table; one run is one crawl (the allowance counted at submit).
-3. **Fixed worst case per crawl:** at most **50 candidates** (admin setting; shown ones first), in batches of **10 jobs per task call**, so at most 5 task calls × 3 turns = **15 model calls**. Each job: title, company, places, type, and the first 1,500 characters of its description.
+3. **Fixed worst case per crawl:** at most **50 candidates** (admin setting; shown ones first), in batches of **10 jobs per task call**. Each job: title, company, places, type, and the first 1,500 characters of its description. Updated in T08d2: the eval showed the platform model sometimes stops early in a batch (after a job carrying an injection attempt, it skipped the jobs before it too), so jobs left out are sent once more in **one follow-up call**: at most **6 task calls × 3 turns = 18 model calls** (was 5 and 15). The crawl stores its call count, so retries never go past 6.
 4. **Profile sent to the model:** roles, search settings, headline, skills, and the first ~6,000 characters of the default résumé's text. With the user's own key the résumé goes to that provider, so the consent text shown when the key is saved must say so.
 5. **Skip unchanged jobs:** each score is stored with a hash of its inputs (job `contentHash` and `descriptionHash`, the profile and roles, and the prompt version); a re-crawl scores only jobs whose hash changed.
 6. **Output:** `relevance {score 0–100, bestRoleId?, reasons (at most 3 short ones), model, promptVersion, inputsHash, scoredAt}`. Code checks exactly the given job IDs come back, once each, and that `bestRoleId` is one of the user's roles ([0010](../decisions/0010-platform-ai-model.md)).
 7. **The score decides:** the per-company ranking uses it, and a score **below 30** (admin setting) hides the job as `not_relevant` (reason `llm_low_score`), expiring like other hidden jobs. Jobs not scored (over the cap, or the run failed) keep their T08c verdict.
 
+## T08d2 notes (found while building)
+
+- **How a run starts and stays single:** the crawl worker writes the ranked `candidates` with the finished crawl; the relevance Pipe passes `MODIFY` events of succeeded crawls with an AI source, `jobsRelevant` > 0, and no `relevance` yet. The worker's first write adds `relevance`, so its own writes never start another run.
+- **Stream replay:** a new Pipe reads the crawls stream from its start (24 hours). The worker skips crawls that finished more than 30 minutes ago without a run, so the first deploy does not score old crawls.
+- **One transaction per task call:** the crawl's progress (`calls`, `sent`, `llm`), the `AI#` tokens, and the scores. A retried message never sends a job again and never counts tokens twice; a provider error is retried by the queue, and the last attempt ends the run (`model_unavailable`). An own key the provider rejects ends it at once (`key_rejected`).
+- **A re-crawl and stored scores:** each crawl runs the keyword filter first, so a job hidden by a low score is briefly shown again until the scoring run reapplies its stored score (seconds; no model call while its inputs are unchanged). A crawl with `aiSource` `none` shows the keyword verdict only.
+- **Ranking:** scored jobs rank before unscored ones (by score), then by role priority and date (`compareRank`).
+- **Integration tests never call a model:** the dev-only `stub` provider answers relevance by a fixed rule (`relevance-stub.ts`), and the account-deletion test crawls with `none`, since Nightly runs the suite on shared dev.
+- **Eval:** `relevance@v1` cases are the smoke eval's synthetic people and jobs with roles, search settings, and résumé text; the eval runs them through `scoreRelevance` like the worker. Baseline on the platform model: 22/22 labels, 4/4 injections resisted, every output valid on the first try.
+- **Consent:** saving an own key now says the profile and résumé text go to the provider too.
+
 ## Done when
 
-- [ ] Relevance is tested with synthetic profiles and jobs and a stub model, including edge cases.
-- [ ] Each stored job shows why it matched.
-- [ ] A fixed worst-case number of calls per crawl, stated in the PR.
-- [ ] T08d1: every worker queue is watched by the queue health check, and shared dev stays within the 10 free alarms.
+- [x] Relevance is tested with synthetic profiles and jobs and a stub model, including edge cases (T08d2).
+- [x] Each stored job shows why it matched (`relevance.reasons`, `GET /me/jobs`; T08d2).
+- [x] A fixed worst-case number of calls per crawl, stated in the PR (6 task calls, 18 model calls; T08d2).
+- [x] T08d1: every worker queue is watched by the queue health check, and shared dev stays within the 10 free alarms.

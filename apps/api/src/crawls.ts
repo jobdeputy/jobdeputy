@@ -39,6 +39,7 @@ import {
   parseCrawlUrl,
   parseJsonBody,
   problem,
+  RELEVANCE_ERRORS,
   updateCrawlSettingsInput,
   validationProblem,
 } from '@jobdeputy/shared';
@@ -217,6 +218,25 @@ export function crawlView(c: Crawl) {
     // T07b: what the crawl read and saved.
     ...(c.stats ? { stats: c.stats } : {}),
     ...(c.extraction ? { extraction: c.extraction } : {}),
+    // T08d: the AI scoring of the candidates, and the model and tokens it used.
+    ...(c.relevance
+      ? {
+          relevance: {
+            status: c.relevance.status,
+            ...(c.relevance.reason
+              ? {
+                  error: {
+                    code: c.relevance.reason,
+                    message: RELEVANCE_ERRORS[c.relevance.reason],
+                  },
+                }
+              : {}),
+            ...(c.relevance.stats ? { stats: c.relevance.stats } : {}),
+            ...(c.relevance.finishedAt ? { finishedAt: c.relevance.finishedAt } : {}),
+          },
+        }
+      : {}),
+    ...(c.llm ? { llm: c.llm } : {}),
     createdAt: c.createdAt,
     ...(c.startedAt ? { startedAt: c.startedAt } : {}),
     ...(c.finishedAt ? { finishedAt: c.finishedAt } : {}),

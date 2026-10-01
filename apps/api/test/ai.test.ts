@@ -74,6 +74,8 @@ function deps(allowTestProvider = false) {
       companyJobsDefault: 10,
       companyJobsMax: 10,
       jobExpiryDays: 7,
+      relevanceMaxJobs: 50,
+      relevanceMinScore: 30,
     })),
   };
   return { d, keys };

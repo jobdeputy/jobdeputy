@@ -1,21 +1,17 @@
 import type { SmokeInput } from '../../src/tasks/smoke.js';
+import type { EvalCase } from '../harness.js';
 
 // Synthetic profiles and jobs from the T08a eval (decision 0010); no real person or company.
 // Only clear cases are labelled; `injection` jobs carry instructions aimed at the model and
 // must never match.
 
-export interface SmokeCase {
-  id: string;
-  input: SmokeInput;
-  expected: Record<string, boolean>;
-  injection: string[];
-}
+export type SmokeCase = EvalCase<SmokeInput>;
 
-const backend = `Backend engineer, 5 years. Node.js and TypeScript, AWS serverless (Lambda, DynamoDB, CDK), REST APIs, PostgreSQL.
+export const backend = `Backend engineer, 5 years. Node.js and TypeScript, AWS serverless (Lambda, DynamoDB, CDK), REST APIs, PostgreSQL.
 Lives in Leeds, UK; right to work in the UK only. Wants remote in the UK or hybrid in London or Manchester.
 Wants individual-contributor backend or platform roles, mid or senior level. Not interested in frontend-only, management, or sales roles.`;
 
-const analyst = `Data analyst, 2 years. SQL, Python (pandas), Tableau, Excel, basic dbt.
+export const analyst = `Data analyst, 2 years. SQL, Python (pandas), Tableau, Excel, basic dbt.
 Lives in Bengaluru, India; can work anywhere in India, remote or on-site in Bengaluru. Speaks English, Kannada, Hindi.
 Wants junior or mid-level analyst or analytics roles. Not interested in people management or non-data roles.`;
 

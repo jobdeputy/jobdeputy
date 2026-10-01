@@ -5,8 +5,9 @@ import { buildApp } from '../lib/build-app.js';
 import { MAX_RECEIVES } from '../lib/cell-stack.js';
 import { aiKeysKeyParameter } from '../lib/keys-stack.js';
 
-// T08b2 (decision 0009): only the key API encrypts, only the key-check worker decrypts, each
-// only with the user and provider as encryption context; the test provider exists only in dev.
+// T08b2 (decision 0009): only the key API encrypts, only the workers that call providers
+// (key check, T08d relevance) decrypt, each only with the user and provider as encryption
+// context; the test provider exists only in dev.
 
 const cell = (stage: 'dev' | 'prod', owner?: string) => {
   const name = owner ? `jobdeputy-${stage}-${owner}-iad` : `jobdeputy-${stage}-iad`;
@@ -38,7 +39,7 @@ describe('ai-keys (T08b2)', () => {
     });
   });
 
-  it('gives KMS to exactly two functions: encrypt to the key API, decrypt to the key-check worker', () => {
+  it('gives KMS to exactly three functions: encrypt to the key API, decrypt to the two workers that call providers', () => {
     for (const t of [dev, cell('prod'), cell('dev', 'pr42')]) {
       const kms = statements(t).filter(([, s]) =>
         [s.Action].flat().some((a) => a.startsWith('kms:')),
@@ -46,6 +47,7 @@ describe('ai-keys (T08b2)', () => {
       expect(kms.map(([id, s]) => [id.replace(/[0-9A-F]{8}$/, ''), s.Action])).toEqual([
         ['AiKeysAiApiFnServiceRoleDefaultPolicy', 'kms:Encrypt'],
         ['AiKeysKeyCheckWorkerFnServiceRoleDefaultPolicy', 'kms:Decrypt'],
+        ['RelevanceRelevanceWorkerFnServiceRoleDefaultPolicy', 'kms:Decrypt'],
       ]);
       for (const [, s] of kms) {
         expect(s.Condition).toEqual({
@@ -91,6 +93,6 @@ describe('ai-keys (T08b2)', () => {
         .filter((v) => v !== undefined);
     expect(new Set(flags(dev))).toEqual(new Set(['true']));
     expect(new Set(flags(cell('prod')))).toEqual(new Set(['false']));
-    expect(flags(cell('prod')).length).toBe(3); // AI API, key-check worker, crawls API
+    expect(flags(cell('prod')).length).toBe(4); // AI API, key-check and relevance workers, crawls API
   });
 });

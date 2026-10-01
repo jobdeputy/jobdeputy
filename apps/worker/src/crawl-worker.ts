@@ -24,14 +24,13 @@ import {
   crawlKeys,
   crawlMessage,
   createLogger,
-  effectiveCompanyJobsLimit,
 } from '@jobdeputy/shared';
 import type { Context, SQSBatchResponse, SQSEvent, SQSRecord } from 'aws-lambda';
 import { ulid } from 'ulid';
 import { withDeadline } from './deadline.js';
 import { createFetcher, FetchError, type FetchedPage } from './fetch/fetcher.js';
 import { type FetchFn, readJobs } from './jobs/crawl-jobs.js';
-import { type FitInputs, fitJobs, type ShownStore } from './relevance/fit.js';
+import { type FitInputs, fitInputsLoader, fitJobs, type ShownStore } from './relevance/fit.js';
 
 const logger = createLogger('crawl-worker');
 
@@ -173,7 +172,7 @@ export async function processRecord(
       deps.remainingMs() - SAFETY_MARGIN_MS,
     );
     const key = crawlKeys(userId, crawlId).page;
-    const { saved, closed, listedJobIds, fit } = await withDeadline(
+    const { saved, closed, listedJobIds, fit, inputs } = await withDeadline(
       (async () => {
         // T08c: filter every job, rank each company's candidates, then save with the result.
         const inputs = await deps.fitInputs(userId);
@@ -182,12 +181,14 @@ export async function processRecord(
         const context = { sourceId: crawl.sourceId, crawlId, expiresAt };
         const saved = await deps.saveJobs(userId, fit.jobs, context);
         await deps.markOverLimit(userId, fit.pushedOut, expiresAt);
-        if (extraction.outcome !== 'read') return { saved, closed: 0, fit };
+        if (extraction.outcome !== 'read') return { saved, closed: 0, fit, inputs };
         // T07c: what this page lists now. Only a complete crawl can tell a job is gone;
         // a partial one keeps what it knew and adds what it read.
         const seen = jobs.map((j) => j.jobId);
         const previous = await deps.listedJobIds(userId, crawl.sourceId);
-        if (!complete) return { saved, closed: 0, fit, listedJobIds: listed(seen, previous) };
+        if (!complete) {
+          return { saved, closed: 0, fit, inputs, listedJobIds: listed(seen, previous) };
+        }
         const current = new Set(seen);
         const missing = previous.filter((id) => !current.has(id));
         const closedJobs = await deps.closeJobs(userId, crawl.sourceId, missing, expiresAt);
@@ -197,7 +198,7 @@ export async function processRecord(
           byCompany.set(j.companyKey, [...(byCompany.get(j.companyKey) ?? []), j.jobId]);
         for (const [companyKey, ids] of byCompany)
           await deps.shown.release(userId, companyKey, ids);
-        return { saved, closed: closedJobs.length, fit, listedJobIds: seen };
+        return { saved, closed: closedJobs.length, fit, inputs, listedJobIds: seen };
       })(),
       deps.remainingMs() - SAFETY_MARGIN_MS,
     );
@@ -222,6 +223,10 @@ export async function processRecord(
           s3Key: key,
         },
         stats,
+        // T08d: what the LLM scores next, when this crawl has an AI source.
+        ...(crawl.aiSource && crawl.aiSource !== 'none'
+          ? { candidates: fit.ranked.slice(0, inputs.relevanceMaxJobs) }
+          : {}),
         extraction,
         source: {
           kind: board ? 'ats_board' : 'unknown',
@@ -351,25 +356,7 @@ function defaultDeps(): CrawlWorkerDeps {
     },
     closeJobs: (userId, sourceId, jobIds, expiresAt) =>
       jobs.closeMissing(userId, sourceId, jobIds, expiresAt),
-    fitInputs: async (userId) => {
-      const [roles, search, profile, settings, config] = await Promise.all([
-        preferences.listRoles(userId),
-        preferences.getSearch(userId),
-        profiles.get(userId),
-        crawlSettings.get(userId),
-        limits(),
-      ]);
-      return {
-        profile: {
-          roles: roles.filter((r) => r.active),
-          ...(search ? { search } : {}),
-          ...(profile?.headline ? { headline: profile.headline } : {}),
-          skills: profile?.skills ?? [],
-        },
-        companyLimit: effectiveCompanyJobsLimit(config, settings?.companyJobsLimit),
-        expiryDays: config.jobExpiryDays,
-      };
-    },
+    fitInputs: fitInputsLoader({ preferences, profiles, crawlSettings, limits }),
     shown,
     markOverLimit: (userId, jobIds, expiresAt) => jobs.markOverLimit(userId, jobIds, expiresAt),
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),

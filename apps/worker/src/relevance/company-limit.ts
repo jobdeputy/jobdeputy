@@ -1,8 +1,8 @@
 /**
  * T08c: at most N jobs shown per company (`companyKey` until the shared company list
- * exists, #40). A snapshot, ranked again on every crawl: the best candidates are
- * `counted`, the rest `over_limit`. Until T08d scores jobs, "best" is the matching
- * role's priority, then the newest posting.
+ * exists, #40). A snapshot, ranked again on every crawl and every scoring run: the best
+ * candidates are `counted`, the rest `over_limit`. "Best" is the LLM's score (T08d) when
+ * there is one, then the matching role's priority, then the newest posting.
  */
 
 /** What the company's `usage` item remembers about each shown job, to rank it again later. */
@@ -11,14 +11,21 @@ export interface ShownEntry {
   p: number;
   /** `postedAt`, when known. */
   t?: string;
+  /** T08d: the LLM's score (0–100), when it has scored the job. */
+  s?: number;
 }
 
 export interface RankedJob extends ShownEntry {
   jobId: string;
 }
 
-/** Higher priority first, then newer, then by ID so the order is always the same. */
+/**
+ * Scored jobs first, higher score first (evidence beats none); then higher priority,
+ * then newer, then by ID so the order is always the same.
+ */
 export function compareRank(a: RankedJob, b: RankedJob): number {
+  if ((a.s === undefined) !== (b.s === undefined)) return a.s === undefined ? 1 : -1;
+  if (a.s !== undefined && b.s !== undefined && a.s !== b.s) return b.s - a.s;
   if (a.p !== b.p) return b.p - a.p;
   if ((a.t ?? '') !== (b.t ?? '')) return (b.t ?? '') < (a.t ?? '') ? -1 : 1;
   return a.jobId < b.jobId ? -1 : a.jobId > b.jobId ? 1 : 0;
@@ -54,7 +61,13 @@ export function applyCompanyLimit(
   const kept = ranked.slice(0, limit);
   const keptIds = new Set(kept.map((j) => j.jobId));
   const shown: Record<string, ShownEntry> = {};
-  for (const j of kept) shown[j.jobId] = j.t !== undefined ? { p: j.p, t: j.t } : { p: j.p };
+  for (const j of kept) {
+    shown[j.jobId] = {
+      p: j.p,
+      ...(j.t !== undefined ? { t: j.t } : {}),
+      ...(j.s !== undefined ? { s: j.s } : {}),
+    };
+  }
   return {
     shown,
     counted: candidates.filter((j) => keptIds.has(j.jobId)).map((j) => j.jobId),

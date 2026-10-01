@@ -35,7 +35,7 @@ Which platform model to use is a separate decision ([T08a](../tasks/t08a-ai-mode
    - A user saves one key per provider, picks the model for it, and chooses a default: the platform model or one of their keys. Each run (for example, a crawl) can use a different choice.
    - When a key is saved, one small test call checks it. The key is never returned or logged; the API shows only its last 4 characters and whether it works.
    - A key the provider rejects (401 or 403) is marked `invalid`, and the run stops with that reason. It never falls back to the platform model silently.
-   - With their own key, the user's job data goes to that provider, outside our Region. The app says so and asks for consent when the key is saved ([0004](0004-regional-cells-and-data-residency.md)).
+   - With their own key, the user's job data goes to that provider, outside our Region (from T08d also their profile, roles, and the start of their résumé's text). The app says so and asks for consent when the key is saved ([0004](0004-regional-cells-and-data-residency.md)).
    - A key is used only for runs the user started ([0002](0002-llm-loop-and-token-budget.md) rule 5).
 3. **Keys are stored encrypted in DynamoDB** (table `ai-keys`, one item per user and provider), encrypted with the cell's KMS key using `userId` and `provider` as the encryption context. Only the key routes may encrypt, and only the LLM workers may decrypt. The table is a user table, so deleting the account deletes the keys. Cost: about $1 per month per KMS key, plus $0.03 per 10,000 requests.
 4. **Platform model allowance:** a user may start at most **1 platform AI run per week and 4 per month** (ISO weeks and calendar months, UTC).

@@ -381,13 +381,14 @@ describe('JobRepository.markOverLimit (T08c)', () => {
     expect(inputs.filter((i) => i.Key?.jobId === 'untouched')).toEqual([
       expect.objectContaining({
         UpdateExpression:
-          'SET #limitState = :over, updatedAt = :now, #ttl = if_not_exists(#ttl, :ttl)',
+          'SET #limitState = :v0, updatedAt = :now, #ttl = if_not_exists(#ttl, :ttl)',
         ConditionExpression: 'attribute_exists(userId) AND #status = :new',
+        ExpressionAttributeValues: expect.objectContaining({ ':v0': 'over_limit' }),
       }),
     ]);
     expect(inputs.filter((i) => i.Key?.jobId === 'acted').map((i) => i.UpdateExpression)).toEqual([
-      'SET #limitState = :over, updatedAt = :now, #ttl = if_not_exists(#ttl, :ttl)',
-      'SET #limitState = :over, updatedAt = :now',
+      'SET #limitState = :v0, updatedAt = :now, #ttl = if_not_exists(#ttl, :ttl)',
+      'SET #limitState = :v0, updatedAt = :now',
     ]);
     expect(inputs.filter((i) => i.Key?.jobId === 'gone')).toHaveLength(2);
   });
@@ -397,5 +398,76 @@ describe('JobRepository.markOverLimit (T08c)', () => {
       throw new Error('InternalServerError');
     });
     await expect(repo(c).markOverLimit(USER, ['j1'], 1)).rejects.toThrow('InternalServerError');
+  });
+});
+
+describe('JobRepository.applyRelevance (T08d)', () => {
+  it('hides low scores as not relevant, ranks the rest, and expires only hidden untouched jobs', async () => {
+    const { c, send } = client();
+    await repo(c).applyRelevance(
+      USER,
+      [
+        { jobId: 'low', hide: { reasons: ['title_match', 'llm_low_score'] } },
+        { jobId: 'shown', limitState: 'counted' },
+        { jobId: 'over', limitState: 'over_limit' },
+      ],
+      1_800_000_000,
+    );
+    const byJob = new Map(
+      send.mock.calls.map(([cmd]) => [
+        (cmd as UpdateCommand).input.Key?.jobId,
+        (cmd as UpdateCommand).input,
+      ]),
+    );
+    expect(byJob.get('low')).toMatchObject({
+      UpdateExpression:
+        'SET #filter.#state = :v0, #filter.#reasons = :v1, updatedAt = :now, #ttl = if_not_exists(#ttl, :ttl) REMOVE #limitState',
+      ConditionExpression: 'attribute_exists(userId) AND #status = :new',
+      ExpressionAttributeValues: expect.objectContaining({
+        ':v0': 'not_relevant',
+        ':v1': ['title_match', 'llm_low_score'],
+        ':ttl': 1_800_000_000,
+      }),
+    });
+    expect(byJob.get('shown')).toMatchObject({
+      UpdateExpression: 'SET #limitState = :v0, updatedAt = :now REMOVE #ttl',
+      ConditionExpression: 'attribute_exists(userId)',
+      ExpressionAttributeValues: expect.objectContaining({ ':v0': 'counted' }),
+    });
+    expect(byJob.get('over')?.UpdateExpression).toBe(
+      'SET #limitState = :v0, updatedAt = :now, #ttl = if_not_exists(#ttl, :ttl)',
+    );
+    expect(send).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('JobRepository.getMany (T08d)', () => {
+  it('reads consistently in chunks of 100 and reads unprocessed keys again', async () => {
+    let first = true;
+    const { c, send } = client((cmd) => {
+      const req = (
+        cmd as { input: { RequestItems: Record<string, { Keys: { jobId: string }[] }> } }
+      ).input.RequestItems.Jobs as { Keys: { jobId: string }[]; ConsistentRead: boolean };
+      expect(req.ConsistentRead).toBe(true);
+      const keys = req.Keys;
+      if (first) {
+        first = false;
+        // Throttled: the last key comes back unprocessed.
+        return {
+          Responses: { Jobs: keys.slice(0, -1).map((k) => ({ jobId: k.jobId })) },
+          UnprocessedKeys: { Jobs: { Keys: keys.slice(-1) } },
+        };
+      }
+      // `missing` does not exist.
+      return {
+        Responses: {
+          Jobs: keys.filter((k) => k.jobId !== 'missing').map((k) => ({ jobId: k.jobId })),
+        },
+      };
+    });
+    const ids = [...Array.from({ length: 101 }, (_, i) => `j${i}`), 'missing'];
+    const jobs = await repo(c).getMany(USER, ids);
+    expect(jobs.map((j) => j.jobId).sort()).toEqual(ids.filter((id) => id !== 'missing').sort());
+    expect(send).toHaveBeenCalledTimes(3);
   });
 });

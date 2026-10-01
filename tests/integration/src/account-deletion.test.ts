@@ -47,8 +47,10 @@ describe('delete my account (deployed)', () => {
       'application/pdf',
       makePdf([['Delete me']]),
     );
+    // `none`: no AI scoring, so this test never calls a model (Nightly runs it on shared dev).
     const crawl = await callApi(api, 'POST', 'me/crawls', token, {
       url: new URL('test-site/jobs-schema-org', testSite).href,
+      aiSource: 'none',
     });
     expect(crawl.status).toBe(202);
     await waitFor(

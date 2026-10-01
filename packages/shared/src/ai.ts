@@ -73,7 +73,8 @@ export function saveAiKeyInput(provider: AiProvider) {
       }),
     modelId,
     consent: z.literal(true, {
-      error: 'Consent is required: job data is sent to the provider, outside our Region',
+      error:
+        'Consent is required: job data and your profile, including résumé text, are sent to the provider, outside our Region',
     }),
   });
 }
@@ -124,6 +125,16 @@ export const updateAiSettingsInput = (allowTestProvider: boolean) =>
     defaultSource: aiSource(allowTestProvider),
     version: z.number().int().min(0),
   });
+
+/** T08d: why a crawl's AI scoring stopped, as shown to the user (its jobs keep the keyword verdict). */
+export const RELEVANCE_ERRORS = {
+  key_missing: 'The key for this AI source was deleted, so the jobs were not scored.',
+  key_invalid: 'The key for this AI source does not work. Check it, then crawl again.',
+  key_rejected: 'The provider rejected the key while scoring. Check it, then crawl again.',
+  model_unavailable:
+    'The AI model was unavailable, so some jobs were not scored. Crawl again later.',
+} as const;
+export type RelevanceError = keyof typeof RELEVANCE_ERRORS;
 
 /** T08b3: the CloudWatch namespace of LLM task metrics (written by packages/llm, read by infra). */
 export const LLM_METRICS_NAMESPACE = 'JobDeputy/LLM';

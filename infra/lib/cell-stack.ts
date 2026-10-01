@@ -28,6 +28,7 @@ import { Documents } from './constructs/documents.js';
 import { LlmMonitoring } from './constructs/llm-monitoring.js';
 import { AppFunction } from './constructs/node-function.js';
 import { QueueHealth } from './constructs/queue-health.js';
+import { Relevance } from './constructs/relevance.js';
 
 export interface CellStackProps extends StackProps {
   readonly stage: StageName;
@@ -534,6 +535,28 @@ export class CellStack extends Stack {
       // Normal worst case: about 6 minutes (3 attempts with 30 s and 120 s waits).
       backlogAfter: Duration.minutes(15),
       queueName: `${id}-crawls`,
+    });
+
+    // T08d: LLM scoring of each AI crawl's candidates (a second Pipe on the crawls stream).
+    new Relevance(this, 'Relevance', {
+      namePrefix: id,
+      stage: props.stage,
+      tables: {
+        crawls: crawlsTable,
+        sources: sourcesTable,
+        jobs: jobsTable,
+        usage: usageTable,
+        audit: auditTable,
+        users: usersTable,
+        preferences: preferencesTable,
+        documents: documentsTable,
+      },
+      documentsBucket: documents.bucket,
+      aiKeys,
+      limitsParameter: crawlLimits,
+      removalPolicy,
+      maxReceives: MAX_RECEIVES,
+      health: queueHealth,
     });
 
     const auditApi = new AppFunction(this, 'AuditApi', {

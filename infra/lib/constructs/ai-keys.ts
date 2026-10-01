@@ -1,6 +1,7 @@
 import { Duration, type RemovalPolicy } from 'aws-cdk-lib';
 import type { Table } from 'aws-cdk-lib/aws-dynamodb';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
+import type { IFunction } from 'aws-cdk-lib/aws-lambda';
 import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 import type { CellId } from '../../config/cells.js';
@@ -33,8 +34,8 @@ export const ENCRYPTION_CONTEXT_KEYS = ['userId', 'provider'];
 /**
  * T08b2 (decision 0009): the user's own AI keys.
  * - `AiApi`: `/me/ai-keys` and `/me/ai-settings`; the only function that may encrypt.
- * - ai-keys (status `checking`) → stream → Pipe → queue → `KeyCheckWorker`, the only
- *   function (until the T08d workers) that may decrypt.
+ * - ai-keys (status `checking`) → stream → Pipe → queue → `KeyCheckWorker`, which may
+ *   decrypt; so may the T08d relevance worker (grantDecrypt), and no other function.
  * The KMS key comes from the cell's keys stack (its ARN in SSM), shared by personal and
  * PR stacks in dev.
  */
@@ -42,11 +43,13 @@ export class AiKeys extends Construct {
   readonly api: AppFunction;
   readonly worker: AppFunction;
   readonly keyArn: string;
+  readonly table: Table;
   /** For other functions that read the table (the crawls API checks a chosen key). */
   readonly env: Record<string, string>;
 
   constructor(scope: Construct, id: string, props: AiKeysProps) {
     super(scope, id);
+    this.table = props.table;
     this.keyArn = StringParameter.valueForStringParameter(
       this,
       aiKeysKeyParameter(props.stage, props.cell),
@@ -135,6 +138,11 @@ export class AiKeys extends Construct {
       health: props.health,
       queueName: `${props.namePrefix}-key-checks`,
     });
+  }
+
+  /** T08d: lets a worker decrypt keys, only with the user and provider as encryption context. */
+  grantDecrypt(fn: IFunction): void {
+    fn.addToRolePolicy(this.kmsStatement('kms:Decrypt'));
   }
 
   /** One KMS action on the cell's key, only with the user and provider as encryption context. */

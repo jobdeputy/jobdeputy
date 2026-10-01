@@ -142,6 +142,31 @@ describe('GET /me/jobs: fit (T08c)', () => {
   });
 });
 
+describe('GET /me/jobs: relevance (T08d)', () => {
+  it("shows the LLM's score and reasons, never what it was computed from", async () => {
+    const relevance = {
+      score: 82,
+      bestRoleId: 'R1',
+      reasons: ['Same role and stack'],
+      model: 'mistral.ministral-3-14b-instruct',
+      promptVersion: 'relevance@v1',
+      inputsHash: 'h'.repeat(32),
+      scoredAt: '2026-10-01T06:00:00.000Z',
+    };
+    const d = deps({ list: vi.fn(async () => ({ items: [job({ relevance }), job()] })) });
+    const [scored, unscored] = JSON.parse(
+      (await route(event('GET /me/jobs'), d)).body as string,
+    ).jobs;
+    expect(scored.relevance).toEqual({
+      score: 82,
+      bestRoleId: 'R1',
+      reasons: ['Same role and stack'],
+      scoredAt: '2026-10-01T06:00:00.000Z',
+    });
+    expect(unscored).not.toHaveProperty('relevance');
+  });
+});
+
 describe('GET /me/jobs/{jobId}', () => {
   it('shows one job in full, only to its owner', async () => {
     const d = deps();

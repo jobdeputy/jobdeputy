@@ -38,13 +38,14 @@ Queue health line: `<queue>: N message(s) in the dead-letter queue (work failed 
 | `account-deletions` | A user's data may not be fully erased: a legal obligation (right to erasure) | **Same day.** Fix, redrive, then verify with [account-deletion.md](account-deletion.md#checking-that-an-account-is-gone). |
 | `document-scans` | A résumé is stuck or failed; the user sees "failed, upload again" | Within a day |
 | `crawls` | Our own failure (a bug, S3 or DynamoDB errors) 3 times in a row. Sites that block us, time out, or are down never reach the DLQ: those crawls end as `failed` with a reason. The crawl already shows `failed` (`internal`), so the user can submit again. | Within a day. After a fix, submit again rather than redrive: a redriven message finds the crawl finished and does nothing. |
+| `relevance` | AI scoring failed 3 times in a row for a reason the worker did not expect (not a provider outage or a bad key: those end the run as `failed` with a reason). The crawl's jobs keep the keyword filter's verdict, so nothing is lost; its `relevance.status` stays `running`. | Within a day. After a fix, submitting the page again scores its jobs; a redriven message resumes the run where it stopped. |
 | `ping-jobs` | Test scaffolding only | Whenever convenient; usually from a forced-failure test |
 
 ## Queue backed up
 
 Queue health line: `<queue>: messages have been waiting for over N minutes (worker stuck, throttled, or not running).`
 
-**Meaning:** messages have waited, without a break, longer than that queue's slowest normal path (crawls 15 minutes, documents 30, account deletions 60; key checks and ping jobs are checked for dead letters only). The worker is stuck, throttled, or failing slowly; users see crawls stuck in `queued`, résumés stuck in `pending`, or, for deletions, data not yet erased.
+**Meaning:** messages have waited, without a break, longer than that queue's slowest normal path (crawls 15 minutes, documents 30, AI scoring 30, account deletions 60; key checks and ping jobs are checked for dead letters only). The worker is stuck, throttled, or failing slowly; users see crawls stuck in `queued`, résumés stuck in `pending`, or, for deletions, data not yet erased.
 
 1. **Is the worker running?** Check its Lambda metrics: `Throttles` (the account's concurrency limit, #35), `Errors`, and `Duration` near the timeout.
 2. **Throttled:** raise the account's concurrency limit, or find what else is using it (a burst of API calls, another stack's tests).

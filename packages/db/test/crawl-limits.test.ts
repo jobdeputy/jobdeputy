@@ -16,6 +16,8 @@ describe('cachedCrawlLimits', () => {
       companyJobsDefault: 10,
       companyJobsMax: 10,
       jobExpiryDays: 7,
+      relevanceMaxJobs: 50,
+      relevanceMinScore: 30,
     });
     now = LIMITS_CACHE_MS - 1;
     await limits();
@@ -34,6 +36,8 @@ describe('cachedCrawlLimits', () => {
       companyJobsDefault: 10,
       companyJobsMax: 10,
       jobExpiryDays: 7,
+      relevanceMaxJobs: 50,
+      relevanceMinScore: 30,
     });
   });
 
@@ -65,6 +69,8 @@ describe('cachedCrawlLimits', () => {
       companyJobsDefault: 10,
       companyJobsMax: 10,
       jobExpiryDays: 7,
+      relevanceMaxJobs: 50,
+      relevanceMinScore: 30,
     });
   });
 });

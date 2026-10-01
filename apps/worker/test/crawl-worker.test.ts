@@ -59,7 +59,13 @@ function page(over: Partial<FetchedPage> = {}): FetchedPage {
 }
 
 /** No roles: every job is a candidate (T08c); the filter itself is tested on its own. */
-const NO_ROLES: FitInputs = { profile: { roles: [], skills: [] }, companyLimit: 10, expiryDays: 7 };
+const NO_ROLES: FitInputs = {
+  profile: { roles: [], skills: [] },
+  companyLimit: 10,
+  expiryDays: 7,
+  relevanceMaxJobs: 50,
+  relevanceMinScore: 30,
+};
 
 /** An in-memory crawl with the same transition rules as the DynamoDB repository. */
 function setup(fetchImpl: FetchFn = async () => page(), fitInputs: FitInputs = NO_ROLES) {
@@ -428,7 +434,13 @@ describe('crawl worker: relevance and the company limit (T08c)', () => {
     Object.fromEntries((deps.saveJobs.mock.calls[0]?.[1] ?? []).map((j) => [j.title, j.fit]));
 
   it('marks each job kept or dropped, with why, and counts them', async () => {
-    const inputs = { profile: { roles: [role], skills: [] }, companyLimit: 10, expiryDays: 7 };
+    const inputs = {
+      profile: { roles: [role], skills: [] },
+      companyLimit: 10,
+      expiryDays: 7,
+      relevanceMaxJobs: 50,
+      relevanceMinScore: 30,
+    };
     const { state, deps } = setup(async () => twoJobs(), inputs);
     expect(await processRecord(record(), deps)).toBe('succeeded');
     expect(saved(deps)).toEqual({
@@ -458,7 +470,13 @@ describe('crawl worker: relevance and the company limit (T08c)', () => {
   });
 
   it('shows at most the limit per company, newest first, and hides the rest', async () => {
-    const inputs = { profile: { roles: [role], skills: [] }, companyLimit: 1, expiryDays: 7 };
+    const inputs = {
+      profile: { roles: [role], skills: [] },
+      companyLimit: 1,
+      expiryDays: 7,
+      relevanceMaxJobs: 50,
+      relevanceMinScore: 30,
+    };
     const { state, deps } = setup(async () => twoJobs(), inputs);
     expect(await processRecord(record(), deps)).toBe('succeeded');
     const fit = saved(deps);
@@ -473,11 +491,44 @@ describe('crawl worker: relevance and the company limit (T08c)', () => {
     expect(version).toBe(0);
   });
 
+  it('T08d: hands the LLM the candidates, shown ones first, up to the admin cap (AI crawls only)', async () => {
+    const inputs = {
+      profile: { roles: [role], skills: [] },
+      companyLimit: 1,
+      expiryDays: 7,
+      relevanceMaxJobs: 2,
+      relevanceMinScore: 30,
+    };
+    const candidatesOf = async (aiSource: string | undefined, max = 2) => {
+      const { deps } = setup(async () => twoJobs(), { ...inputs, relevanceMaxJobs: max });
+      const start = deps.repo.start.getMockImplementation();
+      deps.repo.start.mockImplementation(async (...args) => {
+        const crawl = await start?.(...args);
+        return crawl && aiSource ? ({ ...crawl, aiSource } as Crawl) : crawl;
+      });
+      await processRecord(record(), deps);
+      const outcome = deps.repo.finish.mock.calls[0]?.[1];
+      const titles = new Map(
+        (deps.saveJobs.mock.calls[0]?.[1] ?? []).map((j) => [j.jobId, j.title]),
+      );
+      return outcome?.status === 'succeeded'
+        ? outcome.candidates?.map((id) => titles.get(id))
+        : 'failed';
+    };
+    // Engineer is shown (newest), Senior Engineer is over the limit; Designer was dropped.
+    expect(await candidatesOf('platform')).toEqual(['Engineer', 'Senior Engineer']);
+    expect(await candidatesOf('openai', 1)).toEqual(['Engineer']);
+    expect(await candidatesOf('none')).toBeUndefined();
+    expect(await candidatesOf(undefined)).toBeUndefined();
+  });
+
   it('a better job pushes out one another page listed', async () => {
     const inputs = {
       profile: { roles: [{ ...role, priority: 90 }], skills: [] },
       companyLimit: 2,
       expiryDays: 7,
+      relevanceMaxJobs: 50,
+      relevanceMinScore: 30,
     };
     const { deps } = setup(async () => twoJobs(), inputs);
     deps.shown.get.mockResolvedValueOnce({ shown: { elsewhere: { p: 50 } }, version: 4 });
