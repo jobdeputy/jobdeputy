@@ -30,7 +30,7 @@ Every task goes through these statuses: `planned` → `researching` → `awaitin
 | T08b | [LLM foundation, own keys, and token usage](t08b-llm-foundation.md) (T08b1–T08b3) | done | T08a |
 | T08c | [Code filter, per-company limit, and expiry](t08c-code-filter.md) | done | T07 |
 | T08d | [LLM relevance scoring](t08d-llm-relevance.md) (T08d1–T08d3) | done | T08b, T08c |
-| T08e | [Research: how well prompts and models work on live data](t08e-live-effectiveness.md) | planned | T08b |
+| T08e | [Research: how well prompts and models work on live data](t08e-live-effectiveness.md) | done | T08b |
 | T09 | [User interface for the slice](t09-ui.md) | planned | T05, T06, T08 |
 | T10 | [End-to-end tests and hardening](t10-end-to-end-hardening.md) | planned | T09 |
 
