@@ -17,7 +17,7 @@ import type { StageName } from '../../config/stages.js';
 
 export { LLM_METRICS_NAMESPACE };
 
-/** Alarm thresholds per hour, across all tasks. Tuned with real data later (T08e). */
+/** Alarm thresholds per hour, across all tasks. Tuned with real data by the daily LLM report (T08e, #65). */
 export const LLM_ALARM_THRESHOLDS = { rejectedOutputs: 10, timeouts: 5 } as const;
 
 /**

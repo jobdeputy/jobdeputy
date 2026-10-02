@@ -13,6 +13,7 @@ A user can complete the flow in the browser: profile, submit a URL, watch the cr
 - Out: materials generation UI.
 
 - Carried over from T08c: when the user acts on a job (shortlist, star, apply), remove its `ttl` in the same write (the crawl never sets one on a job whose `status` is not `new`); a dismissed job keeps a small record without the description until 7 days after it closes. `GET /me/jobs` shows only shown jobs unless `view=all`; its pages can be short. Sorting by score or date needs an index.
+- Carried over from [T08e](t08e-live-effectiveness.md#decision-agreed-with-the-maintainer-2026-10-01): 👍/👎 on a score and "not a job"; each action on a scored job (open, save, apply, dismiss) and each 👍/👎 writes one log line (action, score range, prompt version, model; no user ID), read weekly.
 
 ## Research
 

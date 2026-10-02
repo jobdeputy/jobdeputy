@@ -22,7 +22,7 @@ Three PRs, each working on its own (agreed 2026-09-29):
     - prompts are versioned (`relevance@v1`), and every result stores the prompt version and model. A test fails if a task's prompt, schema, or limits change without a new version (a fingerprint in `eval/versions.json`), or if a version has no baseline;
     - the eval harness moves from [#49](https://github.com/jobdeputy/jobdeputy/issues/49) into `packages/llm/eval`, with a golden-set format and a saved baseline;
     - a PR that changes a prompt, schema, or model runs the eval against the baseline, posts the comparison on the PR, and fails on a regression.
-    - The golden set itself (100–200 real, anonymised, labelled jobs and about 20 real careers pages) grows with real crawls in T08d and T07d.
+    - The golden set itself (100–200 real, anonymised, labelled jobs and about 20 real careers pages) grows with real crawls in T08d and T07d. How live findings become cases: [T08e](t08e-live-effectiveness.md#decision-agreed-with-the-maintainer-2026-10-01) (decision 5).
   - **Nightly real-model check:** one real call to the platform model (with an injection case). The dev CI role may invoke only that model. Nightly emails the result (pass or fail, tokens, time) every night, not only on failure.
 - **T08b2: own keys** (details agreed with the maintainer on 2026-09-30).
   - The OpenAI and Anthropic providers in `resolveModel` (client retries off).
