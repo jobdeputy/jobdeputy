@@ -5,16 +5,14 @@ import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import type { Bucket } from 'aws-cdk-lib/aws-s3';
 import type { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
-import type { StageName } from '../../config/stages.js';
 import type { AiKeys } from './ai-keys.js';
 import { AsyncPipeline } from './async-pipeline.js';
-import { llmMetricsEnvironment } from './llm-monitoring.js';
+import type { LlmMonitoring } from './llm-monitoring.js';
 import { AppFunction } from './node-function.js';
 import type { QueueHealth } from './queue-health.js';
 
 export interface RelevanceProps {
   readonly namePrefix: string;
-  readonly stage: StageName;
   readonly tables: {
     readonly crawls: Table;
     readonly sources: Table;
@@ -31,6 +29,8 @@ export interface RelevanceProps {
   readonly removalPolicy: RemovalPolicy;
   readonly maxReceives: number;
   readonly health?: QueueHealth | undefined;
+  /** Shared stacks: the daily LLM report and the dashboard read the worker's log lines. */
+  readonly monitoring?: LlmMonitoring | undefined;
 }
 
 /**
@@ -65,9 +65,9 @@ export class Relevance extends Construct {
         DOCUMENTS_BUCKET_NAME: props.documentsBucket.bucketName,
         CRAWL_LIMITS_PARAMETER: props.limitsParameter.parameterName,
         ...props.aiKeys.env,
-        ...llmMetricsEnvironment(props.stage),
       },
     });
+    props.monitoring?.watch('Relevance worker', this.worker);
     const fn = this.worker.fn;
     // The crawl (GetItem); starting, storing each call, and ending the run (UpdateItem).
     tables.crawls.grant(fn, 'dynamodb:GetItem', 'dynamodb:UpdateItem');

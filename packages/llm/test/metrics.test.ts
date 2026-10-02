@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { LLM_METRICS_NAMESPACE, recordTaskMetrics, taskMetricsLine } from '../src/metrics.js';
+import {
+  LLM_METRICS_NAMESPACE,
+  loggedModel,
+  recordTaskMetrics,
+  taskMetricsLine,
+} from '../src/metrics.js';
 import type { TaskResult } from '../src/task.js';
 
 const AT = new Date('2026-09-30T12:00:00Z');
@@ -18,7 +23,11 @@ const timeout: TaskResult<unknown> = { ...base, status: 'partial', reason: 'time
 
 describe('task metrics (Embedded Metric Format)', () => {
   it('counts calls, rejections, partial results, timeouts, tokens, and latency', () => {
-    const line = taskMetricsLine(timeout, { groundingRejections: 3, scoreSpread: 40 }, 'task', AT);
+    const line = taskMetricsLine(
+      timeout,
+      { groundingRejections: 3, scoreSpread: 40, jobs: 10, lowScoreJobs: 4 },
+      AT,
+    );
     expect(line).toMatchObject({
       task: 'relevance',
       promptVersion: 'relevance@v1',
@@ -34,6 +43,8 @@ describe('task metrics (Embedded Metric Format)', () => {
       LatencyMs: 2100,
       GroundingRejections: 3,
       ScoreSpread: 40,
+      Jobs: 10,
+      LowScoreJobs: 4,
     });
     const [directive] = (
       line._aws as { CloudWatchMetrics: { Namespace: string; Metrics: { Name: string }[] }[] }
@@ -43,33 +54,37 @@ describe('task metrics (Embedded Metric Format)', () => {
     for (const { Name } of directive?.Metrics ?? []) expect(typeof line[Name]).toBe('number');
   });
 
-  it('keeps dev to totals and per task; prod adds model, prompt version, and key source', () => {
-    const dims = (detail: 'task' | 'full') =>
-      (
-        taskMetricsLine(ok, {}, detail, AT)._aws as {
-          CloudWatchMetrics: { Dimensions: string[][] }[];
-        }
-      ).CloudWatchMetrics[0]?.Dimensions;
-    expect(dims('task')).toEqual([[], ['task']]);
-    expect(dims('full')).toEqual([[], ['task'], ['task', 'modelId', 'promptVersion', 'keySource']]);
+  it('metrics are totals and per task; jobs and low scores are in the line only', () => {
+    const { Dimensions, Metrics } = (
+      taskMetricsLine(ok, { jobs: 10, lowScoreJobs: 4 }, AT)._aws as {
+        CloudWatchMetrics: { Dimensions: string[][]; Metrics: { Name: string }[] }[];
+      }
+    ).CloudWatchMetrics[0] ?? { Dimensions: [], Metrics: [] };
+    expect(Dimensions).toEqual([[], ['task']]);
+    expect(Metrics.map((m) => m.Name)).not.toContain('Jobs');
+    expect(Metrics.map((m) => m.Name)).not.toContain('LowScoreJobs');
+  });
+
+  it("logs an own key's model by provider only", () => {
+    const own: TaskResult<unknown> = { ...ok, keySource: 'own', provider: 'openai' };
+    expect(taskMetricsLine(own, {}, AT)).toMatchObject({ keySource: 'own', modelId: 'own:openai' });
+    expect(loggedModel(ok)).toBe('mistral.ministral-3-14b-instruct');
   });
 
   it('never writes the output, a user, or anything not measured', () => {
-    const line = JSON.stringify(taskMetricsLine(ok, {}, 'full', AT));
+    const line = JSON.stringify(taskMetricsLine(ok, {}, AT));
     expect(line).not.toContain('job text');
     expect(line).not.toMatch(/userId|user/i);
-    expect(taskMetricsLine(ok, {}, 'task', AT)).not.toHaveProperty('GroundingRejections');
+    expect(taskMetricsLine(ok, {}, AT)).not.toHaveProperty('GroundingRejections');
   });
 
-  it('writes one JSON line with the detail chosen for the stage', () => {
+  it('writes one JSON line', () => {
     const lines: string[] = [];
-    process.env.LLM_METRICS_DETAIL = 'full';
     recordTaskMetrics(ok, {}, (l) => lines.push(l));
-    delete process.env.LLM_METRICS_DETAIL;
-    recordTaskMetrics(ok, {}, (l) => lines.push(l));
-    const [full, task] = lines.map(
-      (l) => JSON.parse(l)._aws.CloudWatchMetrics[0].Dimensions.length,
-    );
-    expect([full, task]).toEqual([3, 2]);
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0] as string)._aws.CloudWatchMetrics[0].Dimensions).toEqual([
+      [],
+      ['task'],
+    ]);
   });
 });

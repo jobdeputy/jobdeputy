@@ -105,12 +105,30 @@ The email shows the eval table: calls, valid output, labels, injections resisted
 
 ## LLM tasks: rejected outputs or timeouts
 
-Alarms `…-LlmMonitoringRejectedOutputsAlarm` (10 or more model replies rejected as invalid output in an hour) and `…-LlmMonitoringTimeoutsAlarm` (5 or more task calls timed out in an hour), across all LLM tasks (T08b3). The dashboard `<stack>-llm` shows them per task (and in prod per model and prompt version).
+Alarms `…-LlmMonitoringRejectedOutputsAlarm` (10 or more model replies rejected as invalid output in an hour) and `…-LlmMonitoringTimeoutsAlarm` (5 or more task calls timed out in an hour), across all LLM tasks (T08b3). The dashboard `<stack>-llm` shows them per task, and a table per LLM worker shows them per task, prompt version, and model (read from the log lines, last 14 days).
 
-1. Open the dashboard: which task, and (prod) which model and prompt version?
+1. Open the dashboard: which task, and in the table which model and prompt version?
 2. **Many rejected outputs:** the model's replies no longer fit the schema. Check a recent prompt, schema, or model change (its PR eval), and run the eval (`AWS_PROFILE=… pnpm --filter @jobdeputy/llm eval --runs 3`). Revert the change if the eval fails. Injected text in pages can also cause it: look for one site in the worker's logs.
 3. **Timeouts:** the provider is slow (Bedrock in the Region, or a user's provider for own keys). Check the AWS Health dashboard; own-key timeouts affect only those users.
 4. Nothing to fix in data: task calls that failed return `partial`, and nothing invalid is stored.
+
+## Daily LLM report
+
+Since T08e1 the `LlmMonitoringReport` function runs at 03:30 UTC in shared stacks. It reads the last day's LLM log lines (one per task call) with Logs Insights, per task, prompt version, model (own keys: `own:<provider>`), and key source, and emails the alarm topic **only when a limit is crossed** (subject `[<stack>] LLM report: limits crossed`). Groups with fewer than 20 task calls, and the dev-only `stub` model, are not judged. Limits (`LLM_REPORT_LIMITS` in `apps/worker/src/llm-report.ts`, start values to tune with real runs):
+
+| Limit | What it usually means |
+|---|---|
+| Rejected outputs > 5% of model calls | The replies no longer fit the schema: a prompt, schema, or model change. Run the eval. |
+| Partial results > 5%, timeouts > 1% of task calls | The provider is slow or failing (AWS Health; own keys: that provider). |
+| Grounding rejections > 2% of jobs | The model invents IDs or roles, or quotes IDs in reasons. Look at the version's eval "reasons quoting an ID". |
+| Latency p95 > 2× the eval's median (platform model only) | Bedrock is slow in the Region, or a prompt grew. |
+| Median score spread < 20 | The model scores everything alike: it no longer tells good jobs from bad. |
+| Hidden by a low score outside 10–80% of jobs | Too few: the cut-off or the model is too generous. Too many: the keyword filter lets too much through, or the model is too strict. |
+| Jobs scored, but no LLM log lines | The report is blind: the log line or the query changed. Fix it first. |
+
+For one group, read its lines in Logs Insights on the worker's log group (`filter task = "relevance" and promptVersion = "…"`). A real problem found here becomes an eval case ([T08e decision 5](../tasks/t08e-live-effectiveness.md)).
+
+**`…LlmMonitoringReportErrorAlarm…`**: the report itself failed (a query that failed or ran too long, or a missing permission), so LLM quality is not being checked that day. Read the `LlmMonitoringReport` function's logs.
 
 ## Budget alerts ($5, $10, $15) and the $20 block
 

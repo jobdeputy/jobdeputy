@@ -205,6 +205,8 @@ export async function processRecord(
           const values = call.scored.map((s) => s.score);
           deps.recordMetrics(call.result, {
             groundingRejections: call.groundingRejections,
+            jobs: call.sent.length,
+            lowScoreJobs: values.filter((v) => v < inputs.relevanceMinScore).length,
             ...(values.length > 0
               ? { scoreSpread: Math.max(...values) - Math.min(...values) }
               : {}),

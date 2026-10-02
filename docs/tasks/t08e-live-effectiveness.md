@@ -2,7 +2,7 @@
 
 - **Status:** done (research; build in [#65](https://github.com/jobdeputy/jobdeputy/issues/65), [#66](https://github.com/jobdeputy/jobdeputy/issues/66))
 - **Depends on:** T08b
-- **Branch / PR:** `t08e-research`
+- **Branch / PR:** `t08e-research` ([#67](https://github.com/jobdeputy/jobdeputy/pull/67)); T08e1 `t08e1-llm-report`
 
 ## Goal
 
@@ -71,6 +71,16 @@ We know how to measure, on real runs, whether our prompts and models give good r
 4. **User signals (T09):** an action on a scored job, 👍/👎, and "not a job" each write one log line (action, score range, prompt version, model; no user ID), read weekly.
 5. **Golden set:** a crossed limit, a 👎, or a disagreement in the sample is reviewed by the maintainer inside the cell; the case added to the eval is the real public job (names and contact details removed) with a made-up profile that repeats the problem, and the baseline is recorded again. #62 was found this way.
 6. **Costs at 1,000 users, three cells:** metrics about $15 a month, second-model sample about $1.30, shadow sample about $0.30 while a test runs, report Lambda and log queries in the free tier or cents.
+
+## T08e1 notes (built 2026-10-01)
+
+- **Metric count per cell:** 9 measures × (1 total + 1 per task) = **18 metrics** with relevance as the only live task (about $5.40 a month at list price); each new task adds 9. `LLM_METRICS_DETAIL` is gone.
+- **Log-only fields:** `Jobs` (jobs sent in the call) and `LowScoreJobs` (scored below `relevanceMinScore`) are in the line, not metrics: the daily report reads them, and they need no hourly alarm. Making either a metric is a one-line change in `metrics.ts`.
+- **Revisit metrics** about a month after launch (agreed 2026-10-01): if trends per model or prompt version over months are wanted, add that split as metrics in prod only. Until then the line keeps it for 14 days.
+- **The report:** `LlmMonitoringReport`, daily at 03:30 UTC, shared stacks only. LLM workers register with `LlmMonitoring.watch` (its log group goes to the report and a dashboard table). Latency is judged against the eval baseline's median for the same prompt version and model (baselines read at synth), platform model only; another provider's speed is not ours to fix. The `stub` model is never judged. One more alarm on its own errors: shared dev has 6 of the 10 free alarms.
+- **Blind-report guard:** jobs scored (the worker's "Scoring ended" lines) with no LLM lines at all is emailed too, so a changed line or query cannot hide problems.
+- **Agreement with the second model** is added with T08e2 ([#66](https://github.com/jobdeputy/jobdeputy/issues/66)).
+- **Permissions:** `logs:StartQuery` on the registered log groups only; `logs:GetQueryResults` has no resource type in IAM, so it is `*` (it reads only results of queries already started); `sns:Publish` on the alarm topic.
 
 ## Done when
 

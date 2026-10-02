@@ -221,6 +221,9 @@ importers:
       '@aws-lambda-powertools/idempotency':
         specifier: 2.35.0
         version: 2.35.0(@aws-sdk/client-dynamodb@3.1141.0)(@aws-sdk/lib-dynamodb@3.1141.0(@aws-sdk/client-dynamodb@3.1141.0))
+      '@aws-sdk/client-cloudwatch-logs':
+        specifier: 3.1141.0
+        version: 3.1141.0
       '@aws-sdk/client-cognito-identity-provider':
         specifier: 3.1141.0
         version: 3.1141.0
@@ -461,6 +464,10 @@ packages:
 
   '@aws-sdk/client-cloudformation@3.1141.0':
     resolution: {integrity: sha512-D1+eBndiEYAj71m4jz6tMfqovnRm/swM54oIMy/l0uNa0WbUyyuOn0SkkLc1NAvYma5SEHbWc8HmJVBHmziOkg==}
+    engines: {node: '>=20.0.0'}
+
+  '@aws-sdk/client-cloudwatch-logs@3.1141.0':
+    resolution: {integrity: sha512-ReFRgWxiwfQo2Rr1CZhVXdk7MWQtIld0/uQGS6qtEvPlGcyP6VM47U+1g1o+JVr8SkBck2yFSANaVsFbrr/e0Q==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/client-cognito-identity-provider@3.1141.0':
@@ -2078,6 +2085,17 @@ snapshots:
       tslib: 2.8.1
 
   '@aws-sdk/client-cloudformation@3.1141.0':
+    dependencies:
+      '@aws-sdk/core': 3.978.1
+      '@aws-sdk/credential-provider-node': 3.972.84
+      '@aws-sdk/types': 3.974.6
+      '@smithy/core': 3.35.0
+      '@smithy/fetch-http-handler': 5.8.0
+      '@smithy/node-http-handler': 4.12.1
+      '@smithy/types': 4.19.0
+      tslib: 2.8.1
+
+  '@aws-sdk/client-cloudwatch-logs@3.1141.0':
     dependencies:
       '@aws-sdk/core': 3.978.1
       '@aws-sdk/credential-provider-node': 3.972.84

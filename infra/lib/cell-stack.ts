@@ -444,14 +444,16 @@ export class CellStack extends Stack {
       health: queueHealth,
       limitsParameter: crawlLimits,
     });
-    // T08b3: the LLM dashboard and alarms, in shared stacks only (like the other alarms).
-    if (sharedAlarms) {
-      new LlmMonitoring(this, 'LlmMonitoring', {
-        namePrefix: id,
-        stage: props.stage,
-        alarmTopic: sharedAlarms,
-      });
-    }
+    // T08b3: the LLM dashboard and alarms, in shared stacks only (like the other alarms);
+    // T08e1: with the daily LLM report.
+    const llmMonitoring = sharedAlarms
+      ? new LlmMonitoring(this, 'LlmMonitoring', {
+          namePrefix: id,
+          stage: props.stage,
+          alarmTopic: sharedAlarms,
+          removalPolicy,
+        })
+      : undefined;
 
     // T06b: POST /me/crawls → crawls table (queued) → stream → Pipe → queue → worker.
     const crawlsApi = new AppFunction(this, 'CrawlsApi', {
@@ -541,7 +543,6 @@ export class CellStack extends Stack {
     // T08d: LLM scoring of each AI crawl's candidates (a second Pipe on the crawls stream).
     new Relevance(this, 'Relevance', {
       namePrefix: id,
-      stage: props.stage,
       tables: {
         crawls: crawlsTable,
         sources: sourcesTable,
@@ -558,6 +559,7 @@ export class CellStack extends Stack {
       removalPolicy,
       maxReceives: MAX_RECEIVES,
       health: queueHealth,
+      monitoring: llmMonitoring,
     });
 
     const auditApi = new AppFunction(this, 'AuditApi', {
