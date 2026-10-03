@@ -34,6 +34,34 @@ Every task goes through these statuses: `planned` → `researching` → `awaitin
 | T09 | [User interface for the slice](t09-ui.md) | planned | T05, T06, T08 |
 | T10 | [End-to-end tests and hardening](t10-end-to-end-hardening.md) | planned | T09 |
 
+## Backlog (open issues, in order)
+
+Every open piece of work is a GitHub issue. Agreed with the maintainer (2026-10-02): finish the backend in dev first, then monitoring, and park prod until later (prod launches in the US cell first). Work goes top to bottom; each item still runs research → align → build.
+
+**1. Backend in dev** (label `enhancement`, except the first)
+
+| Order | Issue | Summary |
+|---|---|---|
+| 1 | [#61](https://github.com/jobdeputy/jobdeputy/issues/61) | Flaky PR deploys: a Pipe fails to validate its dead-letter queue (IAM race). First, because every PR below hits it. |
+| 2 | [#71](https://github.com/jobdeputy/jobdeputy/issues/71) | Job actions API: save, dismiss, applied, star, notes, and feedback on a score |
+| 3 | [#73](https://github.com/jobdeputy/jobdeputy/issues/73) | Jobs list: sort by score or date, filter by status, company, and page |
+| 4 | [#57](https://github.com/jobdeputy/jobdeputy/issues/57) | Re-filter stored jobs right after a target-role or search change |
+| 5 | [#72](https://github.com/jobdeputy/jobdeputy/issues/72) | Saved pages API: list, rename, and remove saved pages |
+| 6 | [#41](https://github.com/jobdeputy/jobdeputy/issues/41) | T07d: LLM extraction for pages without structured job data |
+| 7 | [#74](https://github.com/jobdeputy/jobdeputy/issues/74) | Scheduled re-crawls of saved pages (needs a product decision first) |
+| 8 | [#75](https://github.com/jobdeputy/jobdeputy/issues/75) | Data export: `GET /me/export` |
+| 9 | [#51](https://github.com/jobdeputy/jobdeputy/issues/51) | Own keys: recommended default model per provider and task |
+| 10 | [#40](https://github.com/jobdeputy/jobdeputy/issues/40) | Shared companies and company-aliases tables |
+| 11 | [#47](https://github.com/jobdeputy/jobdeputy/issues/47) | AI quotas for premium users (only if premium is wanted) |
+
+**2. Dev upkeep** (label `upkeep`; whenever convenient): [#35](https://github.com/jobdeputy/jobdeputy/issues/35) (dev Lambda concurrency 10 → 1000), [#24](https://github.com/jobdeputy/jobdeputy/issues/24) (CDK asset clean-up), [#49](https://github.com/jobdeputy/jobdeputy/issues/49) (monthly new-model eval), [#50](https://github.com/jobdeputy/jobdeputy/issues/50) (monthly prompt-injection review), [#23](https://github.com/jobdeputy/jobdeputy/issues/23) (Node.js 24 before 2027-04-30).
+
+**3. Monitoring, after the backend** (label `monitoring`): [#70](https://github.com/jobdeputy/jobdeputy/issues/70) (every failure mode and what catches it; decide how to catch each first), [#65](https://github.com/jobdeputy/jobdeputy/issues/65) (PR [#68](https://github.com/jobdeputy/jobdeputy/pull/68) on hold until #70 is agreed), [#66](https://github.com/jobdeputy/jobdeputy/issues/66) (T08e2), [#34](https://github.com/jobdeputy/jobdeputy/issues/34) (safe prod deploys).
+
+**4. Prod, parked:** the release blockers below.
+
+Then T09 (the UI) and T10.
+
 ## Release blockers
 
 Must be fixed before the prod launch. Tracked as GitHub issues with the [`release-blocker`](https://github.com/jobdeputy/jobdeputy/labels/release-blocker) label; the launch task cannot close while any are open.
@@ -46,19 +74,17 @@ Must be fixed before the prod launch. Tracked as GitHub issues with the [`releas
 | [#22](https://github.com/jobdeputy/jobdeputy/issues/22) | Production wiring: prod accounts, approval-gated deploys, prod alerts |
 | [#34](https://github.com/jobdeputy/jobdeputy/issues/34) | Safe prod deploys: gradual rollout with automatic rollback, error-rate 5xx alarm, a second alert channel, Lambda concurrency quotas |
 
-Deferred from T07: [#40](https://github.com/jobdeputy/jobdeputy/issues/40) (shared `companies` and `company-aliases` tables, built with company rules). AI quotas for premium users: [#47](https://github.com/jobdeputy/jobdeputy/issues/47). Other tracked maintenance: [#23](https://github.com/jobdeputy/jobdeputy/issues/23) (Node.js 24 before 2027-04-30), [#24](https://github.com/jobdeputy/jobdeputy/issues/24) (CDK asset garbage collection), [#35](https://github.com/jobdeputy/jobdeputy/issues/35) (restore the dev account's Lambda concurrency limit, 10 → 1000).
-
 ## Future (after this slice)
 
 Captured so they are not forgotten. Not started until the current slice is done.
 
 | Task | Notes |
 |---|---|
-| AI credentials (BYOT and premium) | Users store their own AI keys. Premium users use JobDeputy's credentials. Keys are encrypted in the user's home Region ([0004](../decisions/0004-regional-cells-and-data-residency.md)), never logged or returned. Every AI call follows [0002](../decisions/0002-llm-loop-and-token-budget.md). Storage and encryption are researched then. |
+| Premium AI credentials | Own keys and the free platform allowance are built (T08b); premium quotas are [#47](https://github.com/jobdeputy/jobdeputy/issues/47). Premium users use JobDeputy's credentials. Keys are encrypted in the user's home Region ([0004](../decisions/0004-regional-cells-and-data-residency.md)), never logged or returned. Every AI call follows [0002](../decisions/0002-llm-loop-and-token-budget.md). Storage and encryption are researched then. |
 | Tailored résumé and cover-letter generation | Depends on AI credentials. |
 | LinkedIn discovery | Phase 1 requirement from the [problem statement](../problem-statement.md). |
 | Shared job postings | A per-Region `postings` table so a page saved by many users is extracted once; jobs reference it. See [0006](../decisions/0006-data-model.md). |
-| Prod launch in `us`, `in`, and `uk` | Deploy the prod cells, domain and subdomains, per-Region audit trails, and WAF. |
+| Prod launch: `us` first, then `in` and `uk` | Agreed 2026-10-02: the US cell first (US users only), the other Regions when funded. Deploy the prod cells, domain and subdomains, per-Region audit trails, and WAF. |
 | Phase 2: application automation | See the problem statement. |
 
 ## Adding a task
