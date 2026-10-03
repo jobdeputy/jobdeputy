@@ -1,6 +1,6 @@
 import { Stack } from 'aws-cdk-lib';
 import type { Table } from 'aws-cdk-lib/aws-dynamodb';
-import { PolicyStatement, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
+import { PolicyDocument, PolicyStatement, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
 import { CfnPipe } from 'aws-cdk-lib/aws-pipes';
 import type { Queue } from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
@@ -44,24 +44,37 @@ export class AsyncPipeline extends Construct {
     this.queue = queue;
     this.deadLetterQueue = deadLetterQueue;
 
+    // #61: the permissions are inline on the role, never a separate AWS::IAM::Policy.
+    // A separate policy could finish a second before the Pipe was created, and IAM had
+    // not yet applied it when the Pipe validated its dead-letter queue: the Pipe failed
+    // with "Error occurred while sending message to SQS queue" (PR stacks, 2026-09-29).
+    // Inline, the permissions exist from the moment the role does.
     const role = new Role(this, 'PipeRole', {
       assumedBy: new ServicePrincipal('pipes.amazonaws.com', {
         conditions: { StringEquals: { 'aws:SourceAccount': Stack.of(this).account } },
       }),
+      inlinePolicies: {
+        Pipe: new PolicyDocument({
+          statements: [
+            new PolicyStatement({
+              actions: [
+                'dynamodb:DescribeStream',
+                'dynamodb:GetRecords',
+                'dynamodb:GetShardIterator',
+                'dynamodb:ListStreams',
+              ],
+              resources: [props.table.tableStreamArn],
+            }),
+            // The target queue and the stream's dead-letter queue (SQS-managed encryption,
+            // so no KMS permission is needed).
+            new PolicyStatement({
+              actions: ['sqs:SendMessage', 'sqs:GetQueueAttributes', 'sqs:GetQueueUrl'],
+              resources: [this.queue.queueArn, this.deadLetterQueue.queueArn],
+            }),
+          ],
+        }),
+      },
     });
-    role.addToPolicy(
-      new PolicyStatement({
-        actions: [
-          'dynamodb:DescribeStream',
-          'dynamodb:GetRecords',
-          'dynamodb:GetShardIterator',
-          'dynamodb:ListStreams',
-        ],
-        resources: [props.table.tableStreamArn],
-      }),
-    );
-    this.queue.grantSendMessages(role);
-    this.deadLetterQueue.grantSendMessages(role);
 
     const pipe = new CfnPipe(this, 'Pipe', {
       roleArn: role.roleArn,
@@ -101,10 +114,7 @@ export class AsyncPipeline extends Construct {
           : `{"id": "<$.dynamodb.Keys.${props.idAttribute}.S>"}`,
       },
     });
-    // The Pipe only references the role's ARN, so CloudFormation could create it before
-    // the role's policy exists; the Pipe then fails to validate its dead-letter queue
-    // ("Error occurred while sending message to SQS queue"). Seen on a PR stack
-    // (2026-09-29). Depending on the role includes its policy.
+    // The Pipe only references the role's ARN; wait for the role (and so its policy).
     pipe.node.addDependency(role);
   }
 }

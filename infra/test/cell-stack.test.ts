@@ -45,15 +45,27 @@ describe('async pipeline (T04)', () => {
     });
   });
 
-  it('creates every Pipe only after its role policy (its DLQ and queue permissions)', () => {
+  // #61: a separate role policy raced the Pipe's dead-letter queue check on PR stacks.
+  it('gives every Pipe role its permissions inline, never as a separate policy', () => {
     const pipes = Object.values(t.findResources('AWS::Pipes::Pipe'));
     expect(pipes.length).toBeGreaterThanOrEqual(3);
+    const roles = t.findResources('AWS::IAM::Role');
+    const policies = Object.values(t.findResources('AWS::IAM::Policy'));
     for (const pipe of pipes) {
-      const dependsOn = [pipe.DependsOn ?? []].flat() as string[];
-      expect(
-        dependsOn.some((d) => /PipeRoleDefaultPolicy/.test(d)),
-        JSON.stringify(dependsOn),
-      ).toBe(true);
+      const roleId = pipe.Properties.RoleArn['Fn::GetAtt'][0] as string;
+      expect([pipe.DependsOn ?? []].flat()).toContain(roleId);
+      const statements = (roles[roleId]?.Properties.Policies ?? []).flatMap(
+        (p: { PolicyDocument: { Statement: unknown[] } }) => p.PolicyDocument.Statement,
+      );
+      const resources = JSON.stringify(statements);
+      const params = pipe.Properties.SourceParameters.DynamoDBStreamParameters;
+      expect(resources).toContain(JSON.stringify(params.DeadLetterConfig.Arn));
+      expect(resources).toContain(JSON.stringify(pipe.Properties.Target));
+      expect(resources).toContain(JSON.stringify(pipe.Properties.Source));
+      const attached = policies.filter((p) =>
+        JSON.stringify(p.Properties.Roles ?? []).includes(`"${roleId}"`),
+      );
+      expect(attached, roleId).toEqual([]);
     }
   });
 

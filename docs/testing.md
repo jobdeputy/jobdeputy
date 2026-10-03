@@ -65,4 +65,4 @@ The full suite (`JD_FULL=1`) runs automatically:
 
 The CI roles that run these tests can do only what the tests need (`infra/lib/cicd-stack.ts`): read stack outputs, manage throwaway test users, send to and clear the stack's queues, and (dev only, T07c) `PutItem`/`UpdateItem` on the tested stacks' `-jobs` and `-sources` tables, to seed data no test page can produce, such as a job a page listed before. They never read or delete table data, and the prod role gets none of this.
 
-Leftover PR stacks are deleted when the PR closes, and a daily job deletes any older than 24 hours.
+Leftover PR stacks are deleted when the PR closes, and a daily job deletes any older than 24 hours. Deleting a stack retries up to 3 times when AWS fails a resource's delete with an internal error (`scripts/delete-pr-stack.sh`, #61); this retries the cleanup, never a test.
