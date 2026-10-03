@@ -47,12 +47,16 @@ Every open piece of work is a GitHub issue. Agreed with the maintainer (2026-10-
 | 3 | [#73](https://github.com/jobdeputy/jobdeputy/issues/73) | Jobs list: sort by score or date, filter by status, company, and page |
 | 4 | [#57](https://github.com/jobdeputy/jobdeputy/issues/57) | Re-filter stored jobs right after a target-role or search change |
 | 5 | [#72](https://github.com/jobdeputy/jobdeputy/issues/72) | Saved pages API: list, rename, and remove saved pages |
-| 6 | [#41](https://github.com/jobdeputy/jobdeputy/issues/41) | T07d: LLM extraction for pages without structured job data |
-| 7 | [#74](https://github.com/jobdeputy/jobdeputy/issues/74) | Scheduled re-crawls of saved pages (needs a product decision first) |
-| 8 | [#75](https://github.com/jobdeputy/jobdeputy/issues/75) | Data export: `GET /me/export` |
-| 9 | [#51](https://github.com/jobdeputy/jobdeputy/issues/51) | Own keys: recommended default model per provider and task |
-| 10 | [#40](https://github.com/jobdeputy/jobdeputy/issues/40) | Shared companies and company-aliases tables |
-| 11 | [#47](https://github.com/jobdeputy/jobdeputy/issues/47) | AI quotas for premium users (only if premium is wanted) |
+| 6 | [#77](https://github.com/jobdeputy/jobdeputy/issues/77) | More job-board readers (beyond Greenhouse, Lever, Ashby, Workday) |
+| 7 | [#41](https://github.com/jobdeputy/jobdeputy/issues/41) | T07d: LLM extraction for pages without structured job data |
+| 8 | [#74](https://github.com/jobdeputy/jobdeputy/issues/74) | Scheduled re-crawls of saved pages (needs a product decision first) |
+| 9 | [#75](https://github.com/jobdeputy/jobdeputy/issues/75) | Data export: `GET /me/export` |
+| 10 | [#51](https://github.com/jobdeputy/jobdeputy/issues/51) | Own keys: recommended default model per provider and task |
+| 11 | [#40](https://github.com/jobdeputy/jobdeputy/issues/40) | Shared companies and company-aliases tables |
+| 12 | [#78](https://github.com/jobdeputy/jobdeputy/issues/78) | Scanned PDF résumés: text by OCR (decide first) |
+| 13 | [#79](https://github.com/jobdeputy/jobdeputy/issues/79) | Decide on a browser for JavaScript-only pages (needs counts first) |
+| 14 | [#80](https://github.com/jobdeputy/jobdeputy/issues/80) | Own keys: more providers, and costs shown per model |
+| 15 | [#47](https://github.com/jobdeputy/jobdeputy/issues/47) | AI quotas for premium users (only if premium is wanted) |
 
 **2. Dev upkeep** (label `upkeep`; whenever convenient): [#35](https://github.com/jobdeputy/jobdeputy/issues/35) (dev Lambda concurrency 10 → 1000), [#24](https://github.com/jobdeputy/jobdeputy/issues/24) (CDK asset clean-up), [#49](https://github.com/jobdeputy/jobdeputy/issues/49) (monthly new-model eval), [#50](https://github.com/jobdeputy/jobdeputy/issues/50) (monthly prompt-injection review), [#23](https://github.com/jobdeputy/jobdeputy/issues/23) (Node.js 24 before 2027-04-30).
 
