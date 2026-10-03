@@ -48,6 +48,7 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | `deletion-worker.ts` | erases every user table and S3 prefix (T12) |
 | `test-data-reaper.ts` | dev only: requests deletion of old test users |
 | `relevance-worker.ts` | T08d: relevance queue: scores a crawl's candidates with the LLM (stored per call with its tokens), hides low scores, ranks each company by score |
+| `llm-report.ts` | T08e1: once a day, checks the last day's LLM log lines per task, prompt version, and model against limits and emails the alarm topic when one is crossed |
 | `queue-health.ts` | T08d1: every 5 minutes, checks each worker queue (dead letters, backlog) and emails the alarm topic on changes |
 | `ping-worker.ts` | dev only: T04 async test |
 | `deadline.ts` | stop before Lambda's timeout |
@@ -83,7 +84,7 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | `test-fixtures/src/index.ts` | synthetic PDF, DOCX, zip bomb, EICAR |
 | `llm/src/task.ts` | `defineTask`, `runTask`: 3 turns, token caps, timeout, strict zod output, `partial`, usage (the only Strands caller, 0009) |
 | `llm/src/models.ts` | `resolveModel`: the platform model on Bedrock in the cell Region, or the user's OpenAI or Anthropic key; no client retries |
-| `llm/src/metrics.ts` | `recordTaskMetrics`: one Embedded Metric Format line per task call (no user IDs) |
+| `llm/src/metrics.ts` | `recordTaskMetrics`: one Embedded Metric Format line per task call (no user IDs); metrics are totals and per task, the rest is read from the line (T08e1) |
 | `llm/src/key-check.ts`, `llm/src/logging.ts` | one small call checks a user's key (and the dev-only `stub`); Strands logs with keys masked |
 | `llm/src/prompt.ts`, `llm/src/grounding.ts` | data blocks and the rules against prompt injection; keep only the IDs we sent (0010) |
 | `llm/src/stub-model.ts` | `@jobdeputy/llm/testing`: scripted model for unit and integration tests |
@@ -100,7 +101,7 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | `bin/app.ts`, `lib/build-app.ts`, `config/` | which stacks exist per stage, cell, and owner |
 | `lib/cell-stack.ts` | everything in one Region cell: tables, Lambdas, grants, routes, pipelines, alarms |
 | `lib/keys-stack.ts` | the cell's KMS key for own AI keys, in its own stack (kept on delete); its ARN in SSM |
-| `lib/constructs/` | `ai-keys` (key API, key-check worker, KMS grants), `llm-monitoring` (LLM dashboard, alarms, `llmMetricsEnvironment`), `async-pipeline` (stream → Pipe → queue → worker), `queue-worker`, `queue-health` (the scheduled check that watches every queue; T08d1), `relevance` (T08d: the relevance worker, its Pipe on the crawls stream, its grants), `auth`, `documents` (bucket, malware scan), `node-function` |
+| `lib/constructs/` | `ai-keys` (key API, key-check worker, KMS grants), `llm-monitoring` (LLM dashboard, alarms, the daily LLM report; T08e1), `async-pipeline` (stream → Pipe → queue → worker), `queue-worker`, `queue-health` (the scheduled check that watches every queue; T08d1), `relevance` (T08d: the relevance worker, its Pipe on the crawls stream, its grants), `auth`, `documents` (bucket, malware scan), `node-function` |
 | `lib/cicd-stack.ts` | GitHub OIDC roles (deploy, PR integration) |
 | `lib/guards.ts` | cost and Region guard checks |
 

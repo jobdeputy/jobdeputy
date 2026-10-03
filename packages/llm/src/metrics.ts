@@ -4,15 +4,13 @@ import type { TaskResult } from './task.js';
 // T08b3 (decision 0009): how LLM tasks behave, as CloudWatch metrics and one log line per
 // task call, never with a user ID (0004: aggregated, non-personal). The line uses CloudWatch's
 // Embedded Metric Format: Lambda's log stream turns it into metrics, and the same line is the
-// detail that Logs Insights queries (dashboard) read.
+// detail that Logs Insights queries (dashboard, daily LLM report) read.
+//
+// T08e: metrics are totals and per task only, in every stage. Each metric is billed per
+// combination of dimension values, so the split by model, prompt version, and key source
+// is read from the line instead (kept 14 days). Revisit about a month after launch.
 
 export { LLM_METRICS_NAMESPACE };
-
-/**
- * `task`: totals and per task (dev, a few metrics). `full`: also per model, prompt version,
- * and key source (prod; agreed 2026-09-30: no compromise on detail in prod).
- */
-export type MetricsDetail = 'task' | 'full';
 
 /** Task-specific measures the caller adds, for example from grounding checks. */
 export interface TaskMetricExtras {
@@ -20,15 +18,26 @@ export interface TaskMetricExtras {
   groundingRejections?: number;
   /** For scoring tasks: highest minus lowest score in the call. */
   scoreSpread?: number;
+  /** Jobs (or other items) sent in the call. In the line only, not a metric. */
+  jobs?: number;
+  /** For scoring tasks: results scored below the cut-off that hides them. In the line only. */
+  lowScoreJobs?: number;
 }
 
-const FULL_DIMENSIONS = ['task', 'modelId', 'promptVersion', 'keySource'];
+/**
+ * The model as logged: an own key's model can be any name the provider offers, so it is
+ * logged by provider only, which keeps the report's groups few.
+ */
+export function loggedModel(
+  result: Pick<TaskResult<unknown>, 'keySource' | 'provider' | 'modelId'>,
+): string {
+  return result.keySource === 'own' ? `own:${result.provider}` : result.modelId;
+}
 
 /** One Embedded Metric Format line for a finished task call. */
 export function taskMetricsLine(
   result: TaskResult<unknown>,
   extras: TaskMetricExtras = {},
-  detail: MetricsDetail = 'task',
   at: Date = new Date(),
 ): Record<string, unknown> {
   const values: Record<string, [number, string]> = {
@@ -44,14 +53,13 @@ export function taskMetricsLine(
       : {}),
     ...(extras.scoreSpread !== undefined ? { ScoreSpread: [extras.scoreSpread, 'None'] } : {}),
   };
-  const dimensions = detail === 'full' ? [[], ['task'], FULL_DIMENSIONS] : [[], ['task']];
   return {
     _aws: {
       Timestamp: at.getTime(),
       CloudWatchMetrics: [
         {
           Namespace: LLM_METRICS_NAMESPACE,
-          Dimensions: dimensions,
+          Dimensions: [[], ['task']],
           Metrics: Object.entries(values).map(([Name, [, Unit]]) => ({ Name, Unit })),
         },
       ],
@@ -60,22 +68,20 @@ export function taskMetricsLine(
     promptVersion: result.promptVersion,
     keySource: result.keySource,
     provider: result.provider,
-    modelId: result.modelId,
+    modelId: loggedModel(result),
     status: result.status,
     ...(result.status === 'partial' ? { reason: result.reason } : {}),
     ...Object.fromEntries(Object.entries(values).map(([name, [value]]) => [name, value])),
+    ...(extras.jobs !== undefined ? { Jobs: extras.jobs } : {}),
+    ...(extras.lowScoreJobs !== undefined ? { LowScoreJobs: extras.lowScoreJobs } : {}),
   };
 }
 
-/**
- * Writes the metrics line for a task call. LLM workers call it once per finished task call;
- * `LLM_METRICS_DETAIL` (set by the stack per stage) chooses the detail.
- */
+/** Writes the metrics line for a task call. LLM workers call it once per finished task call. */
 export function recordTaskMetrics(
   result: TaskResult<unknown>,
   extras: TaskMetricExtras = {},
   write: (line: string) => void = (line) => console.log(line),
 ): void {
-  const detail: MetricsDetail = process.env.LLM_METRICS_DETAIL === 'full' ? 'full' : 'task';
-  write(JSON.stringify(taskMetricsLine(result, extras, detail)));
+  write(JSON.stringify(taskMetricsLine(result, extras)));
 }

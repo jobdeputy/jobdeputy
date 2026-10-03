@@ -20,10 +20,11 @@ export interface AppFunctionProps {
 /** Node 22 on ARM64, bundled with esbuild, logs kept 14 days (decision 0005). */
 export class AppFunction extends Construct {
   readonly fn: NodejsFunction;
+  readonly logGroup: LogGroup;
 
   constructor(scope: Construct, id: string, props: AppFunctionProps) {
     super(scope, id);
-    const logGroup = new LogGroup(this, 'Logs', {
+    this.logGroup = new LogGroup(this, 'Logs', {
       retention: RetentionDays.TWO_WEEKS,
       removalPolicy: props.removalPolicy,
     });
@@ -35,7 +36,7 @@ export class AppFunction extends Construct {
       architecture: Architecture.ARM_64,
       memorySize: props.memorySize ?? 256,
       timeout: props.timeout,
-      logGroup,
+      logGroup: this.logGroup,
       environment: {
         NODE_OPTIONS: '--enable-source-maps',
         POWERTOOLS_LOG_LEVEL: 'INFO',

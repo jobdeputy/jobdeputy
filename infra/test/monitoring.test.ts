@@ -43,10 +43,12 @@ describe('monitoring (T13)', () => {
       id.replace(/[0-9A-F]{8}$/, ''),
     );
     // T08d1: one queue health check replaced the 8 queue alarms (dead letters and backlogs),
-    // so new queues add no alarm. The two LLM alarms (T08b3) are back within the free 10.
+    // so new queues add no alarm. The two LLM alarms (T08b3) are back within the free 10;
+    // T08e1's daily LLM report keeps one alarm on its own errors.
     expect(names).toEqual([
       'ApiServerErrorAlarm',
       'LlmMonitoringRejectedOutputsAlarm',
+      'LlmMonitoringReportErrorAlarm',
       'LlmMonitoringTimeoutsAlarm',
       'QueueHealthCheckerErrorAlarm',
       'TestDataReaperAlarm',

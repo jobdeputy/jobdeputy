@@ -212,6 +212,8 @@ describe('relevance worker: a run', () => {
     ]);
     expect(deps.recordMetrics).toHaveBeenCalledWith(expect.objectContaining({ status: 'ok' }), {
       groundingRejections: 0,
+      jobs: 2,
+      lowScoreJobs: 1,
       scoreSpread: 80,
     });
 
