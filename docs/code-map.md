@@ -2,6 +2,8 @@
 
 Where each part of the code lives, so you can open the right file instead of searching. Read this first. **Update it in the same PR** when you add, move, or split a source file (`infra/test/docs-code-map.test.ts` fails otherwise).
 
+How the parts connect at run time, with sequence diagrams: [docs/flows/](flows/crawl.md) (crawl, relevance).
+
 Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/`, `infra/test/`, and deployed tests in `tests/integration/src/`.
 
 ## Common changes

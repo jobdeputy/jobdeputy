@@ -15,6 +15,7 @@ JobDeputy discovers jobs from any URL a user gives, keeps the relevant ones, and
 | Which file does what (read first, instead of searching) | [docs/code-map.md](docs/code-map.md) |
 | Task board and current status | [docs/tasks/README.md](docs/tasks/README.md) |
 | One task's goal, research, decision, done criteria | `docs/tasks/tNN-*.md` |
+| How a feature flows end to end (sequence diagrams, where data is stored) | [docs/flows/](docs/flows/crawl.md): crawl (T06, T07), relevance (T08) |
 | Tables, attributes, and S3 paths | [docs/data-model.md](docs/data-model.md) |
 | What to test where, and rules against flaky tests | [docs/testing.md](docs/testing.md) |
 | What to do when an alarm fires; deleting an account; changing crawl limits | [docs/runbooks/](docs/runbooks/alarms.md) |
@@ -43,6 +44,7 @@ Do not design ahead of the task that needs it. For example, the crawler's archit
 - Update the task file and task board status in the same PR as the work, and [docs/code-map.md](docs/code-map.md) when a source file is added, moved, or split. Split a large file by feature when a task already changes it.
 - **Read code sparingly:** start from the code map, search (`grep -n`), then read only the lines needed; keep only the result lines of test and deploy output.
 - **Accounts are deleted only through `DELETE /me` or `scripts/request-account-deletion.sh`**, never in the Cognito console, so no data is orphaned ([runbook](docs/runbooks/account-deletion.md)). Every new table keyed by `userId` must be added to the deletion list in `infra/lib/cell-stack.ts` (an infra test enforces it).
+- **Flow changes are documented in the same PR:** update the feature's diagram in `docs/flows/` when a PR changes how the parts connect or where data is stored.
 - **Schema changes are documented in the same PR:** update [docs/data-model.md](docs/data-model.md) and its change log whenever an attribute, item kind, or S3 path changes. New tables or key changes need a decision record ([0006](docs/decisions/0006-data-model.md)).
 
 ## Stack
