@@ -57,11 +57,7 @@ jobs:
           STACKS: ${{ steps.pick.outputs.stacks }}
         run: |
           for stack in $STACKS; do
-            case "$stack" in jobdeputy-dev-pr*) ;; *) echo "Refusing $stack"; exit 1 ;; esac
-            aws cloudformation delete-stack --stack-name "$stack"
-          done
-          for stack in $STACKS; do
-            aws cloudformation wait stack-delete-complete --stack-name "$stack"
+            scripts/delete-pr-stack.sh "$stack"
             scripts/cleanup-log-groups.sh stack "$stack"
           done
 

@@ -112,3 +112,4 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | `*.test.ts` | one file per deployed feature |
 | `scripts/request-account-deletion.sh` | the only way to delete an account by hand |
 | `scripts/cleanup-log-groups.sh`, `scripts/cloud-setup.sh` | orphaned log groups; cloud dev environment |
+| `scripts/delete-pr-stack.sh` | deletes a PR stack, retrying AWS internal delete failures (#61) |
