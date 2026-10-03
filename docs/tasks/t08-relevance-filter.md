@@ -2,6 +2,7 @@
 
 - **Status:** in-progress (split into T08a–T08e)
 - **Depends on:** T05, T07
+- **Flow (diagrams):** [docs/flows/relevance.md](../flows/relevance.md)
 
 ## Goal
 

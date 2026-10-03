@@ -2,6 +2,7 @@
 
 - **Status:** done
 - **Depends on:** T04, T05
+- **Flow (diagrams):** [docs/flows/crawl.md](../flows/crawl.md)
 
 ## Goal
 
