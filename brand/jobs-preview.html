@@ -1,0 +1,3970 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="JobDeputy Job matches: the roles your deputy found and ranked, where you choose what to add to Applications."
+    />
+    <title>JobDeputy · Job matches</title>
+    <link rel="icon" href="./jobdeputy-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./app-chrome.css" />
+    <link rel="stylesheet" href="./app-components.css" />
+    <link rel="stylesheet" href="./deputy.css" />
+    <link rel="expect" href="#first-view" blocking="render" />
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #1b1a18;
+        --ink-soft: #2d2b27;
+        --muted: #706d66;
+        --quiet: #98948b;
+        --paper: #faf8f3;
+        --paper-deep: #f0ece3;
+        --surface: rgba(255, 255, 255, 0.82);
+        --surface-strong: rgba(255, 255, 255, 0.92);
+        --header-surface: rgba(250, 248, 243, 0.82);
+        --line: rgba(27, 26, 24, 0.12);
+        --line-soft: rgba(27, 26, 24, 0.08);
+        --line-strong: rgba(27, 26, 24, 0.24);
+        --green: #2f9e77;
+        --green-soft: #ccebdc;
+        --green-wash: rgba(204, 235, 220, 0.55);
+        --green-line: rgba(47, 158, 119, 0.36);
+        --green-ink: #23795b;
+        --orange: #f36b3f;
+        --orange-soft: #ffd5c6;
+        --danger-ink: #9c4028;
+        --blue: #526fe5;
+        --blue-soft: #d9def8;
+        --on-ink-muted: rgba(255, 255, 255, 0.68);
+        --shadow: 0 21px 55px rgba(55, 48, 36, 0.07);
+        --shadow-control: 0 10px 21px rgba(27, 26, 24, 0.15);
+        --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+        --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+        --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+        --font-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+        font-family: var(--font-text);
+        font-synthesis: none;
+      }
+
+      /*
+       * Shared chrome lives in ./app-chrome.css, the shared components in ./app-components.css,
+       * and the deputy in ./deputy.css. The rules below are Job matches layout only: the deputy's
+       * ranked inbox of every role its searches found, where you decide what moves on to
+       * Applications, beside the role open in preview.
+       */
+
+      html {
+        min-height: 100%;
+        background: var(--paper);
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        overflow-x: clip;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 7% 4%, var(--surface-strong), transparent 28rem),
+          radial-gradient(
+            circle at 94% 16%,
+            color-mix(in srgb, var(--green-soft) 25%, transparent),
+            transparent 24rem
+          ),
+          var(--paper);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      button,
+      a {
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      p {
+        margin-top: 0;
+      }
+
+      /* Under the shared page intro (its Take the tour is placed by app-chrome.css), the flow
+         ribbon places this page between Searches and Applications: 21px under the intro, as the
+         Settings tab strip sits, and 34px above the list. */
+
+      .jobs-flow {
+        display: grid;
+        gap: 8px;
+        margin: -13px 0 34px;
+      }
+
+      .jobs-flow-line {
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      /* The metrics band (round 7, R10-2 and J1): what your deputy found under the filters in use,
+         what is new today and this week, and the roles already in Applications (a link there),
+         then one line naming the latest search with Show only those. 34px above the list. */
+      .jobs-band {
+        display: grid;
+        min-width: 0;
+        gap: 21px;
+        margin-bottom: 34px;
+      }
+
+      .jobs-band > * {
+        min-width: 0;
+      }
+
+      /* Boot without flicker (round 7, R10-1): until the first render is done the band and the
+         list are held as skeletons (the shared data-skeleton), the band at about its drawn
+         height and the list at least a screen tall, so the footer never shows and moves away. */
+      .jobs-band[data-skeleton] {
+        --skeleton-min: 189px;
+      }
+
+      .jobs-surface[data-skeleton] {
+        --skeleton-min: 100vh;
+      }
+
+      .jobs-stats {
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 104px), 1fr));
+      }
+
+      .jobs-stats > .stat[hidden] {
+        display: none;
+      }
+
+      .jobs-band-line {
+        display: flex;
+        min-width: 0;
+        flex-wrap: wrap;
+        gap: 4px 13px;
+        margin: 0;
+        align-items: center;
+        color: var(--ink-soft);
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      .jobs-band-line[hidden] {
+        display: none;
+      }
+
+      /* Added to Applications names its home: the label is the link there, its 44px target
+         reaching over the row's edges, so the stats keep one height (round 7: no empty row under
+         them). */
+      .jobs-stat-link {
+        margin-block: -13px;
+      }
+
+      /* A stat's short name is a phone's (below). */
+      .jobs-stat-short {
+        display: none;
+      }
+
+      /* A link's missing role, source, or search, over the band (T7-4). */
+      .jobs-missing {
+        margin-bottom: 34px;
+      }
+
+      /* What you just decided (J2): the notice over the next role, or in the list where the row
+         was, with Open in Applications and Undo. */
+      .jobs-decided-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      .jobs-decided-actions:empty {
+        display: none;
+      }
+
+      .jobs-row.is-decided {
+        display: block;
+        padding: 13px 21px;
+      }
+
+      .jobs-row.is-decided:hover {
+        background: transparent;
+      }
+
+      /* The triage surface: the views, the fit key and the filters in use, then the list beside the
+         role open in preview. Its width decides the layout, so it is a size container. */
+
+      .jobs-surface {
+        display: grid;
+        gap: 21px;
+        container: jobs / inline-size;
+      }
+
+      .jobs-toolbar {
+        display: flex;
+        min-width: 0;
+        flex-wrap: wrap;
+        gap: 13px 21px;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .jobs-views-host {
+        min-width: 0;
+        border-radius: 13px;
+      }
+
+      /* The shared filter bar (round 7, R10-7) under the views; it lays out its own parts. */
+      .jobs-filter {
+        min-width: 0;
+      }
+
+      /* On phones the two views take the full row; where a tab is too narrow for its words, they
+         sit one over the other. */
+      @media (max-width: 720px) {
+        .jobs-views-host {
+          flex: 1 1 100%;
+        }
+
+        /* A compact band on a phone (round 7, T2-12): every stat in one row, each named in a word
+           or two (the whole name stays for screen readers), so the first role is near the top. */
+        .jobs-band {
+          gap: 13px;
+        }
+
+        .jobs-band[data-skeleton] {
+          --skeleton-min: 220px;
+        }
+
+        .jobs-stats {
+          grid-auto-columns: minmax(0, 1fr);
+          grid-auto-flow: column;
+          grid-template-columns: none;
+        }
+
+        .jobs-stats .stat-figure {
+          font-size: 21px;
+        }
+
+        .jobs-stat-words {
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          overflow: hidden;
+          clip-path: inset(50%);
+          white-space: nowrap;
+        }
+
+        .jobs-stat-short {
+          display: inline;
+        }
+      }
+
+      @container jobs (max-width: 420px) {
+        .jobs-views-host > .jobs-views {
+          grid-auto-flow: row;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      .jobs-action-icon,
+      .jobs-materials-icon {
+        width: 20px;
+        height: 20px;
+        flex: 0 0 auto;
+      }
+
+      /* The fit key names the colour of each fit, with its meaning on touch screens and in a
+         tooltip elsewhere, and filters to that fit. */
+      .jobs-keyrow {
+        display: grid;
+        min-width: 0;
+        gap: 13px;
+      }
+
+      .jobs-detail {
+        display: grid;
+        min-width: 0;
+        gap: 21px;
+        align-content: start;
+        border-radius: 13px;
+      }
+
+      .jobs-detail:focus-visible {
+        outline: 2px solid var(--green);
+        outline-offset: 8px;
+      }
+
+      .jobs-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.618fr);
+        gap: 34px;
+        align-items: start;
+      }
+
+      /* A view with nothing in it gives its empty state the whole width. */
+      .jobs-layout.is-empty {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .jobs-layout.is-empty > .jobs-detail {
+        display: none;
+      }
+
+      .jobs-back {
+        display: none;
+      }
+
+      /* Beside the list, the open role stays in view while it fits below the sticky header (the
+         page script measures that against the page's scroll padding). */
+      @container jobs (min-width: 800px) {
+        .jobs-detail.is-sticky {
+          position: sticky;
+          top: 89px;
+        }
+      }
+
+      /* Narrower than the split (phones and tablets): the list comes first, and a role opens as
+         its own view with a way back to the list. */
+      @container jobs (max-width: 799px) {
+        .jobs-layout {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 21px;
+        }
+
+        .jobs-back {
+          display: inline-flex;
+          justify-self: start;
+        }
+
+        .jobs-surface:not([data-pane="detail"]) .jobs-detail,
+        .jobs-surface[data-pane="detail"] .jobs-list,
+        .jobs-surface[data-pane="detail"] .jobs-toolbar,
+        .jobs-surface[data-pane="detail"] .jobs-filter,
+        .jobs-surface[data-pane="detail"] .jobs-keyrow {
+          display: none;
+        }
+      }
+
+      /* The list: one panel per view, each a ranked list of rows, under the live search line. */
+
+      .jobs-list {
+        min-width: 0;
+        overflow: hidden;
+        border: 1px solid var(--line-soft);
+        border-radius: 22px;
+        background: var(--paper);
+        container: jobs-list / inline-size;
+      }
+
+      .jobs-live,
+      .jobs-arrivals {
+        display: flex;
+        min-width: 0;
+        flex-wrap: wrap;
+        gap: 8px 13px;
+        margin: 0;
+        padding: 13px 21px;
+        border-bottom: 1px solid var(--line);
+        align-items: center;
+        color: var(--ink-soft);
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      /* On a later page, the roles a finished search just added are on page 1: one line says how
+         many, with the way there. */
+      .jobs-arrivals > a {
+        margin-inline-start: auto;
+      }
+
+      .jobs-rows {
+        display: grid;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .jobs-rows:empty {
+        display: none;
+      }
+
+      /* A row: the role (its link covers the whole row), then its quick decision at the end. */
+      .jobs-row {
+        position: relative;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px 13px;
+        padding: 21px;
+        align-items: start;
+        transition: background 180ms ease;
+      }
+
+      .jobs-row + .jobs-row {
+        border-top: 1px solid var(--line);
+      }
+
+      .jobs-row:hover {
+        background: var(--surface);
+      }
+
+      /* A role a finished search just added lights up once: flagNew adds .is-new for 1.618s, and
+         never while motion is paused or reduced. */
+      .jobs-row.is-new {
+        background: var(--green-wash);
+      }
+
+      /* The highlighted row is the role open in preview: a green leading rule, as on the current
+         nav link. Forced colours drop the fill and the rule, so it keeps a system outline. */
+      .jobs-row:has(.jobs-row-link[aria-current="true"]) {
+        background: var(--surface-strong);
+        box-shadow: inset 3px 0 0 var(--green);
+      }
+
+      .jobs-row:has(.jobs-row-link:focus-visible) {
+        outline: 2px solid var(--green);
+        outline-offset: -4px;
+      }
+
+      .jobs-row-title {
+        margin: 0;
+        overflow-wrap: anywhere;
+        text-wrap: balance;
+      }
+
+      .jobs-row-link {
+        display: grid;
+        min-width: 0;
+        min-height: 44px;
+        gap: 6px;
+        align-content: start;
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .jobs-row-link::after {
+        position: absolute;
+        inset: 0;
+        content: "";
+      }
+
+      .jobs-row-link:focus-visible {
+        outline: none;
+      }
+
+      .jobs-row-link:hover .jobs-row-title {
+        text-decoration: underline;
+        text-decoration-color: var(--green-line);
+        text-underline-offset: 3px;
+      }
+
+      /* The facts under the title: the fit (its colour and name), the company and place, and the
+         role's state. They wrap between their parts, never inside a place. */
+      .jobs-row-meta {
+        display: flex;
+        min-width: 0;
+        flex-wrap: wrap;
+        gap: 4px 8px;
+        margin: 0;
+        align-items: center;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      /* The fit and the New badge sit above the row's link, so a pointer gets their tooltips; a
+         click still opens the role, because they are part of the link. */
+      .jobs-row-tip {
+        position: relative;
+        z-index: 1;
+      }
+
+      .jobs-row-fit {
+        display: inline-flex;
+      }
+
+      .jobs-row-place {
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+
+      .jobs-row-end {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        min-width: 0;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+
+      .jobs-row-end:empty {
+        display: none;
+      }
+
+      .jobs-row:has(> .jobs-row-end:empty) {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      /* A quick decision's word shows on touch screens, where its tooltip cannot. */
+      .jobs-action-word {
+        display: none;
+      }
+
+      /* A phone-width list keeps its rows compact, and stacks a row's two quick decisions so the
+         role's title keeps the width. */
+      @container jobs-list (max-width: 400px) {
+        .jobs-row,
+        .jobs-live,
+        .jobs-arrivals {
+          padding-inline: 13px;
+        }
+
+        .jobs-row-end {
+          flex-direction: column;
+        }
+      }
+
+      /* Touch screens name each quick decision in words. A list narrower than a tablet's gives
+         the decisions their own row under the role, sharing its width. */
+      @media (hover: none), (pointer: coarse) {
+        .jobs-action-word {
+          display: inline;
+        }
+
+        @container jobs-list (max-width: 559px) {
+          .jobs-row {
+            grid-template-columns: minmax(0, 1fr);
+          }
+
+          .jobs-row-end {
+            flex-direction: row;
+          }
+
+          .jobs-row-end > .compact-action {
+            flex: 1 1 auto;
+          }
+        }
+      }
+
+      .jobs-empty {
+        padding: 34px 21px;
+      }
+
+      /* Pages (J1; round 7, R10-6): a long view comes a page at a time, in the shared pagination: a
+         compact pager over the rows (the range, Previous, Next) and the full one after them (the
+         range, Previous, the numbers, Next, and the page size). The component draws and places
+         its parts; the page gives them room. */
+      .jobs-pages-top:not(:has(> .pagination:not([hidden]))),
+      .jobs-pages:not(:has(> .pagination:not([hidden]))) {
+        display: none;
+      }
+
+      .jobs-pages-top {
+        padding: 8px 21px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .jobs-pages {
+        padding: 13px 21px;
+        border-top: 1px solid var(--line);
+      }
+
+      @container jobs-list (max-width: 400px) {
+        .jobs-pages-top,
+        .jobs-pages {
+          padding-inline: 13px;
+        }
+      }
+
+      /* Status beacons repeat the words: green-ink in Applications, orange where it waits on you,
+         and quiet grey once set aside or closed. */
+      .jobs-dot,
+      .jobs-decision-state::before {
+        width: 8px;
+        height: 8px;
+        flex: 0 0 auto;
+        border: 1px solid transparent;
+        border-radius: 50%;
+        content: "";
+      }
+
+      .jobs-dot[data-tone="attention"],
+      .jobs-decision[data-tone="attention"] .jobs-decision-state::before {
+        background: var(--orange);
+      }
+
+      .jobs-decision[data-tone="app"] .jobs-decision-state::before {
+        background: var(--green-ink);
+      }
+
+      .jobs-decision[data-tone="quiet"] .jobs-decision-state::before {
+        background: var(--quiet);
+      }
+
+      /* The role open in preview: what it is, your decision, why it fits, then the posting. */
+
+      .jobs-detail-head > .section-label {
+        margin-bottom: 8px;
+      }
+
+      .jobs-detail-head h2 {
+        margin-bottom: 0;
+        text-wrap: balance;
+      }
+
+      .jobs-detail-company {
+        display: flex;
+        gap: 13px;
+        margin: 13px 0 0;
+        align-items: center;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      .jobs-decision {
+        display: grid;
+        gap: 13px;
+        padding-top: 21px;
+        border-top: 1px solid var(--line);
+      }
+
+      .jobs-decision-state {
+        display: flex;
+        gap: 8px;
+        margin: 0;
+        align-items: center;
+        color: var(--ink);
+        font-size: 15px;
+        font-weight: 700;
+        line-height: 1.35;
+      }
+
+      .jobs-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .jobs-materials {
+        display: flex;
+        gap: 8px;
+        margin: 0;
+        align-items: center;
+        color: var(--ink-soft);
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      /* Why it fits: the deputy's reasoning as one check per reason, a tick for a match and ! for
+         a gap worth checking, with the posting's keywords under Skills, and the prompt it ranks
+         with. */
+
+      .jobs-why {
+        display: grid;
+        gap: 21px;
+        padding: 21px;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background:
+          radial-gradient(
+            circle at 100% 0%,
+            color-mix(in srgb, var(--blue-soft) 60%, transparent),
+            transparent 13rem
+          ),
+          var(--surface-strong);
+      }
+
+      .jobs-why-head {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 13px;
+        align-items: center;
+      }
+
+      .jobs-why-head > .section-label {
+        margin: 0;
+        margin-inline-end: auto;
+      }
+
+      .jobs-why-fit {
+        display: inline-flex;
+        gap: 6px;
+        margin: 0;
+        align-items: center;
+        line-height: 1.35;
+      }
+
+      .jobs-fit-sample {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 400;
+      }
+
+      .jobs-checks {
+        display: grid;
+        gap: 13px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .jobs-check {
+        display: grid;
+        grid-template-columns: 24px 55px minmax(0, 1fr);
+        gap: 8px 13px;
+        align-items: start;
+      }
+
+      /* The glyph repeats the hidden "Matches" or "Worth checking" words; its alt text is empty. */
+      .jobs-check::before {
+        display: grid;
+        width: 24px;
+        height: 24px;
+        grid-column: 1;
+        grid-row: 1;
+        border: 1px solid transparent;
+        border-radius: 50%;
+        place-items: center;
+        font-size: 13px;
+        font-weight: 800;
+        line-height: 1;
+      }
+
+      .jobs-check[data-kind="match"]::before {
+        color: var(--green-ink);
+        background: var(--green-soft);
+        content: "✓" / "";
+      }
+
+      .jobs-check[data-kind="check"]::before {
+        color: var(--ink);
+        background: var(--orange-soft);
+        content: "!" / "";
+      }
+
+      .jobs-check-name {
+        grid-column: 2;
+        grid-row: 1;
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 680;
+        line-height: 24px;
+      }
+
+      .jobs-check-value {
+        grid-column: 3;
+        grid-row: 1;
+        color: var(--ink);
+        font-size: 15px;
+        line-height: 1.5;
+        text-wrap: pretty;
+      }
+
+      .jobs-check-meter,
+      .jobs-keywords {
+        grid-column: 3;
+      }
+
+      .jobs-check-meter {
+        margin-top: 2px;
+      }
+
+      .jobs-keywords {
+        display: grid;
+        gap: 8px;
+      }
+
+      .jobs-keyword-group {
+        display: grid;
+        min-width: 0;
+        gap: 6px;
+      }
+
+      .jobs-keyword-label {
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 12px;
+        font-weight: 650;
+        line-height: 1.4;
+      }
+
+      .jobs-keyword-list {
+        display: flex;
+        min-width: 0;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .jobs-keyword.is-found::before {
+        content: "✓" / "";
+        font-weight: 800;
+      }
+
+      /* "+N more" under the six keywords shown, at the start of its own line. */
+      .jobs-keywords-more {
+        justify-self: start;
+      }
+
+      .jobs-why-thumbs {
+        display: grid;
+        gap: 8px;
+        padding-top: 21px;
+        border-top: 1px solid var(--line);
+      }
+
+      /* The posting, in a disclosure. */
+      .jobs-disclosure > summary {
+        display: inline-flex;
+        min-height: 44px;
+        gap: 8px;
+        align-items: center;
+        cursor: pointer;
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 680;
+        line-height: 1.3;
+        list-style: none;
+      }
+
+      .jobs-disclosure > summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .jobs-disclosure > summary::before {
+        color: var(--muted);
+        content: "›" / "";
+        font-size: 15px;
+        line-height: 1;
+        transition: transform 180ms ease;
+      }
+
+      .jobs-disclosure[open] > summary::before {
+        transform: rotate(90deg);
+      }
+
+      .jobs-disclosure > summary:focus-visible {
+        border-radius: 4px;
+        outline: 2px solid var(--green);
+        outline-offset: 3px;
+      }
+
+      .jobs-posting {
+        padding-top: 8px;
+        border-top: 1px solid var(--line);
+      }
+
+      .jobs-posting > summary {
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .jobs-disclosure-body {
+        display: grid;
+        gap: 13px;
+        padding: 8px 0 13px 21px;
+      }
+
+      .jobs-copy {
+        max-width: 640px;
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+        text-wrap: pretty;
+      }
+
+      .jobs-asks {
+        display: grid;
+        gap: 4px;
+        margin: 0;
+        padding-left: 21px;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      .jobs-meta {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      @container jobs (max-width: 494px) {
+        .jobs-actions {
+          display: grid;
+        }
+
+        .jobs-check {
+          grid-template-columns: 24px minmax(0, 1fr);
+        }
+
+        .jobs-check-name {
+          grid-column: 2;
+        }
+
+        .jobs-check-value,
+        .jobs-check-meter,
+        .jobs-keywords {
+          grid-column: 2;
+        }
+
+        .jobs-check-value {
+          grid-row: auto;
+        }
+      }
+
+      @media (forced-colors: active) {
+        .jobs-row:has(.jobs-row-link[aria-current="true"]) {
+          outline: 3px solid Highlight;
+          outline-offset: -3px;
+        }
+      }
+
+      /* The reduced-motion and Pause motion resets are shared in ./app-chrome.css; nothing here
+         loops. */
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#page-title">Skip to job matches</a>
+
+    <header class="app-header">
+      <a class="brand" href="./home-preview.html?skipLoader" aria-label="JobDeputy dashboard">
+        <img
+          class="brand-logo"
+          src="./jobdeputy-mark.svg"
+          alt=""
+          width="400"
+          height="290"
+        />
+        <span class="brand-copy">
+          <span class="brand-name"><span>Job</span><span>Deputy</span></span>
+          <span class="brand-note">Your search partner</span>
+        </span>
+      </a>
+      <div class="header-actions">
+        <!-- HeaderActions: start -->
+        <button class="header-action header-feedback" type="button" data-feedback-open aria-haspopup="dialog" data-tip="Send feedback">
+          <svg class="header-action-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5.75 4.75h12.5c1.1 0 2 .9 2 2v8c0 1.1-.9 2-2 2h-6.5l-4.25 3.5v-3.5H5.75c-1.1 0-2-.9-2-2v-8c0-1.1.9-2 2-2Z" /><path d="M8.25 9.25h7.5M8.25 12.5h4.5" /></svg>
+          <span class="header-action-label">Feedback</span>
+        </button>
+        <a class="header-action header-invite" href="./invite-preview.html" data-tip="Invite friends">
+          <svg class="header-action-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.75" y="8.25" width="16.5" height="4" rx="1" /><path d="M5.25 12.25v6.5c0 .55.45 1 1 1h11.5c.55 0 1-.45 1-1v-6.5" /><path d="M12 8.25v11.5" /><path d="M12 8.25c-2.25 0-4.25-.75-4.25-2.25 0-1 .75-1.75 1.75-1.75 1.75 0 2.5 2 2.5 4Zm0 0c2.25 0 4.25-.75 4.25-2.25 0-1-.75-1.75-1.75-1.75-1.75 0-2.5 2-2.5 4Z" /></svg>
+          <span class="header-action-label">Invite friends</span>
+        </a>
+        <!-- HeaderActions: end -->
+        <details class="account-menu">
+          <summary class="account-link" aria-label="Alex Morgan, Free access, account menu">
+            <span class="account-avatar">
+              <img src="./profile-avatar.svg" alt="" width="160" height="160" />
+            </span>
+            <span class="account-copy">
+              <strong>Alex Morgan</strong>
+              <span>Free access</span>
+            </span>
+          </summary>
+          <nav class="account-popover" aria-label="Account">
+            <span class="account-popover-status">
+              <span data-account-credits>339,100 tokens of AI credits left</span>
+            </span>
+            <a href="./profile-preview.html">Profile</a>
+            <a href="./account-preview.html">Settings</a>
+            <a href="./ai-preview.html">AI &amp; credits</a>
+            <a href="./shop-preview.html">Purchases</a>
+            <a href="./invite-preview.html">Invite friends</a>
+            <a href="./trust-preview.html#help">Help &amp; support</a>
+            <button class="account-popover-action" type="button" data-tour-open hidden>Show me around</button>
+            <button class="account-popover-action" type="button" data-feedback-open aria-haspopup="dialog">Send feedback</button>
+            <a class="account-signout" href="./login-preview.html?skipLoader">Sign out</a>
+          </nav>
+        </details>
+      </div>
+    </header>
+
+    <div class="app-frame">
+      <div class="app-sidebar" id="app-sidebar">
+        <div class="app-menu">
+          <button
+            class="compact-action app-menu-toggle"
+            id="app-menu-toggle"
+            type="button"
+            aria-expanded="true"
+            aria-controls="app-nav"
+            hidden
+          >
+            <svg class="app-menu-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+            <span class="app-menu-text">Menu<span class="app-menu-current"> · Job matches</span></span>
+          </button>
+        </div>
+        <!-- AppNav: start -->
+        <nav class="app-nav" id="app-nav" aria-label="Primary">
+          <ul class="app-nav-list">
+            <li>
+              <a class="app-nav-link" href="./home-preview.html?skipLoader">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.75 10.5 12 3.75l8.25 6.75" /><path d="M5.75 9v10.5h12.5V9" /><path d="M10 19.5v-5h4v5" /></svg>
+                <span class="app-nav-label">Dashboard</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./searches-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.25" /><path d="m15.25 15.25 4.75 4.75" /></svg>
+                <span class="app-nav-label">Searches</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./jobs-preview.html" aria-current="page">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="7.25" width="17" height="12.5" rx="2" /><path d="M8.75 7.25V5.5c0-.83.67-1.5 1.5-1.5h3.5c.83 0 1.5.67 1.5 1.5v1.75" /><path d="M3.5 12.5h17" /></svg>
+                <span class="app-nav-label">Job matches</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./applications-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.75" y="4.25" width="4.5" height="11.5" rx="1.25" /><rect x="9.75" y="4.25" width="4.5" height="15.5" rx="1.25" /><rect x="15.75" y="4.25" width="4.5" height="8" rx="1.25" /></svg>
+                <span class="app-nav-label">Applications</span>
+                <span class="app-nav-count is-attention">3<span class="sr-only"> need you</span></span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./documents-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.75 3.75h-6.5c-.97 0-1.75.78-1.75 1.75v13c0 .97.78 1.75 1.75 1.75h9.5c.97 0 1.75-.78 1.75-1.75V8.25Z" /><path d="M13.75 3.75v4.5h4.5" /><path d="M8.75 12.25h6.5M8.75 15.75h6.5" /></svg>
+                <span class="app-nav-label">Résumés</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./profile-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="8.25" r="3.75" /><path d="M4.75 20c.6-3.75 3.4-6 7.25-6s6.65 2.25 7.25 6" /></svg>
+                <span class="app-nav-label">Profile</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./account-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9.88 5.85L10.48 3.38L13.52 3.38L14.12 5.85L16.26 7.09L18.7 6.38L20.22 9.01L18.38 10.76L18.38 13.24L20.22 14.99L18.7 17.62L16.26 16.91L14.12 18.15L13.52 20.62L10.48 20.62L9.88 18.15L7.74 16.91L5.3 17.62L3.78 14.99L5.62 13.24L5.62 10.76L3.78 9.01L5.3 6.38L7.74 7.09Z" /><circle cx="12" cy="12" r="3" /></svg>
+                <span class="app-nav-label">Settings</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./trust-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.75" /><path d="M9.6 9.6a2.5 2.5 0 1 1 3.3 2.36c-.53.2-.9.7-.9 1.27v.52" /><path d="M12 16.75h.01" /></svg>
+                <span class="app-nav-label">Help</span>
+              </a>
+            </li>
+          </ul>
+        </nav>
+        <!-- AppNav: end -->
+        <div class="app-sidebar-deputy">
+          <!-- DeputyDock: start -->
+          <aside
+            class="deputy-dock"
+            id="deputy-dock"
+            aria-labelledby="deputy-dock-title"
+            data-deputy
+            data-deputy-page="jobs"
+            data-deputy-state="rank"
+          >
+            <h2 class="sr-only" id="deputy-dock-title">Your deputy</h2>
+            <div class="deputy-art" data-deputy-art aria-hidden="true"></div>
+            <p class="deputy-speech" data-deputy-speech>Best fits are on top.</p>
+            <p class="deputy-duty"><span class="deputy-duty-dot" aria-hidden="true"></span><span data-deputy-duty>Ranking</span></p>
+            <div class="deputy-actions">
+              <details class="deputy-activity">
+                <summary class="deputy-activity-toggle">Activity</summary>
+                <!-- biome-ignore lint/a11y/useSemanticElements: the panel groups links and lists, not form controls, so a fieldset would be wrong -->
+                <div class="deputy-activity-panel" role="group" aria-labelledby="deputy-activity-title">
+                  <p class="deputy-activity-title" id="deputy-activity-title">What your deputy is doing</p>
+                  <h3 class="deputy-activity-label">Now</h3>
+                  <ul class="deputy-activity-list">
+                    <li>Searching Amazon Jobs</li>
+                  </ul>
+                  <h3 class="deputy-activity-label">Needs you</h3>
+                  <ul class="deputy-activity-list">
+                    <li>
+                      <a href="./materials-preview.html?app=search-infra&amp;from=applications"
+                        >Approve materials for Search Infrastructure (Google)</a
+                      >
+                    </li>
+                    <li><a href="./applications-preview.html?open=amazon-sde2">Follow up with Amazon</a></li>
+                    <li><a href="./searches-preview.html?source=acme">Fix the Acme source</a></li>
+                  </ul>
+                  <h3 class="deputy-activity-label">Done recently</h3>
+                  <ul class="deputy-activity-list">
+                    <li>Tailored a résumé and cover letter for Cloud Reliability · Oct 2</li>
+                    <li>Checked Google Careers: no new roles · Oct 2</li>
+                    <li>Saved 7 new roles from Google Careers · Oct 1</li>
+                  </ul>
+                  <p class="sample-note">Sample data · not connected</p>
+                </div>
+              </details>
+              <button class="deputy-motion" type="button" data-deputy-motion>Pause motion</button>
+            </div>
+            <p class="sr-only" data-deputy-announce role="status"></p>
+          </aside>
+          <!-- DeputyDock: end -->
+        </div>
+      </div>
+    <main class="app-main" id="main">
+      <div class="page-shell">
+        <section class="page-intro jobs-intro" aria-labelledby="page-title">
+          <div class="page-intro-copy">
+            <p class="eyebrow">Job matches</p>
+            <h1 id="page-title">Roles your deputy found.</h1>
+            <p class="intro-copy">Ranked against your profile, best fits first.</p>
+          </div>
+          <div class="page-intro-actions">
+            <button type="button" class="secondary-action page-tour" data-tour-open hidden>Take the tour</button>
+          </div>
+        </section>
+
+        <div class="jobs-flow">
+            <!-- FlowRibbon: start -->
+            <nav class="flow-ribbon" aria-label="How roles move">
+              <ol class="flow-ribbon-list">
+                <li>
+                  <a class="flow-ribbon-step" href="./searches-preview.html">
+                    <svg class="flow-ribbon-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.25" /><path d="m15.25 15.25 4.75 4.75" /></svg>
+                    <span class="flow-ribbon-label">Searches</span>
+                    <span class="flow-ribbon-count" data-flow-count="sources">6 sources</span>
+                  </a>
+                </li>
+                <li>
+                  <a class="flow-ribbon-step" href="./jobs-preview.html" aria-current="page">
+                    <svg class="flow-ribbon-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="7.25" width="17" height="12.5" rx="2" /><path d="M8.75 7.25V5.5c0-.83.67-1.5 1.5-1.5h3.5c.83 0 1.5.67 1.5 1.5v1.75" /><path d="M3.5 12.5h17" /></svg>
+                    <span class="flow-ribbon-label">Job matches</span>
+                    <span class="flow-ribbon-count" data-flow-count="matches">27 found</span>
+                  </a>
+                </li>
+                <li>
+                  <a class="flow-ribbon-step" href="./applications-preview.html">
+                    <svg class="flow-ribbon-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.75" y="4.25" width="4.5" height="11.5" rx="1.25" /><rect x="9.75" y="4.25" width="4.5" height="15.5" rx="1.25" /><rect x="15.75" y="4.25" width="4.5" height="8" rx="1.25" /></svg>
+                    <span class="flow-ribbon-label">Applications</span>
+                    <span class="flow-ribbon-count" data-flow-count="tracked">8 tracked</span>
+                  </a>
+                </li>
+              </ol>
+            </nav>
+            <!-- FlowRibbon: end -->
+            <p class="jobs-flow-line">Add a role to Applications or set it aside, and the next one opens.</p>
+        </div>
+
+        <!-- A link to a role, a source, or a search that isn't here (R9-2; round 7, T7-4): one calm
+             notice over the band, under the intro, so it is in view when the page opens. -->
+        <section
+          class="feedback-panel jobs-missing"
+          id="jobs-missing"
+          data-kind="notice"
+          hidden
+          tabindex="-1"
+          aria-labelledby="jobs-missing-title"
+          aria-describedby="jobs-missing-message"
+        >
+          <span class="feedback-panel-icon" aria-hidden="true">i</span>
+          <span class="feedback-panel-copy">
+            <strong class="feedback-panel-title" id="jobs-missing-title"></strong>
+            <span class="feedback-panel-message" id="jobs-missing-message"></span>
+          </span>
+        </section>
+
+        <!-- The metrics band (round 7, R10-2, D7, and J1): what your deputy found and what is new,
+             under the filters in use, so a link that names a figure lands on it. The figures of
+             the views that left (All, In Applications) stay here; To review and Not for me are
+             the tabs' counts. Every figure is the store's, filled by the page's script. -->
+        <section
+          class="task-surface jobs-band"
+          id="jobs-band"
+          aria-labelledby="jobs-band-title"
+          data-skeleton="lines"
+        >
+          <h2 class="sr-only" id="jobs-band-title">Your matches at a glance</h2>
+          <dl
+            class="stat-row jobs-stats"
+            id="jobs-stats"
+            aria-label="Your matches at a glance"
+            data-tour-step="1"
+            data-tour-title="Here is what I found."
+            data-tour-text="I count every role I found once, what is new today and this week, and the roles you already added, which live in Applications. Filters narrow these figures too."
+          >
+            <div class="stat" data-stat="found">
+              <dt class="stat-label">Found</dt>
+              <dd class="stat-figure"><span data-band-figure="found"></span></dd>
+            </div>
+            <div class="stat" data-stat="today" hidden>
+              <dt class="stat-label"><span class="jobs-stat-words">Found today</span><span class="jobs-stat-short" aria-hidden="true">Today</span></dt>
+              <dd class="stat-figure"><span data-band-figure="today"></span></dd>
+            </div>
+            <div class="stat" data-stat="week" hidden>
+              <dt class="stat-label"><span class="jobs-stat-words">Found this week</span><span class="jobs-stat-short" aria-hidden="true">This week</span></dt>
+              <dd class="stat-figure"><span data-band-figure="week"></span></dd>
+            </div>
+            <div class="stat" data-stat="tracked">
+              <dt class="stat-label">
+                <a class="chart-action jobs-stat-link" id="jobs-stat-tracked" href="./applications-preview.html" data-return-link
+                  ><span class="jobs-stat-words">Added to Applications</span
+                  ><span class="jobs-stat-short" aria-hidden="true">Added</span></a
+                >
+              </dt>
+              <dd class="stat-figure"><span data-band-figure="tracked"></span></dd>
+            </div>
+          </dl>
+          <p class="jobs-band-line" id="jobs-newest" hidden>
+            <span id="jobs-newest-words"></span>
+            <a class="compact-action" id="jobs-newest-link" href="./jobs-preview.html">Show only those</a>
+          </p>
+        </section>
+
+        <section
+          class="task-surface jobs-surface"
+          id="jobs-surface"
+          aria-labelledby="matches-title"
+          data-pane="list"
+          data-skeleton="rows"
+        >
+          <h2 class="sr-only" id="matches-title">Your job matches</h2>
+          <div class="jobs-toolbar">
+            <div
+              class="jobs-views-host"
+              data-tour-step="2"
+              data-tour-title="Decide on each role here."
+              data-tour-text="To review holds every role waiting for your call. Add one or set it aside and I open the next; Not for me keeps those you set aside."
+            >
+              <div class="tabs is-even jobs-views" role="tablist" aria-label="Job match views" data-tabs>
+                <button
+                  id="jobs-tab-new"
+                  type="button"
+                  role="tab"
+                  aria-selected="true"
+                  aria-controls="jobs-panel-new"
+                  data-view="new"
+                >
+                  To review <span class="status-pill is-neutral" data-view-count="new" data-metric="jobs.new"></span
+                  ><span class="sr-only" data-view-noun> roles</span>
+                </button>
+                <button
+                  id="jobs-tab-dismissed"
+                  type="button"
+                  role="tab"
+                  aria-selected="false"
+                  aria-controls="jobs-panel-dismissed"
+                  data-view="dismissed"
+                  tabindex="-1"
+                >
+                  Not for me <span class="status-pill is-neutral" data-view-count="dismissed" data-metric="jobs.dismissed"></span
+                  ><span class="sr-only" data-view-noun> roles</span>
+                </button>
+              </div>
+            </div>
+            <p class="sample-note jobs-surface-note">Sample data · not connected</p>
+          </div>
+
+          <!-- The shared filter bar (round 7, R10-7): search, Fit, Source, Work style, and Order,
+               each with its count in the view, live as you type or choose, kept in the address. -->
+          <div
+            class="jobs-filter"
+            id="jobs-filter"
+            data-tour-step="3"
+            data-tour-title="Narrow the list here."
+            data-tour-text="Search a title, a company, or a city, or show one fit, the sources you pick, or one work style. I narrow the list as you choose."
+          ></div>
+
+          <div class="jobs-keyrow">
+            <!-- One search's roles (?run=, or the band's Show only those; round 7, T7-5): the search
+                 is one chip under the filters, "Search at 02:02 · 2 sources", and its × shows
+                 every role again. -->
+            <ul class="multi-select-chips jobs-run-chips" id="jobs-run-line" aria-label="The search shown" hidden>
+              <li>
+                <button class="compact-action multi-select-chip" id="jobs-run-clear" type="button">
+                  <span class="multi-select-chip-name" id="jobs-run-words"></span
+                  ><svg class="multi-select-chip-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m7.5 7.5 9 9M16.5 7.5l-9 9" /></svg>
+                </button>
+              </li>
+            </ul>
+            <ul
+              class="chart-key is-compact is-inline jobs-fit-key"
+              id="fit-key"
+              aria-label="Fit levels"
+              data-tour-step="4"
+              data-tour-title="Each colour is a fit."
+              data-tour-text="I colour every role by its fit. Point at a colour to read what it means; on a phone the key says it."
+            ></ul>
+          </div>
+
+          <div class="jobs-layout" id="jobs-layout">
+            <div class="jobs-list" id="jobs-list">
+              <p
+                class="jobs-live"
+                id="jobs-live"
+                data-tip-title="A search is running"
+                data-tip="Roles it finds join this list, marked New, when it finishes."
+                hidden
+              >
+                <span class="live-pill is-live"
+                  ><span class="live-pill-dot" aria-hidden="true"></span
+                  ><span id="jobs-live-word">Live</span></span
+                >
+              </p>
+              <p class="jobs-arrivals" id="jobs-arrivals" hidden>
+                <span id="jobs-arrivals-words"></span>
+                <a class="compact-action" id="jobs-arrivals-link" href="./jobs-preview.html" data-page="1">Go to page 1</a>
+              </p>
+              <!-- The shared pagination's top pager (round 7, R10-6): the range, Previous, and Next. -->
+              <div class="jobs-pages-top" id="jobs-pages-top"></div>
+              <div class="tab-panel" id="jobs-panel-new" role="tabpanel" aria-labelledby="jobs-tab-new">
+                <ol class="jobs-rows" data-rows="new" aria-label="Roles to review, best fit first"></ol>
+                <div class="empty-state jobs-empty" data-empty="new" hidden>
+                  <div class="empty-state-art" data-deputy-prop="cards" aria-hidden="true">
+                    <span class="empty-state-icon"
+                      ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="7.25" width="17" height="12.5" rx="2" /><path d="M8.75 7.25V5.5c0-.83.67-1.5 1.5-1.5h3.5c.83 0 1.5.67 1.5 1.5v1.75" /></svg
+                    ></span>
+                  </div>
+                  <h3 class="empty-state-title" tabindex="-1">You’re all caught up</h3>
+                  <p class="empty-state-copy">New roles from your next search land here.</p>
+                  <div class="empty-state-actions">
+                    <a class="secondary-action" href="./searches-preview.html">Open Searches</a>
+                  </div>
+                </div>
+              </div>
+              <div
+                class="tab-panel"
+                id="jobs-panel-dismissed"
+                role="tabpanel"
+                aria-labelledby="jobs-tab-dismissed"
+                hidden
+              >
+                <ol class="jobs-rows" data-rows="dismissed" aria-label="Roles not for you"></ol>
+                <div class="empty-state jobs-empty" data-empty="dismissed" hidden>
+                  <div class="empty-state-art" data-deputy-prop="cards" aria-hidden="true">
+                    <span class="empty-state-icon"
+                      ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="7.25" width="17" height="12.5" rx="2" /><path d="M8.75 7.25V5.5c0-.83.67-1.5 1.5-1.5h3.5c.83 0 1.5.67 1.5 1.5v1.75" /></svg
+                    ></span>
+                  </div>
+                  <h3 class="empty-state-title" tabindex="-1">Nothing set aside</h3>
+                  <p class="empty-state-copy">Roles you mark Not for me wait here, so you can restore them.</p>
+                  <div class="empty-state-actions"></div>
+                </div>
+              </div>
+              <!-- The shared pagination (round 7, R10-6): the range, Previous, the numbers, Next, and
+                   the page size, after the rows. -->
+              <div
+                class="jobs-pages"
+                id="jobs-pages"
+                data-tour-step="8"
+                data-tour-title="I split long lists into pages."
+                data-tour-text="I show 12 roles a page, or 24 or 48 if you choose. The pagers above and below the list move between the pages."
+              ></div>
+            </div>
+
+            <article class="jobs-detail" id="job-detail" tabindex="-1" aria-labelledby="detail-title">
+              <button class="compact-action jobs-back" id="back-to-list" type="button">
+                <span aria-hidden="true">←</span> Back to the list
+              </button>
+              <!-- What you just decided (round 7, J2): the role left the list and the next one is
+                   open here; the notice says where it went, with Open in Applications and Undo. -->
+              <section
+                class="feedback-panel jobs-decided"
+                id="jobs-decided"
+                data-kind="success"
+                hidden
+                aria-labelledby="jobs-decided-title"
+              >
+                <span class="feedback-panel-icon" aria-hidden="true">✓</span>
+                <span class="feedback-panel-copy">
+                  <strong class="feedback-panel-title" id="jobs-decided-title"></strong>
+                  <span class="feedback-panel-message" id="jobs-decided-message"></span>
+                  <span class="jobs-decided-actions" id="jobs-decided-actions"></span>
+                </span>
+              </section>
+              <div class="jobs-detail-head">
+                <p class="section-label" id="detail-source">Job match</p>
+                <h2 id="detail-title">The role you open</h2>
+                <p class="jobs-detail-company">
+                  <span class="company-mark" id="detail-mark" aria-hidden="true"></span>
+                  <span id="detail-facts"></span>
+                </p>
+              </div>
+
+              <div
+                class="jobs-decision"
+                id="detail-decision"
+                data-tone="new"
+                data-tour-step="6"
+                data-tour-title="The call is yours."
+                data-tour-text="Add it to Applications and I track it there, or choose Not for me. Either way I open the next role, and Undo brings it back. I send nothing."
+              ></div>
+
+              <section
+                class="jobs-why"
+                aria-labelledby="why-title"
+                data-tour-step="7"
+                data-tour-title="Here is why it fits."
+                data-tour-text="I check the role, the place, and the posting’s keywords against your résumé. Under them is the prompt I rank with; Open in Prompts changes it."
+              >
+                <div class="jobs-why-head">
+                  <h3 class="section-label" id="why-title">Why it fits</h3>
+                  <p class="jobs-why-fit" id="detail-fit"></p>
+                </div>
+                <ul class="jobs-checks" id="detail-checks" aria-label="Checked against your profile"></ul>
+                <!-- The prompt that ranks every role (round 7, R10-5): the shared prompt summary, read
+                     only, with Open in Prompts as the one way to change it. -->
+                <div
+                  class="jobs-why-prompt"
+                  id="jobs-why-prompt"
+                  data-prompt-summary="rank"
+                  data-prompt-size="row"
+                  data-prompt-heading="4"
+                ></div>
+                <div class="jobs-why-thumbs">
+                  <fieldset class="thumbs" data-thumbs-context="Job match" id="detail-thumbs">
+                    <legend class="field-label">Was this match right?</legend>
+                    <div class="thumbs-options">
+                      <label class="thumbs-option">
+                        <input type="radio" name="match-thumbs" value="yes" />
+                        <svg class="thumbs-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7.5 10.75v9.1" /><path d="M7.5 10.75 11 4.5c.9 0 2.25.6 2.25 2.25v3h4.6a2 2 0 0 1 1.95 2.45l-1.4 6.1a2 2 0 0 1-1.95 1.55H4.75a1.25 1.25 0 0 1-1.25-1.25v-6.6c0-.7.55-1.25 1.25-1.25Z" /></svg>
+                        <span class="thumbs-label">Yes</span>
+                      </label>
+                      <label class="thumbs-option">
+                        <input type="radio" name="match-thumbs" value="no" />
+                        <svg class="thumbs-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g transform="rotate(180 12 12)"><path d="M7.5 10.75v9.1" /><path d="M7.5 10.75 11 4.5c.9 0 2.25.6 2.25 2.25v3h4.6a2 2 0 0 1 1.95 2.45l-1.4 6.1a2 2 0 0 1-1.95 1.55H4.75a1.25 1.25 0 0 1-1.25-1.25v-6.6c0-.7.55-1.25 1.25-1.25Z" /></g></svg>
+                        <span class="thumbs-label">No</span>
+                      </label>
+                    </div>
+                    <div class="thumbs-followup">
+                      <fieldset class="thumbs-reasons">
+                        <legend class="field-help">What was off? Choose any, or skip this.</legend>
+                        <label class="choice-chip"><input type="checkbox" name="match-thumbs-reason" value="Wrong role" />Wrong role</label>
+                        <label class="choice-chip"><input type="checkbox" name="match-thumbs-reason" value="Wrong place" />Wrong place</label>
+                        <label class="choice-chip"><input type="checkbox" name="match-thumbs-reason" value="Too senior" />Too senior</label>
+                        <label class="choice-chip"><input type="checkbox" name="match-thumbs-reason" value="Too junior" />Too junior</label>
+                        <label class="choice-chip"><input type="checkbox" name="match-thumbs-reason" value="Something else" />Something else</label>
+                      </fieldset>
+                      <button
+                        class="compact-action thumbs-more"
+                        type="button"
+                        data-feedback-open
+                        data-feedback-context="Job match"
+                      >
+                        Tell us more
+                      </button>
+                    </div>
+                  </fieldset>
+                  <p class="field-help" id="thumbs-saved" hidden>Saved in this browser only.</p>
+                </div>
+              </section>
+
+              <details class="jobs-disclosure jobs-posting" id="detail-posting">
+                <summary>What the posting says</summary>
+                <div class="jobs-disclosure-body">
+                  <p class="jobs-copy" id="detail-description"></p>
+                  <ul class="jobs-asks" id="detail-asks"></ul>
+                  <p class="jobs-meta" id="detail-seen"></p>
+                  <a
+                    class="compact-action"
+                    id="view-posting"
+                    href="https://jobs.example.com/postings/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="View the posting (opens in a new tab)"
+                    >View the posting <span aria-hidden="true">↗</span></a
+                  >
+                </div>
+              </details>
+            </article>
+          </div>
+          <p class="sr-only" id="results-announcement" role="status" aria-live="polite"></p>
+        </section>
+
+      </div>
+    </main>
+    </div>
+
+    <footer class="site-footer" id="footer-trust">
+      <div class="footer-inner">
+        <div class="footer-primary">
+          <span class="footer-brand">
+            <strong>JobDeputy</strong>
+            <span>Your private workspace for finding relevant roles.</span>
+          </span>
+          <nav class="footer-nav" aria-label="Footer">
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./home-preview.html?skipLoader">Dashboard</a>
+              <a class="footer-link" href="./searches-preview.html">Searches</a>
+              <a class="footer-link" href="./jobs-preview.html">Job matches</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./applications-preview.html">Applications</a>
+              <a class="footer-link" href="./documents-preview.html">Résumés</a>
+              <a class="footer-link" href="./profile-preview.html">Profile</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./account-preview.html">Settings</a>
+              <a class="footer-link" href="./ai-preview.html">AI &amp; credits</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./shop-preview.html">Purchases</a>
+              <a class="footer-link" href="./invite-preview.html">Invite friends</a>
+            </span>
+          </nav>
+        </div>
+        <div class="footer-secondary">
+          <span
+            ><strong>United States home Region</strong> · Your profile, searches, and stored keys
+            stay encrypted here.</span
+          >
+          <nav class="footer-nav" aria-label="Trust and support">
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./trust-preview.html#privacy">Privacy</a>
+              <a class="footer-link" href="./trust-preview.html#security">Security</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./trust-preview.html#accessibility">Accessibility</a>
+              <a class="footer-link" href="./trust-preview.html#help">Help</a>
+            </span>
+          </nav>
+        </div>
+      </div>
+    </footer>
+
+    <script src="./app-shell.js"></script>
+    <script src="./app-components.js"></script>
+    <script src="./prompt-guard.js"></script>
+    <script src="./agreement-text.js"></script>
+    <script src="./sample-store.js"></script>
+    <script src="./deputy.js"></script>
+    <script src="./feedback.js"></script>
+    <script src="./app-panels.js"></script>
+    <script>
+      (() => {
+        const store = window.JobDeputyStore ?? null;
+        const deputy = window.JobDeputyDeputy ?? null;
+        const components = window.JobDeputyComponents ?? null;
+        const parameters = new URLSearchParams(window.location.search);
+
+        // The page's rules, apart from the page so the tests can run them on a sample store: the
+        // roles a view and the filters show, in their order, how many each view holds and which
+        // store metric that count is, and how a role's keywords read against your résumé.
+        const jobsModel = () => {
+          const FIT_RANK = { strong: 0, good: 1, stretch: 2 };
+          const lower = (value) => String(value ?? '').trim().toLowerCase();
+          const time = (value) => Date.parse(value ?? '') || 0;
+          // All is every found role (the band's Found); To review (the store's view new), In
+          // Applications, and Not for me split it (round 7, J2: the page shows To review and Not for
+          // me as tabs, and the band counts All and In Applications). pinned keeps a role in a view
+          // it has left (no view of the page pins one since round 7: a decided role leaves at once).
+          const inView = (job, view, pinned = null) =>
+            view === 'all' || (pinned?.get(job.id) ?? job.view) === view;
+          // The sources a filter asks for (round 6, R6-4): one id, several (a list, or "a,b" from
+          // an address), or none ('all' or empty), which is every source.
+          const sourceSet = (value) =>
+            new Set(
+              (Array.isArray(value) ? value : [value])
+                .flatMap((part) => String(part ?? '').split(','))
+                .map((id) => id.trim())
+                .filter((id) => id && id !== 'all'),
+            );
+          // A run (?run=) narrows to the roles that one search found, so "See the 2 new roles"
+          // lands on those 2 rather than every waiting role from the source (UAT-D2-4).
+          const passes = (job, filters) => {
+            const words = lower(filters.query);
+            const sources = sourceSet(filters.source);
+            return (
+              (!filters.fit || job.fit === filters.fit) &&
+              (!sources.size || sources.has(job.source)) &&
+              (!filters.run || job.runId === filters.run) &&
+              (!filters.workplace || job.workplace === filters.workplace) &&
+              (!words || lower(`${job.title} ${job.company} ${job.location}`).includes(words))
+            );
+          };
+          // Best fit first (a closed posting last within its fit, then the higher score), or the
+          // newest found first.
+          const byFit = (a, b) =>
+            FIT_RANK[a.fit] - FIT_RANK[b.fit] ||
+            Number(Boolean(a.closed)) - Number(Boolean(b.closed)) ||
+            b.score - a.score;
+          const byNewest = (a, b) =>
+            time(b.foundAt) - time(a.foundAt) ||
+            String(b.posted).localeCompare(String(a.posted)) ||
+            byFit(a, b);
+          // Roles a finished search added while you look (first) lead the list, so they join page
+          // 1, until the view or the filters change.
+          const shown = (jobs, view, filters, { sort = 'fit', pinned = null, first = null } = {}) => {
+            const rows = jobs
+              .filter((job) => inView(job, view, pinned) && passes(job, filters))
+              .sort(sort === 'newest' ? byNewest : byFit);
+            if (!first?.size) return rows;
+            return [
+              ...rows.filter((job) => first.has(job.id)),
+              ...rows.filter((job) => !first.has(job.id)),
+            ];
+          };
+          const count = (jobs, view, filters) =>
+            jobs.filter((job) => inView(job, view) && passes(job, filters)).length;
+          // The source list (R6-4, UAT-D-15): how many roles of this view each source has under
+          // the other filters (its sources and its run aside), for the sources that have any. A
+          // source with none would narrow the list to nothing, so it is left out, unless it is
+          // picked (a ?source= link to it still shows the empty state that says why).
+          const sourceCounts = (jobs, view, filters, picked = []) => {
+            const others = { ...filters, source: [], run: '' };
+            const counts = new Map();
+            for (const job of jobs) {
+              if (!inView(job, view) || !passes(job, others)) continue;
+              counts.set(job.source, (counts.get(job.source) ?? 0) + 1);
+            }
+            for (const id of sourceSet(picked)) if (!counts.has(id)) counts.set(id, 0);
+            return counts;
+          };
+          // The store metric a view's count is (R3-4): each view alone, or with one fit or one
+          // source. Other mixes (a fit and a source, several sources, a work style, a search, one
+          // run) have no metric.
+          const countKey = (view, filters) => {
+            const sources = [...sourceSet(filters.source)];
+            const mixed = (filters.fit && sources.length) || sources.length > 1;
+            if (filters.run || filters.workplace || lower(filters.query) || mixed) return null;
+            const base = view === 'all' ? 'jobs' : `jobs.${view}`;
+            if (filters.fit) return `${base}.fit.${filters.fit}`;
+            if (sources.length) return `${base}.source.${sources[0]}`;
+            return view === 'all' ? 'jobs.found' : base;
+          };
+          // A role's keywords in the posting's order, each on or off your default résumé. The
+          // store works found and missing out with the readiness rule (keywordStats), so Job
+          // matches and Résumés never disagree about a keyword.
+          const keywords = (job) => {
+            const onResume = new Set((job.found ?? []).map(lower));
+            return (job.keywords ?? []).map((word) => ({
+              word,
+              onResume: onResume.has(lower(word)),
+            }));
+          };
+          // Pages (J1; round 7, R10-6): 12, 24, or 48 roles a page, the size you choose (12 until
+          // you do, at every width). A page is a number from 1, and any page asked for lands on one
+          // that exists.
+          const SIZES = [12, 24, 48];
+          const pageSize = (chosen = null) => (SIZES.includes(Number(chosen)) ? Number(chosen) : SIZES[0]);
+          const pageCount = (total, size) => Math.max(1, Math.ceil(total / size));
+          const clampPage = (page, total, size) =>
+            Math.min(Math.max(1, Math.trunc(Number(page)) || 1), pageCount(total, size));
+          const pageOf = (index, size) => Math.floor(Math.max(0, index) / size) + 1;
+          const onPage = (rows, page, size) => rows.slice((page - 1) * size, page * size);
+          return {
+            sourceSet,
+            inView,
+            passes,
+            shown,
+            count,
+            sourceCounts,
+            countKey,
+            keywords,
+            pageSize,
+            sizes: SIZES,
+            pageCount,
+            clampPage,
+            pageOf,
+            onPage,
+          };
+        };
+
+        const model = jobsModel();
+        const labelsOf = (list) =>
+          Object.fromEntries((list ?? []).map((item) => [item.id, item.label]));
+        // The fit levels (each one's name, colour, and meaning) and the stages come from the store,
+        // so every page names and colours them alike; nothing here retypes them. The queue (round 7,
+        // J2) has two views, the store's new and dismissed: To review and Not for me. All and In
+        // Applications left; their figures are the band's.
+        const VIEW_IDS = ['new', 'dismissed'];
+        const VIEWS = { new: 'To review', dismissed: 'Not for me' };
+        // The address of each view (?view=), and the old ones that still land: all and new open To
+        // review, dismissed Not for me (tracked forwards to Applications, at the start).
+        const VIEW_PARAMS = { new: null, dismissed: 'not-for-me' };
+        const VIEW_ALIASES = { review: 'new', new: 'new', all: 'new', 'not-for-me': 'dismissed', dismissed: 'dismissed' };
+        const FIT_LEVELS = store?.FITS ?? [];
+        const FITS = labelsOf(FIT_LEVELS);
+        const FIT_TONES = Object.fromEntries(FIT_LEVELS.map((fit) => [fit.id, fit.tone]));
+        const FIT_MEANINGS = Object.fromEntries(FIT_LEVELS.map((fit) => [fit.id, fit.meaning]));
+        // The word for each tone, for the tour's line about the colours.
+        const TONE_WORDS = {
+          green: 'green',
+          blue: 'blue',
+          quiet: 'grey',
+          orange: 'orange',
+          ink: 'dark grey',
+        };
+        const STAGE_LABEL = labelsOf(store?.STAGES);
+        const WORKPLACE = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' };
+        const SORTS = { fit: 'Best fit first', newest: 'Newest first' };
+        // The sources picked show as at most three chips, then "+N more" (R6-4).
+        const SOURCE_CHIPS = 3;
+        // The page sizes you can choose (R10-6): 12 until you choose another.
+        const PAGE_SIZES = model.sizes;
+        // A posting's skills match when most of its keywords are on the résumé.
+        const SKILLS_MATCH = 0.65;
+        const PLUS_ICON =
+          '<svg class="jobs-action-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M12 5.5v13M5.5 12h13" /></svg>';
+        const CLEAR_ICON =
+          '<svg class="jobs-chip-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="m7.5 7.5 9 9M16.5 7.5l-9 9" /></svg>';
+        const PAGE_ICON =
+          '<svg class="jobs-materials-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.75 3.75h-6.5c-.97 0-1.75.78-1.75 1.75v13c0 .97.78 1.75 1.75 1.75h9.5c.97 0 1.75-.78 1.75-1.75V8.25Z" /><path d="M13.75 3.75v4.5h4.5" /><path d="M8.75 12.25h6.5M8.75 15.75h6.5" /></svg>';
+
+        const $ = (selector, root = document) => root.querySelector(selector);
+        const surface = $('#jobs-surface');
+        const layout = $('#jobs-layout');
+        const tablist = $('.jobs-views');
+        const tabs = Object.fromEntries(VIEW_IDS.map((view) => [view, $(`#jobs-tab-${view}`)]));
+        const panels = Object.fromEntries(
+          VIEW_IDS.map((view) => [view, $(`#jobs-panel-${view}`)]),
+        );
+        const lists = Object.fromEntries(
+          VIEW_IDS.map((view) => [view, $(`[data-rows="${view}"]`)]),
+        );
+        const empties = Object.fromEntries(
+          VIEW_IDS.map((view) => [view, $(`[data-empty="${view}"]`)]),
+        );
+        const tabCounts = Object.fromEntries(
+          VIEW_IDS.map((view) => [view, $(`[data-view-count="${view}"]`)]),
+        );
+        const tabNouns = Object.fromEntries(
+          VIEW_IDS.map((view) => [view, $('[data-view-noun]', tabs[view])]),
+        );
+        const fitKey = $('#fit-key');
+        const filterHost = $('#jobs-filter');
+        const jobDetail = $('#job-detail');
+        const backToList = $('#back-to-list');
+        const announcement = $('#results-announcement');
+        const live = { line: $('#jobs-live'), word: $('#jobs-live-word') };
+        const jobsList = $('#jobs-list');
+        const pagesHost = $('#jobs-pages');
+        const pagesTop = $('#jobs-pages-top');
+        const arrivalsLine = {
+          line: $('#jobs-arrivals'),
+          words: $('#jobs-arrivals-words'),
+          link: $('#jobs-arrivals-link'),
+        };
+        const missingNotice = {
+          panel: $('#jobs-missing'),
+          title: $('#jobs-missing-title'),
+          message: $('#jobs-missing-message'),
+        };
+        const runLine = { line: $('#jobs-run-line'), words: $('#jobs-run-words'), clear: $('#jobs-run-clear') };
+        // The band (round 7): its figures and the latest search's line.
+        const band = {
+          stats: $('#jobs-stats'),
+          figures: Object.fromEntries(
+            ['found', 'today', 'week', 'tracked'].map((name) => [name, $(`[data-band-figure="${name}"]`)]),
+          ),
+          trackedLink: $('#jobs-stat-tracked'),
+          newest: $('#jobs-newest'),
+          newestWords: $('#jobs-newest-words'),
+          newestLink: $('#jobs-newest-link'),
+        };
+        // What you just decided (J2), over the next role.
+        const decided = {
+          panel: $('#jobs-decided'),
+          title: $('#jobs-decided-title'),
+          message: $('#jobs-decided-message'),
+          actions: $('#jobs-decided-actions'),
+        };
+        const detail = {
+          source: $('#detail-source'),
+          title: $('#detail-title'),
+          mark: $('#detail-mark'),
+          facts: $('#detail-facts'),
+          decision: $('#detail-decision'),
+          fit: $('#detail-fit'),
+          checks: $('#detail-checks'),
+          thumbs: $('#detail-thumbs'),
+          thumbsSaved: $('#thumbs-saved'),
+          posting: $('#detail-posting'),
+          description: $('#detail-description'),
+          asks: $('#detail-asks'),
+          seen: $('#detail-seen'),
+          viewPosting: $('#view-posting'),
+        };
+
+        // What the page shows. The deep links set it: ?view=, ?fit=, ?source=, ?run=, and ?job=.
+        const state = {
+          view: 'new',
+          fit: '',
+          // The sources picked (ids, in the order picked); none is every source.
+          sources: [],
+          // One search's roles (a run id), always with that search's sources.
+          run: '',
+          workplace: '',
+          query: '',
+          sort: 'fit',
+          active: null,
+          // Narrower than the split, the list and the open role are two views of one surface, and
+          // the list marks a role as open only once you have opened it.
+          pane: 'list',
+          opened: false,
+          // The page of the view shown (?page=), and its size at the last render; chosen is the
+          // page size you picked (?size=, one of PAGE_SIZES), else null and the size follows the
+          // screen.
+          page: 1,
+          size: 0,
+          chosen: null,
+          // What you just decided (round 7, J2): { kind, jobId, appId, title, company, from, view,
+          // index, nextId }, until the next decision, a view, a filter, or a page changes.
+          decision: null,
+        };
+        const filters = () => ({
+          fit: state.fit,
+          source: state.sources,
+          run: state.run,
+          workplace: state.workplace,
+          query: state.query,
+        });
+        // Round 7 (J2): a role you decide on leaves the queue at once (no view keeps it pinned).
+        const pinned = new Map();
+        // Roles a search added while this page is open lead page 1 until the view or the filters
+        // change; the ones you have not seen yet on page 1 are named from a later page.
+        const arrivals = new Set();
+        const unseen = new Set();
+        const rowElements = new Map();
+        let searching = false;
+        let narrowNow = false;
+
+        // Everything shown comes from the sample world (R3-3): every found role, the sources, and
+        // the applications. Nothing here keeps its own copy.
+        let catalog = { sources: [], jobs: [], deletedSources: [] };
+        let applications = [];
+        const read = () => {
+          if (!store) return;
+          catalog = store.catalog();
+          applications = store.get().applications ?? [];
+        };
+        // The found roles at the last render, so roles a finished search adds are welcomed once.
+        let known = null;
+
+        // ---------------------------------------------------------------- helpers
+
+        const el = (tag, attributes = {}, ...children) => {
+          const node = document.createElement(tag);
+          for (const [name, value] of Object.entries(attributes)) {
+            if (value === false || value === null || value === undefined) continue;
+            node.setAttribute(name, value === true ? '' : String(value));
+          }
+          node.append(...children.flat().filter((child) => child !== null && child !== false));
+          return node;
+        };
+        const withHtml = (node, html) => {
+          node.innerHTML = html;
+          return node;
+        };
+        // Counts read with thousands separators ("1,024 roles"), as the store writes them.
+        const grouped = (count) => Number(count).toLocaleString('en-US');
+        const counted = (count, one, many = `${one}s`) =>
+          `${grouped(count)} ${count === 1 ? one : many}`;
+        const shortDate = (iso) => store?.format.shortDate(iso) ?? '';
+        const whenFound = (iso) => store?.format.ago(iso) ?? '';
+
+        const announce = (message) => {
+          announcement.textContent = '';
+          window.setTimeout(() => {
+            announcement.textContent = message;
+          }, 40);
+        };
+
+        // The address as written: a flag with no value stays bare (?skipLoader, never ?skipLoader=;
+        // round 7, T3-20).
+        const addressOf = (url) => {
+          const query = url.searchParams.toString().replace(/=(?=&|$)/g, '');
+          return `${url.pathname}${query ? `?${query}` : ''}${url.hash}`;
+        };
+        const setParameter = (name, value) => {
+          try {
+            const url = new URL(window.location.href);
+            if (value === null || value === '') url.searchParams.delete(name);
+            else url.searchParams.set(name, value);
+            window.history.replaceState(window.history.state, '', addressOf(url));
+          } catch {
+            // Some file:// contexts refuse history changes; the view still updates.
+          }
+        };
+        // Several sources write one ?source= each (?source=google&source=stripe); none, none.
+        const setSourceParameters = (ids) => {
+          try {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('source');
+            for (const id of ids) url.searchParams.append('source', id);
+            window.history.replaceState(window.history.state, '', addressOf(url));
+          } catch {
+            // Some file:// contexts refuse history changes; the view still updates.
+          }
+        };
+
+        // The fixed header (and the app bar on phones) covers the top of the page; the page's
+        // scroll padding says by how much, so nothing here assumes a height.
+        const chromeOffset = () =>
+          Number.parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 89;
+
+        // ---------------------------------------------------------------- the sample world
+
+        const jobFor = (id) => catalog.jobs.find((job) => job.id === id) ?? null;
+        const appFor = (job) =>
+          job?.applicationId
+            ? (applications.find((app) => app.id === job.applicationId) ?? null)
+            : null;
+        const sourceRecord = (id) =>
+          catalog.sources.find((source) => source.id === id) ??
+          (catalog.deletedSources ?? []).find((source) => source.id === id) ??
+          null;
+        const sourceName = (id) =>
+          sourceRecord(id)?.name ?? catalog.jobs.find((job) => job.source === id)?.sourceName ?? id;
+        const knownSource = (id) =>
+          Boolean(id) &&
+          (Boolean(sourceRecord(id)) || catalog.jobs.some((job) => job.source === id));
+        // A run's sources: those of the roles it found here, in the order it checked them (Keep
+        // watch checks every watched source in one run, round 6), or none when no role here came
+        // from it.
+        const runSources = (id) => {
+          if (!id) return [];
+          const here = new Set(
+            catalog.jobs.filter((job) => job.runId === id).map((job) => job.source),
+          );
+          const order = store?.run?.(id)?.sourceIds ?? [];
+          return [...new Set([...order, ...here])].filter((source) => here.has(source));
+        };
+        // A run's own id: an old link's id opens the run it is part of now (round 5's r10 was
+        // folded into r9, Keep watch's one nightly run; the store keeps the alias).
+        const runIdOf = (id) => (id ? (store?.run?.(id)?.id ?? id) : '');
+        // When a run finished: "at 14:02" today, "on Oct 3" before; its chip reads "Search at
+        // 14:02".
+        const runWhen = (id) => {
+          const finished = store?.run(id)?.finishedAt ?? '';
+          if (!finished) return '';
+          return String(finished).slice(0, 10) === store.today()
+            ? `at ${store.format.time(finished)}`
+            : `on ${shortDate(finished)}`;
+        };
+        const runLabel = (id) => (runWhen(id) ? `Search ${runWhen(id)}` : 'One search');
+        const sameSet = (a, b) => a.length === b.length && a.every((id) => b.includes(id));
+        // The sources an address names: a search that checked several sources implies them all,
+        // so ?run= alone stands for every one of them (a nightly run checks up to 30); one
+        // source, or some of a run's sources, are named as before.
+        const addressSources = (sources, run) => {
+          const checked = runSources(run);
+          return run && checked.length > 1 && sameSet(sources, checked) ? [] : sources;
+        };
+        // The address of one search's roles: its sources, then the run.
+        const runParameters = (id) => {
+          const url = new URLSearchParams();
+          for (const source of addressSources(runSources(id), id)) url.append('source', source);
+          url.set('run', id);
+          return url;
+        };
+        const isWaiting = (app) => app.stage === 'approval' && app.approval !== 'approved';
+        const stageName = (app) =>
+          app.stage === 'approval' && !isWaiting(app)
+            ? 'Approved'
+            : (STAGE_LABEL[app.stage] ?? app.stage);
+        const openHref = (app) => `./applications-preview.html?open=${encodeURIComponent(app.id)}`;
+        // The materials, in the words Applications uses: none, draft, waiting, or approved.
+        const materialsOf = (app) => {
+          if (app.materials === 'approved' || (app.stage === 'approval' && !isWaiting(app))) {
+            return 'approved';
+          }
+          if (app.materials === 'ready') return 'waiting';
+          if (app.materials === 'draft') return 'draft';
+          return 'none';
+        };
+        const MATERIALS = {
+          none: 'Materials not started yet.',
+          draft: 'Your deputy is drafting the materials.',
+          waiting: 'Materials are ready for your approval.',
+          approved: 'Materials approved.',
+        };
+
+        // ---------------------------------------------------------------- views and filters
+
+        const shownIn = (view) =>
+          model.shown(catalog.jobs, view, filters(), { sort: state.sort, pinned, first: arrivals });
+
+        // ---------------------------------------------------------------- pages
+
+        const pageSizeNow = () => model.pageSize(state.chosen);
+        // A page's own address keeps the view and the filters the address can hold.
+        const pageHref = (page) => {
+          const url = new URLSearchParams();
+          if (VIEW_PARAMS[state.view]) url.set('view', VIEW_PARAMS[state.view]);
+          if (state.fit) url.set('fit', state.fit);
+          for (const id of addressSources(state.sources, state.run)) url.append('source', id);
+          if (state.run) url.set('run', state.run);
+          if (state.sort !== 'fit') url.set('sort', state.sort);
+          if (state.chosen) url.set('size', String(state.chosen));
+          if (page > 1) url.set('page', String(page));
+          const search = url.toString();
+          return `./jobs-preview.html${search ? `?${search}` : ''}`;
+        };
+        // The role you are on in the list, which a change of the list keeps on screen.
+        const focusedRowId = () => {
+          const focused = document.activeElement;
+          if (!focused || !lists[state.view]?.contains(focused)) return null;
+          return focused.closest('.jobs-row')?.dataset.id ?? null;
+        };
+        const pageWords = (page, pages) => `Page ${page} of ${pages}`;
+        // A search that checked several sources, with every one of them: one filter, the run.
+        const wholeRun = () =>
+          Boolean(state.run) &&
+          runSources(state.run).length > 1 &&
+          sameSet(state.sources, runSources(state.run));
+        // Anything that narrows the list (the order only reorders it).
+        const anyFilter = () =>
+          Boolean(state.query.trim() || state.fit || state.sources.length || state.run || state.workplace);
+
+        // Narrower than the split, the back control shows, so the stylesheet decides the layout.
+        const isNarrow = () => getComputedStyle(backToList).display !== 'none';
+
+        // Each view's count under the filters in use. The four always add up (All = New + In
+        // Applications + Not for me), and each carries the store metric it equals whenever the
+        // store has one, so the probe checks it against the Dashboard's numbers.
+        // A count's store key in the store's round 7 names where it has them (To review is
+        // jobs.toReview, Not for me jobs.notForMe, the same figures as jobs.new and jobs.dismissed),
+        // else the older names.
+        const RENAMED = [
+          ['jobs.new', 'jobs.toReview'],
+          ['jobs.dismissed', 'jobs.notForMe'],
+        ];
+        const storeKey = (key) => {
+          if (!key || !store) return key;
+          for (const [from, to] of RENAMED) {
+            if (key !== from && !key.startsWith(`${from}.`)) continue;
+            const named = `${to}${key.slice(from.length)}`;
+            return store.metric(named) === null || store.metric(named) === undefined ? key : named;
+          }
+          return key;
+        };
+        const renderCounts = () => {
+          for (const view of VIEW_IDS) {
+            const node = tabCounts[view];
+            const key = store ? storeKey(model.countKey(view, filters())) : null;
+            const count = model.count(catalog.jobs, view, filters());
+            const text = key ? store.metricText(key) : String(count);
+            if (key) node.setAttribute('data-metric', key);
+            else node.removeAttribute('data-metric');
+            if (node.textContent !== text) node.textContent = text;
+            // Screen readers hear "New, 1 role" or "New, 20 roles".
+            const noun = count === 1 ? ' role' : ' roles';
+            if (tabNouns[view] && tabNouns[view].textContent !== noun) {
+              tabNouns[view].textContent = noun;
+            }
+          }
+        };
+
+        // ---------------------------------------------------------------- rows
+
+        // The fit, named in its colour, the same name and colour the Dashboard uses for it.
+        const toneLabel = (fit) =>
+          el('span', { class: 'tone-label', 'data-tone': FIT_TONES[fit] }, FITS[fit]);
+        // A source's colour is the Dashboard's (the store's colour key, round 6): the five sources
+        // with the most found roles have their own, and every other source is Other, the shared
+        // hatched grey (data-tone="other"). Before the store has the key, a source is named
+        // without a colour.
+        const sourceToneOf = (id) => store?.sourceTone?.(id) ?? null;
+        // The role's name follows each action, for screen readers.
+        const named = (label, job) => [label, el('span', { class: 'sr-only' }, `: ${job.title}`)];
+
+        const buildRow = (job) =>
+          el(
+            'li',
+            { class: 'jobs-row', 'data-id': job.id },
+            el(
+              'a',
+              {
+                class: 'jobs-row-link',
+                href: `./jobs-preview.html?job=${encodeURIComponent(job.id)}`,
+                'aria-labelledby': `row-${job.id}-title`,
+                'aria-describedby': `row-${job.id}-meta`,
+                'data-open': job.id,
+              },
+              el('h3', { class: 'jobs-row-title', id: `row-${job.id}-title` }, job.title),
+              el('p', { class: 'jobs-row-meta', id: `row-${job.id}-meta` }),
+            ),
+            el('div', { class: 'jobs-row-end' }),
+          );
+
+        // In Applications: the stage as a pill (an orange dot when it waits on you).
+        const stagePill = (app) =>
+          el(
+            'span',
+            { class: 'status-pill is-neutral' },
+            isWaiting(app) ? el('span', { class: 'jobs-dot', 'data-tone': 'attention' }) : null,
+            el('span', { class: 'sr-only' }, 'In Applications: '),
+            isWaiting(app) ? 'Approval · needs you' : stageName(app),
+          );
+
+        // A role a search found in this browser, and still waiting for your decision.
+        const isFresh = (job) => Boolean(job.fresh) && job.view === 'new';
+        const newBadge = () =>
+          el(
+            'span',
+            {
+              class: 'status-pill jobs-row-tip',
+              'data-tip-title': 'Just found',
+              'data-tip': 'Your deputy found it in a search that just finished.',
+            },
+            'New',
+          );
+
+        // A row names the city (or Remote, US); the open role gives the full place.
+        const placeOf = (job) =>
+          job.workplace === 'remote' ? job.location : job.location.replace(/,\s*[A-Z]{2}$/, '');
+
+        const rowMeta = (job) => {
+          const app = appFor(job);
+          return [
+            isFresh(job) ? newBadge() : null,
+            el(
+              'span',
+              {
+                class: 'jobs-row-fit jobs-row-tip',
+                'data-tip-title': FITS[job.fit],
+                'data-tip': FIT_MEANINGS[job.fit],
+              },
+              toneLabel(job.fit),
+            ),
+            el('span', { class: 'jobs-row-place' }, `${job.company} · ${placeOf(job)}`),
+            app ? stagePill(app) : null,
+            !app && job.view !== 'dismissed' && job.closed
+              ? el(
+                  'span',
+                  {
+                    class: 'tag jobs-row-tip',
+                    'data-tip-title': `Posting closed ${shortDate(job.closed)}`,
+                    'data-tip': 'It can’t be added to Applications.',
+                  },
+                  'Closed',
+                )
+              : null,
+          ];
+        };
+
+        // A quick decision: an icon, its name in a tooltip where a pointer can hover and in a word
+        // beside the icon on touch screens, and the role's name for screen readers (the word is
+        // the start of that name, so it is hidden from them).
+        const iconAction = (action, label, word, tip, icon, job) => {
+          const button = withHtml(
+            el('button', {
+              class: 'compact-action jobs-icon-action',
+              type: 'button',
+              'data-action': action,
+              'data-key': action,
+              'data-tip-title': label,
+              'data-tip': tip,
+            }),
+            icon,
+          );
+          button.append(
+            el('span', { class: 'jobs-action-word', 'aria-hidden': 'true' }, word),
+            el('span', { class: 'sr-only' }, `${label}: ${job.title}`),
+          );
+          return button;
+        };
+
+        const rowActions = (job) => {
+          if (appFor(job)) return [];
+          if (job.view === 'dismissed') {
+            return [
+              el(
+                'button',
+                {
+                  class: 'compact-action',
+                  type: 'button',
+                  'data-action': 'restore',
+                  'data-key': 'restore',
+                },
+                named('Restore', job),
+              ),
+            ];
+          }
+          return [
+            job.closed
+              ? null
+              : iconAction(
+                  'add',
+                  'Add to Applications',
+                  'Add',
+                  'Tracks it in Applications as Shortlisted. Nothing is sent.',
+                  PLUS_ICON,
+                  job,
+                ),
+            iconAction(
+              'dismiss',
+              'Not for me',
+              'Not for me',
+              'Sets it aside in Not for me. You can restore it.',
+              CLEAR_ICON,
+              job,
+            ),
+          ];
+        };
+
+        const rowFor = (job) => {
+          let row = rowElements.get(job.id);
+          if (!row) {
+            row = buildRow(job);
+            rowElements.set(job.id, row);
+          }
+          const app = appFor(job);
+          const signature = JSON.stringify([
+            app?.stage ?? null,
+            app?.approval ?? null,
+            job.view,
+            state.view === 'dismissed',
+            isFresh(job),
+          ]);
+          if (row.dataset.signature !== signature) {
+            row.dataset.signature = signature;
+            row.querySelector('.jobs-row-meta').replaceChildren(...rowMeta(job).filter(Boolean));
+            row.querySelector('.jobs-row-end').replaceChildren(...rowActions(job).filter(Boolean));
+          }
+          const link = row.querySelector('.jobs-row-link');
+          if (job.id === state.active && (state.opened || !narrowNow)) {
+            link.setAttribute('aria-current', 'true');
+          } else {
+            link.removeAttribute('aria-current');
+          }
+          return row;
+        };
+
+        // Moves rows only when the order changes: moving a focused row takes the focus with it.
+        const placeRows = (list, rows) => {
+          const focused = document.activeElement;
+          const changed =
+            list.children.length !== rows.length ||
+            rows.some((row, index) => list.children[index] !== row);
+          if (!changed) return;
+          list.replaceChildren(...rows);
+          if (focused && list.contains(focused)) focused.focus({ preventScroll: true });
+        };
+
+        // The tour's row step rings the first role of the view.
+        const markTourRow = (rows) => {
+          const first = rows[0] ? rowElements.get(rows[0].id) : null;
+          for (const row of document.querySelectorAll('.jobs-row[data-tour-step]')) {
+            if (row !== first) {
+              row.removeAttribute('data-tour-step');
+              row.removeAttribute('data-tour-title');
+              row.removeAttribute('data-tour-text');
+            }
+          }
+          if (!first || first.hasAttribute('data-tour-step')) return;
+          first.setAttribute('data-tour-step', '5');
+          first.setAttribute('data-tour-title', 'I put the best fits first.');
+          first.setAttribute(
+            'data-tour-text',
+            'Each row shows the fit, the company, and the place. Open a role to see why I ' +
+              'matched it, or decide here: + adds it to Applications, × sets it aside.',
+          );
+        };
+
+        // ---------------------------------------------------------------- empty states
+
+        const emptyCopy = (view) => {
+          // One source asked for explains itself; several are filters like any other.
+          const id = state.sources.length === 1 ? state.sources[0] : 'all';
+          const source = id !== 'all' ? sourceRecord(id) : null;
+          const narrowed = state.fit || state.workplace || state.query.trim();
+          const roles = id !== 'all' ? model.count(catalog.jobs, 'all', { source: id }) : 1;
+          if (id !== 'all' && !narrowed && roles === 0) {
+            const name = sourceName(id);
+            const all = { label: 'Show all sources', action: 'all-sources' };
+            const card = `./searches-preview.html?source=${encodeURIComponent(id)}`;
+            if (store?.liveRun(id)) {
+              return {
+                prop: 'magnifier',
+                title: `Your deputy is still searching ${name}`,
+                copy: 'Roles appear here when the search finishes.',
+                actions: [{ label: 'Watch it live', href: `${card}&live=1`, primary: true }, all],
+              };
+            }
+            if (source?.state === 'attention') {
+              return {
+                prop: 'magnifier',
+                title: `${name} needs attention`,
+                copy: `Its last search stopped. ${source.problem?.message ?? 'Check it'}.`,
+                actions: [{ label: 'Fix it in Searches', href: card, primary: true }, all],
+              };
+            }
+            if (source?.status === 'archived') {
+              return {
+                prop: 'magnifier',
+                title: `${name} is archived`,
+                copy: 'It found no roles before you archived it.',
+                actions: [
+                  { label: 'See it in Searches', href: './searches-preview.html?view=archived' },
+                  { ...all, primary: true },
+                ],
+              };
+            }
+            return {
+              prop: 'magnifier',
+              title: `No roles from ${name} yet`,
+              copy: 'Its searches found nothing that matches your roles so far.',
+              actions: [{ label: 'See it in Searches', href: card }, { ...all, primary: true }],
+            };
+          }
+          if (anyFilter()) {
+            return {
+              prop: 'cards',
+              title: 'No roles match these filters',
+              copy: 'Clear a filter to see more of what your deputy found.',
+              actions: [{ label: 'Clear filters', action: 'clear-filters', primary: true }],
+            };
+          }
+          return {
+            new: {
+              prop: 'cards',
+              title: 'You’re all caught up',
+              copy: 'New roles from your next search land here.',
+              actions: [{ label: 'Open Searches', href: './searches-preview.html' }],
+            },
+            dismissed: {
+              prop: 'cards',
+              title: 'Nothing set aside',
+              copy: 'Roles you mark Not for me wait here, so you can restore them.',
+              actions: [],
+            },
+          }[view];
+        };
+
+        const renderEmpty = (view, shown) => {
+          const box = empties[view];
+          box.hidden = shown > 0;
+          if (shown > 0) return;
+          const copy = emptyCopy(view);
+          const signature = JSON.stringify(copy);
+          if (box.dataset.signature === signature) return;
+          box.dataset.signature = signature;
+          const art = box.querySelector('.empty-state-art');
+          if (art.getAttribute('data-deputy-prop-drawn') !== copy.prop) {
+            art.setAttribute('data-deputy-prop', copy.prop);
+            deputy?.renderProp(art, copy.prop);
+          }
+          box.querySelector('.empty-state-title').textContent = copy.title;
+          box.querySelector('.empty-state-copy').textContent = copy.copy;
+          box.querySelector('.empty-state-actions').replaceChildren(
+            ...copy.actions.map((action) => {
+              const className = action.primary ? 'primary-action' : 'secondary-action';
+              return action.href
+                ? el('a', { class: className, href: action.href }, action.label)
+                : el(
+                    'button',
+                    { class: className, type: 'button', 'data-empty-action': action.action },
+                    action.label,
+                  );
+            }),
+          );
+        };
+
+        // ---------------------------------------------------------------- the open role
+
+        const checksFor = (job) => {
+          const total = (job.keywords ?? []).length;
+          const found = (job.found ?? []).length;
+          return [
+            ['Role', ...job.role],
+            ['Place', ...job.place],
+            [
+              'Skills',
+              total && found / total >= SKILLS_MATCH ? 'match' : 'check',
+              `${found} of ${total} keywords on your résumé`,
+            ],
+          ];
+        };
+
+        // A keyword chip names how many found roles ask for it: the count Résumés readiness shows
+        // for its top keywords, and the store's count across found roles for the others.
+        const keywordTip = (word, stats, counts, onResume) => {
+          const entry = stats?.keywords?.find(
+            (item) => item.keyword.toLowerCase() === word.toLowerCase(),
+          );
+          const roles = counted(stats?.basedOn ?? 0, 'role');
+          if (entry) {
+            return {
+              'data-tip-title': `${entry.keyword} · in ${grouped(entry.roles)} of ${roles}`,
+              'data-tip': entry.onResume
+                ? 'On your default résumé. Résumés readiness counts it the same way.'
+                : 'Not on your default résumé yet. Résumés readiness counts it the same way.',
+            };
+          }
+          const count = counts.get(word.toLowerCase());
+          if (!stats || !count) return {};
+          return {
+            'data-tip-title': `${word} · in ${grouped(count)} of ${roles}`,
+            'data-tip': onResume
+              ? 'On your default résumé.'
+              : 'Not on your default résumé yet.',
+          };
+        };
+
+        // Why it fits names at most six of the role's keywords (R6-4, G9): the six that most found
+        // roles ask for, each in its group, most asked first; "+N more" shows the rest of this
+        // role's keywords in place, and Show fewer folds them again.
+        const KEYWORD_CAP = 6;
+        const keywordGroup = (kind, label, words, { stats, counts, shown }) => {
+          const folded = words.every((word) => !shown.has(word));
+          return el(
+            'div',
+            {
+              class: folded ? 'jobs-keyword-group is-more' : 'jobs-keyword-group',
+              hidden: folded,
+            },
+            el('p', { class: 'jobs-keyword-label', id: `keywords-${kind}-label` }, label),
+            el(
+              'ul',
+              { class: 'jobs-keyword-list', 'aria-labelledby': `keywords-${kind}-label` },
+              words.map((word) =>
+                el(
+                  'li',
+                  {
+                    class: [
+                      'status-pill',
+                      kind === 'found' ? '' : 'is-neutral',
+                      'jobs-keyword',
+                      kind === 'found' ? 'is-found' : '',
+                      shown.has(word) ? '' : 'is-more',
+                    ]
+                      .filter(Boolean)
+                      .join(' '),
+                    hidden: !shown.has(word),
+                    ...keywordTip(word, stats, counts, kind === 'found'),
+                  },
+                  word,
+                ),
+              ),
+            ),
+          );
+        };
+        // How many found roles ask for each keyword, from the store's full list (See all).
+        const keywordCounts = () =>
+          new Map(
+            (store?.seeAll?.('keywords')?.items ?? []).map((item) => [
+              String(item.label).toLowerCase(),
+              Number(item.count) || 0,
+            ]),
+          );
+        const keywordMore = (more) =>
+          el(
+            'button',
+            {
+              class: 'compact-action jobs-keywords-more',
+              type: 'button',
+              'aria-expanded': 'false',
+              'aria-controls': 'detail-keywords',
+              'data-more-keywords': String(more),
+            },
+            el('span', { 'data-more-words': '' }, `+${grouped(more)} more`),
+            el('span', { class: 'sr-only' }, more === 1 ? ' keyword' : ' keywords'),
+          );
+        const toggleKeywords = (button) => {
+          const box = button.closest('.jobs-keywords');
+          const open = button.getAttribute('aria-expanded') !== 'true';
+          button.setAttribute('aria-expanded', String(open));
+          for (const node of box.querySelectorAll('.is-more')) node.hidden = !open;
+          button.querySelector('[data-more-words]').textContent = open
+            ? 'Show fewer'
+            : `+${grouped(Number(button.dataset.moreKeywords))} more`;
+        };
+
+        // A role's keywords most asked first, and the six shown, by the shared top-N rule (pick:
+        // topWithOther, which the Dashboard's keyword bars use too); without it, every keyword
+        // shows in the posting's order.
+        const rankKeywords = (chips, counts, pick) => {
+          const ranked = pick
+            ? pick(chips, {
+                n: KEYWORD_CAP,
+                value: (chip) => counts.get(chip.word.toLowerCase()) ?? 0,
+                label: (chip) => chip.word,
+              })
+            : null;
+          const order = ranked ? ranked.all.map((entry) => entry.item) : chips;
+          const top = ranked ? ranked.top.map((entry) => entry.item) : chips;
+          return {
+            order,
+            shown: new Set(top.map((chip) => chip.word)),
+            more: chips.length - top.length,
+          };
+        };
+
+        const checkNodes = (job) => {
+          const chipsOf = model.keywords(job);
+          const stats = store?.keywordStats?.() ?? null;
+          const counts = keywordCounts();
+          const pick = components?.topWithOther ?? store?.topWithOther ?? null;
+          const { order, shown, more } = rankKeywords(chipsOf, counts, pick);
+          const onResume = order.filter((chip) => chip.onResume).map((chip) => chip.word);
+          const missing = order.filter((chip) => !chip.onResume).map((chip) => chip.word);
+          const context = { stats, counts, shown };
+          return checksFor(job).map(([name, kind, words]) => {
+            const item = el(
+              'li',
+              { class: 'jobs-check', 'data-kind': kind },
+              el('span', { class: 'jobs-check-name' }, name),
+              el(
+                'span',
+                { class: 'jobs-check-value' },
+                el(
+                  'span',
+                  { class: 'sr-only' },
+                  kind === 'match' ? 'Matches: ' : 'Worth checking: ',
+                ),
+                words,
+              ),
+            );
+            if (name === 'Skills') {
+              const share = chipsOf.length ? onResume.length / chipsOf.length : 0;
+              item.append(
+                el('span', {
+                  class: 'meter jobs-check-meter',
+                  'aria-hidden': 'true',
+                  style: `--value: ${Math.round(share * 100)}`,
+                }),
+                el(
+                  'div',
+                  { class: 'jobs-keywords', id: 'detail-keywords' },
+                  onResume.length
+                    ? keywordGroup('found', 'On your résumé', onResume, context)
+                    : null,
+                  missing.length
+                    ? keywordGroup('missing', 'Not on your résumé', missing, context)
+                    : null,
+                  more > 0 ? keywordMore(more) : null,
+                ),
+              );
+            }
+            return item;
+          });
+        };
+
+        // The answer you gave this role, back in the thumbs whenever the role opens.
+        const renderThumbs = (job) => {
+          const saved = job.feedback ?? null;
+          const fieldset = detail.thumbs;
+          fieldset.setAttribute('data-thumbs-context', `Job match: ${job.title}`);
+          for (const input of fieldset.querySelectorAll('.thumbs-option input')) {
+            input.checked = input.value === saved?.value;
+          }
+          for (const input of fieldset.querySelectorAll('.thumbs-reasons input')) {
+            input.checked = saved?.value === 'no' && (saved.reasons ?? []).includes(input.value);
+          }
+          detail.thumbsSaved.hidden = !saved;
+          // Keeps Tell us more's Feedback context on this role and its reasons.
+          components?.init(fieldset);
+        };
+
+        // When your deputy tailors a role you add (round 7): the store's morning schedule in words,
+        // "tomorrow at 06:00" (or today, or the day), else that it waits for Tailor now.
+        const tailorWords = () => {
+          const daily = store?.tailorQueue?.()?.daily;
+          if (!daily?.enabled || !daily.nextAt) {
+            return 'Your deputy tailors it when you choose Tailor now, in Applications.';
+          }
+          const day = store.format.date(daily.nextAt);
+          const today = store.today();
+          const next = new Date(`${today}T12:00:00Z`);
+          next.setUTCDate(next.getUTCDate() + 1);
+          const when =
+            day === store.format.date(today)
+              ? 'today'
+              : day === store.format.date(next.toISOString().slice(0, 10))
+                ? 'tomorrow'
+                : `on ${day}`;
+          return `Your deputy tailors it ${when} at ${store.format.time(daily.nextAt) || daily.time}, in Applications.`;
+        };
+        const decisionFor = (job) => {
+          const app = appFor(job);
+          if (app) {
+            return {
+              tone: isWaiting(app) ? 'attention' : 'app',
+              state: `In Applications · ${stageName(app)}`,
+              materials: MATERIALS[materialsOf(app)],
+              actions: [{ key: 'open', label: 'Open in Applications', href: openHref(app) }],
+            };
+          }
+          if (job.view === 'dismissed') {
+            return {
+              tone: 'quiet',
+              state: 'Not for me',
+              note: 'It stays out of To review. Saved in this browser only.',
+              actions: [
+                {
+                  key: 'restore',
+                  label: 'Restore',
+                  action: 'restore',
+                },
+              ],
+            };
+          }
+          if (job.closed) {
+            return {
+              tone: 'quiet',
+              state: `Posting closed ${shortDate(job.closed)}`,
+              note: 'It can’t be added to Applications.',
+              actions: [{ key: 'dismiss', label: 'Not for me', action: 'dismiss' }],
+            };
+          }
+          return {
+            tone: 'new',
+            note: tailorWords(),
+            actions: [
+              { key: 'add', label: 'Add to Applications', action: 'add', primary: true },
+              { key: 'dismiss', label: 'Not for me', action: 'dismiss' },
+            ],
+          };
+        };
+
+        const actionNode = (action) => {
+          const className = action.primary ? 'primary-action' : 'secondary-action';
+          return action.href
+            ? el(
+                'a',
+                {
+                  class: className,
+                  href: action.href,
+                  'data-key': action.key,
+                  'data-return-link': true,
+                  'data-focus-key': `detail-${action.key}`,
+                },
+                action.label,
+              )
+            : el(
+                'button',
+                {
+                  class: className,
+                  type: 'button',
+                  'data-action': action.action,
+                  'data-key': action.key,
+                },
+                action.label,
+              );
+        };
+
+        const renderDecision = (job) => {
+          const view = decisionFor(job);
+          const signature = JSON.stringify([job.id, view]);
+          if (detail.decision.dataset.signature === signature) return;
+          detail.decision.dataset.signature = signature;
+          detail.decision.dataset.tone = view.tone;
+          const focusKey = detail.decision.contains(document.activeElement)
+            ? document.activeElement.dataset.key
+            : null;
+          detail.decision.replaceChildren(
+            ...[
+              view.state ? el('p', { class: 'jobs-decision-state' }, view.state) : null,
+              el('div', { class: 'jobs-actions' }, view.actions.map(actionNode)),
+              view.materials
+                ? withHtml(el('p', { class: 'jobs-materials' }), PAGE_ICON)
+                : el('p', { class: 'field-help' }, view.note),
+            ].filter(Boolean),
+          );
+          if (view.materials) detail.decision.lastChild.append(view.materials);
+          if (focusKey) detail.decision.querySelector(`[data-key="${focusKey}"]`)?.focus();
+        };
+
+        const renderDetail = (job) => {
+          layout.classList.toggle('is-empty', !job);
+          if (!job) return;
+          const signature = JSON.stringify([job.id, job.feedback, job.keywords, job.found]);
+          if (jobDetail.dataset.signature !== signature) {
+            jobDetail.dataset.signature = signature;
+            jobDetail.dataset.job = job.id;
+            detail.source.textContent = `From ${job.sourceName}`;
+            detail.title.textContent = job.title;
+            detail.mark.textContent = job.mark;
+            detail.facts.textContent = [
+              job.company,
+              job.location,
+              job.workplaceLabel,
+              `Posted ${shortDate(job.posted)}`,
+            ].join(' · ');
+            detail.fit.replaceChildren(
+              toneLabel(job.fit),
+              el('span', { class: 'jobs-fit-sample' }, ' · sample'),
+            );
+            detail.fit.setAttribute('data-tip-title', FITS[job.fit]);
+            detail.fit.setAttribute('data-tip', FIT_MEANINGS[job.fit]);
+            detail.checks.replaceChildren(...checkNodes(job));
+            detail.description.textContent = job.summary;
+            detail.asks.replaceChildren(...job.asks.map((ask) => el('li', {}, ask)));
+            detail.seen.textContent = `Sample posting · first seen ${whenFound(job.foundAt)} on ${
+              job.sourceName
+            }`;
+            detail.viewPosting.href = job.url;
+            detail.viewPosting.setAttribute(
+              'aria-label',
+              `View the posting: ${job.title} (opens in a new tab)`,
+            );
+            renderThumbs(job);
+          }
+          renderDecision(job);
+        };
+
+        // ---------------------------------------------------------------- the page
+
+        // The fit key, from the store: each level's colour, name, and meaning (on touch screens
+        // under its name; elsewhere in its tooltip). The filter bar's Fit choices name them too.
+        const buildFits = () => {
+          fitKey.replaceChildren(
+            ...FIT_LEVELS.map((fit) =>
+              el(
+                'li',
+                { 'data-tone': fit.tone },
+                el(
+                  'a',
+                  {
+                    class: 'chart-key-item',
+                    href: `./jobs-preview.html?fit=${encodeURIComponent(fit.id)}`,
+                    'data-fit': fit.id,
+                  },
+                  el('span', { class: 'chart-key-name' }, fit.label),
+                  el(
+                    'span',
+                    { class: 'chart-key-meaning' },
+                    fit.meaning.replace(/\.$/, ''),
+                    el('span', { class: 'sr-only' }, '.'),
+                  ),
+                  el('span', { class: 'sr-only' }, 'Show only these roles'),
+                ),
+              ),
+            ),
+          );
+          const colours = FIT_LEVELS.map(
+            (fit) => `${TONE_WORDS[fit.tone] ?? fit.tone} for ${fit.label}`,
+          ).join(', ');
+          fitKey.setAttribute(
+            'data-tour-text',
+            `I colour every role by its fit: ${colours}. Point at a colour to read what it ` +
+              'means; on a phone the key says it.',
+          );
+        };
+
+        // The fit key filters this view to a fit; each tooltip names the fit, how many of its
+        // roles this view holds, and what the colour means.
+        const renderKey = () => {
+          const others = { ...filters(), fit: '' };
+          for (const link of fitKey.querySelectorAll('a[data-fit]')) {
+            const fit = link.dataset.fit;
+            const count = model.count(catalog.jobs, state.view, { ...others, fit });
+            const where = `in ${VIEWS[state.view]}`;
+            const url = new URLSearchParams();
+            if (VIEW_PARAMS[state.view]) url.set('view', VIEW_PARAMS[state.view]);
+            url.set('fit', fit);
+            link.setAttribute('href', `./jobs-preview.html?${url}`);
+            const tip = `${FITS[fit]} · ${counted(count, 'role')} ${where}`;
+            link.setAttribute('data-tip-title', tip);
+            link.setAttribute('data-tip', `${FIT_MEANINGS[fit]} Shows only these roles.`);
+            if (state.fit === fit) link.setAttribute('aria-current', 'true');
+            else link.removeAttribute('aria-current');
+          }
+        };
+
+        // The shared filter bar (round 7, R10-7): search, Fit, Source, Work style, and Order, each
+        // choice with its count in the view under the other filters (the multi-select lists the
+        // sources with roles there, at most three as chips), live as you type or choose, Clear while
+        // anything is set, and the result count. The page keeps the state in the address itself
+        // (?q=, ?fit=, ?source=, ?workplace=, ?sort=), so the bar writes none.
+        // "Fit: Any", as Source says it, so the row fits on one line (round 7).
+        const choiceOptions = (labels) => [
+          { value: '', label: 'Any' },
+          ...Object.entries(labels).map(([value, label]) => ({ value, label })),
+        ];
+        const sourceFacet = {
+          name: 'source',
+          label: 'Source',
+          kind: 'multi',
+          singular: 'source with roles',
+          plural: 'sources with roles',
+          countLabel: ['role', 'roles'],
+          maxChips: SOURCE_CHIPS,
+          options: [],
+        };
+        let bar = null;
+        const sourceOptions = () =>
+          [...model.sourceCounts(catalog.jobs, state.view, filters(), state.sources)].map(
+            // Each source in the Dashboard's colour for it (Other's hatched grey past the top 5).
+            ([id, count]) => ({ value: id, label: sourceName(id), count, tone: sourceToneOf(id) ?? undefined }),
+          );
+        const buildFilterBar = () => {
+          if (typeof components?.filterBar !== 'function') return;
+          sourceFacet.options = sourceOptions();
+          bar = components.filterBar(filterHost, {
+            label: 'Filter your job matches',
+            // Short enough for a phone's field beside Filters (round 7, T3-21).
+            search: { label: 'Search roles', placeholder: 'Title, company, city' },
+            facets: [
+              { name: 'fit', label: 'Fit', kind: 'choice', options: choiceOptions(FITS) },
+              sourceFacet,
+              {
+                name: 'workplace',
+                label: 'Work style',
+                kind: 'choice',
+                options: choiceOptions(WORKPLACE),
+              },
+              {
+                name: 'sort',
+                label: 'Order',
+                kind: 'choice',
+                options: Object.entries(SORTS).map(([value, label]) => ({ value, label })),
+              },
+            ],
+            noun: ['role', 'roles'],
+            channel: announcement,
+            onChange: (chosen) => {
+              const sources = (chosen.source ?? []).filter(knownSource);
+              // A run is one search of its sources, so choosing sources leaves the run; a whole
+              // search's sources stay its own while Source says Any.
+              if (!sameSet(sources, barSources())) {
+                state.run = '';
+                state.sources = sources;
+              }
+              state.query = chosen.q ?? '';
+              state.fit = FITS[chosen.fit] ? chosen.fit : '';
+              state.workplace = WORKPLACE[chosen.workplace] ? chosen.workplace : '';
+              state.sort = SORTS[chosen.sort] ? chosen.sort : 'fit';
+              applyFilters(false);
+            },
+          });
+        };
+        // The bar's Source: while a whole search shows, its sources are the run chip's (T7-5), so
+        // Source says Any; some of them, or sources you chose, show as they are.
+        const barSources = () => (wholeRun() ? [] : [...state.sources]);
+        // The bar shows the page's state (a deep link, the fit key, Show only those, Clear) and
+        // each choice's count; drawn again only when something it shows changed.
+        let barDrawn = '';
+        const syncFilterBar = (rows) => {
+          if (!bar) return;
+          const wanted = {
+            q: state.query,
+            fit: state.fit,
+            source: barSources(),
+            workplace: state.workplace,
+            sort: state.sort,
+          };
+          const now = bar.state;
+          const differs =
+            now.q !== wanted.q ||
+            now.fit !== wanted.fit ||
+            !sameSet(now.source ?? [], wanted.source) ||
+            now.workplace !== wanted.workplace ||
+            now.sort !== wanted.sort;
+          if (differs) bar.set(wanted);
+          const others = filters();
+          const counted = (name, values) =>
+            Object.fromEntries(
+              values.map((value) => [
+                value,
+                model.count(catalog.jobs, state.view, { ...others, [name]: value }),
+              ]),
+            );
+          const options = sourceOptions();
+          const counts = {
+            fit: counted('fit', ['', ...Object.keys(FITS)]),
+            workplace: counted('workplace', ['', ...Object.keys(WORKPLACE)]),
+            source: Object.fromEntries(options.map((option) => [option.value, option.count])),
+          };
+          const total = model.count(catalog.jobs, state.view, { source: [], query: '', fit: '', workplace: '', run: '' });
+          const signature = JSON.stringify([counts, options.map((option) => option.value), rows.length, total]);
+          if (signature === barDrawn) return;
+          barDrawn = signature;
+          sourceFacet.options = options;
+          bar.setCounts(counts);
+          bar.setResult(rows.length, total);
+        };
+
+        // One search's roles: one line says which, with the way back to every role (the bar's
+        // sources are that search's while it shows).
+        const renderRunLine = () => {
+          runLine.line.hidden = !state.run;
+          if (!state.run) return;
+          const many = wholeRun() ? ` · ${counted(state.sources.length, 'source')}` : '';
+          const words = `${runLabel(state.run)}${many}`;
+          if (runLine.words.textContent === words) return;
+          runLine.words.textContent = words;
+          runLine.clear.setAttribute('aria-label', `Remove ${words}: show every role`);
+        };
+
+        // A search that is running now, for the views its new roles land in: they appear in the
+        // list when it finishes.
+        const liveRunShown = () => {
+          if (!store || state.view !== 'new') return null;
+          if (!state.sources.length) return store.liveRun(null);
+          for (const id of state.sources) {
+            const run = store.liveRun(id);
+            if (run) return run;
+          }
+          return null;
+        };
+
+        // A running search finishes on time here: the store notices a run's end on its next tick
+        // (once a second), so one timer reads it at the end itself, and the roles and every count
+        // change together.
+        let finishTimer = 0;
+        const watchFinish = () => {
+          window.clearTimeout(finishTimer);
+          const left = (store?.liveRuns?.() ?? []).map(
+            (run) => (1 - run.progress) * run.durationSeconds * 1000,
+          );
+          if (!left.length) return;
+          const wait = Math.max(0, Math.min(...left)) + 30;
+          finishTimer = window.setTimeout(() => store?.liveRun(), wait);
+        };
+
+        const renderLive = () => {
+          const run = liveRunShown();
+          live.line.hidden = !run;
+          const word = run ? `Live · searching ${run.sourceName}` : 'Live';
+          if (live.word.textContent !== word) live.word.textContent = word;
+          watchFinish();
+          syncDeputy();
+        };
+
+        // The deputy ranks here, and searches while a source you filtered to is being searched.
+        const syncDeputy = () => {
+          const now = state.sources.some((id) => Boolean(store?.liveRun(id)));
+          if (now === searching) return;
+          searching = now;
+          setDeputyPage(now ? 'search' : 'rank');
+        };
+
+        // The deputy's resting state for this view. Before deputy.js adopts the dock (it starts on
+        // DOMContentLoaded, after this script), the host attribute sets its first state instead.
+        const setDeputyPage = (pageState) => {
+          if (!deputy) return;
+          if (deputy.pageState === null) {
+            const dock = document.querySelector('#deputy-dock');
+            const copy = deputy.defaults[pageState];
+            if (!dock || !copy) return;
+            dock.setAttribute('data-deputy-state', pageState);
+            dock.querySelector('[data-deputy-speech]').textContent = copy.speech;
+            dock.querySelector('[data-deputy-duty]').textContent = copy.duty;
+          } else {
+            deputy.pageState = pageState;
+          }
+        };
+
+        // Beside the list the open role stays in view while it fits below the sticky header.
+        const measureSticky = () => {
+          const room = window.innerHeight - chromeOffset() - 21;
+          jobDetail.classList.toggle('is-sticky', !isNarrow() && jobDetail.offsetHeight <= room);
+        };
+
+        // The shared pagination (round 7, R10-6): a compact pager over the rows and the full one
+        // after them, the range in words ("13 to 24 of 40 roles", never a tab's count), and the page
+        // size; one state for both. It is drawn again only when what it shows changes (R9-3), and a
+        // change by your hand is said once, by the pagination itself.
+        let pager = null;
+        let pagerDrawn = '';
+        const renderPager = (total) => {
+          if (typeof components?.pagination !== 'function') return;
+          const options = { total, pageSize: state.size, page: state.page };
+          const signature = JSON.stringify([options, pageHref(1)]);
+          if (!pager) {
+            pager = components.pagination(pagesHost, {
+              ...options,
+              label: 'Pages of roles',
+              noun: ['role', 'roles'],
+              top: pagesTop,
+              sizes: PAGE_SIZES,
+              list: jobsList,
+              href: pageHref,
+              channel: announcement,
+              onChange: (page) => goToPage(page, { fromPager: true }),
+              onSize: (size) => changeSize(size, { fromPager: true }),
+            });
+            pagerDrawn = signature;
+            return;
+          }
+          if (pagerDrawn === signature) return;
+          pagerDrawn = signature;
+          const kept = pagerFocus();
+          pager.render(options);
+          kept?.();
+        };
+        // The pagers are drawn afresh, so the control that had the focus (the page size, Previous,
+        // Next) gets it back by its kind (R9-3).
+        const pagerFocus = () => {
+          const active = document.activeElement;
+          if (!active || !(pagesHost.contains(active) || pagesTop.contains(active))) return null;
+          const scope = pagesHost.contains(active) ? pagesHost : pagesTop;
+          const step = active.getAttribute('data-page-step');
+          const selector = active.matches('.pagination-size-select')
+            ? '.pagination-size-select'
+            : step
+              ? `[data-page-step="${step}"]`
+              : '[aria-current="page"]';
+          return () => {
+            if (active.isConnected) return;
+            scope.querySelector(selector)?.focus({ preventScroll: true });
+          };
+        };
+
+        // On a later page, the roles a search just added (they lead page 1, unseen yet) are named
+        // above the list with the way to them. The count is the band's (the latest search), so the
+        // line says it in words.
+        let waiting = [];
+        const renderArrivals = (rows) => {
+          waiting = state.page > 1 ? rows.filter((job) => unseen.has(job.id)) : [];
+          arrivalsLine.line.hidden = waiting.length === 0;
+          if (!waiting.length) return;
+          const words =
+            waiting.length === 1
+              ? 'The role a search just found is on page 1.'
+              : 'The roles a search just found are on page 1.';
+          if (arrivalsLine.words.textContent !== words) arrivalsLine.words.textContent = words;
+          arrivalsLine.link.setAttribute('href', pageHref(1));
+        };
+
+        // The band (round 7, R10-2 and J1): what your deputy found under the filters in use, so a
+        // link that names a figure lands on it ("Google 12" opens "12 found"): Found (every role,
+        // whatever you decided), found today and this week (once the store counts them), and In
+        // Applications, which opens Applications. Each carries the store's key for that filter where
+        // it has one (R3-4), else the count, as the tabs do. Under them, the latest search: what it
+        // found, with Show only those.
+        const WINDOWS = { today: 'jobs.foundToday', week: 'jobs.foundWeek' };
+        const windowKey = (base, chosen) => {
+          const key = model.countKey('new', chosen);
+          return key ? key.replace(/^jobs\.new/, base) : null;
+        };
+        const hasMetric = (key) => {
+          const value = store?.metric?.(key);
+          return value !== null && value !== undefined;
+        };
+        const setFigure = (node, key, count) => {
+          const text = key && hasMetric(key) ? store.metricText(key) : String(grouped(count));
+          if (key && hasMetric(key)) node.setAttribute('data-metric', key);
+          else node.removeAttribute('data-metric');
+          if (node.textContent !== text) node.textContent = text;
+        };
+        const renderBand = () => {
+          const chosen = filters();
+          setFigure(band.figures.found, model.countKey('all', chosen), model.count(catalog.jobs, 'all', chosen));
+          setFigure(
+            band.figures.tracked,
+            model.countKey('tracked', chosen),
+            model.count(catalog.jobs, 'tracked', chosen),
+          );
+          // Today and this week show once the store counts them, under every filter (round 7,
+          // T1-18): its key where it has one, else the count of the same roles (words, a work
+          // style, several sources), so the row keeps its four stats while you narrow it.
+          const windows = foundWindows();
+          for (const [name, base] of Object.entries(WINDOWS)) {
+            const known = hasMetric(base);
+            const stat = band.stats.querySelector(`[data-stat="${name}"]`);
+            if (stat.hidden === known) stat.hidden = !known;
+            if (!known) continue;
+            const found = catalog.jobs.filter((job) => String(job.foundAt ?? '').slice(0, 10) >= windows[name]);
+            setFigure(band.figures[name], windowKey(base, chosen), model.count(found, 'all', chosen));
+          }
+          renderNewest();
+        };
+        // The first day of each window, as the store counts them: today, and this week from Monday.
+        const foundWindows = () => {
+          const today = store?.today?.() ?? '';
+          const day = new Date(`${today}T00:00:00Z`);
+          const back = (day.getUTCDay() + 6) % 7;
+          day.setUTCDate(day.getUTCDate() - back);
+          return { today, week: Number.isNaN(day.getTime()) ? today : day.toISOString().slice(0, 10) };
+        };
+        // The latest search that kept roles: who ran it, when, what it found, and where, with Show
+        // only those (its roles in place, as ?run= does). It names every source, so it shows while
+        // no source or search narrows the list.
+        const renderNewest = () => {
+          const series =
+            store && !state.run && !state.sources.length && typeof store.newRolesSeries === 'function'
+              ? store.newRolesSeries()
+              : null;
+          const bar = (series?.bars ?? []).filter((item) => item.id !== 'deleted').at(-1) ?? null;
+          band.newest.hidden = !bar;
+          if (!bar) return;
+          const run = store.run?.(bar.id) ?? null;
+          const names = runSources(bar.id).map(sourceName);
+          const where =
+            names.length > 2 ? `on ${counted(names.length, 'source')}` : names.length ? `on ${names.join(' and ')}` : '';
+          const who = run?.via === 'watch' ? (store.TERMS?.watch ?? 'Keep watch') : 'Your search';
+          const when = runWhen(bar.id);
+          const total = Number(bar.total) || 0;
+          const href = `./jobs-preview.html?${runParameters(bar.id)}`;
+          const signature = JSON.stringify([bar.id, bar.metric, store.metricText(bar.metric ?? ''), where, when, href]);
+          if (band.newest.dataset.signature === signature) return;
+          band.newest.dataset.signature = signature;
+          band.newestWords.replaceChildren(
+            `${who}${when ? ` ${when}` : ''} found `,
+            bar.metric
+              ? el('strong', { 'data-metric': bar.metric }, store.metricText(bar.metric))
+              : el('strong', {}, String(total)),
+            ` ${total === 1 ? 'role' : 'roles'}${where ? ` ${where}` : ''}.`,
+          );
+          band.newestLink.setAttribute('href', href);
+          band.newestLink.dataset.run = bar.id;
+        };
+
+        // What you just decided (round 7, J2): the role left the list, and one notice says where it
+        // went, with Open in Applications (once added) and Undo. Over the next role when you decided
+        // in the open role; in the list, where the row was, when you decided in a row (or when no
+        // role is left to open). The same element stays while the decision stands (R9-3).
+        const DECIDED = {
+          added: {
+            title: 'Added to Applications',
+            message: (d) => `${d.title} at ${d.company} is in Shortlisted there.`,
+          },
+          dismissed: { title: 'Set aside in Not for me', message: (d) => `${d.title} at ${d.company}.` },
+          restored: { title: 'Back in To review', message: (d) => `${d.title} at ${d.company}.` },
+        };
+        const canUndo = (d) => d.kind !== 'added' || typeof store?.undoAddToApplications === 'function';
+        const decidedActions = (d) =>
+          [
+            d.kind === 'added'
+              ? el(
+                  'a',
+                  {
+                    class: 'feedback-panel-action',
+                    href: `./applications-preview.html?open=${encodeURIComponent(d.appId)}`,
+                    'data-key': 'decided-open',
+                    // Back in Applications returns here (round 7, R10-3).
+                    'data-return-link': true,
+                    'data-focus-key': 'decided-open',
+                  },
+                  'Open in Applications',
+                )
+              : null,
+            canUndo(d)
+              ? el(
+                  'button',
+                  { class: 'feedback-panel-action', type: 'button', 'data-decided': 'undo', 'data-key': 'decided-undo' },
+                  'Undo',
+                  el('span', { class: 'sr-only' }, `: ${d.title}`),
+                )
+              : null,
+          ].filter(Boolean);
+        let decidedRow = null;
+        const decidedRowFor = (d) => {
+          const key = JSON.stringify(d);
+          if (decidedRow?.dataset.key === key) return decidedRow;
+          decidedRow = el(
+            'li',
+            {
+              class: 'jobs-row is-decided',
+              'data-decided-row': d.jobId,
+              'data-key': key,
+              style: d.height ? `min-height: ${d.height}px` : null,
+            },
+            el(
+              'div',
+              { class: 'feedback-panel', 'data-kind': 'success' },
+              el('span', { class: 'feedback-panel-icon', 'aria-hidden': 'true' }, '✓'),
+              el(
+                'span',
+                { class: 'feedback-panel-copy' },
+                el('strong', { class: 'feedback-panel-title' }, DECIDED[d.kind].title),
+                ' ',
+                el('span', { class: 'feedback-panel-message' }, DECIDED[d.kind].message(d)),
+                el('span', { class: 'jobs-decided-actions' }, decidedActions(d)),
+              ),
+            ),
+          );
+          return decidedRow;
+        };
+        const renderDecided = () => {
+          const d = state.decision;
+          const show =
+            Boolean(d) && d.place === 'detail' && d.view === state.view && state.active === d.nextId;
+          if (!show) {
+            if (!decided.panel.hidden) {
+              if (decided.panel.contains(document.activeElement)) detail.title.focus({ preventScroll: true });
+              decided.panel.hidden = true;
+            }
+            decided.panel.dataset.key = '';
+            return;
+          }
+          const key = JSON.stringify(d);
+          if (decided.panel.dataset.key !== key) {
+            decided.panel.dataset.key = key;
+            decided.title.textContent = DECIDED[d.kind].title;
+            decided.message.textContent = DECIDED[d.kind].message(d);
+            decided.actions.replaceChildren(...decidedActions(d));
+          }
+          decided.panel.hidden = false;
+        };
+
+        // The address keeps the page shown (?page=, none for page 1).
+        const syncPageParameter = () => {
+          const wanted = state.page > 1 ? String(state.page) : null;
+          if (new URLSearchParams(window.location.search).get('page') !== wanted) {
+            setParameter('page', wanted);
+          }
+        };
+
+        // The page holds the role it is asked to (anchor), or, when the page size changes (a resize
+        // across 720px or 1280px), the role you are on or the open one, so it stays on screen.
+        const render = ({ anchor = null } = {}) => {
+          narrowNow = isNarrow();
+          renderCounts();
+          const rows = shownIn(state.view);
+          const size = pageSizeNow();
+          const resized = state.size > 0 && size !== state.size;
+          state.size = size;
+          const keep = anchor ?? (resized ? (focusedRowId() ?? state.active) : null);
+          const index = keep ? rows.findIndex((job) => job.id === keep) : -1;
+          if (index >= 0) state.page = model.pageOf(index, size);
+          state.page = model.clampPage(state.page, rows.length, size);
+          const page = model.onPage(rows, state.page, size);
+          if (!rows.some((job) => job.id === state.active)) {
+            state.active = page[0]?.id ?? null;
+            state.pane = 'list';
+            state.opened = false;
+          }
+          for (const view of VIEW_IDS) {
+            if (view === state.view) {
+              const items = page.map(rowFor);
+              // A decision made in a row (or with no role left to open) is said where the row was.
+              const d = state.decision;
+              if (d && d.place === 'list' && d.view === view) {
+                const at = d.index - (state.page - 1) * size;
+                if (at >= 0 && at <= items.length) items.splice(at, 0, decidedRowFor(d));
+              }
+              placeRows(lists[view], items);
+              renderEmpty(view, rows.length);
+            } else {
+              if (lists[view].children.length) lists[view].replaceChildren();
+              empties[view].hidden = true;
+            }
+          }
+          // Roles a search added light up once, when their page is first in view.
+          const landed = page.filter((job) => unseen.has(job.id));
+          if (landed.length) {
+            for (const job of landed) unseen.delete(job.id);
+            components?.flagNew(landed.map((job) => rowElements.get(job.id)));
+          }
+          renderPager(rows.length);
+          renderArrivals(rows);
+          renderBand();
+          syncPageParameter();
+          markTourRow(page);
+          // Keeps the open view's panel a tab stop only while nothing inside it can take focus.
+          components?.selectTab(tabs[state.view], { silent: true });
+          renderDetail(jobFor(state.active));
+          renderDecided();
+          surface.dataset.pane = state.pane;
+          renderKey();
+          syncFilterBar(rows);
+          renderRunLine();
+          renderLive();
+          measureSticky();
+        };
+
+        // Roles a finished search adds, once: they join page 1 (where their rows light up), the
+        // page says so (and, from a later page, that they are on page 1), and the deputy reacts
+        // with the real count.
+        const welcome = (ids) => {
+          const jobs = ids.map(jobFor).filter(Boolean);
+          if (!jobs.length) return;
+          // Said once and short, however many arrive: two sources by name (else how many), and
+          // three titles, then how many more.
+          const names = [...new Set(jobs.map((job) => job.sourceName))];
+          const from = names.length > 2 ? counted(names.length, 'source') : names.join(' and ');
+          const listed = jobs.slice(0, 3).map((job) => job.title);
+          const titles =
+            jobs.length > 3
+              ? `${listed.join('; ')}; and ${grouped(jobs.length - 3)} more`
+              : listed.join('; ');
+          const where = jobs.every((job) => waiting.includes(job)) ? ' on page 1' : '';
+          announce(`${counted(jobs.length, 'new role')} from ${from}${where}: ${titles}.`);
+          deputy?.react?.('found', { speech: `${counted(jobs.length, 'new role')} for you.` });
+        };
+
+        // A change to the sample world keeps you where you are: the page you are on, or the page
+        // of the role you are on when the list moves under it.
+        const refresh = () => {
+          read();
+          const ids = catalog.jobs.map((job) => job.id);
+          const arrived = known ? ids.filter((id) => !known.has(id)) : [];
+          known = new Set(ids);
+          for (const id of arrived) {
+            arrivals.add(id);
+            unseen.add(id);
+          }
+          render({ anchor: focusedRowId() });
+          if (arrived.length) welcome(arrived);
+        };
+        // The Large account demo, or the usual sample again (round 6), is another world: nothing
+        // in it arrived, so the page starts again on it at page 1 with its best fit open, keeping
+        // the view and the filters that exist there.
+        const switchWorld = () => {
+          read();
+          known = new Set(catalog.jobs.map((job) => job.id));
+          restart();
+          state.sources = state.sources.filter(knownSource);
+          if (state.run && !runSources(state.run).length) state.run = '';
+          state.active = null;
+          state.pane = 'list';
+          state.opened = false;
+          setParameter('job', null);
+          setSourceParameters(addressSources(state.sources, state.run));
+          setParameter('run', state.run || null);
+          render();
+        };
+
+        // ---------------------------------------------------------------- moving between views
+
+        const selectView = (view) => {
+          state.view = view;
+          const tab = tabs[view];
+          if (components) components.selectTab(tab, { silent: true });
+          else {
+            for (const [name, item] of Object.entries(tabs)) {
+              item.setAttribute('aria-selected', String(name === view));
+              item.tabIndex = name === view ? 0 : -1;
+              panels[name].hidden = name !== view;
+            }
+          }
+        };
+
+        // A view or a filter starts again on page 1, without the arrangement of the last one.
+        const restart = () => {
+          pinned.clear();
+          arrivals.clear();
+          unseen.clear();
+          state.page = 1;
+          state.decision = null;
+        };
+        // How many pages a view holds, for the announcement of a view or a filter.
+        const pagesSaid = (count) => {
+          const pages = model.pageCount(count, state.size || pageSizeNow());
+          return pages > 1 ? ` ${pageWords(1, pages)}.` : '';
+        };
+
+        const changeView = (view) => {
+          restart();
+          selectView(view);
+          state.active = null;
+          state.pane = 'list';
+          setParameter('view', VIEW_PARAMS[view]);
+          setParameter('job', null);
+          render();
+          const count = model.count(catalog.jobs, view, filters());
+          announce(`${VIEWS[view]}: ${counted(count, 'role')}.${pagesSaid(count)}`);
+        };
+
+        const applyFilters = (spoken = true) => {
+          restart();
+          // The open role stays open only while it is on page 1.
+          const first = model.onPage(shownIn(state.view), 1, state.size || pageSizeNow());
+          if (!first.some((job) => job.id === state.active)) state.active = null;
+          // Round 7 (R10-7): the search and the work style are in the address too.
+          setParameter('q', state.query.trim() || null);
+          setParameter('fit', state.fit || null);
+          setSourceParameters(addressSources(state.sources, state.run));
+          setParameter('run', state.run || null);
+          setParameter('workplace', state.workplace || null);
+          setParameter('job', null);
+          // Every order is in the address too (round 6 part 3, T2-2), so a reload keeps it.
+          setParameter('sort', state.sort === 'fit' ? null : state.sort);
+          render();
+          if (!spoken) return;
+          const count = model.count(catalog.jobs, state.view, filters());
+          announce(
+            count === 0 && state.sources.length === 1
+              ? `${emptyCopy(state.view).title}. No roles here.`
+              : `${VIEWS[state.view]}: ${counted(count, 'role')} match.${pagesSaid(count)}`,
+          );
+        };
+
+        // A page change by your hand: the new page's first role takes the focus (and, beside the
+        // list, opens), the list's top comes back under the fixed chrome when it was scrolled past,
+        // and the page is said once through the status channel. From the shared pagination, it
+        // brings the list's top back and says the page itself (R10-6).
+        const goToPage = (page, { fromPager = false } = {}) => {
+          const rows = shownIn(state.view);
+          const size = state.size || pageSizeNow();
+          const target = model.clampPage(page, rows.length, size);
+          if (target === state.page) return;
+          state.page = target;
+          state.active = null;
+          state.pane = 'list';
+          state.opened = false;
+          state.decision = null;
+          setParameter('job', null);
+          render();
+          const link = lists[state.view].querySelector('.jobs-row-link');
+          if (link) {
+            const top = jobsList.getBoundingClientRect().top;
+            const bottom = link.getBoundingClientRect().bottom;
+            if (!fromPager && (top < chromeOffset() || bottom > window.innerHeight)) {
+              jobsList.scrollIntoView({ block: 'start', behavior: 'instant' });
+            }
+            link.focus({ preventScroll: true });
+          }
+          if (!fromPager) announce(`${pageWords(state.page, model.pageCount(rows.length, size))}.`);
+        };
+
+        // A page size you choose (12, 24, or 48 roles, R10-6): the page that holds the role at the
+        // top of the page you were on shows, and the address keeps the size (?size=).
+        const changeSize = (size, { fromPager = false } = {}) => {
+          if (!PAGE_SIZES.includes(size) || size === pageSizeNow()) return;
+          const first = model.onPage(shownIn(state.view), state.page, state.size || pageSizeNow())[0];
+          state.chosen = size === PAGE_SIZES[0] ? null : size;
+          state.decision = null;
+          setParameter('size', state.chosen ? String(size) : null);
+          render({ anchor: first?.id ?? null });
+          if (!fromPager) announce(`${counted(size, 'role')} a page.`);
+        };
+
+        const clearFilters = () => {
+          state.fit = '';
+          state.sources = [];
+          state.run = '';
+          state.workplace = '';
+          state.query = '';
+          applyFilters();
+        };
+        // Where focus goes once a control that filtered went: the filter bar's search.
+        const focusFilters = () =>
+          (filterHost.querySelector('.filter-bar-input') ?? filterHost.querySelector('input, button'))?.focus();
+
+        // Brings the surface's top under the fixed chrome when the page is scrolled past it (a role
+        // opened from far down the list) or when the open role's title is below the fold.
+        const scrollToSurface = () => {
+          const top = surface.getBoundingClientRect().top + window.scrollY - chromeOffset();
+          const below = detail.title.getBoundingClientRect().bottom > window.innerHeight;
+          if (window.scrollY > top || below) window.scrollTo({ top, behavior: 'instant' });
+        };
+
+        // Narrower than the split, opening a role is its own view: the browser's Back returns to
+        // the list as well as the back control does.
+        const openJob = (id, { announceIt = true } = {}) => {
+          const job = jobFor(id);
+          if (!job) return;
+          state.active = id;
+          state.opened = true;
+          const narrow = isNarrow();
+          if (narrow) {
+            state.pane = 'detail';
+            try {
+              const url = new URL(window.location.href);
+              url.searchParams.set('job', id);
+              window.history.pushState({ jobsPane: 'detail', job: id }, '', addressOf(url));
+            } catch {
+              setParameter('job', id);
+            }
+          } else {
+            setParameter('job', id);
+          }
+          render();
+          if (narrow) {
+            jobDetail.focus({ preventScroll: true });
+            scrollToSurface();
+          } else if (jobDetail.getBoundingClientRect().top < chromeOffset()) {
+            jobDetail.scrollIntoView({ block: 'start' });
+          }
+          if (announceIt) announce(`${job.title} opened.`);
+        };
+
+        const showList = () => {
+          state.pane = 'list';
+          render();
+          const link = rowElements.get(state.active)?.querySelector('.jobs-row-link');
+          if (link?.isConnected) {
+            link.focus({ preventScroll: true });
+            link.closest('.jobs-row').scrollIntoView({ block: 'center' });
+          }
+        };
+
+        // ---------------------------------------------------------------- decisions
+
+        // Add to Applications creates the application exactly as Shortlist did: the shared store
+        // gains it, so Applications, the Dashboard, and the ribbon follow.
+        const entryFor = (job, today) => ({
+          id: job.id,
+          jobId: job.id,
+          role: job.title,
+          company: job.company,
+          location: job.location,
+          workStyle: job.workplaceLabel,
+          source: job.sourceName,
+          fit: job.fit,
+          stage: 'shortlisted',
+          priority: 2,
+          materials: 'none',
+          next: 'Tailor materials',
+          followUp: null,
+          notes: '',
+          timeline: [
+            { date: job.firstSeen, label: `Found on ${job.sourceName}`, by: 'deputy' },
+            { date: today, label: 'Shortlisted', by: 'you' },
+          ],
+        });
+
+        const canAdd = (job) => !job.closed && !appFor(job) && job.view === 'new';
+        const canDismiss = (job) => !appFor(job) && job.view === 'new';
+
+        // The queue's actions (round 7, J2), through the store's queue API (ST, item 7) where it has
+        // it, else as round 6 did: Add creates the application exactly as Shortlist did, Not for me
+        // and Restore set the role's status. Undo of Add needs the store's undo; without it the
+        // notice offers Open in Applications only.
+        const backToReview = (id) =>
+          store.update({ type: 'job', jobId: id, status: null }, (next) => {
+            delete next.jobs[id];
+            if (next.jobReasons) delete next.jobReasons[id];
+          });
+        const QUEUE = {
+          added: (job) => {
+            if (typeof store.addToApplications === 'function') return store.addToApplications(job.id);
+            store.addApplication(entryFor(job, store.today()));
+            store.setJob(job.id, 'shortlisted');
+            return { ok: true, app: { id: job.id } };
+          },
+          dismissed: (job) => {
+            if (typeof store.notForMe === 'function') return store.notForMe(job.id);
+            store.setJob(job.id, 'dismissed');
+            return { ok: true };
+          },
+          restored: (job) => {
+            if (typeof store.undoNotForMe === 'function') return store.undoNotForMe(job.id);
+            backToReview(job.id);
+            return { ok: true };
+          },
+        };
+        // Each decision's undo: Add's is the store's undo, Not for me's a restore, a restore's Not
+        // for me again.
+        const UNDO = {
+          added: (job) =>
+            typeof store.undoAddToApplications === 'function'
+              ? store.undoAddToApplications(job.id)
+              : { ok: false, reason: 'unavailable' },
+          dismissed: (job) => QUEUE.restored({ ...job, view: 'dismissed' }),
+          restored: (job) => QUEUE.dismissed(job),
+        };
+        const REACTIONS = { added: 'added', dismissed: 'dismissed', restored: 'saved' };
+
+        // Where focus goes after a decision: the next role's title in the open role (its h2), or
+        // its row in the list; with nothing left, the empty state's title.
+        const focusRole = (id, from) => {
+          if (!id) {
+            empties[state.view]?.querySelector('.empty-state-title')?.focus({ preventScroll: true });
+            return;
+          }
+          if (from === 'detail') {
+            if (!detail.title.hasAttribute('tabindex')) detail.title.setAttribute('tabindex', '-1');
+            detail.title.focus({ preventScroll: true });
+            if (detail.title.getBoundingClientRect().top < chromeOffset()) {
+              jobDetail.scrollIntoView({ block: 'start', behavior: 'instant' });
+            }
+            return;
+          }
+          const link = rowElements.get(id)?.querySelector('.jobs-row-link');
+          link?.focus({ preventScroll: true });
+          const box = link?.getBoundingClientRect();
+          if (box && (box.top < chromeOffset() || box.bottom > window.innerHeight)) {
+            link.closest('.jobs-row').scrollIntoView({ block: 'center', behavior: 'instant' });
+          }
+        };
+
+        // No tooltip on a row that came under a still pointer (round 7, T6-12): after a decision or
+        // its Undo the shared tooltip closes, and the list shows none until the pointer moves.
+        let pointerAt = null;
+        let stillAt = null;
+        document.addEventListener(
+          'pointermove',
+          (event) => {
+            pointerAt = { x: event.clientX, y: event.clientY };
+          },
+          { passive: true },
+        );
+        const quietTips = () => {
+          stillAt = pointerAt;
+          components?.tip?.hide?.();
+        };
+        $('#jobs-surface').addEventListener('pointerover', (event) => {
+          if (!stillAt || event.pointerType === 'touch') return;
+          const still = Math.abs(event.clientX - stillAt.x) < 2 && Math.abs(event.clientY - stillAt.y) < 2;
+          if (still) event.stopPropagation();
+          else stillAt = null;
+        });
+
+        // A decision takes the role out of the list at once and opens the next one (the role that
+        // takes its place, else the one before), with focus on its title; the notice says where it
+        // went, with Open in Applications and Undo. A role you decide on in a row that is not the
+        // open one leaves the open one as it is.
+        const decide = (kind, id, from) => {
+          const job = jobFor(id);
+          if (!store || !job) return;
+          if (kind === 'added' && !canAdd(job)) return;
+          if (kind === 'dismissed' && !canDismiss(job)) return;
+          if (kind === 'restored' && job.view !== 'dismissed') return;
+          const rows = shownIn(state.view);
+          const index = rows.findIndex((row) => row.id === id);
+          const next = rows[index + 1] ?? rows[index - 1] ?? null;
+          const wasOpen = state.active === id;
+          // The notice takes the row's place at the row's height, so nothing slides under the
+          // pointer (round 7, T6-12).
+          const height = Math.round(rowElements.get(id)?.getBoundingClientRect().height ?? 0);
+          const result = QUEUE[kind](job);
+          if (!result?.ok) {
+            deputy?.react?.('error');
+            announce(`We couldn’t move ${job.title}. Nothing changed; try again.`);
+            return;
+          }
+          const moves = from === 'detail' || wasOpen;
+          state.decision = {
+            kind,
+            jobId: id,
+            appId: result.app?.id ?? result.undo?.appId ?? id,
+            title: job.title,
+            company: job.company,
+            from,
+            view: state.view,
+            index: Math.max(0, index),
+            nextId: moves ? (next?.id ?? null) : state.active,
+            // The notice shows where you pressed (T6-12, refined for T4-25), at every width: from
+            // the open role, over the next role's title (Undo one Shift+Tab away); from a row, in
+            // the list where the row was.
+            place: from === 'detail' && next ? 'detail' : 'list',
+            moved: moves,
+            height,
+          };
+          // The store's change may have drawn the page already (its listeners run at once), so the
+          // open role and the pane are set here whatever that draw chose.
+          if (moves) {
+            state.active = next?.id ?? null;
+            state.opened = Boolean(next);
+            state.pane = next && from === 'detail' && isNarrow() ? 'detail' : 'list';
+          }
+          // The address names the role open now, so a reload opens it (T3-20).
+          setParameter('job', state.opened && state.active ? state.active : null);
+          quietTips();
+          refresh();
+          deputy?.react?.(REACTIONS[kind], kind === 'restored' ? { speech: 'It’s back in To review.' } : undefined);
+          const where = { added: 'Added to Applications', dismissed: 'Set aside in Not for me', restored: 'Back in To review' }[kind];
+          const then = moves ? (next ? ` Next: ${next.title}.` : ' Nothing else here.') : '';
+          announce(`${where}: ${job.title}.${then}${canUndo(state.decision) ? ' Undo is in the notice.' : ''}`);
+          focusRole(next?.id ?? null, from);
+        };
+
+        // Undo puts the role back where it was, and opens it again when it was the open role.
+        const undoDecision = () => {
+          const d = state.decision;
+          const job = d ? jobFor(d.jobId) : null;
+          if (!d || !job) return;
+          const result = UNDO[d.kind](job);
+          if (!result?.ok) {
+            deputy?.react?.('error');
+            announce(
+              result?.reason === 'moved-since'
+                ? `${d.title} has moved on in Applications, so it stays there.`
+                : `We couldn’t undo that for ${d.title}.`,
+            );
+            return;
+          }
+          state.decision = null;
+          if (d.moved) {
+            state.active = d.jobId;
+            state.opened = true;
+            if (d.from === 'detail' && isNarrow()) state.pane = 'detail';
+            setParameter('job', d.jobId);
+          }
+          quietTips();
+          read();
+          render({ anchor: d.jobId });
+          deputy?.react?.('saved', { speech: `It’s back in ${VIEWS[d.view]}.` });
+          announce(`${d.title} is back in ${VIEWS[d.view]}.`);
+          focusRole(d.jobId, d.from);
+        };
+
+        // Was this match right? The answer and any reasons stay in this browser, in the page's own
+        // section of the sample store (jobFeedback), and the deputy notes the answer once.
+        const saveThumbs = ({ value, reasons, change }) => {
+          const job = jobFor(state.active);
+          if (!job || !value) return;
+          if (store) {
+            store.update({ type: 'jobFeedback', jobId: job.id }, (next) => {
+              next.jobFeedback = {
+                ...(next.jobFeedback ?? {}),
+                [job.id]: { value, reasons: value === 'no' ? reasons : [], date: store.today() },
+              };
+            });
+            read();
+          }
+          detail.thumbsSaved.hidden = false;
+          if (change === 'answer') {
+            deputy?.react?.('saved', { speech: 'Noted, in this browser only.' });
+            announce(
+              value === 'yes'
+                ? 'Thanks. Saved in this browser only.'
+                : 'Thanks. Saved in this browser only. Say what was off, or tell us more.',
+            );
+          } else {
+            announce(reasons.length ? `Saved: ${reasons.join(', ')}.` : 'Saved.');
+          }
+        };
+
+        const act = (button, from) => {
+          const id = from === 'detail' ? state.active : button.closest('.jobs-row')?.dataset.id;
+          if (!id) return;
+          if (button.dataset.action === 'add') decide('added', id, from);
+          if (button.dataset.action === 'dismiss') decide('dismissed', id, from);
+          if (button.dataset.action === 'restore') decide('restored', id, from);
+        };
+
+        // ---------------------------------------------------------------- events
+
+        tablist.addEventListener('jobdeputy:tabchange', (event) => {
+          const view = event.detail?.tab?.dataset.view;
+          if (VIEW_IDS.includes(view) && view !== state.view) changeView(view);
+        });
+
+        layout.addEventListener('click', (event) => {
+          if (event.target.closest('[data-decided="undo"]')) {
+            undoDecision();
+            return;
+          }
+          const button = event.target.closest('button[data-action]');
+          if (button) {
+            act(button, detail.decision.contains(button) ? 'detail' : 'row');
+            return;
+          }
+          const emptyAction = event.target.closest('button[data-empty-action]');
+          if (emptyAction) {
+            if (emptyAction.dataset.emptyAction === 'clear-filters') {
+              clearFilters();
+              focusFilters();
+            }
+            if (emptyAction.dataset.emptyAction === 'all-sources') {
+              state.sources = [];
+              state.run = '';
+              applyFilters();
+              focusFilters();
+            }
+            return;
+          }
+          const link = event.target.closest('a[data-open]');
+          // A modified click opens the role's own address in a new tab, as a link does.
+          if (!link || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          event.preventDefault();
+          openJob(link.dataset.open);
+        });
+
+        // The fit key filters in place; a modified click opens its address, as a link does.
+        fitKey.addEventListener('click', (event) => {
+          const link = event.target.closest('a[data-fit]');
+          if (!link || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          event.preventDefault();
+          state.fit = link.dataset.fit;
+          applyFilters();
+        });
+
+        backToList.addEventListener('click', () => {
+          if (window.history.state?.jobsPane === 'detail') {
+            window.history.back();
+            return;
+          }
+          setParameter('job', null);
+          showList();
+        });
+
+        window.addEventListener('popstate', (event) => {
+          const target = event.state?.jobsPane === 'detail' ? jobFor(event.state.job) : null;
+          if (target && model.inView(target, state.view, pinned)) {
+            state.active = target.id;
+            state.opened = true;
+            state.pane = 'detail';
+            render({ anchor: target.id });
+            jobDetail.focus({ preventScroll: true });
+            return;
+          }
+          showList();
+        });
+
+        // The line about new roles on page 1 changes the page in place (the shared pagination
+        // handles its own); a modified click opens the page's own address, as a link does.
+        arrivalsLine.link.addEventListener('click', (event) => {
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          event.preventDefault();
+          goToPage(1);
+        });
+        // Show only those (the band's latest search) narrows in place to that search's roles; the
+        // line over the list takes the focus with Show every role, so the way back is right there.
+        // A modified click opens the address, as a link does.
+        band.newestLink.addEventListener('click', (event) => {
+          const run = band.newestLink.dataset.run;
+          if (!run || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          event.preventDefault();
+          state.run = run;
+          state.sources = runSources(run);
+          applyFilters();
+          runLine.clear.focus();
+        });
+        // Show every role leaves the search (and, for a search of several sources, its sources).
+        runLine.clear.addEventListener('click', () => {
+          if (wholeRun()) state.sources = [];
+          state.run = '';
+          applyFilters();
+          focusFilters();
+        });
+
+
+        detail.thumbs.addEventListener('jobdeputy:thumbs', (event) => saveThumbs(event.detail));
+        // "+N more" and Show fewer, under the open role's keywords.
+        detail.checks.addEventListener('click', (event) => {
+          const button = event.target.closest('button[data-more-keywords]');
+          if (button) toggleKeywords(button);
+        });
+
+        // Any change to the sample world (a decision here, a move in Applications, a search that
+        // finished, another tab, a reset) redraws the page from the store; a running search
+        // updates its line once a second.
+        // Round 7 (T3-5, T3-19): a work tick's live progress (a tailoring step, a prompt test) and
+        // a change only to parts this page doesn't show leave it as it is.
+        const UNSHOWN = new Set(['prompts', 'tours']);
+        store?.subscribe((_state, change) => {
+          if (change?.type === 'scale-demo') return switchWorld();
+          if (change?.progress) return;
+          const areas = change?.areas;
+          if (Array.isArray(areas) && areas.length && areas.every((area) => UNSHOWN.has(area))) return;
+          refresh();
+        });
+        store?.onTick(() => renderLive());
+
+        if (typeof ResizeObserver === 'function') {
+          let narrow = null;
+          new ResizeObserver(() => {
+            if (isNarrow() !== narrow) {
+              narrow = isNarrow();
+              render();
+            } else {
+              measureSticky();
+            }
+          }).observe(surface);
+        }
+        window.addEventListener('resize', measureSticky);
+        // Opening a disclosure in the open role can make it taller than the viewport.
+        jobDetail.addEventListener('toggle', measureSticky, true);
+
+        // ---------------------------------------------------------------- start
+
+        // The deep links: ?view=not-for-me (To review when absent; round 6's ?view=all and new
+        // open To review, dismissed Not for me), ?fit=strong|good|stretch, ?source=<id> (one, or
+        // several: ?source=google&source=stripe or ?source=google,stripe), ?run=<id> (the roles one
+        // search found, with its sources; an old run's id opens the run it is part of),
+        // ?sort=newest (Best fit first when absent), ?page=<n> (any number lands on a page that
+        // exists), ?size=12|24|48 (the page size you chose), and ?job=<id>, which reveals that role,
+        // on its page, whatever the others ask. A role, a source, or a search the link names that
+        // isn't here says so in one line over the list shown instead (R9-2).
+        read();
+        // One home per thing (round 7, R10-3 and J2): a role already in Applications lives there, so
+        // its ?job= opens it in Applications, and the In Applications view (?view=tracked) is
+        // Applications itself. Before anything is drawn, without a history entry.
+        const forwardTo = (() => {
+          const asked = parameters.get('job') ?? '';
+          const app = asked ? appFor(jobFor(asked)) : null;
+          if (app) return openHref(app);
+          if (parameters.get('view') === 'tracked') return './applications-preview.html';
+          return null;
+        })();
+        if (forwardTo) {
+          window.location.replace(forwardTo);
+          return;
+        }
+        buildFits();
+        known = new Set(catalog.jobs.map((job) => job.id));
+        const requestedView = parameters.get('view') ?? '';
+        const requestedFit = parameters.get('fit') ?? '';
+        const requestedSort = parameters.get('sort') ?? '';
+        const requestedSources = [...model.sourceSet(parameters.getAll('source'))];
+        const askedRun = parameters.get('run') ?? '';
+        const askedJob = parameters.get('job') ?? '';
+        const runFound = askedRun ? (store?.run?.(askedRun) ?? null) : null;
+        const requestedRun = runSources(runIdOf(askedRun)).length ? runIdOf(askedRun) : '';
+        state.view = VIEW_ALIASES[requestedView] ?? 'new';
+        state.fit = FITS[requestedFit] ? requestedFit : '';
+        state.sort = SORTS[requestedSort] ? requestedSort : 'fit';
+        state.query = (parameters.get('q') ?? '').trim().slice(0, 80);
+        state.workplace = WORKPLACE[parameters.get('workplace') ?? ''] ? (parameters.get('workplace') ?? '') : '';
+        state.sources = requestedSources.filter(knownSource);
+        // A run none of whose sources were asked for is left out, as an undeliverable link; with
+        // one, it keeps the sources asked for that it checked.
+        if (requestedRun) {
+          const checked = runSources(requestedRun);
+          const asked = state.sources.filter((id) => checked.includes(id));
+          if (!state.sources.length || asked.length) {
+            state.run = requestedRun;
+            state.sources = asked.length ? asked : checked;
+          }
+        }
+        state.page = Number.parseInt(parameters.get('page') ?? '', 10) || 1;
+        const requestedSize = Number.parseInt(parameters.get('size') ?? '', 10);
+        state.chosen = PAGE_SIZES.includes(requestedSize) && requestedSize !== PAGE_SIZES[0] ? requestedSize : null;
+        const target = jobFor(askedJob);
+        if (target) {
+          if (state.fit && target.fit !== state.fit) state.fit = '';
+          if (state.run && target.runId !== state.run) state.run = '';
+          // Its own search keeps every source it checked; otherwise every source shows.
+          if (state.sources.length && !state.sources.includes(target.source)) {
+            state.sources = runSources(state.run);
+          }
+          if (!model.inView(target, state.view)) state.view = target.view;
+          state.active = target.id;
+          state.opened = true;
+        }
+        // What the link named that isn't here (R9-2), each in its own words: a search that found
+        // no roles here says so, and a running one that its roles come when it finishes.
+        const missing = [
+          askedJob && !target ? ['a role', 'That role isn’t in your matches', 'Here are your roles.'] : null,
+          requestedSources.some((id) => !knownSource(id))
+            ? ['a source', 'That source isn’t one of yours', 'Here are your roles.']
+            : null,
+          askedRun && !requestedRun
+            ? !runFound
+              ? ['a search', 'That search isn’t in your history', 'Here are your roles.']
+              : runFound.status === 'live'
+                ? ['a search', 'That search is still running', 'Here are your roles until it finishes.']
+                : ['a search', 'That search found no new roles', 'Here are your roles.']
+            : null,
+        ].filter(Boolean);
+        if (missing.length) {
+          const kinds = missing.map(([kind]) => kind);
+          const named =
+            kinds.length === 2 ? kinds.join(' and ') : `${kinds.slice(0, -1).join(', ')}, and ${kinds.at(-1)}`;
+          const [title, message] =
+            missing.length === 1 ? missing[0].slice(1) : [`That link names ${named} that aren’t here`, 'Here are your roles.'];
+          missingNotice.title.textContent = title;
+          missingNotice.message.textContent = message;
+          missingNotice.panel.hidden = false;
+          announce(`${title}. ${message}`);
+        }
+        selectView(state.view);
+        buildFilterBar();
+        render({ anchor: target?.id ?? null });
+        if (target && isNarrow()) {
+          state.pane = 'detail';
+          render();
+          // The role usually starts in the first screen; scroll only when its title would not.
+          if (detail.title.getBoundingClientRect().bottom > window.innerHeight) scrollToSurface();
+        }
+        // Return to where you were (round 7, R10-3): Open in Prompts (or Applications) saves the
+        // place, and Back to Job matches there brings it back: the address keeps the view, the
+        // filters, the page, and the role; this keeps whether the role was open on a phone (the
+        // scroll is the shared helper's).
+        components?.place?.remember?.(() => ({ active: state.active, pane: state.pane }));
+        components?.place?.restore?.((saved) => {
+          const job = saved?.active ? jobFor(saved.active) : null;
+          if (!job || !model.inView(job, state.view)) return;
+          state.active = job.id;
+          state.opened = true;
+          state.pane = saved.pane === 'detail' && isNarrow() ? 'detail' : 'list';
+          render({ anchor: job.id });
+        });
+        // The first view is drawn: the band and the list show in one frame (round 7, R10-1).
+        components?.boot?.ready?.();
+        // Undeliverable deep links leave the address too, so it always matches the view.
+        setParameter('view', VIEW_PARAMS[state.view]);
+        setParameter('size', state.chosen ? String(state.chosen) : null);
+        setParameter('fit', state.fit || null);
+        setSourceParameters(addressSources(state.sources, state.run));
+        setParameter('run', state.run || null);
+        setParameter('sort', state.sort === 'fit' ? null : state.sort);
+        if (!target) setParameter('job', null);
+      })();
+    </script>
+    <span id="first-view" hidden></span>
+  </body>
+</html>

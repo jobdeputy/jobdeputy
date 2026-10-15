@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title description">
+  <title id="title">Alex Morgan profile illustration</title>
+  <desc id="description">A calm green and cream illustrated profile portrait.</desc>
+  <defs>
+    <linearGradient id="background" x1="18" y1="12" x2="142" y2="151" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#d9f0e5"/>
+      <stop offset="1" stop-color="#93cbb3"/>
+    </linearGradient>
+    <linearGradient id="shirt" x1="80" y1="91" x2="80" y2="161" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#292824"/>
+      <stop offset="1" stop-color="#171714"/>
+    </linearGradient>
+  </defs>
+  <rect width="160" height="160" rx="80" fill="url(#background)"/>
+  <circle cx="128" cy="28" r="22" fill="#fff8ee" opacity=".58"/>
+  <path d="M26 160c4-39 23-61 54-61s50 22 54 61H26Z" fill="url(#shirt)"/>
+  <path d="M56 102c5 9 13 14 24 14s20-5 25-14l-4-13H60l-4 13Z" fill="#c9835d"/>
+  <ellipse cx="80" cy="69" rx="37" ry="43" fill="#d99a72"/>
+  <path d="M43 68c0-34 16-49 39-49 24 0 38 16 38 45-8-5-13-15-15-25-12 13-31 21-57 20l-5 9Z" fill="#24231f"/>
+  <path d="M48 57c-7 3-8 18-2 24 3 3 7 2 9-1l-2-22-5-1Zm64 0c7 3 8 18 2 24-3 3-7 2-9-1l2-22 5-1Z" fill="#d99a72"/>
+  <ellipse cx="66" cy="68" rx="4" ry="5" fill="#24231f"/>
+  <ellipse cx="94" cy="68" rx="4" ry="5" fill="#24231f"/>
+  <path d="M68 87c8 6 16 6 24 0" fill="none" stroke="#7e4130" stroke-linecap="round" stroke-width="3"/>
+  <path d="M78 72c-1 6-2 10-5 13 4 2 8 2 12 0" fill="none" stroke="#b4694e" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/>
+  <path d="M50 53c7-4 14-5 21-2M90 51c7-2 14-1 20 3" fill="none" stroke="#24231f" stroke-linecap="round" stroke-width="3"/>
+  <circle cx="133" cy="125" r="17" fill="#fffaf2"/>
+  <path d="m126 125 5 5 10-12" fill="none" stroke="#2f9e77" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"/>
+</svg>

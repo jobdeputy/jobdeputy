@@ -1,0 +1,9 @@
+{
+  "name": "@jobdeputy/prototype-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  }
+}

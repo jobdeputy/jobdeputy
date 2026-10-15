@@ -1,0 +1,4230 @@
+/*
+ * Deputy companion: the panda teammate on every signed-in page (orchestration brief section 4;
+ * docs/design-system.md, "Panda drawing" and "Panda teammate"). brand/deputy.js renders the drawing
+ * and drives the host; this file owns every pose, motion, and size. The cast sheet is
+ * brand/deputy-preview.html.
+ *
+ * Host: [data-deputy] with data-deputy-state (one state or reaction pose), data-deputy-mode (on,
+ * paused, reduce), data-deputy-play (one-time motion may run), data-deputy-gesture (an idle gesture
+ * plays), data-deputy-working (loops may run), data-deputy-held, and data-deputy-blink. Sizes: the
+ * dock (default), the compact dock (max-height: 820px), the rail medallion (721px to 1100px), the
+ * chip (720px and narrower), and the scene (.deputy-scene), which becomes a row at 720px and
+ * narrower. The cast sheet pins a size with data-deputy-size; each pinned block repeats its media
+ * block exactly.
+ *
+ * Nested-group rule: geometry transform attributes stay on child shapes, and every rule here moves
+ * a wrapper group. Motion: --ease-settle and --ease-spring (linear for the blink and the spinner,
+ * ease for small fades), the golden durations, a 618ms settle between poses, one-time motion after
+ * it, and loops of 5.236s only while work is in progress. Idle gestures and the reactions' motion
+ * animate the individual rotate, translate, and scale properties, so they add to a pose's transform
+ * without fighting its settle. Pause motion and reduced motion stop all of it (end of file); while
+ * paused the duty reads "Motion paused" beside a pause mark, and while the deputy waits for the
+ * updated agreement it reads "Paused until you sign" beside the same mark.
+ */
+
+/* A gesture's aim (deputy.js sets it as a gesture starts) and its gain: the rail, the chip, and the
+   phone row raise --deputy-gain, so a gesture still shows where the panda is small. */
+[data-deputy] {
+  --deputy-gain: 1;
+  --deputy-glance-x: 0;
+  --deputy-glance-y: 0;
+  --deputy-turn: 3deg;
+  --deputy-tilt: 6deg;
+}
+
+/* Art box: soft static fields, a ledge, and the drawing. Without the script it stays empty and
+   takes no room. */
+
+.deputy-art {
+  --deputy-panda: 178px;
+  --deputy-panda-x: 13.5px;
+  --deputy-panda-y: -19.7px;
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--paper);
+}
+
+.deputy-art:empty {
+  display: none;
+}
+
+/* The drawing is decorative (aria-hidden) and keeps its own colours in forced colours, like an
+   image: on a system canvas the panda's black would vanish into a dark theme. Its words (the
+   speech and the duty) still follow the system colours. */
+@media (forced-colors: active) {
+  .deputy-art,
+  .deputy-prop-art {
+    forced-color-adjust: none;
+  }
+}
+
+.deputy-panda {
+  position: absolute;
+  z-index: 2;
+  top: var(--deputy-panda-y);
+  left: var(--deputy-panda-x);
+  display: block;
+  width: var(--deputy-panda);
+  height: var(--deputy-panda);
+  overflow: visible;
+}
+
+.deputy-field {
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.deputy-field-one {
+  top: -38%;
+  right: -24%;
+  width: 74%;
+  aspect-ratio: 1.2;
+  border-radius: 48% 52% 59% 41% / 43% 38% 62% 57%;
+  background: var(--orange-soft);
+  opacity: 0.62;
+  transform: rotate(-11deg);
+}
+
+.deputy-field-two {
+  bottom: -34%;
+  left: -30%;
+  width: 82%;
+  aspect-ratio: 1.36;
+  border-radius: 48% 52% 41% 59% / 60% 38% 62% 40%;
+  background: var(--blue-soft);
+  opacity: 0.7;
+  transform: rotate(8deg);
+}
+
+.deputy-field-three {
+  right: 4%;
+  bottom: 6%;
+  width: 40%;
+  aspect-ratio: 1;
+  border-radius: 51% 49% 58% 42% / 44% 59% 41% 56%;
+  background: var(--green-soft);
+  opacity: 0.55;
+  transform: rotate(-8deg);
+}
+
+/* The ledge the panda sits on: a soft desk edge, echoing the logo's panda perched on JD. */
+.deputy-ledge {
+  position: absolute;
+  z-index: 1;
+  right: -8%;
+  bottom: 0;
+  left: -8%;
+  height: 22px;
+  border-top: 1px solid var(--line-soft);
+  border-radius: 50% 50% 0 0 / 13px 13px 0 0;
+  background:
+    linear-gradient(var(--surface-strong), var(--surface-strong)) top / 100% 6px no-repeat,
+    var(--paper-deep);
+  box-shadow: 0 -1px 0 var(--line-soft);
+}
+
+/* Dock (1101px and wider): a small card at the foot of the sidebar, the panda on its ledge. */
+
+.deputy-dock {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  padding: 13px;
+  border: 1px solid var(--line-soft);
+  border-radius: 22px;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.deputy-dock .deputy-art {
+  height: 160px;
+  margin: -13px -13px 0;
+  border-radius: 21px 21px 0 0;
+}
+
+/* The speech bubble: the entry bubble in miniature, its tail toward the panda. */
+.deputy-speech {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  padding: 8px 13px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  color: var(--ink);
+  background: white;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-style: italic;
+  line-height: 1.3;
+  text-align: center;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+  transition:
+    opacity 180ms ease,
+    transform 380ms var(--ease-settle);
+}
+
+.deputy-speech::before {
+  position: absolute;
+  top: -7px;
+  left: calc(50% - 6.5px);
+  width: 13px;
+  height: 13px;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+  background: white;
+  content: "";
+  transform: rotate(45deg);
+}
+
+.deputy-speech.is-changing {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+/* Default lines take one or two lines at 15px; nothing is clipped, so no speech is ever hidden. */
+.deputy-dock .deputy-speech {
+  margin-top: -2px;
+}
+
+/* The duty pill, as on the entry stage. The 1px border is its boundary in forced colours. */
+.deputy-duty {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 28px;
+  gap: 7px;
+  margin: 0;
+  padding: 0 11px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  justify-self: center;
+  align-items: center;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.deputy-duty-dot {
+  display: block;
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 4px var(--green-wash);
+}
+
+/* Forced colours: the dot keeps its shape. */
+@media (forced-colors: active) {
+  .deputy-duty-dot {
+    forced-color-adjust: none;
+    background: CanvasText;
+    box-shadow: none;
+  }
+}
+
+/* pending: the dot becomes a ring that turns every 987ms while motion is on. */
+[data-deputy-state="pending"] .deputy-duty-dot {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--green-line);
+  border-top-color: var(--green);
+  background: transparent;
+  box-shadow: none;
+}
+
+@media (forced-colors: active) {
+  [data-deputy-state="pending"] .deputy-duty-dot {
+    border-color: CanvasText;
+    border-top-color: Highlight;
+    background: transparent;
+  }
+}
+
+/* Paused (Pause motion): the duty reads "Motion paused" (deputy.js) and its dot becomes a pause mark,
+   two bars, at every size: the dock's pill, the rail's label, the chip, and the scene's line. The
+   bars are borders, so they keep their shape and take the text colour in forced colours. The
+   agreement pause (data-deputy-agreement="paused", "Paused until you sign") shows the same mark
+   (round 5 acceptance, D-10). */
+[data-deputy][data-deputy-mode="paused"] .deputy-duty-dot,
+[data-deputy][data-deputy-agreement="paused"] .deputy-duty-dot {
+  width: 8px;
+  height: 10px;
+  border: solid var(--ink-soft);
+  border-width: 0 3px;
+  border-radius: 1px;
+  background: transparent;
+  box-shadow: none;
+}
+
+@media (forced-colors: active) {
+  [data-deputy][data-deputy-mode="paused"] .deputy-duty-dot,
+  [data-deputy][data-deputy-agreement="paused"] .deputy-duty-dot {
+    border-color: CanvasText;
+    background: transparent;
+  }
+}
+
+/* A background notice (deputy.js notice, round 6 UAT M-19): the duty says "Needs you" or "Job
+   stopped" beside the attention mark (a filled orange beacon, or danger-ink for a stopped job), so
+   on phones the notice sits in the app bar's chip, never over the page. A done notice keeps the
+   green dot. In forced colours the mark takes Highlight. */
+[data-deputy][data-deputy-notice="needs-you"] .deputy-duty-dot,
+[data-deputy][data-deputy-notice="stopped"] .deputy-duty-dot {
+  width: 9px;
+  height: 9px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--orange);
+  box-shadow: 0 0 0 4px var(--orange-soft);
+}
+
+[data-deputy][data-deputy-notice="stopped"] .deputy-duty-dot {
+  background: var(--danger-ink);
+}
+
+@media (forced-colors: active) {
+  [data-deputy][data-deputy-notice="needs-you"] .deputy-duty-dot,
+  [data-deputy][data-deputy-notice="stopped"] .deputy-duty-dot {
+    background: Highlight;
+    box-shadow: none;
+  }
+}
+
+/* Pause motion's icon (deputy.js): two bars while motion runs, a triangle once it is paused, beside
+   its label. It is drawn in the label's colour, so it follows forced colours too. */
+.deputy-motion-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  pointer-events: none;
+}
+
+.deputy-motion-label {
+  pointer-events: none;
+}
+
+/* The dock's row holds Activity and Pause motion in 181px, so its own button shows "Pause" or
+   "Play" beside the icon; " motion" stays in its accessible name. */
+.deputy-dock .deputy-actions > .deputy-motion .deputy-motion-more {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+/* Activity and Pause motion share one row of 44px compact actions. */
+.deputy-actions {
+  display: flex;
+  min-width: 0;
+  gap: 6px;
+}
+
+.deputy-activity {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.deputy-activity-toggle,
+.deputy-motion {
+  display: flex;
+  min-width: 0;
+  min-height: 44px;
+  gap: 4px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 680;
+  line-height: normal;
+  text-align: center;
+  white-space: nowrap;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease;
+}
+
+.deputy-activity-toggle {
+  list-style: none;
+}
+
+.deputy-activity-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.deputy-activity-toggle::after {
+  color: var(--muted);
+  content: "⌄" / "";
+  font-size: 12px;
+  line-height: 1;
+  transform: translateY(-2px);
+}
+
+/* The script adds Pause motion's panel copy for the rail and the chip, and the duty for the chip's
+   accessible name; the dock shows neither. Without the script there is no motion to pause. */
+.deputy-motion {
+  display: none;
+  flex: 0 0 auto;
+}
+
+.deputy-activity-toggle:hover,
+.deputy-motion:hover {
+  border-color: var(--line-strong);
+  background: white;
+}
+
+.deputy-activity-toggle:focus-visible,
+.deputy-motion:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+
+.deputy-activity[open] > .deputy-activity-toggle {
+  border-color: var(--line-strong);
+  background: white;
+}
+
+.deputy-toggle-duty,
+.deputy-panel-status,
+.deputy-panel-speech {
+  display: none;
+}
+
+/* The panel's status (deputy.js): in the rail and the chip the speech line, then a row of Pause
+   motion and Show me around; in the dock (which has its own speech and Pause motion) the row alone,
+   and only once the tour engine reveals Show me around. */
+.deputy-panel-status:has(.deputy-panel-action:not([hidden])) {
+  display: grid;
+}
+
+.deputy-panel-actions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 13px;
+}
+
+.deputy-panel-actions > .deputy-motion {
+  display: none;
+}
+
+/* With nothing to pause and no tour, the row takes no room. */
+[data-deputy][data-deputy-mode="reduce"]
+.deputy-panel-actions:not(:has(.deputy-panel-action:not([hidden]))) {
+  display: none;
+}
+
+/* Show me around: a 44px compact action like Pause motion. Hidden until app-components.js finds the
+   page's tour steps; it starts the tour, and the deputy takes its guide pose. */
+.deputy-panel-action {
+  display: flex;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 680;
+  line-height: normal;
+  text-align: center;
+  white-space: nowrap;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease;
+}
+
+.deputy-panel-action[hidden] {
+  display: none;
+}
+
+.deputy-panel-action:hover {
+  border-color: var(--line-strong);
+  background: white;
+}
+
+.deputy-panel-action:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+
+[data-deputy-ready] .deputy-actions > .deputy-motion {
+  display: flex;
+}
+
+.deputy-panel-speech {
+  margin: 0;
+  padding: 0 0 13px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-style: italic;
+  line-height: 1.3;
+}
+
+/* Activity panel: a popover anchored to the dock, beside the sidebar over the content. It is a
+   <details> panel, so its links leave the keyboard order while it is closed. Like the account menu
+   (round 3, findings 15 and 37) it is opaque white with the shadow and a line border, so nothing
+   reads through it. */
+.deputy-activity-panel {
+  --deputy-panel-shift: 0px;
+  position: absolute;
+  z-index: 15;
+  bottom: 0;
+  left: calc(100% + 13px);
+  display: grid;
+  width: min(340px, calc(100vw - 26px));
+  max-height: calc(100dvh - 26px);
+  gap: 4px;
+  padding: 21px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  color: var(--ink);
+  background: white;
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: start;
+  translate: var(--deputy-panel-shift) 0;
+}
+
+/* Inside the app sidebar (a scroll container) the panel is fixed beside it, so nothing clips it. */
+@media (min-width: 721px) {
+  .app-sidebar .deputy-activity-panel {
+    position: fixed;
+    bottom: 13px;
+    left: calc(var(--app-sidebar-width, 233px) + 13px);
+    max-height: calc(100dvh - 72px - 26px);
+  }
+}
+
+@media (min-width: 1101px) and (min-height: 821px) {
+  .app-sidebar .deputy-activity-panel {
+    bottom: 21px;
+    max-height: calc(100dvh - 72px - 42px);
+  }
+}
+
+.deputy-activity-title {
+  margin: 0 0 4px;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.deputy-activity-label {
+  margin: 13px 0 0;
+  color: var(--green-ink);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.deputy-activity-list {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deputy-activity-list li {
+  display: grid;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line-soft);
+  align-content: center;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.deputy-activity-list li:last-child {
+  border-bottom: 0;
+}
+
+.deputy-activity-list a {
+  display: flex;
+  min-height: 44px;
+  margin: -6px 0;
+  align-items: center;
+  color: var(--ink);
+  font-weight: 680;
+  text-decoration: underline;
+  text-decoration-color: var(--green-line);
+  text-underline-offset: 3px;
+  transition: text-decoration-color 180ms ease;
+}
+
+.deputy-activity-list a:hover {
+  text-decoration-color: var(--green);
+}
+
+.deputy-activity-list a:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
+.deputy-activity-panel > .sample-note {
+  margin-top: 13px;
+}
+
+/* Text only assistive technology needs (the chip's duty in its toggle name). */
+.deputy-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Print hides the companion with the rest of the app chrome. */
+@media print {
+  .deputy-dock {
+    display: none;
+  }
+}
+
+/* Scene (onboarding and the cast sheet): the panda up to 320px tall, the bubble beside its head as
+   on the entry stage, and the duty pill in the top band. */
+
+.deputy-scene {
+  --deputy-scene-panda: min(407px, 76cqw);
+  position: relative;
+  display: grid;
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.deputy-scene > * {
+  --deputy-scene-h: calc(var(--deputy-scene-panda) * 0.98);
+}
+
+.deputy-scene .deputy-art {
+  --deputy-panda: var(--deputy-scene-panda);
+  --deputy-panda-x: calc(44cqw - var(--deputy-scene-panda) * 0.5);
+  --deputy-panda-y: calc(
+    var(--deputy-scene-h) -
+    var(--deputy-scene-panda) *
+    0.06 -
+    var(--deputy-scene-panda) *
+    0.886
+  );
+  height: var(--deputy-scene-h);
+  border-radius: 34px;
+}
+
+.deputy-scene .deputy-ledge {
+  height: calc(var(--deputy-scene-panda) * 0.06);
+  border-radius: 50% 50% 0 0 / 21px 21px 0 0;
+}
+
+.deputy-scene .deputy-speech {
+  position: absolute;
+  top: calc(var(--deputy-scene-h) * 0.08);
+  left: calc(44cqw + var(--deputy-scene-panda) * 0.26);
+  width: min(205px, 100cqw - (44cqw + var(--deputy-scene-panda) * 0.26) - 13px);
+  padding: 12px 14px;
+  border-radius: 18px 18px 18px 5px;
+  font-size: clamp(15px, 4cqw, 17px);
+}
+
+.deputy-scene .deputy-speech::before {
+  top: auto;
+  bottom: 13px;
+  left: -7px;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.deputy-scene .deputy-duty {
+  position: absolute;
+  top: 13px;
+  left: 13px;
+  justify-self: start;
+  box-shadow: var(--shadow);
+}
+
+/* A narrow scene puts the bubble and the duty under the art, the tail pointing up at the panda. */
+@container (max-width: 459px) {
+  .deputy-scene > * {
+    --deputy-scene-h: calc(var(--deputy-scene-panda) * 0.92);
+  }
+
+  .deputy-scene .deputy-art {
+    --deputy-panda-x: calc(50cqw - var(--deputy-scene-panda) * 0.5);
+  }
+
+  .deputy-scene .deputy-speech {
+    position: relative;
+    top: auto;
+    left: auto;
+    width: auto;
+    margin-top: 8px;
+    border-radius: 15px;
+  }
+
+  .deputy-scene .deputy-speech::before {
+    top: -7px;
+    bottom: auto;
+    left: calc(50% - 6.5px);
+    border-top: 1px solid var(--line);
+    border-bottom: 0;
+    border-left: 1px solid var(--line);
+  }
+
+  .deputy-scene .deputy-duty {
+    position: static;
+    margin-top: 8px;
+    justify-self: center;
+    box-shadow: none;
+  }
+}
+
+/* Phone scene (720px and narrower): the scene becomes a row, so the setup question starts high on
+   the screen. An 84px panda in the 89px tile (its props and the leaning bamboo fit inside the
+   tile's rounded corners, from 10 to 455 viewBox units) spans the rows beside the speech bubble,
+   whose tail points at the panda; under the bubble sit the duty, as a plain line that wraps inside
+   its column on narrow phones, and Pause motion (44px). The row is as tall as the art, or the
+   bubble and one control. In a scene narrower than 340px Pause motion shows "Pause" or "Play" beside
+   its icon (" motion" stays in its accessible name, as in the dock), so the longest one-word duty
+   still fits beside it; in a scene narrower than 290px Pause motion takes its own line under the
+   duty, so nothing overlaps. The cast sheet pins it with data-deputy-size="row", which repeats
+   this block exactly. */
+
+@media (max-width: 720px) {
+  .deputy-scene:not([data-deputy-size]) {
+    --deputy-gain: 1.4;
+    --deputy-scene-panda: 89px;
+    grid-template-columns: 89px minmax(0, 1fr) auto;
+    grid-template-rows: auto auto 1fr;
+    gap: 0 13px;
+    align-items: start;
+  }
+
+  .deputy-scene:not([data-deputy-size]) > * {
+    --deputy-scene-h: 89px;
+  }
+
+  .deputy-scene:not([data-deputy-size]) .deputy-art {
+    --deputy-panda: 84px;
+    --deputy-panda-x: -2px;
+    width: 89px;
+    grid-row: 1 / -1;
+    grid-column: 1;
+    border: 1px solid var(--line-soft);
+    border-radius: 22px;
+  }
+
+  .deputy-scene:not([data-deputy-size]) .deputy-speech {
+    position: relative;
+    top: auto;
+    left: auto;
+    width: auto;
+    max-width: 100%;
+    grid-row: 1;
+    grid-column: 2 / -1;
+    justify-self: start;
+    margin: 0;
+    padding: 8px 13px;
+    border-radius: 15px;
+    font-size: 15px;
+    text-align: start;
+  }
+
+  .deputy-scene:not([data-deputy-size]) .deputy-speech::before {
+    top: 13px;
+    bottom: auto;
+    left: -7px;
+    border-top: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    border-left: 1px solid var(--line);
+  }
+
+  .deputy-scene:not([data-deputy-size]) .deputy-duty {
+    position: static;
+    min-height: 0;
+    grid-row: 2;
+    grid-column: 2;
+    justify-self: start;
+    align-self: center;
+    margin: 8px 0 0;
+    padding: 0;
+    border: 0;
+    color: var(--ink-soft);
+    background: none;
+    box-shadow: none;
+    letter-spacing: 0;
+    white-space: normal;
+  }
+
+  .deputy-scene:not([data-deputy-size]) .deputy-actions {
+    grid-row: 2;
+    grid-column: 3;
+    margin-top: 8px;
+  }
+
+  /* Reduced motion hides Pause motion, so no third row is needed and the row stays 89px tall. */
+  .deputy-scene:not([data-deputy-size])[data-deputy-mode="reduce"] {
+    grid-template-rows: auto 1fr;
+  }
+
+  @container (max-width: 339px) {
+    .deputy-scene:not([data-deputy-size]) .deputy-actions > .deputy-motion .deputy-motion-more {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+    }
+  }
+
+  @container (max-width: 289px) {
+    .deputy-scene:not([data-deputy-size]) .deputy-duty {
+      grid-column: 2 / -1;
+    }
+
+    .deputy-scene:not([data-deputy-size]) .deputy-actions {
+      grid-row: 3;
+      grid-column: 2 / -1;
+    }
+  }
+}
+
+.deputy-scene[data-deputy-size="row"] {
+  --deputy-gain: 1.4;
+  --deputy-scene-panda: 89px;
+  grid-template-columns: 89px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto 1fr;
+  gap: 0 13px;
+  align-items: start;
+}
+
+.deputy-scene[data-deputy-size="row"] > * {
+  --deputy-scene-h: 89px;
+}
+
+.deputy-scene[data-deputy-size="row"] .deputy-art {
+  --deputy-panda: 84px;
+  --deputy-panda-x: -2px;
+  width: 89px;
+  grid-row: 1 / -1;
+  grid-column: 1;
+  border: 1px solid var(--line-soft);
+  border-radius: 22px;
+}
+
+.deputy-scene[data-deputy-size="row"] .deputy-speech {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: auto;
+  max-width: 100%;
+  grid-row: 1;
+  grid-column: 2 / -1;
+  justify-self: start;
+  margin: 0;
+  padding: 8px 13px;
+  border-radius: 15px;
+  font-size: 15px;
+  text-align: start;
+}
+
+.deputy-scene[data-deputy-size="row"] .deputy-speech::before {
+  top: 13px;
+  bottom: auto;
+  left: -7px;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.deputy-scene[data-deputy-size="row"] .deputy-duty {
+  position: static;
+  min-height: 0;
+  grid-row: 2;
+  grid-column: 2;
+  justify-self: start;
+  align-self: center;
+  margin: 8px 0 0;
+  padding: 0;
+  border: 0;
+  color: var(--ink-soft);
+  background: none;
+  box-shadow: none;
+  letter-spacing: 0;
+  white-space: normal;
+}
+
+.deputy-scene[data-deputy-size="row"] .deputy-actions {
+  grid-row: 2;
+  grid-column: 3;
+  margin-top: 8px;
+}
+
+/* Reduced motion hides Pause motion, so no third row is needed and the row stays 89px tall. */
+.deputy-scene[data-deputy-size="row"][data-deputy-mode="reduce"] {
+  grid-template-rows: auto 1fr;
+}
+
+@container (max-width: 339px) {
+  .deputy-scene[data-deputy-size="row"] .deputy-actions > .deputy-motion .deputy-motion-more {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+}
+
+@container (max-width: 289px) {
+  .deputy-scene[data-deputy-size="row"] .deputy-duty {
+    grid-column: 2 / -1;
+  }
+
+  .deputy-scene[data-deputy-size="row"] .deputy-actions {
+    grid-row: 3;
+    grid-column: 2 / -1;
+  }
+}
+
+/* Prop-only illustrations for empty states: they fill the art slot the page gives them. */
+.deputy-prop-art {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.deputy-region-code {
+  font-family: var(--font-text);
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+/* Rig. Pivots are in viewBox units: shoulders 162.7/257.3 261.16, paw grips 141 330 and 281 326,
+   head 210 158, body base 210 391, and the leaning bamboo's foot 48 386. :where() keeps these bases
+   below every pose.
+
+   The hand rule (round 6, R6-1): the right paw (arm-right) holds the tool of the moment in every
+   state, moment, and reaction; the left paw is free (it rests, waves, or cheers); and the bamboo
+   leans on the ledge beside the panda, a little behind his left side, never in a paw. deputy.js's
+   tools table names each state's tool. */
+
+:where(.deputy-panda) .panda-body {
+  transform-box: view-box;
+  transform-origin: 210px 391px;
+  transition:
+    transform 618ms var(--ease-settle),
+    opacity 380ms ease;
+}
+
+:where(.deputy-panda) .panda-head {
+  transform-box: view-box;
+  transform-origin: 210px 158px;
+  transition: transform 618ms var(--ease-settle);
+}
+
+:where(.deputy-panda) .panda-eye {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+:where(.deputy-panda) .pupil {
+  transform: translate(calc(var(--deputy-look-x, 0) * 1px), calc(var(--deputy-look-y, 0) * 1px));
+  transition: transform 380ms var(--ease-settle);
+}
+
+:where(.deputy-panda) .panda-arm {
+  transform-box: view-box;
+  transition: transform 618ms var(--ease-settle);
+}
+
+:where(.deputy-panda) .panda-arm-left {
+  transform-origin: 162.7px 261.16px;
+}
+
+:where(.deputy-panda) .panda-arm-right {
+  transform-origin: 257.3px 261.16px;
+}
+
+/* The bamboo leans on the ledge; its sway (an idle gesture) pivots on its foot. */
+:where(.deputy-panda) .bamboo-lean {
+  transform-box: view-box;
+  transform-origin: 48px 386px;
+  transition:
+    transform 618ms var(--ease-settle),
+    opacity 380ms ease;
+}
+
+:where(.deputy-panda) .bamboo {
+  transform-box: view-box;
+  transform-origin: 48px 386px;
+}
+
+:where(.deputy-panda) .panda-shadow {
+  transition: opacity 380ms ease;
+}
+
+:where(.deputy-panda) .panda-ear {
+  transform-box: view-box;
+}
+
+:where(.deputy-panda) .ear-left {
+  transform-origin: 156px 118px;
+}
+
+:where(.deputy-panda) .ear-right {
+  transform-origin: 264px 118px;
+}
+
+:where(.deputy-panda) :is(.eye-happy, .mouth, .panda-eye) {
+  transition: opacity 180ms ease;
+}
+
+/* Held props pivot on the paw grip. A prop leaves in 180ms and arrives after the arm has moved. */
+:where(.deputy-panda)
+:is(
+  .panda-magnifier,
+  .panda-pencil,
+  .panda-key,
+  .deputy-glint,
+  .deputy-help,
+  .deputy-card,
+  .deputy-report,
+  .deputy-best,
+  .deputy-offer,
+  .deputy-approval,
+  .deputy-clipboard,
+  .deputy-clock,
+  .deputy-shield,
+  .deputy-pen,
+  .deputy-envelope,
+  .deputy-check,
+  .deputy-copy,
+  .deputy-archive,
+  .deputy-drop,
+  .deputy-hourglass,
+  .deputy-pointer,
+  .deputy-tour-pointer,
+  .deputy-test
+) {
+  transform-box: view-box;
+  transform-origin: 281px 326px;
+  transform: translate(0px, 0px) rotate(0deg) scale(0.6);
+  transition:
+    opacity 180ms ease,
+    transform 618ms var(--ease-settle);
+}
+
+:where(.deputy-panda) .panda-magnifier {
+  transform: translate(0px, 0px) rotate(76.2deg) scale(0.6);
+}
+
+:where(.deputy-panda) :is(.panda-pencil, .deputy-pen) {
+  transform: translate(0px, 0px) rotate(-16deg) scale(0.6);
+}
+
+:where(.deputy-panda) :is(.panda-key, .deputy-glint) {
+  transform: translate(0px, 0px) rotate(92.5deg) scale(0.6);
+}
+
+/* Scene props stand behind the panda and pivot on their own centres. */
+:where(.deputy-panda) :is(.deputy-rank, .deputy-weak, .deputy-page, .deputy-form) {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: translate(0px, 6px) rotate(0deg) scale(0.86);
+  transition:
+    opacity 180ms ease,
+    transform 618ms var(--ease-settle);
+}
+
+:where(.deputy-panda) :is(.deputy-rank-rule, .deputy-clock-hand) {
+  transform-box: fill-box;
+}
+
+:where(.deputy-panda) .deputy-rank-rule {
+  transform-origin: center;
+}
+
+:where(.deputy-panda) .deputy-clock-hand {
+  transform-origin: 50% 100%;
+}
+
+:where(.deputy-panda)
+  :is(.deputy-fill-tick, .deputy-approval-check, .deputy-drop-card, .deputy-letter) {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+:where(.deputy-panda) :is(.deputy-tick, .deputy-page-line, .deputy-fill-value, .deputy-test-tick) {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+
+/* The tour panda's poses (deputy.js guide), kept low in specificity (:where) so they sit with the
+   rig: the pointer in the right paw turns toward the target, the eyes and the head follow. */
+:where(.deputy-guide) .deputy-tour-pointer {
+  opacity: 1;
+}
+
+:where(.deputy-guide[data-point="right"]) {
+  --deputy-look-x: 5;
+  --deputy-look-y: 0;
+}
+
+:where(.deputy-guide[data-point="right"]) .panda-head {
+  transform: translate(3px, -1px) rotate(5deg);
+}
+
+:where(.deputy-guide[data-point="right"]) .panda-arm-right {
+  transform: translate(0px, 0px) rotate(-40deg);
+}
+
+:where(.deputy-guide[data-point="right"]) .deputy-tour-pointer {
+  transform: translate(0px, 0px) rotate(130deg) scale(0.95);
+}
+
+:where(.deputy-guide[data-point="left"]) {
+  --deputy-look-x: -5;
+  --deputy-look-y: 1;
+}
+
+:where(.deputy-guide[data-point="left"]) .panda-head {
+  transform: translate(-3px, 0px) rotate(-5deg);
+}
+
+:where(.deputy-guide[data-point="left"]) .panda-arm-right {
+  transform: translate(0px, -18px) rotate(80deg);
+}
+
+:where(.deputy-guide[data-point="left"]) .deputy-tour-pointer {
+  transform: translate(0px, 0px) rotate(190deg) scale(0.95);
+}
+
+:where(.deputy-guide[data-point="up"]) {
+  --deputy-look-x: 3;
+  --deputy-look-y: -3;
+}
+
+:where(.deputy-guide[data-point="up"]) .panda-head {
+  transform: translate(2px, -2px) rotate(4deg);
+}
+
+:where(.deputy-guide[data-point="up"]) .panda-arm-right {
+  transform: translate(5px, -4px) rotate(-100deg);
+}
+
+:where(.deputy-guide[data-point="up"]) .deputy-tour-pointer {
+  transform: translate(0px, 0px) rotate(100deg) scale(0.95);
+}
+
+:where(.deputy-guide[data-point="up"]) .panda-arm-left {
+  transform: translate(0px, 0px) rotate(16deg);
+}
+
+:where(.deputy-guide[data-point="down"]) {
+  --deputy-look-x: 4;
+  --deputy-look-y: 3;
+}
+
+:where(.deputy-guide[data-point="down"]) .panda-head {
+  transform: translate(2px, 2px) rotate(5deg);
+}
+
+:where(.deputy-guide[data-point="down"]) .panda-arm-right {
+  transform: translate(0px, 0px) rotate(-64deg);
+}
+
+:where(.deputy-guide[data-point="down"]) .deputy-tour-pointer {
+  transform: translate(0px, 0px) rotate(244deg) scale(0.95);
+}
+
+/* Shown props: they fade in once the arm has mostly arrived (380ms into the 618ms settle). Every
+   state and reaction shows one tool in the right paw (and, for some, a scene prop beside it). */
+:is(
+  [data-deputy-state="idle"] .deputy-help,
+  [data-deputy-state="arrive"] .deputy-card,
+  [data-deputy-state="report"] .deputy-report,
+  [data-deputy-state="search"] .panda-magnifier,
+  [data-deputy-state="filter"] :is(.deputy-best, .deputy-weak),
+  [data-deputy-state="rank"] :is(.deputy-pointer, .deputy-rank),
+  [data-deputy-state="choose"] .deputy-offer,
+  [data-deputy-state="tailor"] :is(.panda-pencil, .deputy-page),
+  [data-deputy-state="approve"] .deputy-approval,
+  [data-deputy-state="track"] .deputy-clipboard,
+  [data-deputy-state="watch"] .deputy-clock,
+  [data-deputy-state="protect-data"] .deputy-shield,
+  [data-deputy-state="hold-key"] .panda-key,
+  [data-deputy-state="fill"] :is(.deputy-pen, .deputy-form),
+  [data-deputy-state="invite"] .deputy-envelope,
+  [data-deputy-state="test"] .deputy-test,
+  [data-deputy-state="notice"] .panda-magnifier,
+  [data-deputy-state="pending"] .deputy-hourglass,
+  [data-deputy-state="success"] .panda-key,
+  [data-deputy-state="error"] .deputy-help,
+  [data-deputy-state="guide"] .deputy-pointer,
+  [data-deputy-state="added"] .deputy-clipboard,
+  [data-deputy-state="dismissed"] :is(.deputy-best, .deputy-weak),
+  [data-deputy-state="saved"] .deputy-check,
+  [data-deputy-state="sent"] .deputy-envelope,
+  [data-deputy-state="copied"] .deputy-copy,
+  [data-deputy-state="archived"] .deputy-archive,
+  [data-deputy-state="deleted"] .deputy-drop,
+  [data-deputy-state="started"] .panda-magnifier,
+  [data-deputy-state="found"] .deputy-best,
+  [data-deputy-state="approved"] .deputy-approval,
+  [data-deputy-state="submitted"] :is(.deputy-pen, .deputy-form),
+  [data-deputy-state="celebrate"] .deputy-best,
+  [data-deputy-state="signed"] .deputy-pen
+) {
+  opacity: 1;
+  transition:
+    opacity 180ms ease 380ms,
+    transform 618ms var(--ease-settle);
+}
+
+/* Poses. Each state names its look (pupils, in viewBox units) and its head, arm, and prop pose.
+   The left arm rests unless a pose names it. */
+
+/* idle: holds a help card low at the side, ready, and looks at you. */
+[data-deputy-state="idle"] {
+  --deputy-look-x: 0;
+  --deputy-look-y: 1;
+}
+
+[data-deputy-state="idle"] .panda-head {
+  transform: translate(0px, 1px) rotate(-3deg);
+}
+
+[data-deputy-state="idle"] .panda-arm-right {
+  transform: translate(0px, 0px) rotate(-34deg);
+}
+
+[data-deputy-state="idle"] .deputy-help {
+  transform: translate(0px, 0px) rotate(30deg) scale(1.15);
+}
+
+/* arrive: a job card in the right paw while the left paw waves. */
+[data-deputy-state="arrive"] {
+  --deputy-look-x: -1;
+  --deputy-look-y: -1;
+}
+
+[data-deputy-state="arrive"] .panda-head {
+  transform: translate(-1px, -2px) rotate(-3deg);
+}
+
+[data-deputy-state="arrive"] .panda-arm-left {
+  transform: translate(-14px, -6.2px) rotate(108deg);
+}
+
+[data-deputy-state="arrive"] .panda-arm-right {
+  transform: translate(0px, 0px) rotate(-40deg);
+}
+
+[data-deputy-state="arrive"] .deputy-card {
+  transform: translate(0px, 0px) rotate(36deg) scale(1.2);
+}
+
+[data-deputy-state="arrive"] .mouth-idle {
+  opacity: 0;
+}
+
+[data-deputy-state="arrive"] .mouth-happy {
+  opacity: 1;
+}
+
+[data-deputy-state="report"] {
+  --deputy-look-x: 5;
+  --deputy-look-y: -2;
+}
+
+[data-deputy-state="report"] .panda-head {
+  transform: translate(3px, -2px) rotate(5deg);
+}
+
+[data-deputy-state="report"] .panda-arm-right {
+  transform: translate(5px, -4px) rotate(-96deg);
+}
+
+[data-deputy-state="report"] .deputy-report {
+  transform: translate(0px, 0px) rotate(88deg) scale(1.38);
+}
+
+[data-deputy-state="search"],
+[data-deputy-state="started"] {
+  --deputy-look-x: 5;
+  --deputy-look-y: -2;
+}
+
+[data-deputy-state="search"] .panda-head,
+[data-deputy-state="started"] .panda-head {
+  transform: translate(3px, -2px) rotate(5deg);
+}
+
+[data-deputy-state="search"] .panda-arm-right,
+[data-deputy-state="started"] .panda-arm-right {
+  transform: translate(0px, 0px) rotate(-80.5deg);
+}
+
+[data-deputy-state="search"] .panda-magnifier,
+[data-deputy-state="started"] .panda-magnifier {
+  transform: translate(0px, 0px) rotate(94.2deg) scale(1.38);
+}
+
+[data-deputy-state="filter"],
+[data-deputy-state="dismissed"] {
+  --deputy-look-x: 4;
+  --deputy-look-y: 2;
+}
+
+[data-deputy-state="filter"] .panda-head,
+[data-deputy-state="dismissed"] .panda-head {
+  transform: translate(2px, 1px) rotate(4deg);
+}
+
+[data-deputy-state="filter"] .panda-arm-right,
+[data-deputy-state="dismissed"] .panda-arm-right {
+  transform: translate(3px, -2px) rotate(-70deg);
+}
+
+[data-deputy-state="filter"] .deputy-best,
+[data-deputy-state="dismissed"] .deputy-best {
+  transform: translate(0px, 0px) rotate(64deg) scale(1.32);
+}
+
+[data-deputy-state="filter"] .deputy-weak,
+[data-deputy-state="dismissed"] .deputy-weak {
+  opacity: 0.62;
+  transform: translate(0px, 0px) rotate(0deg) scale(1.16);
+}
+
+/* rank: the pointer in the right paw shows three cards beside the panda; the best rises. */
+[data-deputy-state="rank"] {
+  --deputy-look-x: 5;
+  --deputy-look-y: -2;
+}
+
+[data-deputy-state="rank"] .panda-head {
+  transform: translate(3px, -2px) rotate(6deg);
+}
+
+[data-deputy-state="rank"] .panda-arm-right {
+  transform: translate(0px, 0px) rotate(-60deg);
+}
+
+[data-deputy-state="rank"] .deputy-pointer {
+  transform: translate(0px, 0px) rotate(80deg) scale(0.9);
+}
+
+[data-deputy-state="rank"] .deputy-rank {
+  transform: translate(0px, 0px) rotate(0deg) scale(1.1);
+}
+
+[data-deputy-state="choose"] {
+  --deputy-look-x: 0;
+  --deputy-look-y: 1;
+}
+
+[data-deputy-state="choose"] .panda-head {
+  transform: translate(1px, 1px) rotate(9deg);
+}
+
+[data-deputy-state="choose"] .panda-arm-right {
+  transform: translate(-6px, -10px) rotate(10deg);
+}
+
+[data-deputy-state="choose"] .deputy-offer {
+  transform: translate(0px, 0px) rotate(-14deg) scale(1.7);
+}
+
+[data-deputy-state="tailor"] {
+  --deputy-look-x: 5;
+  --deputy-look-y: 2;
+}
+
+[data-deputy-state="tailor"] .panda-head {
+  transform: translate(3px, 2px) rotate(6deg);
+}
+
+[data-deputy-state="tailor"] .panda-arm-right {
+  transform: translate(0px, 0px) rotate(-50deg);
+}
+
+[data-deputy-state="tailor"] .panda-pencil {
+  transform: translate(0px, 0px) rotate(110deg) scale(1.3);
+}
+
+[data-deputy-state="tailor"] .deputy-page {
+  transform: translate(0px, 0px) rotate(0deg) scale(1.3);
+}
+
+[data-deputy-state="approve"],
+[data-deputy-state="approved"] {
+  --deputy-look-x: 0;
+  --deputy-look-y: 1;
+}
+
+[data-deputy-state="approve"] .panda-head,
+[data-deputy-state="approved"] .panda-head {
+  transform: translate(0px, 1px) rotate(3deg);
+}
+
+[data-deputy-state="approve"] .panda-arm-right,
+[data-deputy-state="approved"] .panda-arm-right {
+  transform: translate(0px, 0px) rotate(22deg);
+}
+
+[data-deputy-state="approve"] .deputy-approval,
+[data-deputy-state="approved"] .deputy-approval {
+  transform: translate(0px, 0px) rotate(-26deg) scale(1.3);
+}
+
+[data-deputy-state="track"] {
+  --deputy-look-x: 4;
+  --deputy-look-y: 2;
+}
+
+[data-deputy-state="track"] .panda-head {
+  transform: translate(2px, 2px) rotate(5deg);
+}
+
+[data-deputy-state="track"] .panda-arm-right {
+  transform: translate(0px, 0px) rotate(-40deg);
+}
+
+[data-deputy-state="track"] .deputy-clipboard {
+  transform: translate(0px, 0px) rotate(34deg) scale(1.3);
+}
+
+/* watch: the right paw holds the alarm clock up beside the head, clear of the face; the eyes are on
+   it. */
+[data-deputy-state="watch"] {
+  --deputy-look-x: 5;
+  --deputy-look-y: -2;
+}
+
+[data-deputy-state="watch"] .panda-head {
+  transform: translate(3px, -3px) rotate(6deg);
+}
+
+[data-deputy-state="watch"] .panda-arm-right {
+  transform: translate(5px, -4px) rotate(-96deg);
+}
+
+[data-deputy-state="watch"] .deputy-clock {
+  transform: translate(0px, 0px) rotate(92deg) scale(1.3);
+}
+
+[data-deputy-state="protect-data"] {
+  --deputy-look-x: 0;
+  --deputy-look-y: 0;
+}
+
+[data-deputy-state="protect-data"] .panda-head {
+  transform: translate(0px, -2px) rotate(0deg);
+}
+
+[data-deputy-state="protect-data"] .panda-arm-right {
+  transform: translate(0px, 0px) rotate(18deg);
+}
+
+[data-deputy-state="protect-data"] .deputy-shield {
+  transform: translate(0px, 0px) rotate(-18deg) scale(1.22);
+}
+
+[data-deputy-state="hold-key"] {
+  --deputy-look-x: -1;
+  --deputy-look-y: 2;
+}
+
+[data-deputy-state="hold-key"] .panda-head {
+  transform: translate(-1px, 2px) rotate(-3deg);
+}
+
+[data-deputy-state="hold-key"] .panda-arm-right {
+  transform: translate(-2px, 0px) rotate(34deg);
+}
+
+[data-deputy-state="hold-key"] :is(.panda-key, .deputy-glint) {
+  transform: translate(0px, 0px) rotate(-4deg) scale(1.7);
+}
+
+/* fill: the form stands beside the panda, clear of the face. At rest the pen is lowered beside it,
+   so every filled field and tick stays in view; the eyes are on the form. */
+[data-deputy-state="fill"],
+[data-deputy-state="submitted"] {
+  --deputy-look-x: 5;
+  --deputy-look-y: 2;
+}
+
+[data-deputy-state="fill"] .panda-head,
+[data-deputy-state="submitted"] .panda-head {
+  transform: translate(3px, 1px) rotate(5deg);
+}
+
+[data-deputy-state="fill"] .panda-arm-right,
+[data-deputy-state="submitted"] .panda-arm-right {
+  transform: translate(8px, -4px) rotate(-58deg);
+}
+
+[data-deputy-state="fill"] .deputy-pen,
+[data-deputy-state="submitted"] .deputy-pen {
+  transform: translate(0px, 0px) rotate(166deg) scale(1.45);
+}
+
+[data-deputy-state="fill"] .deputy-form,
+[data-deputy-state="submitted"] .deputy-form {
+  transform: translate(0px, 0px) rotate(0deg) scale(1.5);
+}
+
+/* invite: holds up an envelope, the credits ticket showing, beside the head and clear of the face,
+   and looks at you. */
+[data-deputy-state="invite"] {
+  --deputy-look-x: 1;
+  --deputy-look-y: 0;
+}
+
+[data-deputy-state="invite"] .panda-head {
+  transform: translate(1px, -1px) rotate(4deg);
+}
+
+[data-deputy-state="invite"] .panda-arm-right {
+  transform: translate(3px, -2px) rotate(-70deg);
+}
+
+[data-deputy-state="invite"] .deputy-envelope {
+  transform: translate(0px, 0px) rotate(64deg) scale(1.35);
+}
+
+/* test (Prompts): holds the test card at the side, its three checks in view. */
+[data-deputy-state="test"] {
+  --deputy-look-x: 4;
+  --deputy-look-y: 2;
+}
+
+[data-deputy-state="test"] .panda-head {
+  transform: translate(2px, 2px) rotate(5deg);
+}
+
+[data-deputy-state="test"] .panda-arm-right {
+  transform: translate(0px, 0px) rotate(-40deg);
+}
+
+[data-deputy-state="test"] .deputy-test {
+  transform: translate(0px, 0px) rotate(34deg) scale(1.3);
+}
+
+/* notice: the head and eyes turn toward the focused field (--deputy-look-x/y from the script); the
+   magnifier waits in the right paw. */
+[data-deputy-state="notice"] .panda-head {
+  transform: translate(calc(var(--deputy-look-x, 5) * 0.8px), calc(var(--deputy-look-y, 1) * 0.6px))
+    rotate(calc(var(--deputy-look-x, 5) * 0.5deg));
+}
+
+[data-deputy-state="notice"] .panda-arm-right {
+  transform: translate(0px, 0px) rotate(-30deg);
+}
+
+[data-deputy-state="notice"] .panda-magnifier {
+  transform: translate(0px, 0px) rotate(30deg) scale(1.1);
+}
+
+/* pending: lifts a little and looks up, the hourglass in the right paw. */
+[data-deputy-state="pending"] {
+  --deputy-look-x: 0;
+  --deputy-look-y: -3;
+}
+
+[data-deputy-state="pending"] .panda-head {
+  transform: translate(0px, -3px) rotate(1deg);
+}
+
+[data-deputy-state="pending"] .panda-body {
+  transform: translate(0px, -7px) rotate(1deg);
+}
+
+[data-deputy-state="pending"] .panda-arm-right {
+  transform: translate(0px, 0px) rotate(-34deg);
+}
+
+[data-deputy-state="pending"] .deputy-hourglass {
+  transform: translate(0px, 0px) rotate(30deg) scale(1.15);
+}
+
+/* success: holds up the key. */
+[data-deputy-state="success"] .panda-arm-right {
+  transform: translate(5.3px, -2.8px) rotate(-100.5deg);
+}
+
+[data-deputy-state="success"] .panda-key {
+  transform: translate(0px, 0px) rotate(104deg) scale(1.3);
+}
+
+:is(
+    [data-deputy-state="success"],
+    [data-deputy-state="found"],
+    [data-deputy-state="celebrate"],
+    [data-deputy-state="signed"]
+  )
+  :is(.panda-eye, .mouth-idle) {
+  opacity: 0;
+}
+
+:is(
+    [data-deputy-state="success"],
+    [data-deputy-state="found"],
+    [data-deputy-state="celebrate"],
+    [data-deputy-state="signed"]
+  )
+  :is(.eye-happy, .mouth-happy) {
+  opacity: 1;
+}
+
+:is(
+    [data-deputy-state="guide"],
+    [data-deputy-state="added"],
+    [data-deputy-state="saved"],
+    [data-deputy-state="sent"],
+    [data-deputy-state="approved"],
+    [data-deputy-state="submitted"]
+  )
+  .mouth-idle {
+  opacity: 0;
+}
+
+:is(
+    [data-deputy-state="guide"],
+    [data-deputy-state="added"],
+    [data-deputy-state="saved"],
+    [data-deputy-state="sent"],
+    [data-deputy-state="approved"],
+    [data-deputy-state="submitted"]
+  )
+  .mouth-happy {
+  opacity: 1;
+}
+
+/* error: a small reassuring tilt, a gentle smile (never a frown), and the help card held out. */
+[data-deputy-state="error"] {
+  --deputy-look-x: 0;
+  --deputy-look-y: 2;
+}
+
+[data-deputy-state="error"] .panda-head {
+  transform: translate(0px, 3px) rotate(-6deg);
+}
+
+[data-deputy-state="error"] .panda-arm-right {
+  transform: translate(0px, 0px) rotate(-24deg);
+}
+
+[data-deputy-state="error"] .deputy-help {
+  transform: translate(0px, 0px) rotate(20deg) scale(1.15);
+}
+
+[data-deputy-state="error"] .mouth-idle {
+  opacity: 0;
+}
+
+[data-deputy-state="error"] .mouth-concern {
+  opacity: 1;
+}
+
+/* guide (a tour, held by deputy.js hold): the pointer raised beside the head toward the page, the
+   eyes on it, and a happy mouth. */
+[data-deputy-state="guide"] {
+  --deputy-look-x: 5;
+  --deputy-look-y: -2;
+}
+
+[data-deputy-state="guide"] .panda-head {
+  transform: translate(3px, -1px) rotate(5deg);
+}
+
+[data-deputy-state="guide"] .panda-arm-right {
+  transform: translate(4px, -4px) rotate(-60deg);
+}
+
+[data-deputy-state="guide"] .deputy-pointer {
+  transform: translate(0px, 0px) rotate(100deg) scale(0.9);
+}
+
+/* Reactions (deputy.js react): each pose names its look and its head, arm, and prop pose, like a
+   state. dismissed, started, approved, and submitted share filter's, search's, approve's, and
+   fill's poses (above); error is the error state. Every held prop stays clear of the face. */
+
+/* added: holds up the Applications clipboard. */
+[data-deputy-state="added"] {
+  --deputy-look-x: 5;
+  --deputy-look-y: 0;
+}
+
+[data-deputy-state="added"] .panda-head {
+  transform: translate(3px, -1px) rotate(5deg);
+}
+
+[data-deputy-state="added"] .panda-arm-right {
+  transform: translate(4px, -6px) rotate(-70deg);
+}
+
+[data-deputy-state="added"] .deputy-clipboard {
+  transform: translate(0px, 0px) rotate(70deg) scale(1.15);
+}
+
+/* saved: raises a green check badge. */
+[data-deputy-state="saved"] {
+  --deputy-look-x: 4;
+  --deputy-look-y: -2;
+}
+
+[data-deputy-state="saved"] .panda-head {
+  transform: translate(2px, -1px) rotate(4deg);
+}
+
+[data-deputy-state="saved"] .panda-arm-right {
+  transform: translate(5px, -4px) rotate(-96deg);
+}
+
+[data-deputy-state="saved"] .deputy-check {
+  transform: translate(0px, 0px) rotate(96deg) scale(1.2);
+}
+
+/* sent: holds the envelope up; the motion sends the letter off and the envelope stays in the paw. */
+[data-deputy-state="sent"] {
+  --deputy-look-x: 5;
+  --deputy-look-y: -3;
+}
+
+[data-deputy-state="sent"] .panda-head {
+  transform: translate(3px, -3px) rotate(6deg);
+}
+
+[data-deputy-state="sent"] .panda-arm-right {
+  transform: translate(3px, -2px) rotate(-70deg);
+}
+
+[data-deputy-state="sent"] .deputy-envelope {
+  transform: translate(0px, 0px) rotate(64deg) scale(1.35);
+}
+
+[data-deputy-state="sent"] .deputy-ticket {
+  opacity: 0;
+}
+
+/* copied: holds a card and its copy. */
+[data-deputy-state="copied"] {
+  --deputy-look-x: 5;
+  --deputy-look-y: -1;
+}
+
+[data-deputy-state="copied"] .panda-head {
+  transform: translate(3px, -1px) rotate(5deg);
+}
+
+[data-deputy-state="copied"] .panda-arm-right {
+  transform: translate(3px, -2px) rotate(-70deg);
+}
+
+[data-deputy-state="copied"] .deputy-copy {
+  transform: translate(0px, 0px) rotate(64deg) scale(1.3);
+}
+
+/* archived: holds the archive box in front, eyes on it. */
+[data-deputy-state="archived"] {
+  --deputy-look-x: 2;
+  --deputy-look-y: 3;
+}
+
+[data-deputy-state="archived"] .panda-head {
+  transform: translate(1px, 2px) rotate(3deg);
+}
+
+[data-deputy-state="archived"] .panda-arm-right {
+  transform: translate(0px, 0px) rotate(14deg);
+}
+
+[data-deputy-state="archived"] .deputy-archive {
+  transform: translate(0px, 0px) rotate(-14deg) scale(1.2);
+}
+
+/* deleted: holds the bin in front, eyes on it; the card drops in (the motion). */
+[data-deputy-state="deleted"] {
+  --deputy-look-x: 2;
+  --deputy-look-y: 3;
+}
+
+[data-deputy-state="deleted"] .panda-head {
+  transform: translate(1px, 2px) rotate(3deg);
+}
+
+[data-deputy-state="deleted"] .panda-arm-right {
+  transform: translate(0px, 0px) rotate(14deg);
+}
+
+[data-deputy-state="deleted"] .deputy-drop {
+  transform: translate(0px, 0px) rotate(-14deg) scale(1.1);
+}
+
+[data-deputy-state="deleted"] .deputy-drop-card {
+  opacity: 0;
+}
+
+/* found: holds the best card up high, smiling. */
+[data-deputy-state="found"] {
+  --deputy-look-x: 4;
+  --deputy-look-y: -2;
+}
+
+[data-deputy-state="found"] .panda-head {
+  transform: translate(3px, -3px) rotate(6deg);
+}
+
+[data-deputy-state="found"] .panda-arm-right {
+  transform: translate(6px, -8px) rotate(-100deg);
+}
+
+[data-deputy-state="found"] .deputy-best {
+  transform: translate(0px, 0px) rotate(94deg) scale(1.38);
+}
+
+/* celebrate: the selected job card held high in the right paw, the left paw raised in a cheer,
+   clear of the face and above the leaning bamboo, smiling (no confetti). */
+[data-deputy-state="celebrate"] {
+  --deputy-look-x: 0;
+  --deputy-look-y: -1;
+}
+
+[data-deputy-state="celebrate"] .panda-head {
+  transform: translate(0px, -3px) rotate(-3deg);
+}
+
+[data-deputy-state="celebrate"] .panda-arm-right {
+  transform: translate(6px, -8px) rotate(-100deg);
+}
+
+[data-deputy-state="celebrate"] .deputy-best {
+  transform: translate(0px, 0px) rotate(94deg) scale(1.38);
+}
+
+[data-deputy-state="celebrate"] .panda-arm-left {
+  transform: translate(-14px, -6.2px) rotate(108deg);
+}
+
+/* signed (round 7, G3): the celebrate pose with the pen raised nib up in the right paw, the
+   left paw cheering clear of the face, happy closed eyes and the wide smile. */
+[data-deputy-state="signed"] {
+  --deputy-look-x: 0;
+  --deputy-look-y: -1;
+}
+
+[data-deputy-state="signed"] .panda-head {
+  transform: translate(0px, -3px) rotate(-3deg);
+}
+
+[data-deputy-state="signed"] .panda-arm-right {
+  transform: translate(6px, -8px) rotate(-100deg);
+}
+
+[data-deputy-state="signed"] .deputy-pen {
+  transform: translate(0px, 0px) rotate(60deg) scale(1.45);
+}
+
+[data-deputy-state="signed"] .panda-arm-left {
+  transform: translate(-14px, -6.2px) rotate(108deg);
+}
+
+/* Away (deputy.js guide): while the tour panda is in the tour card, the dock's panda steps out.
+   The ledge and the leaning bamboo stay; nothing else is drawn, so one panda per viewport holds. */
+[data-deputy-away] :is(.panda-body, .panda-shadow, .deputy-scene-props) {
+  opacity: 0;
+}
+
+/* One-time motion: only with data-deputy-play, after the 618ms settle, from and back to the pose
+   (keyframes without a start or end), except reveals, which hold their first frame (backwards). */
+
+[data-deputy-blink] .panda-eye {
+  animation: deputy-blink 180ms linear 1;
+}
+
+[data-deputy-play][data-deputy-state="arrive"] .panda-arm-left {
+  animation: deputy-wave 1.35s var(--ease-spring) 1;
+}
+
+[data-deputy-play][data-deputy-state="report"] .panda-arm-right {
+  animation: deputy-present-arm 987ms var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="report"] .deputy-report {
+  animation: deputy-present-card 987ms var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="search"] .panda-arm-right {
+  animation: deputy-sweep-arm 2.605s var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="search"] .panda-head {
+  animation: deputy-sweep-head 2.605s var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="search"] .pupil {
+  animation: deputy-sweep-look 2.605s var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="filter"] .deputy-weak {
+  animation: deputy-set-aside 1.618s var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="filter"] .deputy-best {
+  animation: deputy-keep 1.618s var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="rank"] .deputy-rank-best {
+  animation: deputy-rank-rise 1.618s var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="rank"] :is(.deputy-rank-second, .deputy-rank-third) {
+  animation: deputy-rank-step 1.618s var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="rank"] .deputy-rank-rule {
+  animation: deputy-rank-rule 1.618s var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="choose"] .deputy-offer {
+  animation: deputy-offer 987ms var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="tailor"] .panda-arm-right {
+  animation: deputy-write-arm 2.605s var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="tailor"] .deputy-page-line {
+  animation: deputy-write-line 2.605s var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="approve"] .deputy-approval {
+  animation: deputy-await 987ms var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="track"] .deputy-tick-1 {
+  animation: deputy-tick-1 1.618s var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="track"] .deputy-tick-2 {
+  animation: deputy-tick-2 1.618s var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="track"] .deputy-tick-3 {
+  animation: deputy-tick-3 1.618s var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="watch"] .panda-head {
+  animation: deputy-look-out 2.605s var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="watch"] .pupil {
+  animation: deputy-look-out-eyes 2.605s var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="watch"] .deputy-clock-hand {
+  animation: deputy-clock-hand 2.605s var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="protect-data"] .deputy-shield {
+  animation: deputy-guard 618ms var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="hold-key"] .deputy-glint {
+  animation: deputy-glint 987ms ease 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="fill"] .panda-arm-right {
+  animation: deputy-fill-arm 1.618s var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="fill"] .pupil {
+  animation: deputy-fill-look 1.618s var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="fill"] .deputy-fill-value-1 {
+  animation: deputy-fill-value-1 1.618s var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="fill"] .deputy-fill-value-2 {
+  animation: deputy-fill-value-2 1.618s var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="fill"] .deputy-fill-value-3 {
+  animation: deputy-fill-value-3 1.618s var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="fill"] .deputy-fill-tick-1 {
+  animation: deputy-fill-tick-1 1.618s var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="fill"] .deputy-fill-tick-2 {
+  animation: deputy-fill-tick-2 1.618s var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="fill"] .deputy-fill-tick-3 {
+  animation: deputy-fill-tick-3 1.618s var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="invite"] .panda-arm-right {
+  animation: deputy-invite-arm 987ms var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="invite"] .deputy-ticket {
+  animation: deputy-ticket 987ms var(--ease-settle) 618ms 1 backwards;
+}
+
+/* test: the card's three checks tick in turn. */
+[data-deputy-play][data-deputy-state="test"] .deputy-test-tick-1 {
+  animation: deputy-tick-1 1.618s var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="test"] .deputy-test-tick-2 {
+  animation: deputy-tick-2 1.618s var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="test"] .deputy-test-tick-3 {
+  animation: deputy-tick-3 1.618s var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="success"] .panda-body {
+  animation: deputy-bounce 618ms var(--ease-spring) 1;
+}
+
+/* guide: the pointer taps toward the page once ("this way"). error: one slow, reassuring tilt;
+   never a shake. */
+[data-deputy-play][data-deputy-state="guide"] .deputy-pointer {
+  animation: deputy-point 987ms var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="error"] .panda-head {
+  animation: deputy-concern 987ms var(--ease-settle) 618ms 1;
+}
+
+/* Reactions: one-shot motion that starts as the pose settles and ends by 1.605s. It moves the
+   individual rotate, translate, and scale properties, which add to the pose's transform. */
+[data-deputy-play][data-deputy-state="added"] .panda-body {
+  animation: deputy-hop 618ms var(--ease-spring) 1;
+}
+
+[data-deputy-play][data-deputy-state="added"] .deputy-tick-1 {
+  animation: deputy-tick-1 987ms var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="added"] .deputy-tick-2 {
+  animation: deputy-tick-2 987ms var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="added"] .deputy-tick-3 {
+  animation: deputy-tick-3 987ms var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="dismissed"] .deputy-weak {
+  animation: deputy-set-aside 987ms var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="dismissed"] .deputy-best {
+  animation: deputy-keep 987ms var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="saved"] .deputy-check {
+  animation: deputy-pop 618ms var(--ease-spring) 380ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="saved"] .panda-head {
+  animation: deputy-nod 987ms var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="sent"] .deputy-letter {
+  animation: deputy-send 987ms var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="sent"] .panda-arm-right {
+  animation: deputy-throw 987ms var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="copied"] .deputy-copy-front {
+  animation: deputy-copy-out 987ms var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="archived"] .deputy-archive-card {
+  animation: deputy-archive-in 987ms var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="deleted"] .deputy-drop-card {
+  animation: deputy-drop 987ms var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="started"] .panda-arm-right {
+  animation: deputy-start-sweep 987ms var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="started"] .panda-head {
+  animation: deputy-start-head 987ms var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="started"] .pupil {
+  animation: deputy-start-look 987ms var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="found"] .panda-body {
+  animation: deputy-hop 618ms var(--ease-spring) 1;
+}
+
+[data-deputy-play][data-deputy-state="found"] .deputy-best {
+  animation: deputy-present 987ms var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="approved"] .deputy-approval-check {
+  animation: deputy-stamp 618ms var(--ease-spring) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="approved"] .panda-head {
+  animation: deputy-nod 987ms var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="submitted"] .deputy-fill-tick-1 {
+  animation: deputy-submit-tick-1 987ms var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="submitted"] .deputy-fill-tick-2 {
+  animation: deputy-submit-tick-2 987ms var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="submitted"] .deputy-fill-tick-3 {
+  animation: deputy-submit-tick-3 987ms var(--ease-settle) 618ms 1 backwards;
+}
+
+[data-deputy-play][data-deputy-state="submitted"] .deputy-form {
+  animation: deputy-form-lift 987ms var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="celebrate"] .panda-body {
+  animation: deputy-hop-twice 987ms var(--ease-spring) 1;
+}
+
+[data-deputy-play][data-deputy-state="celebrate"] .panda-arm-right {
+  animation: deputy-cheer 987ms var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="celebrate"] .panda-arm-left {
+  animation: deputy-cheer-left 987ms var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="signed"] .panda-body {
+  animation: deputy-hop-twice 987ms var(--ease-spring) 1;
+}
+
+[data-deputy-play][data-deputy-state="signed"] .panda-arm-right {
+  animation: deputy-cheer 987ms var(--ease-settle) 618ms 1;
+}
+
+[data-deputy-play][data-deputy-state="signed"] .panda-arm-left {
+  animation: deputy-cheer-left 987ms var(--ease-settle) 618ms 1;
+}
+
+/* Idle gestures (deputy.js, data-deputy-gesture): one small move every 13 to 21s at rest, only while
+   motion is on. They move the individual rotate and translate properties, so they add to any pose,
+   and --deputy-gain scales them where the panda is small. */
+[data-deputy-mode="on"][data-deputy-gesture="glance"] .pupil {
+  animation: deputy-glance-eyes 1.618s var(--ease-settle) 1;
+}
+
+[data-deputy-mode="on"][data-deputy-gesture="glance"] .panda-head {
+  animation: deputy-glance-head 1.618s var(--ease-settle) 1;
+}
+
+[data-deputy-mode="on"][data-deputy-gesture="tilt"] .panda-head {
+  animation: deputy-tilt 1.618s var(--ease-settle) 1;
+}
+
+[data-deputy-mode="on"][data-deputy-gesture="nod"] .panda-head {
+  animation: deputy-nod 987ms var(--ease-settle) 1;
+}
+
+[data-deputy-mode="on"][data-deputy-gesture="ear-left"] .ear-left {
+  animation: deputy-ear-left 987ms var(--ease-spring) 1;
+}
+
+[data-deputy-mode="on"][data-deputy-gesture="ear-right"] .ear-right {
+  animation: deputy-ear-right 987ms var(--ease-spring) 1;
+}
+
+[data-deputy-mode="on"][data-deputy-gesture="sway"] .bamboo {
+  animation: deputy-sway 1.618s var(--ease-settle) 1;
+}
+
+[data-deputy-mode="on"][data-deputy-gesture="lift"] .panda-arm-right {
+  animation: deputy-lift 987ms var(--ease-settle) 1;
+}
+
+/* Loops: only while the page flags work in progress (search, tailor, fill, and test) or while pending, and
+   only while motion is on. Each period is 5.236s; the spinner turns every 987ms. */
+
+[data-deputy-mode="on"][data-deputy-state="pending"]:not([data-deputy-agreement]) .deputy-duty-dot {
+  animation: deputy-spin 987ms linear infinite;
+}
+
+[data-deputy-mode="on"][data-deputy-working][data-deputy-state="search"] .panda-arm-right {
+  animation: deputy-sweep-arm-loop 5.236s var(--ease-settle) 618ms infinite;
+}
+
+[data-deputy-mode="on"][data-deputy-working][data-deputy-state="search"] .panda-head {
+  animation: deputy-sweep-head-loop 5.236s var(--ease-settle) 618ms infinite;
+}
+
+[data-deputy-mode="on"][data-deputy-working][data-deputy-state="search"] .pupil {
+  animation: deputy-sweep-look-loop 5.236s var(--ease-settle) 618ms infinite;
+}
+
+[data-deputy-mode="on"][data-deputy-working][data-deputy-state="tailor"] .panda-arm-right {
+  animation: deputy-write-arm-loop 5.236s var(--ease-settle) 618ms infinite;
+}
+
+[data-deputy-mode="on"][data-deputy-working][data-deputy-state="tailor"] .deputy-page-line {
+  animation: deputy-write-line-loop 5.236s var(--ease-settle) 618ms infinite;
+}
+
+[data-deputy-mode="on"][data-deputy-working][data-deputy-state="fill"] .panda-arm-right {
+  animation: deputy-fill-arm-loop 5.236s var(--ease-settle) 618ms infinite;
+}
+
+[data-deputy-mode="on"][data-deputy-working][data-deputy-state="fill"] .pupil {
+  animation: deputy-fill-look-loop 5.236s var(--ease-settle) 618ms infinite;
+}
+
+[data-deputy-mode="on"][data-deputy-working][data-deputy-state="fill"] .deputy-fill-value-1 {
+  animation: deputy-fill-value-1-loop 5.236s var(--ease-settle) 618ms infinite backwards;
+}
+
+[data-deputy-mode="on"][data-deputy-working][data-deputy-state="fill"] .deputy-fill-value-2 {
+  animation: deputy-fill-value-2-loop 5.236s var(--ease-settle) 618ms infinite backwards;
+}
+
+[data-deputy-mode="on"][data-deputy-working][data-deputy-state="fill"] .deputy-fill-value-3 {
+  animation: deputy-fill-value-3-loop 5.236s var(--ease-settle) 618ms infinite backwards;
+}
+
+[data-deputy-mode="on"][data-deputy-working][data-deputy-state="fill"] .deputy-fill-tick-1 {
+  animation: deputy-fill-tick-1-loop 5.236s var(--ease-settle) 618ms infinite backwards;
+}
+
+[data-deputy-mode="on"][data-deputy-working][data-deputy-state="fill"] .deputy-fill-tick-2 {
+  animation: deputy-fill-tick-2-loop 5.236s var(--ease-settle) 618ms infinite backwards;
+}
+
+[data-deputy-mode="on"][data-deputy-working][data-deputy-state="fill"] .deputy-fill-tick-3 {
+  animation: deputy-fill-tick-3-loop 5.236s var(--ease-settle) 618ms infinite backwards;
+}
+
+/* test: while a prompt test runs, the three checks tick in turn in each 5.236s period, hold, and
+   clear for the next pass. */
+[data-deputy-mode="on"][data-deputy-working][data-deputy-state="test"] .deputy-test-tick-1 {
+  animation: deputy-test-tick-1-loop 5.236s var(--ease-settle) 618ms infinite backwards;
+}
+
+[data-deputy-mode="on"][data-deputy-working][data-deputy-state="test"] .deputy-test-tick-2 {
+  animation: deputy-test-tick-2-loop 5.236s var(--ease-settle) 618ms infinite backwards;
+}
+
+[data-deputy-mode="on"][data-deputy-working][data-deputy-state="test"] .deputy-test-tick-3 {
+  animation: deputy-test-tick-3-loop 5.236s var(--ease-settle) 618ms infinite backwards;
+}
+
+@keyframes deputy-blink {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  20%,
+  80% {
+    transform: scaleY(0.1);
+  }
+}
+
+@keyframes deputy-wave {
+  18% {
+    transform: translate(-18px, -6.2px) rotate(118deg);
+  }
+  36% {
+    transform: translate(-18px, -6.2px) rotate(100deg);
+  }
+  54% {
+    transform: translate(-18px, -6.2px) rotate(118deg);
+  }
+  72% {
+    transform: translate(-18px, -6.2px) rotate(102deg);
+  }
+}
+
+@keyframes deputy-present-arm {
+  42% {
+    transform: translate(6px, -10px) rotate(-101deg);
+  }
+}
+
+@keyframes deputy-present-card {
+  42% {
+    transform: translate(0px, 0px) rotate(88deg) scale(1.46);
+  }
+}
+
+@keyframes deputy-sweep-arm {
+  22% {
+    transform: translate(0px, -3px) rotate(-104deg);
+  }
+  50% {
+    transform: translate(0px, 2px) rotate(-60deg);
+  }
+  76% {
+    transform: translate(0px, -2px) rotate(-96deg);
+  }
+}
+
+@keyframes deputy-sweep-head {
+  22% {
+    transform: translate(4px, -3px) rotate(8deg);
+  }
+  50% {
+    transform: translate(2px, 0px) rotate(2deg);
+  }
+  76% {
+    transform: translate(4px, -2px) rotate(7deg);
+  }
+}
+
+@keyframes deputy-sweep-look {
+  22% {
+    transform: translate(5px, -3px);
+  }
+  50% {
+    transform: translate(5px, 1px);
+  }
+  76% {
+    transform: translate(5px, -2px);
+  }
+}
+
+/* The loops: the same sweep and writing in the first 2.605s of each 5.236s period, then still. */
+@keyframes deputy-sweep-arm-loop {
+  0%,
+  49.75%,
+  100% {
+    transform: translate(0px, 0px) rotate(-80.5deg);
+  }
+  10.95% {
+    transform: translate(0px, -3px) rotate(-104deg);
+  }
+  24.88% {
+    transform: translate(0px, 2px) rotate(-60deg);
+  }
+  37.81% {
+    transform: translate(0px, -2px) rotate(-96deg);
+  }
+}
+
+@keyframes deputy-sweep-head-loop {
+  0%,
+  49.75%,
+  100% {
+    transform: translate(3px, -2px) rotate(5deg);
+  }
+  10.95% {
+    transform: translate(4px, -3px) rotate(8deg);
+  }
+  24.88% {
+    transform: translate(2px, 0px) rotate(2deg);
+  }
+  37.81% {
+    transform: translate(4px, -2px) rotate(7deg);
+  }
+}
+
+@keyframes deputy-sweep-look-loop {
+  0%,
+  49.75%,
+  100% {
+    transform: translate(5px, -2px);
+  }
+  10.95% {
+    transform: translate(5px, -3px);
+  }
+  24.88% {
+    transform: translate(5px, 1px);
+  }
+  37.81% {
+    transform: translate(5px, -2px);
+  }
+}
+
+@keyframes deputy-set-aside {
+  0%,
+  26% {
+    opacity: 1;
+    transform: translate(-6px, -124px) rotate(-14deg) scale(1.3);
+  }
+}
+
+@keyframes deputy-keep {
+  62% {
+    transform: translate(0px, 0px) rotate(64deg) scale(1.32);
+  }
+  80% {
+    transform: translate(0px, 0px) rotate(64deg) scale(1.42);
+  }
+}
+
+@keyframes deputy-rank-rise {
+  0%,
+  18% {
+    transform: translate(0px, 76px);
+  }
+  58% {
+    transform: translate(-12px, -4px);
+  }
+}
+
+@keyframes deputy-rank-step {
+  0%,
+  18% {
+    transform: translate(0px, -38px);
+  }
+  58% {
+    transform: translate(0px, 2px);
+  }
+}
+
+@keyframes deputy-rank-rule {
+  0%,
+  62% {
+    transform: scaleY(0);
+  }
+}
+
+@keyframes deputy-offer {
+  0% {
+    transform: translate(0px, 0px) rotate(-4deg) scale(1.3);
+  }
+}
+
+@keyframes deputy-write-arm {
+  14% {
+    transform: translate(0px, 2px) rotate(-46deg);
+  }
+  28% {
+    transform: translate(0px, 0px) rotate(-53deg);
+  }
+  42% {
+    transform: translate(0px, 2px) rotate(-47deg);
+  }
+  56% {
+    transform: translate(0px, 0px) rotate(-53deg);
+  }
+  70% {
+    transform: translate(0px, 2px) rotate(-48deg);
+  }
+}
+
+@keyframes deputy-write-line {
+  0%,
+  10% {
+    stroke-dashoffset: 1;
+  }
+  74% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes deputy-write-arm-loop {
+  0%,
+  49.75%,
+  100% {
+    transform: translate(0px, 0px) rotate(-50deg);
+  }
+  6.97% {
+    transform: translate(0px, 2px) rotate(-46deg);
+  }
+  13.93% {
+    transform: translate(0px, 0px) rotate(-53deg);
+  }
+  20.9% {
+    transform: translate(0px, 2px) rotate(-47deg);
+  }
+  27.86% {
+    transform: translate(0px, 0px) rotate(-53deg);
+  }
+  34.83% {
+    transform: translate(0px, 2px) rotate(-48deg);
+  }
+}
+
+@keyframes deputy-write-line-loop {
+  0%,
+  4.98% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+  36.82%,
+  88% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  96% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+  100% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+}
+
+@keyframes deputy-await {
+  45% {
+    transform: translate(0px, -5px) rotate(-26deg) scale(1.34);
+  }
+}
+
+@keyframes deputy-tick-1 {
+  0%,
+  6% {
+    stroke-dashoffset: 1;
+  }
+  30% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes deputy-tick-2 {
+  0%,
+  36% {
+    stroke-dashoffset: 1;
+  }
+  60% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes deputy-tick-3 {
+  0%,
+  66% {
+    stroke-dashoffset: 1;
+  }
+  90% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes deputy-look-out {
+  30% {
+    transform: translate(5px, -5px) rotate(10deg);
+  }
+  64% {
+    transform: translate(1px, -2px) rotate(2deg);
+  }
+}
+
+@keyframes deputy-look-out-eyes {
+  30% {
+    transform: translate(5px, -3px);
+  }
+  64% {
+    transform: translate(1px, 0px);
+  }
+}
+
+@keyframes deputy-clock-hand {
+  0% {
+    transform: rotate(-90deg);
+  }
+}
+
+@keyframes deputy-guard {
+  0% {
+    transform: translate(0px, -12px) rotate(-18deg) scale(1.22);
+  }
+}
+
+@keyframes deputy-glint {
+  50% {
+    opacity: 1;
+  }
+}
+
+/* fill: from rest the pen climbs to the first field, writes each field in turn (it fills, then
+   gains its tick), and comes back to rest beside the form. The wrist stays fixed and the arm swings
+   12 degrees a field, so the pen is steeper on lower fields and never lies along the one it writes;
+   the eyes follow it down. */
+@keyframes deputy-fill-arm {
+  14% {
+    transform: translate(8px, -4px) rotate(-106deg);
+  }
+  18% {
+    transform: translate(8px, -2.5px) rotate(-104deg);
+  }
+  22% {
+    transform: translate(8px, -4px) rotate(-107deg);
+  }
+  26% {
+    transform: translate(8px, -2.5px) rotate(-105deg);
+  }
+  30% {
+    transform: translate(8px, -4px) rotate(-106deg);
+  }
+  36% {
+    transform: translate(8px, -4px) rotate(-94deg);
+  }
+  40% {
+    transform: translate(8px, -2.5px) rotate(-92deg);
+  }
+  44% {
+    transform: translate(8px, -4px) rotate(-95deg);
+  }
+  48% {
+    transform: translate(8px, -2.5px) rotate(-93deg);
+  }
+  52% {
+    transform: translate(8px, -4px) rotate(-94deg);
+  }
+  58% {
+    transform: translate(8px, -4px) rotate(-82deg);
+  }
+  62% {
+    transform: translate(8px, -2.5px) rotate(-80deg);
+  }
+  66% {
+    transform: translate(8px, -4px) rotate(-83deg);
+  }
+  70% {
+    transform: translate(8px, -2.5px) rotate(-81deg);
+  }
+  76% {
+    transform: translate(8px, -4px) rotate(-82deg);
+  }
+  88% {
+    transform: translate(8px, -4px) rotate(-58deg);
+  }
+}
+
+@keyframes deputy-fill-look {
+  14% {
+    transform: translate(5px, -1px);
+  }
+  30% {
+    transform: translate(5px, -1px);
+  }
+  36% {
+    transform: translate(5px, 1px);
+  }
+  52% {
+    transform: translate(5px, 1px);
+  }
+  58% {
+    transform: translate(5px, 3px);
+  }
+  76% {
+    transform: translate(5px, 3px);
+  }
+  88% {
+    transform: translate(5px, 2px);
+  }
+}
+
+@keyframes deputy-fill-value-1 {
+  0%,
+  15% {
+    stroke-dashoffset: 1;
+  }
+  29% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes deputy-fill-value-2 {
+  0%,
+  37% {
+    stroke-dashoffset: 1;
+  }
+  51% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes deputy-fill-value-3 {
+  0%,
+  59% {
+    stroke-dashoffset: 1;
+  }
+  75% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes deputy-fill-tick-1 {
+  0%,
+  30% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  40% {
+    transform: scale(1);
+  }
+}
+
+@keyframes deputy-fill-tick-2 {
+  0%,
+  52% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  57% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  62% {
+    transform: scale(1);
+  }
+}
+
+@keyframes deputy-fill-tick-3 {
+  0%,
+  76% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  81% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  86% {
+    transform: scale(1);
+  }
+}
+
+/* The fill loop: the same filling in the first 1.618s of each 5.236s period, then the filled form
+   holds, and the values and ticks fade away just before the next pass. */
+@keyframes deputy-fill-arm-loop {
+  0%,
+  27.19%,
+  100% {
+    transform: translate(8px, -4px) rotate(-58deg);
+  }
+  4.33% {
+    transform: translate(8px, -4px) rotate(-106deg);
+  }
+  5.56% {
+    transform: translate(8px, -2.5px) rotate(-104deg);
+  }
+  6.8% {
+    transform: translate(8px, -4px) rotate(-107deg);
+  }
+  8.03% {
+    transform: translate(8px, -2.5px) rotate(-105deg);
+  }
+  9.27% {
+    transform: translate(8px, -4px) rotate(-106deg);
+  }
+  11.12% {
+    transform: translate(8px, -4px) rotate(-94deg);
+  }
+  12.36% {
+    transform: translate(8px, -2.5px) rotate(-92deg);
+  }
+  13.6% {
+    transform: translate(8px, -4px) rotate(-95deg);
+  }
+  14.83% {
+    transform: translate(8px, -2.5px) rotate(-93deg);
+  }
+  16.07% {
+    transform: translate(8px, -4px) rotate(-94deg);
+  }
+  17.92% {
+    transform: translate(8px, -4px) rotate(-82deg);
+  }
+  19.16% {
+    transform: translate(8px, -2.5px) rotate(-80deg);
+  }
+  20.39% {
+    transform: translate(8px, -4px) rotate(-83deg);
+  }
+  21.63% {
+    transform: translate(8px, -2.5px) rotate(-81deg);
+  }
+  23.49% {
+    transform: translate(8px, -4px) rotate(-82deg);
+  }
+}
+
+@keyframes deputy-fill-look-loop {
+  0%,
+  27.19%,
+  100% {
+    transform: translate(5px, 2px);
+  }
+  4.33% {
+    transform: translate(5px, -1px);
+  }
+  9.27% {
+    transform: translate(5px, -1px);
+  }
+  11.12% {
+    transform: translate(5px, 1px);
+  }
+  16.07% {
+    transform: translate(5px, 1px);
+  }
+  17.92% {
+    transform: translate(5px, 3px);
+  }
+  23.49% {
+    transform: translate(5px, 3px);
+  }
+}
+
+@keyframes deputy-fill-value-1-loop {
+  0%,
+  4.64% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+  8.96%,
+  88% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  96% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+  100% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+}
+
+@keyframes deputy-fill-value-2-loop {
+  0%,
+  11.43% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+  15.76%,
+  88% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  96% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+  100% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+}
+
+@keyframes deputy-fill-value-3-loop {
+  0%,
+  18.23% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+  23.18%,
+  88% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  96% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+  100% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+}
+
+@keyframes deputy-fill-tick-1-loop {
+  0%,
+  9.27% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  10.82% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  12.36%,
+  88% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  96% {
+    opacity: 0;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+@keyframes deputy-fill-tick-2-loop {
+  0%,
+  16.07% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  17.61% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  19.16%,
+  88% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  96% {
+    opacity: 0;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+@keyframes deputy-fill-tick-3-loop {
+  0%,
+  23.49% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  25.03% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  26.58%,
+  88% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  96% {
+    opacity: 0;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+/* The test loop: each check ticks in turn, all three hold, then they clear. */
+@keyframes deputy-test-tick-1-loop {
+  0%,
+  4% {
+    stroke-dashoffset: 1;
+  }
+  16%,
+  88% {
+    stroke-dashoffset: 0;
+  }
+  96%,
+  100% {
+    stroke-dashoffset: 1;
+  }
+}
+
+@keyframes deputy-test-tick-2-loop {
+  0%,
+  16% {
+    stroke-dashoffset: 1;
+  }
+  28%,
+  88% {
+    stroke-dashoffset: 0;
+  }
+  96%,
+  100% {
+    stroke-dashoffset: 1;
+  }
+}
+
+@keyframes deputy-test-tick-3-loop {
+  0%,
+  28% {
+    stroke-dashoffset: 1;
+  }
+  40%,
+  88% {
+    stroke-dashoffset: 0;
+  }
+  96%,
+  100% {
+    stroke-dashoffset: 1;
+  }
+}
+
+/* invite: the envelope lifts toward you while the ticket slides up out of the pocket. */
+@keyframes deputy-invite-arm {
+  40% {
+    transform: translate(4px, -10px) rotate(-76deg);
+  }
+}
+
+@keyframes deputy-ticket {
+  0%,
+  22% {
+    transform: translate(0px, 31px);
+  }
+}
+
+@keyframes deputy-bounce {
+  45% {
+    transform: translate(0px, -12px) rotate(0deg) scale(1.025);
+  }
+}
+
+@keyframes deputy-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* guide and error. */
+@keyframes deputy-point {
+  30% {
+    rotate: 8deg;
+  }
+  60% {
+    rotate: -3deg;
+  }
+  85% {
+    rotate: 2deg;
+  }
+}
+
+@keyframes deputy-concern {
+  40% {
+    translate: 0px 1px;
+    rotate: -4deg;
+  }
+  75% {
+    rotate: -1deg;
+  }
+}
+
+/* The reactions' motion: each starts from and returns to the pose, apart from the reveals (which
+   hold their first frame, backwards) and sent, whose envelope stays gone until the pose ends. */
+@keyframes deputy-hop {
+  40% {
+    translate: 0px -10px;
+  }
+}
+
+@keyframes deputy-hop-twice {
+  22% {
+    translate: 0px -12px;
+  }
+  44% {
+    translate: 0px 0px;
+  }
+  66% {
+    translate: 0px -7px;
+  }
+}
+
+@keyframes deputy-pop {
+  0% {
+    scale: 0.4;
+  }
+  60% {
+    scale: 1.12;
+  }
+}
+
+@keyframes deputy-send {
+  0%,
+  16% {
+    opacity: 1;
+    translate: 0px 0px;
+    rotate: 0deg;
+  }
+  100% {
+    opacity: 0;
+    translate: 48px -66px;
+    rotate: 16deg;
+  }
+}
+
+@keyframes deputy-throw {
+  35% {
+    rotate: -14deg;
+  }
+  70% {
+    rotate: 4deg;
+  }
+}
+
+@keyframes deputy-copy-out {
+  0%,
+  12% {
+    translate: -14px -14px;
+  }
+}
+
+@keyframes deputy-archive-in {
+  0%,
+  20% {
+    translate: 0px -44px;
+  }
+}
+
+@keyframes deputy-drop {
+  0%,
+  18% {
+    opacity: 1;
+    translate: 0px -84px;
+    rotate: -6deg;
+  }
+  85% {
+    opacity: 1;
+    translate: 0px -4px;
+    rotate: 0deg;
+  }
+  100% {
+    opacity: 0;
+    translate: 0px 0px;
+    rotate: 0deg;
+  }
+}
+
+@keyframes deputy-start-sweep {
+  30% {
+    rotate: -16deg;
+  }
+  65% {
+    rotate: 12deg;
+  }
+}
+
+@keyframes deputy-start-head {
+  30% {
+    rotate: 3deg;
+  }
+  65% {
+    rotate: -2deg;
+  }
+}
+
+@keyframes deputy-start-look {
+  30% {
+    translate: 0px -1px;
+  }
+  65% {
+    translate: 0px 3px;
+  }
+}
+
+@keyframes deputy-present {
+  40% {
+    scale: 1.08;
+  }
+}
+
+@keyframes deputy-stamp {
+  0% {
+    opacity: 0;
+    scale: 0.2;
+  }
+  60% {
+    opacity: 1;
+    scale: 1.15;
+  }
+}
+
+@keyframes deputy-submit-tick-1 {
+  0%,
+  8% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  22% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  32% {
+    transform: scale(1);
+  }
+}
+
+@keyframes deputy-submit-tick-2 {
+  0%,
+  30% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  44% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  54% {
+    transform: scale(1);
+  }
+}
+
+@keyframes deputy-submit-tick-3 {
+  0%,
+  52% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  66% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  76% {
+    transform: scale(1);
+  }
+}
+
+@keyframes deputy-form-lift {
+  80% {
+    translate: 0px -5px;
+  }
+}
+
+@keyframes deputy-cheer {
+  30% {
+    rotate: -12deg;
+  }
+  60% {
+    rotate: 6deg;
+  }
+  85% {
+    rotate: -4deg;
+  }
+}
+
+@keyframes deputy-cheer-left {
+  30% {
+    rotate: 12deg;
+  }
+  60% {
+    rotate: -6deg;
+  }
+  85% {
+    rotate: 4deg;
+  }
+}
+
+/* The idle gestures: from the pose and back to it. The eyes' glance goes to an aim inside the
+   eye-whites; everything else adds a small turn, nod, or sway to the pose. */
+@keyframes deputy-glance-eyes {
+  22%,
+  68% {
+    transform: translate(
+      calc(var(--deputy-glance-x, 0) * 1px),
+      calc(var(--deputy-glance-y, 0) * 1px)
+    );
+  }
+}
+
+@keyframes deputy-glance-head {
+  22%,
+  68% {
+    rotate: calc(var(--deputy-turn, 3deg) * var(--deputy-gain, 1));
+  }
+}
+
+@keyframes deputy-tilt {
+  28%,
+  66% {
+    translate: 0px calc(-1px * var(--deputy-gain, 1));
+    rotate: calc(var(--deputy-tilt, 6deg) * var(--deputy-gain, 1));
+  }
+}
+
+@keyframes deputy-nod {
+  34% {
+    translate: 0px calc(7px * var(--deputy-gain, 1));
+    rotate: calc(2deg * var(--deputy-gain, 1));
+  }
+  68% {
+    translate: 0px calc(-1px * var(--deputy-gain, 1));
+    rotate: 0deg;
+  }
+}
+
+@keyframes deputy-ear-left {
+  16% {
+    rotate: calc(-14deg * var(--deputy-gain, 1));
+  }
+  34% {
+    rotate: 0deg;
+  }
+  50% {
+    rotate: calc(-8deg * var(--deputy-gain, 1));
+  }
+  68% {
+    rotate: 0deg;
+  }
+}
+
+@keyframes deputy-ear-right {
+  16% {
+    rotate: calc(14deg * var(--deputy-gain, 1));
+  }
+  34% {
+    rotate: 0deg;
+  }
+  50% {
+    rotate: calc(8deg * var(--deputy-gain, 1));
+  }
+  68% {
+    rotate: 0deg;
+  }
+}
+
+@keyframes deputy-sway {
+  25% {
+    rotate: -6deg;
+  }
+  55% {
+    rotate: 4deg;
+  }
+  80% {
+    rotate: -1.5deg;
+  }
+}
+
+@keyframes deputy-lift {
+  40% {
+    rotate: -8deg;
+  }
+  70% {
+    rotate: -5deg;
+  }
+}
+
+/* The tool badge (deputy.js): the rail medallion and the chip show only the face, so the tool in
+   the right paw shows on a small paper disc at the face's lower edge, the paw at its grip. Hidden at
+   the other sizes, where the paw itself shows. */
+.deputy-badge {
+  position: absolute;
+  z-index: 3;
+  display: none;
+  pointer-events: none;
+}
+
+[data-deputy-away] .deputy-badge {
+  visibility: hidden;
+}
+
+/* The tour panda (deputy.js guide): the smiling deputy, small, in a square tile, 88px unless the
+   host sets --deputy-guide-size (72px to 96px). The right paw's pointer aims at the step's target;
+   the left paw is free; the bamboo stays behind at the dock. */
+.deputy-guide {
+  --deputy-guide-box: clamp(72px, var(--deputy-guide-size, 88px), 96px);
+  --deputy-panda: calc(var(--deputy-guide-box) * 1.1667);
+  --deputy-panda-x: calc(var(--deputy-guide-box) * -0.1944);
+  --deputy-panda-y: calc(var(--deputy-guide-box) * -0.1111);
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: var(--deputy-guide-box);
+  height: var(--deputy-guide-box);
+  overflow: hidden;
+  border-radius: 22px;
+  background: var(--paper-deep);
+  vertical-align: top;
+}
+
+@media (forced-colors: active) {
+  .deputy-guide {
+    forced-color-adjust: none;
+  }
+}
+
+.deputy-guide :is(.bamboo-lean, .deputy-scene-props) {
+  display: none;
+}
+
+/* Pause motion (html[data-motion="paused"], set by deputy.js) holds the tour panda still: a new
+   direction shows at once. Reduced motion does the same (end of file). */
+html[data-motion="paused"] .deputy-guide :is(.deputy-panda, .deputy-panda *) {
+  /* biome-ignore lint/complexity/noImportantStyles: Pause motion must stop the tour panda's settle, whatever the pose rule */
+  transition: none !important;
+  /* biome-ignore lint/complexity/noImportantStyles: Pause motion must stop every tour panda animation */
+  animation: none !important;
+}
+
+/* Compact dock (1101px and wider, 820px tall or less): a 96px art box with the panda behind the
+   ledge, bust and props showing, as on the logo, and one speech line. */
+
+@media (min-width: 1101px) and (max-height: 820px) {
+  .deputy-dock:not([data-deputy-size]) {
+    --deputy-gain: 1.2;
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-art {
+    --deputy-panda: 120px;
+    --deputy-panda-x: 42.5px;
+    --deputy-panda-y: -14.6px;
+    height: 96px;
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-ledge {
+    z-index: 3;
+    height: 12px;
+    border-radius: 50% 50% 0 0 / 8px 8px 0 0;
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-ledge-prop {
+    transform: translate(0px, -40px);
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-speech {
+    padding: 6px 7px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.deputy-dock[data-deputy-size="compact"] {
+  --deputy-gain: 1.2;
+}
+
+.deputy-dock[data-deputy-size="compact"] .deputy-art {
+  --deputy-panda: 120px;
+  --deputy-panda-x: 42.5px;
+  --deputy-panda-y: -14.6px;
+  height: 96px;
+}
+
+.deputy-dock[data-deputy-size="compact"] .deputy-ledge {
+  z-index: 3;
+  height: 12px;
+  border-radius: 50% 50% 0 0 / 8px 8px 0 0;
+}
+
+.deputy-dock[data-deputy-size="compact"] .deputy-ledge-prop {
+  transform: translate(0px, -40px);
+}
+
+.deputy-dock[data-deputy-size="compact"] .deputy-speech {
+  padding: 6px 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Rail medallion (721px to 1100px): a 55px face (a portrait: no arms or props), a 12px duty
+   label, and Activity. The speech line and Pause motion move into the panel. */
+
+@media (min-width: 721px) and (max-width: 1100px) {
+  .deputy-dock:not([data-deputy-size]) {
+    --deputy-gain: 1.4;
+    gap: 6px;
+    padding: 8px 4px;
+    justify-items: center;
+    box-shadow: none;
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-art {
+    --deputy-panda: 92.4px;
+    --deputy-panda-x: -18.7px;
+    --deputy-panda-y: -6.3px;
+    width: 55px;
+    height: 55px;
+    margin: 0;
+    border-radius: 50%;
+    overflow: visible;
+    background: var(--paper-deep);
+  }
+
+  /* The face stays in its circle; the tool badge sits on the circle's lower edge. */
+  .deputy-dock:not([data-deputy-size]) .deputy-panda {
+    clip-path: circle(27.5px at 46.2px 33.8px);
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-badge {
+    right: -6px;
+    bottom: -4px;
+    display: block;
+    width: 26px;
+    height: 26px;
+  }
+
+  /* Stepped out for a tour: the bamboo stands in the medallion instead of the face. */
+  .deputy-dock:not([data-deputy-size])[data-deputy-away] .bamboo-lean {
+    display: inline;
+    transform: translate(150px, -178px);
+  }
+
+  .deputy-dock:not([data-deputy-size])
+    :is(
+      .deputy-field,
+      .deputy-ledge,
+      .panda-shadow,
+      .deputy-speech,
+      .deputy-scene-props,
+      .bamboo-lean,
+      .panda-arm
+    ) {
+    display: none;
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-duty {
+    display: grid;
+    min-height: 0;
+    gap: 4px;
+    padding: 0;
+    border: 0;
+    justify-items: center;
+    color: var(--ink-soft);
+    background: none;
+    letter-spacing: 0;
+    text-align: center;
+    white-space: normal;
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-actions {
+    width: 100%;
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-activity-toggle {
+    padding: 0 4px;
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-actions > .deputy-motion {
+    display: none;
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-panel-status {
+    display: grid;
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-panel-speech {
+    display: block;
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-panel-actions {
+    margin: 13px 0 21px;
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-panel-actions > .deputy-motion {
+    display: flex;
+  }
+}
+
+.deputy-dock[data-deputy-size="rail"] {
+  --deputy-gain: 1.4;
+  gap: 6px;
+  padding: 8px 4px;
+  justify-items: center;
+  box-shadow: none;
+}
+
+.deputy-dock[data-deputy-size="rail"] .deputy-art {
+  --deputy-panda: 92.4px;
+  --deputy-panda-x: -18.7px;
+  --deputy-panda-y: -6.3px;
+  width: 55px;
+  height: 55px;
+  margin: 0;
+  border-radius: 50%;
+  overflow: visible;
+  background: var(--paper-deep);
+}
+
+/* The face stays in its circle; the tool badge sits on the circle's lower edge. */
+.deputy-dock[data-deputy-size="rail"] .deputy-panda {
+  clip-path: circle(27.5px at 46.2px 33.8px);
+}
+
+.deputy-dock[data-deputy-size="rail"] .deputy-badge {
+  right: -6px;
+  bottom: -4px;
+  display: block;
+  width: 26px;
+  height: 26px;
+}
+
+/* Stepped out for a tour: the bamboo stands in the medallion instead of the face. */
+.deputy-dock[data-deputy-size="rail"][data-deputy-away] .bamboo-lean {
+  display: inline;
+  transform: translate(150px, -178px);
+}
+
+.deputy-dock[data-deputy-size="rail"]
+  :is(
+    .deputy-field,
+    .deputy-ledge,
+    .panda-shadow,
+    .deputy-speech,
+    .deputy-scene-props,
+    .bamboo-lean,
+    .panda-arm
+  ) {
+  display: none;
+}
+
+.deputy-dock[data-deputy-size="rail"] .deputy-duty {
+  display: grid;
+  min-height: 0;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  justify-items: center;
+  color: var(--ink-soft);
+  background: none;
+  letter-spacing: 0;
+  text-align: center;
+  white-space: normal;
+}
+
+.deputy-dock[data-deputy-size="rail"] .deputy-actions {
+  width: 100%;
+}
+
+.deputy-dock[data-deputy-size="rail"] .deputy-activity-toggle {
+  padding: 0 4px;
+}
+
+.deputy-dock[data-deputy-size="rail"] .deputy-actions > .deputy-motion {
+  display: none;
+}
+
+.deputy-dock[data-deputy-size="rail"] .deputy-panel-status {
+  display: grid;
+}
+
+.deputy-dock[data-deputy-size="rail"] .deputy-panel-speech {
+  display: block;
+}
+
+.deputy-dock[data-deputy-size="rail"] .deputy-panel-actions {
+  margin: 13px 0 21px;
+}
+
+.deputy-dock[data-deputy-size="rail"] .deputy-panel-actions > .deputy-motion {
+  display: flex;
+}
+
+/* Chip (720px and narrower): a 44px pill in the app bar, a 34px face and the duty; the whole pill
+   opens Activity, full width below the app bar. */
+
+@media (max-width: 720px) {
+  .deputy-dock:not([data-deputy-size]) {
+    --deputy-gain: 1.8;
+    display: flex;
+    min-height: 44px;
+    gap: 8px;
+    padding: 4px 26px 4px 4px;
+    border-color: var(--line);
+    border-radius: 999px;
+    align-items: center;
+    box-shadow: none;
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-art {
+    --deputy-panda: 63px;
+    --deputy-panda-x: -14.5px;
+    --deputy-panda-y: -6px;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+    margin: 0;
+    border-radius: 50%;
+    overflow: visible;
+    background: var(--paper-deep);
+  }
+
+  /* The face stays in its circle; the tool badge sits on the circle's lower edge. */
+  .deputy-dock:not([data-deputy-size]) .deputy-panda {
+    clip-path: circle(17px at 31.5px 23px);
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-badge {
+    right: -7px;
+    bottom: -4px;
+    display: block;
+    width: 19px;
+    height: 19px;
+  }
+
+  /* Stepped out for a tour: the bamboo stands in the face's circle. */
+  .deputy-dock:not([data-deputy-size])[data-deputy-away] .bamboo-lean {
+    display: inline;
+    transform: translate(150px, -178px);
+  }
+
+  .deputy-dock:not([data-deputy-size])
+    :is(
+      .deputy-field,
+      .deputy-ledge,
+      .panda-shadow,
+      .deputy-speech,
+      .deputy-scene-props,
+      .bamboo-lean,
+      .panda-arm
+    ) {
+    display: none;
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-duty {
+    max-width: 96px;
+    min-height: 0;
+    gap: 5px;
+    padding: 0;
+    border: 0;
+    color: var(--ink-soft);
+    background: none;
+    letter-spacing: 0;
+    white-space: normal;
+  }
+
+  .deputy-dock:not([data-deputy-size])[data-deputy-ready] .deputy-actions {
+    position: static;
+  }
+
+  .deputy-dock:not([data-deputy-size])[data-deputy-ready] .deputy-activity {
+    position: static;
+  }
+
+  .deputy-dock:not([data-deputy-size])[data-deputy-ready] .deputy-activity-toggle {
+    position: absolute;
+    z-index: 1;
+    inset: -1px;
+    justify-content: flex-end;
+    padding: 0 9px;
+    border-color: transparent;
+    border-radius: 999px;
+    background: transparent;
+  }
+
+  .deputy-dock:not([data-deputy-size])[data-deputy-ready]
+    :is(.deputy-activity-name, .deputy-toggle-duty) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-actions > .deputy-motion {
+    display: none;
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-activity-panel {
+    top: calc(100% + 9px);
+    right: 0;
+    bottom: auto;
+    left: auto;
+    width: calc(100cqw - 26px);
+    max-height: calc(100dvh - 160px);
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-panel-status {
+    display: grid;
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-panel-speech {
+    display: block;
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-panel-actions {
+    margin: 13px 0 21px;
+  }
+
+  .deputy-dock:not([data-deputy-size]) .deputy-panel-actions > .deputy-motion {
+    display: flex;
+  }
+}
+
+.deputy-dock[data-deputy-size="chip"] {
+  --deputy-gain: 1.8;
+  display: flex;
+  min-height: 44px;
+  gap: 8px;
+  padding: 4px 26px 4px 4px;
+  border-color: var(--line);
+  border-radius: 999px;
+  align-items: center;
+  box-shadow: none;
+}
+
+.deputy-dock[data-deputy-size="chip"] .deputy-art {
+  --deputy-panda: 63px;
+  --deputy-panda-x: -14.5px;
+  --deputy-panda-y: -6px;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  margin: 0;
+  border-radius: 50%;
+  overflow: visible;
+  background: var(--paper-deep);
+}
+
+/* The face stays in its circle; the tool badge sits on the circle's lower edge. */
+.deputy-dock[data-deputy-size="chip"] .deputy-panda {
+  clip-path: circle(17px at 31.5px 23px);
+}
+
+.deputy-dock[data-deputy-size="chip"] .deputy-badge {
+  right: -7px;
+  bottom: -4px;
+  display: block;
+  width: 19px;
+  height: 19px;
+}
+
+/* Stepped out for a tour: the bamboo stands in the face's circle. */
+.deputy-dock[data-deputy-size="chip"][data-deputy-away] .bamboo-lean {
+  display: inline;
+  transform: translate(150px, -178px);
+}
+
+.deputy-dock[data-deputy-size="chip"]
+  :is(
+    .deputy-field,
+    .deputy-ledge,
+    .panda-shadow,
+    .deputy-speech,
+    .deputy-scene-props,
+    .bamboo-lean,
+    .panda-arm
+  ) {
+  display: none;
+}
+
+.deputy-dock[data-deputy-size="chip"] .deputy-duty {
+  max-width: 96px;
+  min-height: 0;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  color: var(--ink-soft);
+  background: none;
+  letter-spacing: 0;
+  white-space: normal;
+}
+
+.deputy-dock[data-deputy-size="chip"][data-deputy-ready] .deputy-actions {
+  position: static;
+}
+
+.deputy-dock[data-deputy-size="chip"][data-deputy-ready] .deputy-activity {
+  position: static;
+}
+
+.deputy-dock[data-deputy-size="chip"][data-deputy-ready] .deputy-activity-toggle {
+  position: absolute;
+  z-index: 1;
+  inset: -1px;
+  justify-content: flex-end;
+  padding: 0 9px;
+  border-color: transparent;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.deputy-dock[data-deputy-size="chip"][data-deputy-ready]
+  :is(.deputy-activity-name, .deputy-toggle-duty) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.deputy-dock[data-deputy-size="chip"] .deputy-actions > .deputy-motion {
+  display: none;
+}
+
+.deputy-dock[data-deputy-size="chip"] .deputy-activity-panel {
+  top: calc(100% + 9px);
+  right: 0;
+  bottom: auto;
+  left: auto;
+  width: calc(100cqw - 26px);
+  max-height: calc(100dvh - 160px);
+}
+
+.deputy-dock[data-deputy-size="chip"] .deputy-panel-status {
+  display: grid;
+}
+
+.deputy-dock[data-deputy-size="chip"] .deputy-panel-speech {
+  display: block;
+}
+
+.deputy-dock[data-deputy-size="chip"] .deputy-panel-actions {
+  margin: 13px 0 21px;
+}
+
+.deputy-dock[data-deputy-size="chip"] .deputy-panel-actions > .deputy-motion {
+  display: flex;
+}
+
+/* Still modes. Pause motion (data-deputy-mode="paused") and reduced motion ("reduce", or the
+   preference itself below) stop every animation and transition: poses swap instantly, nothing
+   loops or gestures, and a reaction shows its pose and line at once. Paused shows the pause mark
+   (above); under reduced motion the spinner becomes a still dot beside "Working…". */
+
+:is([data-deputy-mode="paused"], [data-deputy-mode="reduce"])
+:is(
+  .deputy-panda,
+  .deputy-panda *,
+  .panda-body,
+  .panda-head,
+  .panda-eye,
+  .pupil,
+  .panda-arm-left,
+  .panda-arm-right,
+  .bamboo,
+  .bamboo-lean,
+  .panda-magnifier,
+  .panda-pencil,
+  .panda-key,
+  .deputy-glint,
+  .deputy-report,
+  .deputy-best,
+  .deputy-weak,
+  .deputy-offer,
+  .deputy-approval,
+  .deputy-clipboard,
+  .deputy-shield,
+  .deputy-rank,
+  .deputy-rank-card,
+  .deputy-rank-best,
+  .deputy-rank-second,
+  .deputy-rank-third,
+  .deputy-rank-rule,
+  .deputy-page,
+  .deputy-page-line,
+  .deputy-clock,
+  .deputy-clock-hand,
+  .deputy-tick,
+  .deputy-tick-1,
+  .deputy-tick-2,
+  .deputy-tick-3,
+  .deputy-pen,
+  .deputy-form,
+  .deputy-fill-value,
+  .deputy-fill-value-1,
+  .deputy-fill-value-2,
+  .deputy-fill-value-3,
+  .deputy-fill-tick,
+  .deputy-fill-tick-1,
+  .deputy-fill-tick-2,
+  .deputy-fill-tick-3,
+  .deputy-envelope,
+  .deputy-ticket,
+  .panda-ear,
+  .ear-left,
+  .ear-right,
+  .deputy-check,
+  .deputy-copy,
+  .deputy-copy-front,
+  .deputy-archive,
+  .deputy-archive-card,
+  .deputy-drop,
+  .deputy-drop-card,
+  .deputy-help,
+  .deputy-card,
+  .deputy-hourglass,
+  .deputy-pointer,
+  .deputy-tour-pointer,
+  .deputy-test,
+  .deputy-test-tick,
+  .deputy-test-tick-1,
+  .deputy-test-tick-2,
+  .deputy-test-tick-3,
+  .deputy-letter,
+  .deputy-approval-check,
+  .deputy-duty-dot,
+  .deputy-speech,
+  .deputy-activity-toggle,
+  .deputy-motion,
+  .deputy-panel-action,
+  .deputy-activity-list a
+) {
+  /* biome-ignore lint/complexity/noImportantStyles: Pause motion must stop every deputy animation, whatever the state rule */
+  animation: none !important;
+  /* biome-ignore lint/complexity/noImportantStyles: paused and reduced poses swap instantly */
+  transition: none !important;
+}
+
+[data-deputy][data-deputy-mode="reduce"][data-deputy-state="pending"] .deputy-duty-dot {
+  width: 7px;
+  height: 7px;
+  border: 0;
+  background: var(--green);
+  box-shadow: 0 0 0 4px var(--green-wash);
+}
+
+[data-deputy][data-deputy-mode="reduce"][data-deputy-state="pending"] [data-deputy-duty]::after {
+  content: "…";
+}
+
+/* With reduced motion there is nothing to pause, in the cast sheet's preview as with the
+   preference (below). */
+[data-deputy][data-deputy-mode="reduce"]
+  :is(.deputy-actions, .deputy-panel-actions)
+  > .deputy-motion {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deputy-panda,
+  .deputy-panda *,
+  .panda-body,
+  .panda-head,
+  .panda-eye,
+  .pupil,
+  .panda-arm-left,
+  .panda-arm-right,
+  .bamboo,
+  .bamboo-lean,
+  .panda-magnifier,
+  .panda-pencil,
+  .panda-key,
+  .deputy-glint,
+  .deputy-report,
+  .deputy-best,
+  .deputy-weak,
+  .deputy-offer,
+  .deputy-approval,
+  .deputy-clipboard,
+  .deputy-shield,
+  .deputy-rank,
+  .deputy-rank-card,
+  .deputy-rank-best,
+  .deputy-rank-second,
+  .deputy-rank-third,
+  .deputy-rank-rule,
+  .deputy-page,
+  .deputy-page-line,
+  .deputy-clock,
+  .deputy-clock-hand,
+  .deputy-tick,
+  .deputy-tick-1,
+  .deputy-tick-2,
+  .deputy-tick-3,
+  .deputy-pen,
+  .deputy-form,
+  .deputy-fill-value,
+  .deputy-fill-value-1,
+  .deputy-fill-value-2,
+  .deputy-fill-value-3,
+  .deputy-fill-tick,
+  .deputy-fill-tick-1,
+  .deputy-fill-tick-2,
+  .deputy-fill-tick-3,
+  .deputy-envelope,
+  .deputy-ticket,
+  .panda-ear,
+  .ear-left,
+  .ear-right,
+  .deputy-check,
+  .deputy-copy,
+  .deputy-copy-front,
+  .deputy-archive,
+  .deputy-archive-card,
+  .deputy-drop,
+  .deputy-drop-card,
+  .deputy-help,
+  .deputy-card,
+  .deputy-hourglass,
+  .deputy-pointer,
+  .deputy-tour-pointer,
+  .deputy-test,
+  .deputy-test-tick,
+  .deputy-test-tick-1,
+  .deputy-test-tick-2,
+  .deputy-test-tick-3,
+  .deputy-letter,
+  .deputy-approval-check,
+  .deputy-duty-dot,
+  .deputy-speech,
+  .deputy-activity-toggle,
+  .deputy-motion,
+  .deputy-panel-action,
+  .deputy-activity-list a {
+    /* biome-ignore lint/complexity/noImportantStyles: the reduced-motion reset must beat every state animation */
+    animation: none !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced-motion poses swap instantly */
+    transition: none !important;
+  }
+
+  /* With reduced motion there is nothing to pause. */
+  [data-deputy] .deputy-motion {
+    /* biome-ignore lint/complexity/noImportantStyles: the control must stay hidden whatever the size rule */
+    display: none !important;
+  }
+
+  [data-deputy][data-deputy-state="pending"] .deputy-duty-dot {
+    width: 7px;
+    height: 7px;
+    border: 0;
+    background: var(--green);
+    box-shadow: 0 0 0 4px var(--green-wash);
+  }
+
+  [data-deputy][data-deputy-state="pending"] [data-deputy-duty]::after {
+    content: "…";
+  }
+}
+
+/* Boot without flicker (round 7, R10-1). Each page paints its static markup before deputy.js has
+   drawn the panda and marked the host ready, so while scripting is enabled the dock has its final
+   layout from the first paint: the art box keeps its size (the dock grew 155px at 1440 and 61px in
+   the rail), Pause motion keeps its place beside Activity, and the phone chip lays its Activity
+   toggle over itself (the app bar was 10px taller, so main moved on every page). Without
+   scripting the round 3 rule stands: an empty art box takes no room. */
+@media (scripting: enabled) {
+  .deputy-dock .deputy-art:empty,
+  .deputy-scene .deputy-art:empty {
+    display: block;
+  }
+}
+
+@media (scripting: enabled) and (min-width: 1101px) {
+  .deputy-dock:not([data-deputy-size]):not([data-deputy-ready]) .deputy-actions > .deputy-motion {
+    display: flex;
+  }
+}
+
+@media (scripting: enabled) and (max-width: 720px) {
+  .deputy-dock:not([data-deputy-size]):not([data-deputy-ready]) .deputy-actions,
+  .deputy-dock:not([data-deputy-size]):not([data-deputy-ready]) .deputy-activity {
+    position: static;
+  }
+
+  .deputy-dock:not([data-deputy-size]):not([data-deputy-ready]) .deputy-activity-toggle {
+    position: absolute;
+    z-index: 1;
+    inset: -1px;
+    justify-content: flex-end;
+    padding: 0 9px;
+    border-color: transparent;
+    border-radius: 999px;
+    color: transparent;
+    background: transparent;
+  }
+}
+
+/* The rail's duty label keeps two lines, so a moment's shorter duty ("Joining you") never makes the
+   medallion jump. */
+@media (min-width: 721px) and (max-width: 1100px) {
+  .deputy-dock:not([data-deputy-size]) .deputy-duty [data-deputy-duty] {
+    min-height: 2lh;
+  }
+}
+
+.deputy-dock[data-deputy-size="rail"] .deputy-duty [data-deputy-duty] {
+  min-height: 2lh;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deputy-dock:not([data-deputy-ready]) .deputy-actions > .deputy-motion {
+    /* biome-ignore lint/complexity/noImportantStyles: with reduced motion there is nothing to pause, before the script runs too */
+    display: none !important;
+  }
+}
+
+/* See all activity (round 7, SE1): the panel's way to the whole trail, Settings, Activity. A 44px
+   link in the shared link look. */
+.deputy-activity-more {
+  margin: 8px 0 13px;
+}
+
+.deputy-activity-all {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 680;
+  text-decoration: underline;
+  text-decoration-color: var(--green-line);
+  text-underline-offset: 3px;
+}
+
+.deputy-activity-all:hover {
+  text-decoration-color: currentColor;
+}
+
+.deputy-activity-all:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
+/* A moment's host (round 7, G3: data-deputy-moment, the signing moment): a 150px art box for the
+   panda, sized by --deputy-panda, the page placing it. */
+[data-deputy-moment] > .deputy-art[data-deputy-art] {
+  --deputy-panda: 150px;
+  --deputy-panda-x: 0px;
+  --deputy-panda-y: 0px;
+  width: 150px;
+  height: 150px;
+}

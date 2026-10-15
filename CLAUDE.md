@@ -18,6 +18,9 @@ JobDeputy discovers jobs from any URL a user gives, keeps the relevant ones, and
 | How a feature flows end to end (sequence diagrams, where data is stored) | [docs/flows/](docs/flows/crawl.md): crawl (T06, T07), relevance (T08) |
 | Tables, attributes, and S3 paths | [docs/data-model.md](docs/data-model.md) |
 | What to test where, and rules against flaky tests | [docs/testing.md](docs/testing.md) |
+| UI typography, colors, motion, panda behavior, and loading | [docs/design-system.md](docs/design-system.md) |
+| Locked composition and continuity rules for every product page | [docs/ui-foundation.md](docs/ui-foundation.md) |
+| Required workflow for building a UI feature | [agent-sops/build-jobdeputy-ui.sop.md](agent-sops/build-jobdeputy-ui.sop.md) |
 | What to do when an alarm fires; deleting an account; changing crawl limits | [docs/runbooks/](docs/runbooks/alarms.md) |
 | Agreed decisions (do not re-litigate) | [docs/decisions/](docs/decisions/README.md) |
 | Contribution and branch rules | [CONTRIBUTING.md](CONTRIBUTING.md) |
@@ -46,6 +49,13 @@ Do not design ahead of the task that needs it. For example, the crawler's archit
 - **Accounts are deleted only through `DELETE /me` or `scripts/request-account-deletion.sh`**, never in the Cognito console, so no data is orphaned ([runbook](docs/runbooks/account-deletion.md)). Every new table keyed by `userId` must be added to the deletion list in `infra/lib/cell-stack.ts` (an infra test enforces it).
 - **Flow changes are documented in the same PR:** update the feature's diagram in `docs/flows/` when a PR changes how the parts connect or where data is stored.
 - **Schema changes are documented in the same PR:** update [docs/data-model.md](docs/data-model.md) and its change log whenever an attribute, item kind, or S3 path changes. New tables or key changes need a decision record ([0006](docs/decisions/0006-data-model.md)).
+- **Every UI change follows the locked foundation, design system, and UI SOP:** read
+  [docs/ui-foundation.md](docs/ui-foundation.md) and
+  [docs/design-system.md](docs/design-system.md), then execute
+  [agent-sops/build-jobdeputy-ui.sop.md](agent-sops/build-jobdeputy-ui.sop.md). Reuse the approved
+  identity, shell, tokens, opening loader, interaction primitives, and named panda states instead of
+  inventing page-specific styling. Do not change the locked foundation without explicit user
+  approval in the current task.
 
 ## Stack
 

@@ -1,0 +1,2704 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="JobDeputy Purchases, in Settings: your runs and tokens and how long they last, one quick buy of runs, AI credits at AWS prices, or bundles, every receipt, bonus credits from friends, and support for JobDeputy. Sample prices; nothing is charged."
+    />
+    <title>JobDeputy · Settings · Purchases</title>
+    <link rel="icon" href="./jobdeputy-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./app-chrome.css" />
+    <link rel="stylesheet" href="./app-components.css" />
+    <link rel="stylesheet" href="./deputy.css" />
+    <link rel="expect" href="#first-view" blocking="render" />
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #1b1a18;
+        --ink-soft: #2d2b27;
+        --muted: #706d66;
+        --quiet: #98948b;
+        --paper: #faf8f3;
+        --paper-deep: #f0ece3;
+        --surface: rgba(255, 255, 255, 0.82);
+        --surface-strong: rgba(255, 255, 255, 0.92);
+        --header-surface: rgba(250, 248, 243, 0.82);
+        --line: rgba(27, 26, 24, 0.12);
+        --line-soft: rgba(27, 26, 24, 0.08);
+        --line-strong: rgba(27, 26, 24, 0.24);
+        --green: #2f9e77;
+        --green-soft: #ccebdc;
+        --green-wash: rgba(204, 235, 220, 0.55);
+        --green-line: rgba(47, 158, 119, 0.36);
+        --green-ink: #23795b;
+        --orange: #f36b3f;
+        --orange-soft: #ffd5c6;
+        --danger-ink: #9c4028;
+        --blue: #526fe5;
+        --blue-soft: #d9def8;
+        --on-ink-muted: rgba(255, 255, 255, 0.68);
+        --shadow: 0 21px 55px rgba(55, 48, 36, 0.07);
+        --shadow-control: 0 10px 21px rgba(27, 26, 24, 0.15);
+        --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+        --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+        --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+        --font-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+        font-family: var(--font-text);
+        font-synthesis: none;
+      }
+
+      /*
+       * Shared chrome lives in ./app-chrome.css and the shared components (the ring meters, the
+       * choice cards, the segmented choice, the feedback panel, the filter bar, the pagination, the
+       * data table, the empty state, and the sample note) in ./app-components.css. The rules below
+       * are Purchases' layout and its few page-only pieces, all prefixed .shop-. Round 7 (SE3):
+       * balances first, then one quick buy, then every receipt.
+       */
+
+      html {
+        min-height: 100%;
+        scroll-behavior: smooth;
+        background: var(--paper);
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        overflow-x: clip;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 9% 4%, var(--surface-strong), transparent 27rem),
+          radial-gradient(
+            circle at 92% 18%,
+            color-mix(in srgb, var(--blue-soft) 30%, transparent),
+            transparent 23rem
+          ),
+          var(--paper);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      button,
+      a {
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      p {
+        margin-top: 0;
+      }
+
+      .shop-sprite {
+        position: absolute;
+        width: 0;
+        height: 0;
+        overflow: hidden;
+      }
+
+      .shop-layout {
+        display: grid;
+        gap: 34px;
+      }
+
+      .shop-surface {
+        position: relative;
+        min-width: 0;
+        container: shop-surface / inline-size;
+      }
+
+      /* Round 4's and round 6's anchors mark the top of the section each one now lands on, so
+         every old link still arrives there. */
+      .shop-anchor {
+        position: absolute;
+        inset-block-start: 0;
+        inset-inline-start: 0;
+      }
+
+      .shop-head {
+        display: grid;
+        margin-bottom: 21px;
+      }
+
+      /* T3-25: arriving on the quick buy from another page, PL's Back link starts the Buy label's
+         line, as it starts the intro's eyebrow line: a flex line, centred, so its 44px target
+         reaches over the line and adding it moves nothing. */
+      #buy > .shop-head > .section-label {
+        display: flex;
+        align-items: center;
+      }
+
+      .shop-head h2 {
+        margin-bottom: 0;
+      }
+
+      /* A head with a 55px icon beside the label and the heading. */
+      .shop-head.has-icon {
+        grid-template-columns: 55px minmax(0, 1fr);
+        gap: 0 21px;
+        align-items: center;
+      }
+
+      .shop-icon {
+        display: inline-grid;
+        width: 55px;
+        height: 55px;
+        border-radius: 50%;
+        place-items: center;
+        color: var(--green-ink);
+        background: var(--green-wash);
+      }
+
+      .shop-icon svg {
+        width: 24px;
+        height: 24px;
+      }
+
+      .shop-copy {
+        max-width: 610px;
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+        text-wrap: pretty;
+      }
+
+      .shop-head .shop-copy {
+        margin-top: 13px;
+      }
+
+      /* Two surfaces side by side from 760px of row (the rail at 1024px and wider screens), so a
+         tablet in portrait gives each its full width. */
+      .shop-pair {
+        min-width: 0;
+        container: shop-pair / inline-size;
+      }
+
+      .shop-pair-grid {
+        display: grid;
+        gap: 34px;
+        align-items: start;
+      }
+
+      @container shop-pair (min-width: 760px) {
+        .shop-pair-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      /* ---------------------------------------------------------------- balances */
+
+      /* The runs ring and the tokens ring side by side from 560px of surface, then the runway. */
+      .shop-balances {
+        display: grid;
+        gap: 34px;
+        align-items: start;
+      }
+
+      @container shop-surface (min-width: 560px) {
+        .shop-balances {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      .shop-runs-split.is-empty {
+        visibility: hidden;
+      }
+
+      /* The balances' order: the head, the rings, then the runway; on a phone the runway comes
+         first as the one-line balance, and the rings fold (closed on load, opened from here). */
+      #nightly {
+        display: grid;
+        align-content: start;
+      }
+
+      .shop-rings-toggle {
+        display: none;
+      }
+
+      @media (max-width: 720px) {
+        #nightly > .shop-head {
+          order: -2;
+        }
+
+        #nightly > .shop-runway {
+          order: -1;
+          margin: 0 0 8px;
+          padding: 0;
+          border-top: 0;
+        }
+
+        .shop-rings-toggle {
+          display: inline-flex;
+        }
+
+        .shop-rings[open] > .shop-balances {
+          margin-top: 13px;
+        }
+      }
+
+      .shop-tokens {
+        min-width: 0;
+        --skeleton-min: 246px;
+      }
+
+      .shop-runway {
+        min-width: 0;
+        margin-top: 21px;
+        padding-top: 21px;
+        border-top: 1px solid var(--line);
+        --skeleton-min: 44px;
+      }
+
+
+      /* ---------------------------------------------------------------- one quick buy */
+
+      .shop-chooser {
+        display: grid;
+        min-width: 0;
+        gap: 21px;
+        justify-items: start;
+      }
+
+      .shop-picks {
+        width: 100%;
+        max-width: 720px;
+      }
+
+      .shop-picks[hidden] {
+        display: none;
+      }
+
+      /* A pack: its figure and unit, what it adds, and why it is the pick; the price at the end. */
+      .shop-pick .choice-card-label {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 8px;
+        align-items: baseline;
+      }
+
+      .shop-pick-figure {
+        font-variant-numeric: tabular-nums;
+      }
+
+      .shop-pick-tag {
+        align-self: center;
+      }
+
+      /* On the chosen card's green-soft fill the pill keeps a light ground, so its green-ink words
+         keep AA (5.3:1 on surface-strong). */
+      .shop-pick:has(input:checked) .shop-pick-tag {
+        background: var(--surface-strong);
+      }
+
+      .shop-pick-price {
+        display: grid;
+        gap: 2px;
+        justify-items: end;
+        color: var(--ink);
+        font-size: 15px;
+        font-weight: 700;
+        line-height: 1.35;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      .shop-pick-was,
+      .shop-pick-save {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 400;
+        line-height: 1.4;
+      }
+
+      .shop-pick:has(input:checked) .shop-pick-was,
+      .shop-pick:has(input:checked) .shop-pick-save {
+        color: var(--ink-soft);
+      }
+
+      /* The AI credits balance and the bundle rule: one line under their packs. */
+      .shop-balance {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 13px;
+        margin: 0;
+        align-items: center;
+        color: var(--ink-soft);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      .shop-balance[hidden] {
+        display: none;
+      }
+
+      .shop-balance strong {
+        color: var(--ink);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .shop-balance-paused {
+        color: var(--ink);
+        font-weight: 650;
+      }
+
+      .shop-offer {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .shop-buy-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 13px 21px;
+        align-items: center;
+      }
+
+      @container shop-surface (max-width: 420px) {
+        .shop-buy-actions,
+        .shop-buy-actions .primary-action {
+          width: 100%;
+        }
+      }
+
+      /* A fold: How prices are made, and Supporter benefits. */
+      .shop-fold {
+        margin-top: 21px;
+        padding-top: 13px;
+        border-top: 1px solid var(--line);
+      }
+
+      .shop-fold-toggle {
+        display: inline-flex;
+        min-height: 44px;
+        gap: 8px;
+        align-items: center;
+        cursor: pointer;
+        color: var(--ink);
+        font-size: 15px;
+        font-weight: 700;
+        list-style: none;
+      }
+
+      .shop-fold-toggle::-webkit-details-marker {
+        display: none;
+      }
+
+      .shop-fold-toggle::after {
+        color: var(--ink-soft);
+        content: "+" / "";
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .shop-fold[open] > .shop-fold-toggle::after {
+        content: "−" / "";
+      }
+
+      .shop-fold-toggle:focus-visible {
+        border-radius: 11px;
+        outline: 2px solid var(--green);
+        outline-offset: 3px;
+      }
+
+      /* How prices are made (P-10): the sum, then its facts. */
+      .shop-prices {
+        display: grid;
+        min-width: 0;
+        max-width: 720px;
+        gap: 13px;
+        margin-top: 8px;
+      }
+
+      .shop-price-sum {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 0;
+        align-items: center;
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 650;
+        line-height: 1.35;
+      }
+
+      .shop-price-term {
+        padding: 4px 10px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--surface-strong);
+      }
+
+      .shop-price-term.is-ours {
+        border-color: var(--green);
+        color: var(--green-ink);
+      }
+
+      .shop-price-op {
+        color: var(--muted);
+      }
+
+      .shop-prices-copy {
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .shop-prices-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 13px;
+        margin: 0;
+        align-items: center;
+      }
+
+      .shop-foot {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 13px 21px;
+        margin: 21px 0 0;
+        align-items: center;
+      }
+
+      /* ---------------------------------------------------------------- receipts */
+
+      .shop-receipts-filters {
+        margin-bottom: 13px;
+      }
+
+      .shop-receipts-totals {
+        margin: 0 0 13px;
+        color: var(--ink-soft);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .shop-receipts-list {
+        min-width: 0;
+        container: shop-receipts / inline-size;
+      }
+
+      .shop-receipts-list:empty {
+        display: none;
+      }
+
+      .shop-receipt-number {
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      .shop-receipts-list .data-table td.is-number {
+        font-variant-numeric: tabular-nums;
+        text-align: end;
+        white-space: nowrap;
+      }
+
+      .shop-receipts-list .data-table td.is-nowrap {
+        white-space: nowrap;
+      }
+
+      .shop-receipt-what {
+        min-width: 180px;
+      }
+
+      /* Receipts on a phone (T2-17): compact rows instead of the stacked table, two lines and View
+         each; the table where there is room. */
+      .shop-receipt-rows {
+        display: none;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      @container shop-receipts (max-width: 599px) {
+        .shop-receipts-list > .data-table-wrap {
+          display: none;
+        }
+
+        .shop-receipt-rows {
+          display: grid;
+        }
+      }
+
+      .shop-receipt-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 2px 13px;
+        padding: 8px 0;
+        border-top: 1px solid var(--line);
+        align-items: center;
+      }
+
+      .shop-receipt-row:last-child {
+        border-bottom: 1px solid var(--line);
+      }
+
+      .shop-receipt-row-top {
+        display: flex;
+        grid-column: 1;
+        flex-wrap: wrap;
+        gap: 2px 13px;
+        margin: 0;
+        justify-content: space-between;
+        color: var(--ink);
+        font-size: 15px;
+        line-height: 1.4;
+      }
+
+      .shop-receipt-row-total {
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      .shop-receipt-row-meta {
+        grid-column: 1;
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .shop-receipt-row-meta > span {
+        white-space: nowrap;
+      }
+
+      .shop-receipt-row > .compact-action {
+        grid-row: 1 / span 2;
+        grid-column: 2;
+      }
+
+      .shop-receipts-empty[hidden] {
+        display: none;
+      }
+
+      /* ---------------------------------------------------------------- bonus and support */
+
+      /* Bonus from friends (P-24): one line with Invite friends, beside the copy from 720px of
+         surface. */
+      .shop-bonus-line.task-surface {
+        padding-block: 21px;
+      }
+
+      .shop-bonus {
+        display: grid;
+        grid-template-columns: 55px minmax(0, 1fr);
+        gap: 13px 21px;
+        align-items: center;
+      }
+
+      .shop-bonus-copy {
+        display: grid;
+        min-width: 0;
+        gap: 2px;
+      }
+
+      .shop-bonus-copy > p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      /* A one-line card names itself in its title line, not with a section's display heading. */
+      .shop-bonus-copy > .shop-bonus-title {
+        color: var(--ink);
+        font-weight: 700;
+        line-height: 1.35;
+      }
+
+      .shop-bonus-actions {
+        display: flex;
+        grid-column: 1 / -1;
+        flex-wrap: wrap;
+        gap: 13px 21px;
+        margin: 0;
+        align-items: center;
+      }
+
+      @container shop-surface (min-width: 720px) {
+        .shop-bonus {
+          grid-template-columns: 55px minmax(0, 1fr) auto;
+        }
+
+        .shop-bonus-actions {
+          grid-column: auto;
+        }
+      }
+
+      /* Support JobDeputy: once or monthly, then Count me in; the list choice once you are in. */
+      .shop-support {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 13px 21px;
+        margin-top: 21px;
+        align-items: center;
+      }
+
+      .shop-support .feedback-error {
+        flex-basis: 100%;
+        margin: 0;
+      }
+
+      .shop-listing {
+        display: grid;
+        min-width: 0;
+        gap: 13px;
+        margin: 21px 0 0;
+        padding: 0;
+        border: 0;
+      }
+
+      .shop-listing-status {
+        margin: 0;
+        color: var(--ink);
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      .shop-benefits-title .status-pill {
+        margin-inline-start: 4px;
+      }
+
+      .shop-benefit-list {
+        display: grid;
+        gap: 4px;
+        margin: 8px 0 0;
+        padding: 0 0 0 21px;
+        color: var(--ink);
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      .shop-tax {
+        margin-top: 13px;
+      }
+
+      .shop-surface > .feedback-panel {
+        margin-top: 21px;
+      }
+
+      @media (forced-colors: active) {
+        .shop-icon {
+          border: 1px solid CanvasText;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#page-title">Skip to Purchases</a>
+
+    <header class="app-header">
+      <a class="brand" href="./home-preview.html?skipLoader" aria-label="JobDeputy dashboard">
+        <img
+          class="brand-logo"
+          src="./jobdeputy-mark.svg"
+          alt=""
+          width="400"
+          height="290"
+        />
+        <span class="brand-copy">
+          <span class="brand-name"><span>Job</span><span>Deputy</span></span>
+          <span class="brand-note">Your search partner</span>
+        </span>
+      </a>
+      <div class="header-actions">
+        <!-- HeaderActions: start -->
+        <button class="header-action header-feedback" type="button" data-feedback-open aria-haspopup="dialog" data-tip="Send feedback">
+          <svg class="header-action-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5.75 4.75h12.5c1.1 0 2 .9 2 2v8c0 1.1-.9 2-2 2h-6.5l-4.25 3.5v-3.5H5.75c-1.1 0-2-.9-2-2v-8c0-1.1.9-2 2-2Z" /><path d="M8.25 9.25h7.5M8.25 12.5h4.5" /></svg>
+          <span class="header-action-label">Feedback</span>
+        </button>
+        <a class="header-action header-invite" href="./invite-preview.html" data-tip="Invite friends">
+          <svg class="header-action-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.75" y="8.25" width="16.5" height="4" rx="1" /><path d="M5.25 12.25v6.5c0 .55.45 1 1 1h11.5c.55 0 1-.45 1-1v-6.5" /><path d="M12 8.25v11.5" /><path d="M12 8.25c-2.25 0-4.25-.75-4.25-2.25 0-1 .75-1.75 1.75-1.75 1.75 0 2.5 2 2.5 4Zm0 0c2.25 0 4.25-.75 4.25-2.25 0-1-.75-1.75-1.75-1.75-1.75 0-2.5 2-2.5 4Z" /></svg>
+          <span class="header-action-label">Invite friends</span>
+        </a>
+        <!-- HeaderActions: end -->
+        <details class="account-menu">
+          <summary class="account-link" aria-label="Alex Morgan, Free access, account menu">
+            <span class="account-avatar">
+              <img src="./profile-avatar.svg" alt="" width="160" height="160" />
+            </span>
+            <span class="account-copy">
+              <strong>Alex Morgan</strong>
+              <span>Free access</span>
+            </span>
+          </summary>
+          <nav class="account-popover" aria-label="Account">
+            <span class="account-popover-status">
+              <span data-account-credits>339,100 tokens of AI credits left</span>
+            </span>
+            <a href="./profile-preview.html">Profile</a>
+            <a href="./account-preview.html">Settings</a>
+            <a href="./ai-preview.html">AI &amp; credits</a>
+            <a href="./shop-preview.html">Purchases</a>
+            <a href="./invite-preview.html">Invite friends</a>
+            <a href="./trust-preview.html#help">Help &amp; support</a>
+            <button class="account-popover-action" type="button" data-tour-open hidden>Show me around</button>
+            <button class="account-popover-action" type="button" data-feedback-open aria-haspopup="dialog">Send feedback</button>
+            <a class="account-signout" href="./login-preview.html?skipLoader">Sign out</a>
+          </nav>
+        </details>
+      </div>
+    </header>
+
+    <div class="app-frame">
+      <div class="app-sidebar" id="app-sidebar">
+        <div class="app-menu">
+          <button
+            class="compact-action app-menu-toggle"
+            id="app-menu-toggle"
+            type="button"
+            aria-expanded="true"
+            aria-controls="app-nav"
+            hidden
+          >
+            <svg class="app-menu-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+            <span class="app-menu-text">Menu<span class="app-menu-current"> · Settings</span></span>
+          </button>
+        </div>
+        <!-- AppNav: start -->
+        <nav class="app-nav" id="app-nav" aria-label="Primary">
+          <ul class="app-nav-list">
+            <li>
+              <a class="app-nav-link" href="./home-preview.html?skipLoader">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.75 10.5 12 3.75l8.25 6.75" /><path d="M5.75 9v10.5h12.5V9" /><path d="M10 19.5v-5h4v5" /></svg>
+                <span class="app-nav-label">Dashboard</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./searches-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.25" /><path d="m15.25 15.25 4.75 4.75" /></svg>
+                <span class="app-nav-label">Searches</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./jobs-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="7.25" width="17" height="12.5" rx="2" /><path d="M8.75 7.25V5.5c0-.83.67-1.5 1.5-1.5h3.5c.83 0 1.5.67 1.5 1.5v1.75" /><path d="M3.5 12.5h17" /></svg>
+                <span class="app-nav-label">Job matches</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./applications-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.75" y="4.25" width="4.5" height="11.5" rx="1.25" /><rect x="9.75" y="4.25" width="4.5" height="15.5" rx="1.25" /><rect x="15.75" y="4.25" width="4.5" height="8" rx="1.25" /></svg>
+                <span class="app-nav-label">Applications</span>
+                <span class="app-nav-count is-attention">3<span class="sr-only"> need you</span></span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./documents-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.75 3.75h-6.5c-.97 0-1.75.78-1.75 1.75v13c0 .97.78 1.75 1.75 1.75h9.5c.97 0 1.75-.78 1.75-1.75V8.25Z" /><path d="M13.75 3.75v4.5h4.5" /><path d="M8.75 12.25h6.5M8.75 15.75h6.5" /></svg>
+                <span class="app-nav-label">Résumés</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./profile-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="8.25" r="3.75" /><path d="M4.75 20c.6-3.75 3.4-6 7.25-6s6.65 2.25 7.25 6" /></svg>
+                <span class="app-nav-label">Profile</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./account-preview.html" aria-current="true">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9.88 5.85L10.48 3.38L13.52 3.38L14.12 5.85L16.26 7.09L18.7 6.38L20.22 9.01L18.38 10.76L18.38 13.24L20.22 14.99L18.7 17.62L16.26 16.91L14.12 18.15L13.52 20.62L10.48 20.62L9.88 18.15L7.74 16.91L5.3 17.62L3.78 14.99L5.62 13.24L5.62 10.76L3.78 9.01L5.3 6.38L7.74 7.09Z" /><circle cx="12" cy="12" r="3" /></svg>
+                <span class="app-nav-label">Settings</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./trust-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.75" /><path d="M9.6 9.6a2.5 2.5 0 1 1 3.3 2.36c-.53.2-.9.7-.9 1.27v.52" /><path d="M12 16.75h.01" /></svg>
+                <span class="app-nav-label">Help</span>
+              </a>
+            </li>
+          </ul>
+        </nav>
+        <!-- AppNav: end -->
+        <div class="app-sidebar-deputy">
+          <!-- DeputyDock: start -->
+          <aside
+            class="deputy-dock"
+            id="deputy-dock"
+            aria-labelledby="deputy-dock-title"
+            data-deputy
+            data-deputy-page="shop"
+            data-deputy-state="idle"
+          >
+            <h2 class="sr-only" id="deputy-dock-title">Your deputy</h2>
+            <div class="deputy-art" data-deputy-art aria-hidden="true"></div>
+            <p class="deputy-speech" data-deputy-speech>Here when you need me.</p>
+            <p class="deputy-duty"><span class="deputy-duty-dot" aria-hidden="true"></span><span data-deputy-duty>Ready</span></p>
+            <div class="deputy-actions">
+              <details class="deputy-activity">
+                <summary class="deputy-activity-toggle">Activity</summary>
+                <!-- biome-ignore lint/a11y/useSemanticElements: the panel groups links and lists, not form controls, so a fieldset would be wrong -->
+                <div class="deputy-activity-panel" role="group" aria-labelledby="deputy-activity-title">
+                  <p class="deputy-activity-title" id="deputy-activity-title">What your deputy is doing</p>
+                  <h3 class="deputy-activity-label">Now</h3>
+                  <ul class="deputy-activity-list">
+                    <li>Searching Amazon Jobs</li>
+                  </ul>
+                  <h3 class="deputy-activity-label">Needs you</h3>
+                  <ul class="deputy-activity-list">
+                    <li>
+                      <a href="./materials-preview.html?app=search-infra&amp;from=applications"
+                        >Approve materials for Search Infrastructure (Google)</a
+                      >
+                    </li>
+                    <li><a href="./applications-preview.html?open=amazon-sde2">Follow up with Amazon</a></li>
+                    <li><a href="./searches-preview.html?source=acme">Fix the Acme source</a></li>
+                  </ul>
+                  <h3 class="deputy-activity-label">Done recently</h3>
+                  <ul class="deputy-activity-list">
+                    <li>Tailored a résumé and cover letter for Cloud Reliability · Oct 2</li>
+                    <li>Checked Google Careers: no new roles · Oct 2</li>
+                    <li>Saved 7 new roles from Google Careers · Oct 1</li>
+                  </ul>
+                  <p class="sample-note">Sample data · not connected</p>
+                </div>
+              </details>
+              <button class="deputy-motion" type="button" data-deputy-motion>Pause motion</button>
+            </div>
+            <p class="sr-only" data-deputy-announce role="status"></p>
+          </aside>
+          <!-- DeputyDock: end -->
+        </div>
+      </div>
+      <main class="app-main" id="main">
+      <!-- Line icons for this page: 24 viewBox, currentColor, 1.75 stroke. -->
+      <svg class="shop-sprite" aria-hidden="true" focusable="false">
+        <defs>
+          <symbol id="shop-icon-gift" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3.75" y="8.25" width="16.5" height="4" rx="1" />
+            <path d="M5.25 12.25v6.5c0 .55.45 1 1 1h11.5c.55 0 1-.45 1-1v-6.5" />
+            <path d="M12 8.25v11.5" />
+            <path d="M12 8.25c-2.25 0-4.25-.75-4.25-2.25 0-1 .75-1.75 1.75-1.75 1.75 0 2.5 2 2.5 4Zm0 0c2.25 0 4.25-.75 4.25-2.25 0-1-.75-1.75-1.75-1.75-1.75 0-2.5 2-2.5 4Z" />
+          </symbol>
+          <symbol id="shop-icon-heart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 19.75s-7.25-4.4-7.25-9.6A4.15 4.15 0 0 1 12 7.6a4.15 4.15 0 0 1 7.25 2.55c0 5.2-7.25 9.6-7.25 9.6Z" />
+          </symbol>
+        </defs>
+      </svg>
+      <div class="page-shell">
+        <section class="page-intro shop-intro" aria-labelledby="page-title" data-page-back>
+          <div class="page-intro-copy">
+            <p class="eyebrow">Settings</p>
+            <h1 id="page-title">Purchases.</h1>
+            <p class="intro-copy">Your balances, one quick buy, and every receipt.</p>
+          </div>
+          <div class="page-intro-actions">
+            <button type="button" class="secondary-action page-tour" data-tour-open hidden>Take the tour</button>
+          </div>
+        </section>
+
+        <!-- SettingsTabs: start -->
+        <nav class="settings-tabs" aria-label="Settings">
+          <ul class="settings-tabs-list">
+            <li><a class="settings-tab" href="./account-preview.html">Account</a></li>
+            <li><a class="settings-tab" href="./connections-preview.html">Connections</a></li>
+            <li><a class="settings-tab" href="./prompts-preview.html">Prompts</a></li>
+            <li><a class="settings-tab" href="./ai-preview.html">AI &amp; credits</a></li>
+            <li><a class="settings-tab" href="./usage-preview.html">Usage</a></li>
+            <li><a class="settings-tab" href="./shop-preview.html" aria-current="page">Purchases</a></li>
+            <li><a class="settings-tab" href="./activity-preview.html">Activity</a></li>
+          </ul>
+        </nav>
+        <!-- SettingsTabs: end -->
+
+        <div class="shop-layout">
+          <!-- Balances (round 7, SE3): what you have, first. The runs ring (the Runs allowance's
+               home since round 6, part 2, N3) and the tokens ring for the payer in use (PL's
+               allowanceRings), then the runway (PL's runwayLine, from JobDeputyStore.runway()):
+               how long they last at your settings and what uses them a day. Round 4's #runs and
+               #watch, round 6's #balances, and AI & credits' old #watch land here. -->
+          <section class="task-surface shop-surface" id="nightly" aria-labelledby="shop-balances-title">
+            <span class="shop-anchor" id="balances"></span>
+            <span class="shop-anchor" id="runs"></span>
+            <span class="shop-anchor" id="watch"></span>
+            <div class="shop-head">
+              <p class="section-label">Balances</p>
+              <h2 id="shop-balances-title">What you have.</h2>
+              <p class="shop-copy">Every search, Keep watch check, Gmail scan, and daily email uses one run. AI work uses tokens.</p>
+            </div>
+            <!-- On a phone the runway line is the one-line balance and the rings fold under it, so
+                 the quick buy is in reach (the testers' phone pass); open where there is room. -->
+            <details class="shop-rings" id="shop-rings" open>
+              <summary class="shop-fold-toggle shop-rings-toggle">Your runs and tokens in detail</summary>
+              <div class="shop-balances">
+                <div
+                  class="allowance is-ring is-attention"
+                  id="shop-meter-runs"
+                  data-meter-kind="watch"
+                  data-tour-step="1"
+                  data-tour-title="These are your runs."
+                  data-tour-text="I use one run for every search, Keep watch check, Gmail scan, and daily email. Hatched grey is used and indigo is left, free runs and any you bought."
+                >
+                  <p class="allowance-label">Runs this month</p>
+                  <div class="allowance-ring">
+                    <span class="allowance-part" data-part="used" style="--count: 6" data-tip-title="6 used" data-tip="Runs used this month: your searches, Keep watch, Gmail’s scans, and the daily email."></span>
+                    <span class="allowance-part" data-part="left" style="--count: 4" data-tip-title="4 of 10 left" data-tip="Runs left this month, free ones and any you bought; the free 10 return on Sun, Nov 1."></span>
+                    <p class="allowance-ring-centre"><span class="allowance-ring-figure" data-metric="runs.left">4</span> <span class="allowance-ring-unit">of <span data-metric="runs.all">10</span> left</span></p>
+                  </div>
+                  <ul class="allowance-key">
+                    <li class="allowance-key-item" data-part="left"><span id="shop-runs-key-left">4 left</span></li>
+                    <li class="allowance-key-item" data-part="used"><span><strong data-metric="runs.used">6</strong> used</span></li>
+                  </ul>
+                  <p class="allowance-note shop-runs-split is-empty" id="shop-runs-split"><span data-metric="runs.free">10</span> free + <span data-metric="runs.bought">0</span> bought</p>
+                  <p class="allowance-note" id="shop-runs-out" hidden></p>
+                  <p class="allowance-note" id="shop-runs-who"><span data-metric="runs.byYou">2</span> started by you, <span data-metric="runs.byDeputy">4</span> by your deputy</p>
+                  <div class="allowance-action">
+                    <a class="chart-action" href="./searches-preview.html#keep-watch">Keep watch<span class="sr-only">, its schedule in Searches</span></a>
+                  </div>
+                </div>
+                <div
+                  class="shop-tokens"
+                  id="shop-tokens"
+                  data-skeleton="block"
+                  data-tour-step="2"
+                  data-tour-title="These are your tokens."
+                  data-tour-text="I count AI work in tokens: on your own key up to its limit, or on AI credits. My runway line says how long both last at your settings."
+                ></div>
+              </div>
+            </details>
+            <div class="shop-runway" id="shop-runway" data-skeleton="lines"></div>
+          </section>
+
+          <!-- One quick buy (round 7, SE3): every pack in one compact chooser (runs, AI credits, and
+               bundles, one kind at a time), a recommended pick said in words, and one Buy that opens
+               the existing checkout (JobDeputyPanels.checkout; ?checkout= still works). Bundles are a
+               kind here, so they have no section of their own (R10-3). #credits and #assist open it
+               on AI credits, #bundles on bundles. How prices are made folds under it (#prices opens
+               it; AI & credits' old #prices lands here). -->
+          <section class="task-surface shop-surface" id="buy" aria-labelledby="shop-buy-title">
+            <span class="shop-anchor" id="credits"></span>
+            <span class="shop-anchor" id="assist"></span>
+            <span class="shop-anchor" id="bundles"></span>
+            <div class="shop-head">
+              <p class="section-label">Buy</p>
+              <h2 id="shop-buy-title">Get more in one step.</h2>
+            </div>
+            <div
+              class="shop-chooser"
+              id="shop-chooser"
+              data-skeleton="block"
+              data-tour-step="3"
+              data-tour-title="I picked what you need."
+              data-tour-text="I recommend the pack that keeps everything you turned on running. Choose another kind or pack if you like; Buy opens a sample checkout, and I charge nothing."
+            >
+              <fieldset class="segmented shop-kinds" id="shop-kinds">
+                <legend class="sr-only">What to buy</legend>
+                <label class="segmented-option">
+                  <input type="radio" name="shop-kind" value="nightly" checked />
+                  <span class="segmented-label">Runs</span>
+                </label>
+                <label class="segmented-option">
+                  <input type="radio" name="shop-kind" value="credits" />
+                  <span class="segmented-label" data-term="credits">AI credits</span>
+                </label>
+                <label class="segmented-option">
+                  <input type="radio" name="shop-kind" value="bundles" />
+                  <span class="segmented-label">Bundles</span>
+                </label>
+              </fieldset>
+              <fieldset class="choice-cards shop-picks" data-shop-picks="nightly" id="shop-packs-nightly">
+                <legend class="sr-only">Run packs</legend>
+              </fieldset>
+              <fieldset class="choice-cards shop-picks" data-shop-picks="credits" id="shop-packs-credits" hidden>
+                <legend class="sr-only">AI credit packs</legend>
+              </fieldset>
+              <fieldset class="choice-cards shop-picks" data-shop-picks="bundles" id="shop-packs-bundles" hidden>
+                <legend class="sr-only">Bundles</legend>
+              </fieldset>
+              <p class="shop-balance" id="shop-credits-line" hidden>
+                <span><strong data-metric="ai.credits.left">339,100</strong> tokens left on <span data-metric="ai.model.name">Ministral 3 14B</span>, worth <span data-metric="ai.credits.value">$0.07</span>.</span>
+                <span class="shop-balance-paused" id="shop-credits-paused" hidden></span>
+                <a class="chart-action" href="./ai-preview.html#model">Change model</a>
+              </p>
+              <p class="shop-balance" id="shop-bundle-line" hidden>
+                <span data-shop-bundle-rule>25% off the runs only; AI credits always cost AWS’s rate plus our margin.</span>
+                <span class="shop-offer" data-shop-offer>Offer ends Sat, Oct 31</span>
+              </p>
+              <div class="shop-buy-actions">
+                <button class="primary-action" id="shop-buy" type="button" data-checkout="nightly-120" aria-describedby="shop-buy-note">Buy 120 runs for $9.00</button>
+                <span class="sample-note" id="shop-buy-note" data-shop-note>Sample prices · nothing is charged</span>
+              </div>
+            </div>
+            <details
+              class="shop-fold"
+              id="prices"
+              data-tour-step="4"
+              data-tour-title="Here is how prices are made."
+              data-tour-text="Our rate is AWS’s on-demand rate for your home Region plus our margin, and tax is added at checkout. I link AWS’s price list with the date we checked it."
+            >
+              <summary class="shop-fold-toggle">How prices are made</summary>
+              <div class="shop-prices">
+                <p class="shop-price-sum" id="shop-price-sum">
+                  <span class="shop-price-term">AWS’s rate</span>
+                  <span class="shop-price-op" aria-hidden="true">+</span><span class="sr-only"> plus </span>
+                  <span class="shop-price-term"><span data-metric="ai.price.marginPct">10</span>% margin</span>
+                  <span class="shop-price-op" aria-hidden="true">=</span><span class="sr-only"> makes </span>
+                  <span class="shop-price-term is-ours">Our rate</span>
+                </p>
+                <p class="shop-prices-copy" id="shop-how">AWS charges <span data-shop-aws="in" data-metric="ai.price.ministral-3-14b.awsIn">$0.20</span> a million input tokens and <span data-shop-aws="out" data-metric="ai.price.ministral-3-14b.awsOut">$0.20</span> a million output tokens for <span data-shop-model-name>Ministral 3 14B</span> in <span data-shop-region>US East (N. Virginia)</span>, your home Region. A token’s price blends the two at this month’s mix of your platform work.</p>
+                <p class="shop-prices-copy" id="shop-example">A search uses about <span data-shop-example="tokens" data-metric="ai.search.tokens">11,000</span> tokens: about <span data-shop-example="cost" data-metric="ai.price.ministral-3-14b.search">$0.0024</span> on <span data-shop-example="model">Ministral 3 14B</span>.</p>
+                <p class="shop-prices-copy">Run packs cost what they say. A bundle takes its discount off its runs only.</p>
+                <p class="shop-prices-copy" data-shop-tax>Tax is added at checkout, based on your billing address.</p>
+                <p class="shop-prices-copy">AWS’s rates: <span data-shop-source-name>Amazon Bedrock on-demand pricing, Standard tier</span>, checked <span data-metric="ai.price.checkedOn">Thu, Oct 1</span>.</p>
+                <p class="shop-prices-links">
+                  <a class="compact-action" href="https://aws.amazon.com/bedrock/pricing/" target="_blank" rel="noopener noreferrer" data-shop-source>See AWS’s prices <span aria-hidden="true">↗</span><span class="sr-only"> (opens a new tab)</span></a>
+                  <a class="chart-action" href="./ai-preview.html#model">Every model’s rates<span class="sr-only">, in AI &amp; credits</span></a>
+                </p>
+              </div>
+            </details>
+          </section>
+
+          <!-- Receipts (round 7, SE3): every payment from JobDeputyStore.receipts(), with the shared
+               filter bar (search, the time range, kind, status) that changes the list as you choose
+               (R10-7), the totals for the filter, the shared pagination (R10-6), and each receipt's
+               View with the shared preview and its Download. The usual sample has none and says so.
+               Round 6's What you bought is this list now; #purchases and #added land here. -->
+          <section class="task-surface shop-surface" id="receipts" aria-labelledby="shop-receipts-title">
+            <span class="shop-anchor" id="purchases"></span>
+            <span class="shop-anchor" id="added"></span>
+            <div
+              class="shop-head"
+              data-tour-step="5"
+              data-tour-title="I keep every receipt."
+              data-tour-text="Every payment is here with its receipt to view and download. Filter by time, kind, or status, and I total what you chose."
+            >
+              <p class="section-label">Receipts</p>
+              <h2 id="shop-receipts-title" tabindex="-1">Every payment.</h2>
+              <p class="shop-copy" id="shop-receipts-count" hidden></p>
+            </div>
+            <div class="shop-receipts-filters" id="shop-receipts-filters" hidden></div>
+            <p class="shop-receipts-totals" id="shop-receipts-totals" hidden></p>
+            <div class="shop-pager-top" id="shop-receipts-pager-top"></div>
+            <div class="shop-receipts-list" id="shop-receipts-list" data-skeleton="rows"></div>
+            <div class="shop-pager" id="shop-receipts-pager"></div>
+            <p class="shop-copy shop-receipts-empty" id="shop-receipts-empty">No payments yet. When you buy runs or AI credits, each receipt is kept here, ready to download.</p>
+            <p class="shop-foot"><span class="sample-note" data-shop-note>Sample prices · nothing is charged</span></p>
+          </section>
+
+          <div class="shop-pair">
+            <div class="shop-pair-grid">
+              <!-- Bonus from friends (P-24): one line with Invite friends; Invite friends is its home. -->
+              <section class="task-surface shop-surface shop-bonus-line" id="bonus" aria-labelledby="shop-bonus-title">
+                <div
+                  class="shop-bonus"
+                  id="shop-bonus-step"
+                  data-tour-step="6"
+                  data-tour-title="Friends earn us both credits."
+                  data-tour-text="Each friend’s first search earns you both bonus AI credits, up to 5 friends a year. I use them after your free credits."
+                >
+                  <span class="shop-icon" aria-hidden="true"><svg aria-hidden="true" focusable="false"><use href="#shop-icon-gift" /></svg></span>
+                  <div class="shop-bonus-copy">
+                    <p class="shop-bonus-title" id="shop-bonus-title">Bonus from friends</p>
+                    <p id="shop-bonus-line">A friend’s first search earns you both <span data-shop-reward>100,000</span> tokens<span data-shop-earned>; <span data-shop-who>Jordan’s search</span> earned you <span data-metric="referrals.bonus">100,000</span> so far</span>.</p>
+                  </div>
+                  <p class="shop-bonus-actions">
+                    <a class="secondary-action" href="./invite-preview.html">Invite friends</a>
+                    <span class="status-pill is-neutral">Planned for launch</span>
+                  </p>
+                </div>
+              </section>
+
+              <!-- Support JobDeputy (round 5, G5; compact in round 7): an interest only, once or
+                   monthly, never an amount; what supporters get and the tax line fold away. -->
+              <section class="task-surface shop-surface shop-support-card" id="support" aria-labelledby="shop-support-title">
+                <div class="shop-head has-icon">
+                  <span class="shop-icon" aria-hidden="true"><svg aria-hidden="true" focusable="false"><use href="#shop-icon-heart" /></svg></span>
+                  <div>
+                    <p class="section-label">Support JobDeputy</p>
+                    <h2 id="shop-support-title">Donate at launch.</h2>
+                  </div>
+                </div>
+                <p class="shop-copy">You choose the amount then.</p>
+                <form
+                  class="shop-support"
+                  id="shop-support-form"
+                  novalidate
+                  data-tour-step="7"
+                  data-tour-title="Help us when donations open."
+                  data-tour-text="Donations aren’t open yet. Choose once or monthly and Count me in, and I’ll tell you when they open. Then you can join the supporters list."
+                >
+                  <fieldset class="segmented" id="shop-cadence">
+                    <legend class="sr-only">How often</legend>
+                    <label class="segmented-option">
+                      <input type="radio" name="cadence" value="once" />
+                      <span class="segmented-label">Once</span>
+                    </label>
+                    <label class="segmented-option">
+                      <input type="radio" name="cadence" value="monthly" />
+                      <span class="segmented-label">Monthly</span>
+                    </label>
+                  </fieldset>
+                  <p class="feedback-error" id="shop-support-error" hidden>Choose once or monthly.</p>
+                  <button class="secondary-action" type="submit" id="shop-support-add">Count me in</button>
+                </form>
+                <div class="feedback-panel has-action" data-kind="success" id="shop-support-done" tabindex="-1" hidden>
+                  <span class="feedback-panel-icon" aria-hidden="true">✓</span>
+                  <span class="feedback-panel-copy">
+                    <strong class="feedback-panel-title" id="shop-support-done-title">You’re counted in.</strong>
+                    <span class="feedback-panel-message" id="shop-support-done-message">We’ll tell you when donations open.</span>
+                  </span>
+                  <button class="feedback-panel-action" type="button" id="shop-support-withdraw" aria-describedby="shop-support-done-title">Withdraw</button>
+                </div>
+                <fieldset class="shop-listing" id="shop-listing" hidden>
+                  <legend class="field-label">The supporters list</legend>
+                  <label class="choice-card">
+                    <input type="checkbox" name="listing" id="shop-listing-opt" />
+                    <span class="choice-card-control" aria-hidden="true"></span>
+                    <span class="choice-card-copy">
+                      <span class="choice-card-label">List me as a supporter</span>
+                      <span class="choice-card-meta">On our website at launch. Leave any time.</span>
+                    </span>
+                  </label>
+                  <fieldset class="choice-cards" id="shop-listing-display">
+                    <legend class="field-label">Show my name as</legend>
+                    <label class="choice-card">
+                      <input type="radio" name="display" value="full" />
+                      <span class="choice-card-control" aria-hidden="true"></span>
+                      <span class="choice-card-copy"><span class="choice-card-label" data-shop-name="full">Alex Morgan</span></span>
+                    </label>
+                    <label class="choice-card">
+                      <input type="radio" name="display" value="initial" />
+                      <span class="choice-card-control" aria-hidden="true"></span>
+                      <span class="choice-card-copy"><span class="choice-card-label" data-shop-name="initial">Alex M.</span></span>
+                    </label>
+                    <label class="choice-card">
+                      <input type="radio" name="display" value="anonymous" />
+                      <span class="choice-card-control" aria-hidden="true"></span>
+                      <span class="choice-card-copy"><span class="choice-card-label" data-shop-name="anonymous">Anonymous supporter</span></span>
+                    </label>
+                  </fieldset>
+                  <p class="shop-listing-status" id="shop-listing-status">Not on the list.</p>
+                </fieldset>
+                <details class="shop-fold shop-benefits">
+                  <summary class="shop-fold-toggle shop-benefits-title">Supporter benefits <span class="status-pill is-neutral">Planned</span></summary>
+                  <ul class="shop-benefit-list" id="shop-benefits">
+                    <li>The supporters list</li>
+                    <li>A quarterly Q&amp;A</li>
+                    <li>Early access</li>
+                    <li>A vote on what we build</li>
+                  </ul>
+                  <p class="shop-copy shop-tax" id="shop-support-note">JobDeputy isn’t a charity, so support isn’t tax deductible, and the benefits are thanks, not a purchase.</p>
+                </details>
+              </section>
+            </div>
+          </div>
+        </div>
+
+        <p class="sr-only" id="shop-status" role="status" aria-live="polite"></p>
+      </div>
+      </main>
+    </div>
+
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <div class="footer-primary">
+          <span class="footer-brand">
+            <strong>JobDeputy</strong>
+            <span>Your private workspace for finding relevant roles.</span>
+          </span>
+          <nav class="footer-nav" aria-label="Footer">
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./home-preview.html?skipLoader">Dashboard</a>
+              <a class="footer-link" href="./searches-preview.html">Searches</a>
+              <a class="footer-link" href="./jobs-preview.html">Job matches</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./applications-preview.html">Applications</a>
+              <a class="footer-link" href="./documents-preview.html">Résumés</a>
+              <a class="footer-link" href="./profile-preview.html">Profile</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./account-preview.html">Settings</a>
+              <a class="footer-link" href="./ai-preview.html">AI &amp; credits</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./shop-preview.html">Purchases</a>
+              <a class="footer-link" href="./invite-preview.html">Invite friends</a>
+            </span>
+          </nav>
+        </div>
+        <div class="footer-secondary">
+          <span
+            ><strong>United States home Region</strong> · Your profile, searches, and stored keys
+            stay encrypted here.</span
+          >
+          <nav class="footer-nav" aria-label="Trust and support">
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./trust-preview.html#privacy">Privacy</a>
+              <a class="footer-link" href="./trust-preview.html#security">Security</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./trust-preview.html#accessibility">Accessibility</a>
+              <a class="footer-link" href="./trust-preview.html#help">Help</a>
+            </span>
+          </nav>
+        </div>
+      </div>
+    </footer>
+
+    <script src="./app-shell.js"></script>
+    <script src="./app-components.js"></script>
+    <script src="./prompt-guard.js"></script>
+    <script src="./agreement-text.js"></script>
+    <script src="./sample-store.js"></script>
+    <script src="./deputy.js"></script>
+    <script src="./feedback.js"></script>
+    <script src="./app-panels.js"></script>
+    <script>
+      /* shop-rules: start */
+      // The rules of Purchases (round 5, brief 4.4; round 6 part 2, N3, P-2, P-3, P-10; round 7,
+      // SE3), with no DOM or storage access, so tests/prototype/shop.test.ts can run this block on
+      // its own. Every price, token count, rate, date, and receipt comes from JobDeputyStore
+      // (shopItems(), models(), PRICING, credits(), allowance().runs, runway(), receipts(),
+      // receipt(), support()); these rules only arrange what it gives, so no price is ever typed
+      // into the page (R5-1). Support stays an interest, once or monthly, never an amount.
+      const shopRules = (() => {
+        const TERMS = Object.freeze({
+          assist: 'Deputy Assist',
+          credits: 'AI credits',
+          tokens: 'tokens',
+          watch: 'Keep watch',
+          // Round 6, part 2 (N3): one Runs allowance; the round 5 names read runs too.
+          nightlyRun: 'run',
+          nightlyRuns: 'runs',
+          run: 'run',
+          runs: 'runs',
+        });
+        // The data palette's words (JobDeputyComponents.palette, round 5, D1): how tips and tours
+        // name each ring part.
+        const WORDS = Object.freeze({
+          used: 'hatched grey',
+          bonus: 'gold',
+          bought: 'wine',
+          watch: 'indigo',
+          assist: 'teal',
+        });
+        // Old anchors and the section each one lands on now; #bonus, #support, #prices, #credits,
+        // and #bundles keep their names. #balances, #runs, and #watch mark the top of the balances
+        // and read #nightly in the address (round 6 part 3, T4-6); round 6's What you bought is
+        // Receipts now (round 7, SE3), so #purchases and #added read #receipts.
+        const LEGACY = Object.freeze({
+          balances: 'nightly',
+          runs: 'nightly',
+          assist: 'credits',
+          watch: 'nightly',
+          purchases: 'receipts',
+          added: 'receipts',
+        });
+        // The chooser's kinds (round 7, SE3), in its order, and the anchors that open one.
+        const KINDS = Object.freeze(['nightly', 'credits', 'bundles']);
+        const KIND_LABELS = Object.freeze({ nightly: 'Runs', credits: 'AI credits', bundles: 'Bundles' });
+        const KIND_ANCHORS = Object.freeze({ credits: 'credits', assist: 'credits', bundles: 'bundles', buy: null });
+        const CADENCES = Object.freeze(['once', 'monthly']);
+        const DISPLAYS = Object.freeze(['full', 'initial', 'anonymous']);
+
+        const whole = (value) => {
+          const number = Number(value);
+          return Number.isFinite(number) && number > 0 ? Math.round(number) : 0;
+        };
+        const count = (value) => Number(value).toLocaleString('en-US');
+        const plural = (n, one, many) => `${count(n)} ${n === 1 ? one : many}`;
+        const text = (value) => (value == null ? '' : String(value).trim());
+        const capital = (value) => `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+        // A sentence ends once: "On the list as Alex M." never reads "Alex M..".
+        const sentence = (value) => (/[.!?]$/.test(value) ? value : `${value}.`);
+        const asIs = (value) => text(value);
+
+        // The store's names when it has them, these otherwise.
+        const termsFrom = (stored) => ({
+          ...TERMS,
+          ...Object.fromEntries(
+            Object.entries(stored && typeof stored === 'object' ? stored : {}).filter(
+              ([key, value]) => key in TERMS && typeof value === 'string' && value.trim(),
+            ),
+          ),
+        });
+
+        // The palette's words when app-components.js has them, these otherwise.
+        const wordsFrom = (palette) => {
+          const pick = (value, fallback) =>
+            typeof value === 'string' && value.trim() ? value : fallback;
+          return {
+            used: pick(palette?.parts?.used, WORDS.used),
+            bonus: pick(palette?.parts?.bonus, WORDS.bonus),
+            bought: pick(palette?.parts?.bought, WORDS.bought),
+            watch: pick(palette?.left?.watch, WORDS.watch),
+            assist: pick(palette?.left?.assist, WORDS.assist),
+          };
+        };
+
+        // The AI credits balance in one line (P-3): tokens left on your platform model and their
+        // value are store figures; when credits ran out and they run your AI, the store's line says
+        // what happens now.
+        function creditsLine(credits, choice) {
+          const onCredits = !['openai', 'anthropic', 'none'].includes(choice?.source);
+          const out = credits?.state === 'out';
+          return {
+            model: text(credits?.model?.name),
+            paused: onCredits && choice?.limited && text(choice?.summary) ? `${text(choice.summary)}.` : '',
+            state: out ? 'reached' : credits?.state === 'near' ? 'attention' : 'ok',
+          };
+        }
+
+        // The Runs allowance (allowance().runs, round 6 part 2, N3): every search, Keep watch
+        // check, Gmail scan, and daily email uses one run (round 7, R10-9). Round 6 part 3 (R9-1,
+        // T6-1): the ring is every run you can still use this month, free plus bought, so the
+        // centre reads "{left} of {free + bought} left" and the key's Left row says the same number;
+        // where the total comes from is the split line's to say, so the ring keeps two parts. The
+        // state is reached when none is left, and attention while the runs end before the month
+        // does.
+        function runsView(runs, { day = asIs } = {}) {
+          const used = whole(runs?.used);
+          const freeLeft = whole(runs?.freeLeft);
+          const free = whole(runs?.limit) || used + freeLeft;
+          const bought = whole(runs?.bought ?? runs?.topups);
+          const left = whole(runs?.left);
+          const total = free + bought;
+          const boughtLeft = Math.max(0, left - freeLeft);
+          return {
+            parts: { used, left, limit: total },
+            state: left === 0 ? 'reached' : whole(runs?.neededForMonth) > 0 ? 'attention' : 'ok',
+            lasts: left > 0 && Boolean(runs?.lastsThrough),
+            out: left === 0 ? `No runs are left this month. Buy runs below, or wait for ${day(runs?.refreshesOn)}.` : '',
+            // The split, only once anything was bought: the free allowance and the runs you bought.
+            split: bought ? `${count(free)} free + ${count(bought)} bought` : '',
+            leftWords: `${count(left)} left`,
+            tips: {
+              used: [`${count(used)} used`, 'Runs used this month: your searches, Keep watch, Gmail’s scans, and the daily email.'],
+              left: [
+                `${count(left)} of ${count(total)} left`,
+                bought
+                  ? `Runs left this month: ${count(freeLeft)} free and ${count(boughtLeft)} bought. The free ${count(free)} return on ${day(runs?.refreshesOn)}; bought runs stay.`
+                  : `Runs left this month, free ones and any you bought; the free ${count(free)} return on ${day(runs?.refreshesOn)}.`,
+              ],
+            },
+          };
+        }
+
+        // Who used this month's runs, in one line, from the store's figures: you, and your deputy
+        // (Keep watch, Gmail's scans, the daily email) once the store counts it (runs.byDeputy),
+        // else you and Keep watch as round 6 said.
+        function whoLine(figures = {}) {
+          const known = (key) => figures[key] !== null && figures[key] !== undefined;
+          if (known('byDeputy')) {
+            return [
+              ['byYou', 'runs.byYou'],
+              ' started by you, ',
+              ['byDeputy', 'runs.byDeputy'],
+              ' by your deputy',
+            ];
+          }
+          return [['byYou', 'runs.byYou'], ' started by you, ', ['byKeepWatch', 'runs.byKeepWatch'], ' by Keep watch'];
+        }
+
+        // The tour's words for the runs ring, naming its colours as the palette does.
+        const runsTour = ({ words = WORDS } = {}) =>
+          `I use one run for every search, Keep watch check, Gmail scan, and daily email. ${capital(words.used)} is used and ${words.watch} is left, free runs and any you bought.`;
+        // Bonus from friends, from the store: what one friend's first search earns you both, as
+        // tokens on your platform model (what a rewarded friend earned you there, or before any, the
+        // reward in proportion to your free credits on that model, as Invite works it out), and
+        // whose searches have earned you the bonus so far.
+        function bonusView(referrals, credits, { tokens = count, freeTokens = 0 } = {}) {
+          const friends = whole(credits?.bonus?.friends);
+          const earned = whole(credits?.bonus?.earned);
+          const free = whole(credits?.free?.tokens);
+          const rule = whole(referrals?.rewardTokens);
+          const each =
+            friends && earned
+              ? Math.round(earned / friends)
+              : rule && free && whole(freeTokens)
+                ? Math.floor((rule * free) / whole(freeTokens) + 1e-6)
+                : rule;
+          const rewarded = (Array.isArray(referrals?.invites) ? referrals.invites : []).filter(
+            (invite) => invite?.status === 'rewarded',
+          );
+          const names = rewarded.map((invite) => text(invite.name).split(/\s+/)[0]).filter(Boolean);
+          let who = '';
+          if (rewarded.length === 1) who = names.length ? `${names[0]}’s search` : 'A friend’s search';
+          else if (rewarded.length === 2 && names.length === 2)
+            who = `${names[0]}’s and ${names[1]}’s searches`;
+          else if (rewarded.length > 1) who = `${count(rewarded.length)} friends’ searches`;
+          return { reward: each ? tokens(each) : '', who };
+        }
+        // Bonus from friends: the yearly cap from the store.
+        const bonusTour = (cap, { terms = TERMS } = {}) =>
+          `Each friend’s first search earns you both bonus ${terms.credits}${whole(cap) ? `, up to ${count(whole(cap))} friends a year` : ''}. I use them after your free credits.`;
+
+        // The platform model in use (models()[i].chosen), or the first.
+        const chosenModel = (models) => {
+          const list = Array.isArray(models) ? models : [];
+          return list.find((model) => model?.chosen) ?? list[0] ?? null;
+        };
+
+        // The chooser's rows from shopItems(): what each buys (a credit pack's tokens on your
+        // platform model, a run pack's runs and what they last through, a bundle's two parts), its
+        // price (a bundle's list price and saving too), and the full name of its Buy.
+        function itemRows(kind, items, { terms = TERMS, day = asIs } = {}) {
+          const group = (name) => (Array.isArray(items?.[name]) ? items[name] : []);
+          return group(kind)
+            .filter((item) => text(item?.id))
+            .map((item) => {
+              // What it would last through at your settings, when the store says (its runway, with
+              // its metric key); round 6's "more nights" counted Keep watch only, and every use is a
+              // run now (R10-9).
+              const runway = item.runway && typeof item.runway === 'object' ? item.runway : null;
+              // T1-7: without a day it lasts through (it runs short today), the store's own words
+              // for the pack, never a dropped line.
+              const lastsText = text(runway?.lastsText);
+              const base = {
+                id: text(item.id),
+                price: text(item.priceText),
+                meta: '',
+                was: '',
+                save: '',
+                lasts: runway?.lastsThrough
+                  ? {
+                      text: `Lasts through ${day(runway.lastsThrough)} at your settings`,
+                      parts: ['Lasts through ', [text(runway.metric), day(runway.lastsThrough)], ' at your settings'],
+                    }
+                  : lastsText
+                    ? { text: lastsText, parts: [[`runs.ifBuy.${text(item.id)}.lastsText`, lastsText]] }
+                    : null,
+              };
+              if (kind === 'credits') {
+                return {
+                  ...base,
+                  figure: text(item.tokensText),
+                  unit: terms.tokens,
+                  action: `${text(item.tokensText)} ${terms.tokens} for ${base.price}`,
+                };
+              }
+              const runs = whole(item.runs ?? item.nightlyRuns);
+              const unit = runs === 1 ? terms.run : terms.runs;
+              if (kind === 'nightly') {
+                return {
+                  ...base,
+                  figure: count(runs),
+                  unit,
+                  action: `${count(runs)} ${unit} for ${base.price}`,
+                };
+              }
+              // A bundle's two parts: its credit pack at full price, and its runs.
+              const [creditId] = Array.isArray(item.includes) ? item.includes : [];
+              const credit = text(group('credits').find((pack) => pack?.id === creditId)?.priceText);
+              const parts = [
+                credit ? `${credit} credits` : text(item.tokensText) && `${text(item.tokensText)} ${terms.tokens}`,
+                runs ? `${count(runs)} ${unit}` : '',
+              ].filter(Boolean);
+              return {
+                ...base,
+                figure: text(item.name) || text(item.label),
+                unit: '',
+                meta: parts.join(' + '),
+                was: text(item.listPriceText),
+                save: text(item.savingsText) ? `Save ${text(item.savingsText)}` : '',
+                action: `the ${text(item.label)} for ${base.price}`,
+              };
+            });
+        }
+
+        // The kind a pack belongs to in the chooser, from its id.
+        function kindOf(items, id) {
+          const wanted = text(id);
+          return KINDS.find((kind) => (Array.isArray(items?.[kind]) ? items[kind] : []).some((item) => item?.id === wanted)) ?? null;
+        }
+        // The kind an address's anchor opens (#credits and #assist, AI credits; #bundles, Bundles).
+        const kindFor = (hash) => {
+          const id = text(hash).replace(/^#/, '');
+          return Object.hasOwn(KIND_ANCHORS, id) ? KIND_ANCHORS[id] : null;
+        };
+
+        // The recommended pick (round 7, SE3): one pack for your situation, with why in the
+        // store's words. When the store says what each pack would last through (its runway), the
+        // smallest that keeps everything running through the month, else the one that lasts
+        // longest; before that, the smallest run pack that covers the runs this month still needs
+        // (runway().runs.neededForMonth), else the largest. Nothing short: the smallest run pack.
+        function recommend(items, runs) {
+          const packs = (Array.isArray(items?.nightly) ? items.nightly : []).filter((item) => text(item?.id));
+          if (!packs.length) return null;
+          const bySize = [...packs].sort((a, b) => whole(a.runs ?? a.nightlyRuns) - whole(b.runs ?? b.nightlyRuns));
+          const withRunway = bySize.filter((item) => item.runway && typeof item.runway === 'object');
+          if (withRunway.length) {
+            // Its card says the date it lasts through, so the reason never says it twice.
+            const covers = withRunway.find((item) => item.runway.coversMonth);
+            const pick = covers ?? withRunway.at(-1);
+            return {
+              kind: 'nightly',
+              id: pick.id,
+              reason: covers
+                ? 'Keeps everything you turned on running through the month'
+                : 'The most runs in one pack; none lasts the month at your settings',
+            };
+          }
+          const needed = whole(runs?.neededForMonth);
+          if (!needed) return { kind: 'nightly', id: bySize[0].id, reason: 'Your runs last the month; this is the smallest pack', metric: null };
+          const covers = bySize.find((item) => whole(item.runs ?? item.nightlyRuns) >= needed);
+          // The figure is the store's (runs.neededForMonth), so the page shows it with its key.
+          const [before, after] = covers
+            ? ['Covers the ', ' more runs this month needs at your settings']
+            : ['The most runs in one pack, toward the ', ' more this month needs'];
+          return {
+            kind: 'nightly',
+            id: (covers ?? bySize.at(-1)).id,
+            reason: `${before}${count(needed)}${after}`,
+            parts: [before, ['runs.neededForMonth', count(needed)], after],
+            neededMetric: 'runs.neededForMonth',
+          };
+        }
+
+        // The one Buy's words for the chosen pack: "Buy 120 runs for $9.00".
+        const buyWords = (row) => (row?.action ? `Buy ${row.action}` : 'Buy');
+
+        // The bundle rule: the discount is on the runs only, and AI credits cost what they
+        // cost on their own (the fold says how that price is made).
+        const bundleRule = (offer, terms = TERMS) => {
+          const pct = whole(offer?.discountPct);
+          return `${pct ? `${pct}% off` : 'The discount is on'} the ${terms.runs} only; ${terms.credits} always cost AWS’s rate plus our margin.`;
+        };
+        const offerEnds = (offer, { day = asIs } = {}) =>
+          offer?.endsOn ? `Offer ends ${day(offer.endsOn)}` : '';
+
+        // How prices are made (P-10, moved here from AI & credits), for the platform model in use:
+        // its AWS rates (the store's figures), the Region, the tax line, the source the rates come
+        // from, and the worked example (what one search costs on it, models()[i].searchCost).
+        function howView(models, pricing) {
+          const model = chosenModel(models);
+          if (!model) return null;
+          const id = text(model.id);
+          const url = text(pricing?.sourceUrl);
+          return {
+            id,
+            name: text(model.name),
+            awsInKey: `ai.price.${id}.awsIn`,
+            awsOutKey: `ai.price.${id}.awsOut`,
+            region: text(pricing?.regionName),
+            tax: text(pricing?.tax),
+            source: text(pricing?.source),
+            sourceUrl: /^https:\/\//.test(url) ? url : '',
+            example: model.searchCost
+              ? {
+                  tokensKey: 'ai.search.tokens',
+                  costKey: `ai.price.${id}.search`,
+                  tokens: whole(model.searchCost.tokens),
+                  cost: text(model.searchCost.valueText),
+                }
+              : null,
+          };
+        }
+
+        // Receipts (round 7, SE3), from receipts(): each payment as a row of the table, the totals
+        // for the filter in one line, and a receipt's printable copy (Markdown, for the shared
+        // preview and its Download).
+        const RECEIPT_SIZES = Object.freeze([12, 24, 48]);
+        const RECEIPT_SIZE = 12;
+        const STATUS = Object.freeze({ paid: 'Paid', refunded: 'Refunded' });
+        function receiptRow(row, { when = asIs } = {}) {
+          return {
+            id: text(row?.id),
+            number: text(row?.number),
+            when: when(row?.at),
+            at: text(row?.at),
+            kind: text(row?.kind),
+            kindLabel: text(row?.kindLabel),
+            item: text(row?.item),
+            amount: text(row?.amountText),
+            tax: text(row?.taxText),
+            total: text(row?.totalText),
+            method: text(row?.method),
+            status: Object.hasOwn(STATUS, row?.status) ? row.status : 'paid',
+            statusLabel: text(row?.statusLabel) || STATUS[row?.status] || STATUS.paid,
+          };
+        }
+        // The totals of a set of payments from the rows themselves (T3-15), each row rounded to
+        // the cent as its table shows it, so the line always adds up to what you see: what was
+        // paid and the tax inside it, and what was refunded (a refund gives the tax back too).
+        const cents = (micros) => Math.round((Number(micros) || 0) / 10000) * 10000;
+        function totalsOf(rows) {
+          const list = Array.isArray(rows) ? rows.filter((row) => text(row?.id)) : [];
+          const paid = list.filter((row) => row.status !== 'refunded');
+          const refunded = list.filter((row) => row.status === 'refunded');
+          const sum = (items, field) => items.reduce((total, row) => total + cents(row[field]), 0);
+          return {
+            count: list.length,
+            paid: sum(paid, 'total'),
+            paidTax: sum(paid, 'tax'),
+            refunded: sum(refunded, 'total'),
+            refunds: refunded.length,
+          };
+        }
+        function totalsLine(totals, { money = asIs } = {}) {
+          const payments = whole(totals?.count);
+          if (!payments) return '';
+          const parts = [plural(payments, 'payment', 'payments')];
+          if (whole(totals?.paid)) parts.push(`${money(totals.paid)} paid, including ${money(totals.paidTax)} tax`);
+          if (whole(totals?.refunded)) parts.push(`${money(totals.refunded)} refunded`);
+          return `${parts.join(' · ')}.`;
+        }
+        // The whole history, once, under Receipts' heading: the store's figures with their keys
+        // (receipts.count, receipts.paid, receipts.refunded) and their words.
+        function historyParts(totals, { money = asIs } = {}) {
+          const payments = whole(totals?.count);
+          if (!payments) return [];
+          const refunds = whole(totals?.refundedCount ?? totals?.refunds);
+          return [
+            ['receipts.count', count(payments)],
+            payments === 1 ? ' payment · ' : ' payments · ',
+            ['receipts.paid', text(totals?.paidText) || money(totals?.paid ?? totals?.total)],
+            ' paid',
+            ...(refunds ? [' · ', ['receipts.refunded', count(refunds)], ' refunded'] : []),
+            '.',
+          ];
+        }
+        function receiptMarkdown(receipt, { when = asIs, money = asIs } = {}) {
+          if (!receipt || !text(receipt.id)) return '';
+          const lines = (Array.isArray(receipt.lines) ? receipt.lines : []).map(
+            (line) => `- ${text(line.label)}${whole(line.quantity) > 1 ? ` x ${count(whole(line.quantity))}` : ''}: ${money(line.amount)}`,
+          );
+          return [
+            `# Receipt ${text(receipt.number)}`,
+            '',
+            `${text(receipt.seller?.name) || 'JobDeputy'} · ${when(receipt.at)}`,
+            '',
+            `Billed to ${text(receipt.buyer?.name)}${text(receipt.buyer?.email) ? `, ${text(receipt.buyer.email)}` : ''}`,
+            '',
+            '## What you bought',
+            '',
+            ...(lines.length ? lines : [`- ${text(receipt.item)}: ${text(receipt.amountText)}`]),
+            '',
+            // T1-15: Markdown joins lines that touch into one paragraph, so the totals are a line
+            // each with a blank line between them.
+            `Subtotal: ${money(receipt.subtotal ?? receipt.amount)}`,
+            '',
+            `Tax${whole(receipt.taxRatePct) ? ` (${receipt.taxRatePct}%)` : ''}: ${money(receipt.tax)}`,
+            '',
+            `Total: ${money(receipt.total)}`,
+            '',
+            // T6-10: one word for the status, and a refund's day once.
+            `Paid with ${text(receipt.paidWith ?? receipt.method)}. ${
+              receipt.status === 'refunded'
+                ? `Refunded${receipt.refundedAt ? ` ${when(receipt.refundedAt)}` : ''}.`
+                : `${STATUS.paid}.`
+            }`,
+            '',
+            // Each note its own paragraph too.
+            ...(Array.isArray(receipt.notes) ? receipt.notes.flatMap((note, index) => (index ? ['', text(note)] : [text(note)])) : []),
+          ].join('\n');
+        }
+        // The filter bar's options from the store's facets.
+        const facetOptions = (facet) =>
+          (Array.isArray(facet) ? facet : [])
+            .filter((item) => text(item?.id))
+            .map((item) => ({ value: item.id, label: text(item.label) || item.id, count: whole(item.count) }));
+        // The store's query from the bar's state ({ q, kind, status, range }) and the page.
+        function receiptQuery(state = {}, { page = 1, size = RECEIPT_SIZE } = {}) {
+          const query = { page: whole(page) || 1, size: RECEIPT_SIZES.includes(Number(size)) ? Number(size) : RECEIPT_SIZE };
+          if (text(state.q)) query.q = text(state.q);
+          const kinds = (Array.isArray(state.kind) ? state.kind : []).map(text).filter(Boolean);
+          if (kinds.length) query.kind = kinds;
+          if (Object.hasOwn(STATUS, state.status)) query.status = state.status;
+          // Every payment is the default: All time (or no range) asks for no time filter.
+          const range = state.range;
+          if (range === 'all' || range?.preset === 'all') return query;
+          if (typeof range === 'string' && text(range)) query.range = text(range);
+          else if (range?.preset && range.preset !== 'custom') query.range = range.preset;
+          else if (range?.from && range?.to) {
+            query.from = range.from;
+            query.to = range.to;
+          }
+          return query;
+        }
+
+        // The support interest (support()): once or monthly, never an amount; the planned
+        // benefits; and your supporters list choice, which needs the interest recorded first.
+        function supportView(support, { when = asIs } = {}) {
+          const cadence = CADENCES.includes(support?.cadence) ? support.cadence : null;
+          const pledged = Boolean(support?.pledged) && cadence !== null;
+          const listing =
+            support?.listing && typeof support.listing === 'object' ? support.listing : {};
+          const display = DISPLAYS.includes(listing.display) ? listing.display : 'initial';
+          const names = {
+            full: text(listing.names?.full),
+            initial: text(listing.names?.initial),
+            anonymous: text(listing.names?.anonymous) || 'Anonymous supporter',
+          };
+          const optIn = pledged && listing.optIn === true;
+          return {
+            pledged,
+            cadence,
+            title: pledged ? `You’re counted in, ${cadence}.` : '',
+            message: pledged
+              ? `We’ll tell you when donations open.${support.at ? ` Recorded ${when(support.at)}.` : ''}`
+              : '',
+            listing: {
+              optIn,
+              display,
+              names,
+              status: optIn ? sentence(`On the list as ${names[display]}`) : 'Not on the list.',
+            },
+            benefits: (Array.isArray(support?.benefits) ? support.benefits : [])
+              .filter((benefit) => text(benefit?.title))
+              .map((benefit) => ({
+                id: text(benefit.id),
+                title: text(benefit.title),
+                text: text(benefit.text),
+                planned: benefit.planned !== false,
+              })),
+            note: text(support?.note),
+          };
+        }
+
+        // Whether an address's anchor lands on the quick buy (#buy, and #credits, #assist, and
+        // #bundles inside it), where Get more runs and Buy credits arrive from other pages (T3-25).
+        const landsOnBuy = (hash) => {
+          const id = text(hash).replace(/^#/, '');
+          return id === 'buy' || Object.hasOwn(KIND_ANCHORS, id);
+        };
+
+        // The section an old anchor lands on, or null.
+        const anchorFor = (hash) => {
+          const id = text(hash).replace(/^#/, '');
+          return Object.hasOwn(LEGACY, id) ? LEGACY[id] : null;
+        };
+
+        return {
+          TERMS,
+          WORDS,
+          LEGACY,
+          KINDS,
+          KIND_LABELS,
+          KIND_ANCHORS,
+          CADENCES,
+          DISPLAYS,
+          STATUS,
+          RECEIPT_SIZES,
+          RECEIPT_SIZE,
+          termsFrom,
+          wordsFrom,
+          creditsLine,
+          runsView,
+          whoLine,
+          runsTour,
+          bonusTour,
+          bonusView,
+          chosenModel,
+          itemRows,
+          kindOf,
+          kindFor,
+          landsOnBuy,
+          recommend,
+          buyWords,
+          bundleRule,
+          offerEnds,
+          howView,
+          receiptRow,
+          totalsOf,
+          totalsLine,
+          historyParts,
+          receiptMarkdown,
+          facetOptions,
+          receiptQuery,
+          supportView,
+          sentence,
+          anchorFor,
+        };
+      })();
+      /* shop-rules: end */
+
+      (() => {
+        const store = window.JobDeputyStore;
+        const deputy = window.JobDeputyDeputy;
+        const components = window.JobDeputyComponents;
+        const rules = shopRules;
+        const $ = (selector, root = document) => root.querySelector(selector);
+        const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+        const main = $('#main');
+        const terms = rules.termsFrom(store?.TERMS);
+        const words = rules.wordsFrom(components?.palette);
+        const format = store?.format ?? {};
+        const day = (at) => (typeof format.date === 'function' ? format.date(at) : String(at ?? ''));
+        const money = (micros) => (typeof format.money === 'function' ? format.money(micros) : String(micros ?? ''));
+        // A payment's day with its year (receipts reach back a year): "Sun, Oct 12, 2025".
+        const dayYear = (at) => {
+          const year = /^\d{4}/.exec(String(at ?? ''))?.[0];
+          return year ? `${day(at)}, ${year}` : day(at);
+        };
+        const tokens = (value) =>
+          typeof format.tokens === 'function'
+            ? format.tokens(value)
+            : Number(value).toLocaleString('en-US');
+
+        const pageStatus = $('#shop-status');
+        let statusTimer;
+        const announce = (message) => {
+          window.clearTimeout(statusTimer);
+          pageStatus.textContent = '';
+          statusTimer = window.setTimeout(() => {
+            pageStatus.textContent = message;
+          }, 40);
+        };
+
+        const call = (name, ...args) => {
+          try {
+            return typeof store?.[name] === 'function' ? store[name](...args) : undefined;
+          } catch {
+            return undefined;
+          }
+        };
+        const setText = (element, value) => {
+          if (element && element.textContent !== value) element.textContent = value;
+        };
+        const known = (key) => {
+          const value = call('metric', key);
+          return value !== null && value !== undefined;
+        };
+
+        // ---------------------------------------------------------------- old anchors
+
+        // #balances, #runs, #watch, #purchases, and #added land on the section they became: each
+        // old id marks the top of that section, and the address names the new anchor.
+        const redirect = () => {
+          const target = rules.anchorFor(window.location.hash);
+          if (!target || !document.getElementById(target)) return;
+          try {
+            window.location.replace(`#${target}`);
+          } catch {
+            document.getElementById(target).scrollIntoView({ block: 'start' });
+          }
+        };
+        redirect();
+
+        // ---------------------------------------------------------------- figures and words
+
+        // Each figure shows the store's text for its key (R3-3, R3-4); one without a value keeps
+        // what it shows. The feature names come from JobDeputyStore.TERMS (R4-3).
+        const renderFigures = () => {
+          for (const element of $$('[data-metric]', main)) {
+            if (!known(element.dataset.metric)) continue;
+            setText(element, store.metricText(element.dataset.metric));
+          }
+          for (const element of $$('[data-term]', main)) {
+            const value = terms[element.dataset.term];
+            if (value) setText(element, value);
+          }
+        };
+
+        // R5-1: "Sample prices · nothing is charged" near every price, in the store's words.
+        const renderNotes = () => {
+          const note = store?.PRICING?.note;
+          if (note) for (const element of $$('[data-shop-note]', main)) setText(element, note);
+        };
+
+        // ---------------------------------------------------------------- balances
+
+        const runsMeter = $('#shop-meter-runs');
+
+        // Sizes a ring's parts and sets its state and kind (JobDeputyComponents.allowance.set hides
+        // a part of zero and draws the ring again); without the components the parts are sized here.
+        const sizeMeter = (meter, parts, state, kind) => {
+          const set = components?.allowance?.set;
+          if (typeof set === 'function') {
+            set(meter, { ...parts, state, kind });
+            return;
+          }
+          for (const part of ['used', 'left', 'bonus', 'bought']) {
+            if (!(part in parts)) continue;
+            for (const segment of $$(`.allowance-part[data-part="${part}"]`, meter)) {
+              segment.style.setProperty('--count', String(parts[part]));
+              segment.hidden = parts[part] === 0;
+            }
+          }
+          meter.classList.toggle('is-attention', state === 'attention');
+          meter.classList.toggle('is-reached', state === 'reached');
+        };
+        const setTips = (meter, tips) => {
+          for (const [part, [title, tip]] of Object.entries(tips)) {
+            const segment = $(`.allowance-part[data-part="${part}"]`, meter);
+            if (!segment) continue;
+            if (segment.getAttribute('data-tip-title') !== title)
+              segment.setAttribute('data-tip-title', title);
+            if (segment.getAttribute('data-tip') !== tip) segment.setAttribute('data-tip', tip);
+          }
+        };
+
+        // Who used the runs, in one line of store figures (each its own data-metric).
+        const whoNode = $('#shop-runs-who');
+        const renderWho = () => {
+          const parts = rules.whoLine({
+            byYou: call('metric', 'runs.byYou'),
+            byDeputy: call('metric', 'runs.byDeputy'),
+            byKeepWatch: call('metric', 'runs.byKeepWatch'),
+          });
+          const signature = parts.map((part) => (Array.isArray(part) ? part[1] : part)).join('|');
+          if (whoNode.dataset.signature === signature) return;
+          whoNode.dataset.signature = signature;
+          whoNode.replaceChildren(
+            ...parts.map((part) => {
+              if (!Array.isArray(part)) return document.createTextNode(part);
+              const figure = document.createElement('span');
+              figure.dataset.metric = part[1];
+              figure.textContent = known(part[1]) ? store.metricText(part[1]) : '';
+              return figure;
+            }),
+          );
+        };
+
+        // The runs ring (P-2, N3): the allowance's home. Without runs left, the line says what to
+        // do. How long they last is the runway's line under both rings.
+        const renderRuns = () => {
+          const allowance = call('allowance');
+          const view = rules.runsView(allowance?.runs ?? allowance?.nightly, { day });
+          setTips(runsMeter, view.tips);
+          sizeMeter(runsMeter, view.parts, view.state, 'watch');
+          // The centre carries the figure's key, so the key's Left row says the same number in words.
+          setText($('#shop-runs-key-left'), view.leftWords);
+          // The split keeps its line while nothing was bought (hidden from sight and from screen
+          // readers), so buying, or the large demo, never moves what is under the ring (R10-1).
+          $('#shop-runs-split').classList.toggle('is-empty', !view.split);
+          const out = $('#shop-runs-out');
+          setText(out, view.out);
+          out.hidden = !view.out;
+          renderWho();
+          const tour = rules.runsTour({ words });
+          if (runsMeter.getAttribute('data-tour-text') !== tour) runsMeter.setAttribute('data-tour-text', tour);
+        };
+
+        // The tokens ring for the payer in use and the runway line (PL's allowanceRings and
+        // runwayLine, from the store's runway()); each draws once and follows the store itself.
+        const tokensHost = $('#shop-tokens');
+        const runwayHost = $('#shop-runway');
+        let ringsDrawn = false;
+        const renderTokens = () => {
+          if (ringsDrawn) return;
+          if (typeof components?.allowanceRings === 'function') {
+            components.allowanceRings(tokensHost, { kinds: ['tokens'], size: 'large', metrics: true });
+          } else {
+            tokensHost.hidden = true;
+          }
+          if (typeof components?.runwayLine === 'function') {
+            components.runwayLine(runwayHost, { uses: true });
+          } else {
+            runwayHost.hidden = true;
+          }
+          ringsDrawn = true;
+        };
+
+        // ---------------------------------------------------------------- one quick buy
+
+        const pickLists = Object.fromEntries(rules.KINDS.map((kind) => [kind, $(`[data-shop-picks="${kind}"]`)]));
+        const kindRadios = $$('input[name="shop-kind"]');
+        const buyButton = $('#shop-buy');
+        const creditsLine = $('#shop-credits-line');
+        const bundleLine = $('#shop-bundle-line');
+        // What you chose: the kind, and the pack of each kind (kept while you switch kinds).
+        const chosen = { kind: null, picks: {} };
+        let recommended = null;
+
+        // A pack's card: a native radio, its figure and unit (or a bundle's name), what it adds,
+        // the Recommended pill and its reason when it is the pick, and its price at the end. Every
+        // value goes in as text.
+        const pickCard = (kind) => {
+          const card = document.createElement('label');
+          card.className = 'choice-card shop-pick';
+          card.innerHTML =
+            '<input type="radio" /><span class="choice-card-control" aria-hidden="true"></span><span class="choice-card-copy"><span class="choice-card-label"><span><span class="shop-pick-figure" data-pick-figure></span> <span data-pick-unit></span></span><span class="status-pill shop-pick-tag" data-pick-tag hidden>Recommended</span></span><span class="choice-card-meta" data-pick-meta hidden></span><span class="choice-card-meta" data-pick-lasts hidden></span><span class="choice-card-meta shop-pick-why" data-pick-why hidden></span></span><span class="shop-pick-price"><s class="shop-pick-was" data-pick-was hidden><span class="sr-only">List price </span><span data-pick-was-price></span></s><span data-pick-price></span><span class="shop-pick-save" data-pick-save hidden></span></span>';
+          const input = $('input', card);
+          input.name = `shop-pick-${kind}`;
+          return card;
+        };
+
+        // A line of words and store figures ([key, the words without the store]), each figure with
+        // its data-metric (R3-4), drawn again only when it changes; empty, the line hides.
+        const drawParts = (node, parts) => {
+          const signature = JSON.stringify(parts);
+          if (node.dataset.signature !== signature) {
+            node.dataset.signature = signature;
+            node.replaceChildren(
+              ...parts.map((part) => {
+                if (!Array.isArray(part)) return document.createTextNode(part);
+                const figure = document.createElement('span');
+                if (part[0]) figure.dataset.metric = part[0];
+                figure.textContent = part[0] && known(part[0]) ? store.metricText(part[0]) : part[1];
+                return figure;
+              }),
+            );
+          }
+          node.hidden = parts.length === 0;
+        };
+
+        const rowsNow = () => {
+          const items = call('shopItems');
+          return {
+            items,
+            rows: Object.fromEntries(rules.KINDS.map((kind) => [kind, rules.itemRows(kind, items, { terms, day })])),
+          };
+        };
+
+        const renderChooser = () => {
+          const { items, rows } = rowsNow();
+          recommended = rules.recommend(items, call('runway')?.runs ?? call('allowance')?.runs);
+          const focused = document.activeElement;
+          for (const kind of rules.KINDS) {
+            const list = pickLists[kind];
+            if (!list) continue;
+            const existing = new Map($$('.shop-pick', list).map((card) => [card.dataset.item, card]));
+            const ordered = rows[kind].map((row) => {
+              const card = existing.get(row.id) ?? pickCard(kind);
+              existing.delete(row.id);
+              card.dataset.item = row.id;
+              const input = $('input', card);
+              if (input.value !== row.id) input.value = row.id;
+              setText($('[data-pick-figure]', card), row.figure);
+              const unit = $('[data-pick-unit]', card);
+              setText(unit, row.unit);
+              unit.hidden = !row.unit;
+              const meta = $('[data-pick-meta]', card);
+              setText(meta, row.meta);
+              meta.hidden = !row.meta;
+              drawParts($('[data-pick-lasts]', card), row.lasts?.parts ?? []);
+              setText($('[data-pick-was-price]', card), row.was);
+              $('[data-pick-was]', card).hidden = !row.was;
+              setText($('[data-pick-price]', card), row.price);
+              const save = $('[data-pick-save]', card);
+              setText(save, row.save);
+              save.hidden = !row.save;
+              const isPick = recommended?.id === row.id;
+              $('[data-pick-tag]', card).hidden = !isPick;
+              drawParts($('[data-pick-why]', card), isPick ? [...(recommended.parts ?? [recommended.reason]), '.'] : []);
+              return card;
+            });
+            for (const stale of existing.values()) stale.remove();
+            ordered.forEach((card, index) => {
+              const at = list.children[index + 1] ?? null;
+              if (list.children[index + 1] !== card) list.insertBefore(card, at);
+            });
+            // Each kind keeps one chosen pack: yours, else the recommended one, else its first.
+            const ids = rows[kind].map((row) => row.id);
+            if (!ids.includes(chosen.picks[kind])) {
+              chosen.picks[kind] = recommended?.kind === kind && ids.includes(recommended.id) ? recommended.id : ids[0];
+            }
+            for (const input of $$('input', list)) {
+              const on = input.value === chosen.picks[kind];
+              if (input.checked !== on) input.checked = on;
+            }
+          }
+          if (!chosen.kind) chosen.kind = recommended?.kind ?? 'nightly';
+          syncKind();
+          if (focused instanceof HTMLElement && focused.isConnected && document.activeElement !== focused) {
+            focused.focus({ preventScroll: true });
+          }
+          const offer = items?.offer ?? store?.BUNDLE_OFFER;
+          setText($('[data-shop-bundle-rule]', main), rules.bundleRule(offer, terms));
+          const ends = $('[data-shop-offer]', main);
+          setText(ends, rules.offerEnds(offer, { day }));
+          ends.hidden = !ends.textContent;
+        };
+
+        // The chosen kind shows its packs (and its line: the credits balance or the bundle rule);
+        // the one Buy names the chosen pack and opens its checkout.
+        const syncKind = () => {
+          for (const input of kindRadios) {
+            const on = input.value === chosen.kind;
+            if (input.checked !== on) input.checked = on;
+          }
+          for (const kind of rules.KINDS) pickLists[kind].hidden = kind !== chosen.kind;
+          creditsLine.hidden = chosen.kind !== 'credits';
+          bundleLine.hidden = chosen.kind !== 'bundles';
+          const id = chosen.picks[chosen.kind];
+          const row = rowsNow().rows[chosen.kind]?.find((item) => item.id === id);
+          if (row) {
+            if (buyButton.getAttribute('data-checkout') !== row.id) buyButton.setAttribute('data-checkout', row.id);
+            setText(buyButton, rules.buyWords(row));
+            buyButton.removeAttribute('aria-disabled');
+          } else {
+            buyButton.removeAttribute('data-checkout');
+            setText(buyButton, rules.buyWords(null));
+            buyButton.setAttribute('aria-disabled', 'true');
+          }
+        };
+
+        $('#shop-kinds').addEventListener('change', (event) => {
+          const input = event.target;
+          if (!(input instanceof HTMLInputElement) || input.name !== 'shop-kind') return;
+          chosen.kind = input.value;
+          syncKind();
+          announce(`${rules.KIND_LABELS[chosen.kind]}: ${buyButton.textContent.trim()}.`);
+        });
+        for (const kind of rules.KINDS) {
+          pickLists[kind].addEventListener('change', (event) => {
+            const input = event.target;
+            if (!(input instanceof HTMLInputElement) || !input.checked) return;
+            chosen.picks[kind] = input.value;
+            syncKind();
+          });
+        }
+
+        // An anchor or a ?checkout= link chooses its kind and pack, so the Buy names it and the
+        // checkout's focus returns to it.
+        const chooseFromAddress = () => {
+          const { items } = rowsNow();
+          const wanted = new URLSearchParams(window.location.search).get('checkout');
+          const kind = wanted ? rules.kindOf(items, wanted) : null;
+          if (kind) {
+            chosen.kind = kind;
+            chosen.picks[kind] = wanted;
+            return;
+          }
+          const fromHash = rules.kindFor(window.location.hash);
+          if (fromHash) chosen.kind = fromHash;
+        };
+        window.addEventListener('hashchange', () => {
+          redirect();
+          const kind = rules.kindFor(window.location.hash);
+          if (kind && kind !== chosen.kind) {
+            chosen.kind = kind;
+            syncKind();
+          }
+          if (window.location.hash === '#prices') $('#prices').open = true;
+        });
+
+        // AI credits (P-3): one line under their packs; once credits are out while they run your
+        // AI, the store's own words say what happens now.
+        const renderCredits = () => {
+          const view = rules.creditsLine(call('credits'), call('aiChoice'));
+          const paused = $('#shop-credits-paused');
+          setText(paused, view.paused);
+          paused.hidden = !view.paused;
+          creditsLine.dataset.state = view.state;
+        };
+
+        // ---------------------------------------------------------------- how the price is made
+
+        // How prices are made (P-10): the model in use, its AWS rates (metric keys), the Region,
+        // tax, the source, and the worked example, whose figures carry their keys where the store
+        // has them. #prices opens the fold.
+        const prices = $('#prices');
+        if (window.location.hash === '#prices') prices.open = true;
+        const renderHow = () => {
+          const view = rules.howView(call('models'), store?.PRICING);
+          if (!view) return;
+          $('[data-shop-aws="in"]', prices).dataset.metric = view.awsInKey;
+          $('[data-shop-aws="out"]', prices).dataset.metric = view.awsOutKey;
+          for (const element of $$('[data-shop-model-name]', prices)) setText(element, view.name);
+          if (view.region) setText($('[data-shop-region]', prices), view.region);
+          if (view.tax) setText($('[data-shop-tax]', prices), view.tax);
+          const source = $('[data-shop-source]', prices);
+          if (view.sourceUrl && source.getAttribute('href') !== view.sourceUrl)
+            source.setAttribute('href', view.sourceUrl);
+          if (view.source) setText($('[data-shop-source-name]', prices), view.source);
+          const example = $('#shop-example');
+          example.hidden = !view.example;
+          if (!view.example) return;
+          const parts = {
+            tokens: [view.example.tokensKey, tokens(view.example.tokens)],
+            cost: [view.example.costKey, view.example.cost],
+          };
+          for (const [part, [key, value]] of Object.entries(parts)) {
+            const element = $(`[data-shop-example="${part}"]`, example);
+            if (!known(key)) {
+              element.removeAttribute('data-metric');
+              setText(element, value);
+            } else if (element.dataset.metric !== key) element.dataset.metric = key;
+          }
+          setText($('[data-shop-example="model"]', example), view.name);
+        };
+
+        // ---------------------------------------------------------------- receipts
+
+        const receiptsList = $('#shop-receipts-list');
+        const receiptsEmpty = $('#shop-receipts-empty');
+        const receiptsFilters = $('#shop-receipts-filters');
+        const receiptsTotals = $('#shop-receipts-totals');
+        const receiptsHeading = $('#shop-receipts-title');
+        // The page and its size from the address (?rpage=, ?rsize=), as the pager keeps them.
+        const receiptAddress =
+          typeof components?.pagination?.fromAddress === 'function'
+            ? components.pagination.fromAddress({ param: 'rpage', sizeParam: 'rsize', sizes: [...rules.RECEIPT_SIZES] })
+            : null;
+        const askedReceiptSize = new URLSearchParams(window.location.search).has('rsize') ? Number(receiptAddress?.size) : 0;
+        const receiptPlace = {
+          page: Number(receiptAddress?.page) || 1,
+          size: rules.RECEIPT_SIZES.includes(askedReceiptSize) ? askedReceiptSize : rules.RECEIPT_SIZE,
+        };
+        let receiptBar = null;
+        let receiptPager = null;
+        let receiptSignature = '';
+        let receiptCountsKey = '';
+        let receiptPagerKey = '';
+        // A page parameter in the address, kept as the shared pager writes it (dropped on page 1).
+        const addressPage = (param, page) => {
+          try {
+            const query = new URLSearchParams(window.location.search);
+            if (page > 1) query.set(param, String(page));
+            else query.delete(param);
+            const search = query.toString().replace(/=(?=&|$)/g, '');
+            window.history.replaceState(window.history.state, '', `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`);
+          } catch {
+            // The address keeps its page; the list still starts at the first.
+          }
+        };
+
+        const receiptCell = (tag, value, { label, className } = {}) => {
+          const cell = document.createElement(tag);
+          if (label) cell.dataset.label = label;
+          if (className) cell.className = className;
+          cell.textContent = value;
+          return cell;
+        };
+        // The table of a page of receipts (the shared data table): date, what, amount, tax, total,
+        // method, status, the receipt number, and View (the shared preview, with its Download).
+        const receiptTable = (rows) => {
+          const wrap = document.createElement('section');
+          wrap.className = 'data-table-wrap';
+          wrap.tabIndex = 0;
+          wrap.setAttribute('aria-label', 'Receipts');
+          const table = document.createElement('table');
+          table.className = 'data-table';
+          table.setAttribute('role', 'table');
+          const head = document.createElement('thead');
+          const headRow = document.createElement('tr');
+          for (const name of ['Date', 'What', 'Amount', 'Tax', 'Total', 'Paid with', 'Status', 'Receipt', 'Copy']) {
+            const cell = receiptCell('th', name);
+            cell.scope = 'col';
+            if (name === 'Copy') {
+              cell.textContent = '';
+              cell.append(Object.assign(document.createElement('span'), { className: 'sr-only', textContent: 'View and download' }));
+            }
+            headRow.append(cell);
+          }
+          head.append(headRow);
+          const body = document.createElement('tbody');
+          for (const row of rows) {
+            const line = document.createElement('tr');
+            line.dataset.receipt = row.id;
+            const what = receiptCell('td', row.item, { label: 'What', className: 'shop-receipt-what' });
+            const view = document.createElement('button');
+            view.type = 'button';
+            view.className = 'compact-action';
+            view.dataset.receiptView = row.id;
+            view.dataset.focusKey = `receipt-${row.id}`;
+            view.textContent = 'View';
+            view.append(Object.assign(document.createElement('span'), { className: 'sr-only', textContent: ` receipt ${row.number}` }));
+            const viewCell = document.createElement('td');
+            viewCell.dataset.label = 'Receipt copy';
+            viewCell.append(view);
+            line.append(
+              receiptCell('td', row.when, { label: 'Date', className: 'is-nowrap' }),
+              what,
+              receiptCell('td', row.amount, { label: 'Amount', className: 'is-number' }),
+              receiptCell('td', row.tax, { label: 'Tax', className: 'is-number' }),
+              receiptCell('td', row.total, { label: 'Total', className: 'is-number' }),
+              receiptCell('td', row.method, { label: 'Paid with', className: 'is-nowrap' }),
+              receiptCell('td', row.statusLabel, { label: 'Status', className: 'is-nowrap' }),
+              receiptCell('td', row.number, { label: 'Receipt', className: 'shop-receipt-number' }),
+              viewCell,
+            );
+            body.append(line);
+          }
+          table.append(head, body);
+          wrap.append(table);
+          return wrap;
+        };
+
+        // The same page of receipts as compact rows for a phone (T2-17): what and its total, then
+        // the day, the status, and the receipt number, and View.
+        const receiptRows = (rows) => {
+          const list = document.createElement('ol');
+          list.className = 'shop-receipt-rows';
+          list.setAttribute('aria-label', 'Receipts');
+          for (const row of rows) {
+            const item = document.createElement('li');
+            item.className = 'shop-receipt-row';
+            item.dataset.receipt = row.id;
+            const top = document.createElement('p');
+            top.className = 'shop-receipt-row-top';
+            const what = document.createElement('span');
+            what.className = 'shop-receipt-row-what';
+            what.textContent = row.item;
+            const total = document.createElement('span');
+            total.className = 'shop-receipt-row-total';
+            total.textContent = row.total;
+            top.append(what, total);
+            const meta = document.createElement('p');
+            meta.className = 'shop-receipt-row-meta';
+            // Each part kept whole (a receipt number never breaks at its hyphens).
+            const parts = [row.when, row.statusLabel, row.number].filter(Boolean);
+            parts.forEach((part, index) => {
+              if (index) meta.append(' · ');
+              meta.append(Object.assign(document.createElement('span'), { textContent: part }));
+            });
+            const view = document.createElement('button');
+            view.type = 'button';
+            view.className = 'compact-action';
+            view.dataset.receiptView = row.id;
+            view.dataset.focusKey = `receipt-row-${row.id}`;
+            view.textContent = 'View';
+            view.append(Object.assign(document.createElement('span'), { className: 'sr-only', textContent: ` receipt ${row.number}` }));
+            item.append(top, meta, view);
+            list.append(item);
+          }
+          return list;
+        };
+
+        const renderReceipts = ({ moved = false } = {}) => {
+          if (typeof store?.receipts !== 'function') {
+            receiptsList.replaceChildren();
+            receiptsEmpty.hidden = false;
+            return;
+          }
+          const all = call('receipts', { size: 1 });
+          const any = Number(all?.total) > 0;
+          // The whole history once, under the heading; nothing to filter when there is none.
+          const count = $('#shop-receipts-count');
+          drawParts(count, any ? rules.historyParts({ ...all.totals, refundedCount: call('metric', 'receipts.refunded') }, { money }) : []);
+          if (any && !receiptBar && typeof components?.filterBar === 'function') {
+            receiptsFilters.hidden = false;
+            receiptBar = components.filterBar(receiptsFilters, {
+              label: 'Filter your receipts',
+              search: { label: 'Search receipts', param: 'rq', placeholder: 'For example: JD-2026-0004 or credits' },
+              facets: [
+                { name: 'kind', label: 'Kind', kind: 'multi', param: 'kind', singular: 'kind', plural: 'kinds', options: rules.facetOptions(all.facets?.kind) },
+                { name: 'status', label: 'Status', kind: 'choice', param: 'status', options: [{ value: 'all', label: 'All' }, ...rules.facetOptions(all.facets?.status)] },
+              ],
+              // Receipts is every payment: the range opens on All time (T5-1: a fixed custom
+              // range left a new purchase out), with the longer presets a year of payments needs.
+              range: { param: 'rrange', value: 'all', presets: ['1w', '30d', 'month', '90d', 'year', 'all'] },
+              noun: ['receipt', 'receipts'],
+              onChange: () => {
+                receiptPlace.page = 1;
+                renderReceipts({ moved: true });
+              },
+            });
+          }
+          receiptsFilters.hidden = !any || !receiptBar;
+          const result = any ? call('receipts', rules.receiptQuery(receiptBar?.state ?? {}, receiptPlace)) : null;
+          const rows = (result?.rows ?? []).map((row) => rules.receiptRow(row, { when: dayYear }));
+          const signature = JSON.stringify(rows.map((row) => [row.id, row.status, row.total]));
+          if (signature !== receiptSignature) {
+            receiptSignature = signature;
+            const active = document.activeElement;
+            const key = active?.dataset?.focusKey && receiptsList.contains(active) ? active.dataset.focusKey : '';
+            // A table where there is room, and the same receipts as compact rows on a phone (T2-17).
+            receiptsList.replaceChildren(...(rows.length ? [receiptTable(rows), receiptRows(rows)] : []));
+            const again = key ? [...receiptsList.querySelectorAll(`[data-focus-key="${CSS.escape(key)}"]`)].find((node) => node.getClientRects().length) : null;
+            again?.focus({ preventScroll: true });
+          }
+          // The filter's totals, once the filters narrow the list (the head says the whole history),
+          // added up from the rows themselves, as their table shows them (T3-15).
+          const narrowed = any && Number(result?.total) !== Number(all.total);
+          receiptsTotals.hidden = !narrowed || !rows.length;
+          if (narrowed && rows.length) {
+            const every = call('receipts', { ...rules.receiptQuery(receiptBar?.state ?? {}, receiptPlace), page: 1, size: Math.max(1, Number(result?.total) || 1) });
+            setText(receiptsTotals, `For these filters: ${rules.totalsLine(rules.totalsOf(every?.rows), { money })}`);
+          }
+          receiptsEmpty.hidden = rows.length > 0;
+          setText(
+            receiptsEmpty,
+            any
+              ? 'No receipts match these filters. Try fewer filters or a longer time range.'
+              : 'No payments yet. When you buy runs or AI credits, each receipt is kept here, ready to download.',
+          );
+          // The bar's counts and the pager change only when they do (R9-3, T3-19).
+          const counts = {
+            kind: Object.fromEntries(rules.facetOptions(result?.facets?.kind).map((option) => [option.value, option.count])),
+            status: Object.fromEntries(rules.facetOptions(result?.facets?.status).map((option) => [option.value, option.count])),
+          };
+          const countsKey = JSON.stringify([counts, Number(result?.total) || 0]);
+          if (countsKey !== receiptCountsKey) {
+            receiptCountsKey = countsKey;
+            receiptBar?.setCounts?.(counts);
+            receiptBar?.setResult?.(Number(result?.total) || 0);
+          }
+          if (any && typeof components?.pagination === 'function') {
+            if (!receiptPager) {
+              receiptPager = components.pagination($('#shop-receipts-pager'), {
+                total: Number(result?.total) || 0,
+                pageSize: receiptPlace.size,
+                page: receiptPlace.page,
+                label: 'Pages of receipts',
+                channel: pageStatus,
+                noun: ['receipt', 'receipts'],
+                top: $('#shop-receipts-pager-top'),
+                sizes: [...rules.RECEIPT_SIZES],
+                list: receiptsList,
+                heading: receiptsHeading,
+                address: true,
+                param: 'rpage',
+                sizeParam: 'rsize',
+                onChange: (page) => {
+                  receiptPlace.page = page;
+                  renderReceipts();
+                },
+                onSize: (size) => {
+                  receiptPlace.size = size;
+                  receiptPlace.page = 1;
+                  // The list starts again at its first page, and the address says so (T3-7).
+                  addressPage('rpage', 1);
+                  renderReceipts();
+                },
+              });
+              receiptPagerKey = JSON.stringify([Number(result?.total) || 0, receiptPlace.page, receiptPlace.size]);
+            } else {
+              const pagerKey = JSON.stringify([Number(result?.total) || 0, receiptPlace.page, receiptPlace.size]);
+              if (pagerKey !== receiptPagerKey) {
+                receiptPagerKey = pagerKey;
+                receiptPager.render({ total: Number(result?.total) || 0, page: receiptPlace.page, pageSize: receiptPlace.size });
+              }
+            }
+          }
+          if (moved) announce(rows.length ? '' : 'No receipts match these filters.');
+        };
+
+        // View opens a receipt in the shared preview, on its text, with the shared Download.
+        const openReceipt = (id, opener) => {
+          const receipt = call('receipt', id);
+          if (!receipt || typeof components?.preview?.open !== 'function') return false;
+          components.preview.open(
+            {
+              title: `Receipt ${receipt.number}`,
+              meta: `${dayYear(receipt.at)} · ${receipt.totalText ?? money(receipt.total)} · ${receipt.statusLabel ?? ''}`.replace(/ · $/, ''),
+              source: rules.receiptMarkdown(receipt, { when: dayYear, money }),
+              view: 'text',
+            },
+            opener,
+          );
+          return true;
+        };
+        receiptsList.addEventListener('click', (event) => {
+          const view = event.target.closest?.('[data-receipt-view]');
+          if (view) openReceipt(view.dataset.receiptView, view);
+        });
+
+        // ---------------------------------------------------------------- bonus from friends
+
+        const bonusStep = $('#shop-bonus-step');
+        const bonusLine = $('#shop-bonus-line');
+        const renderBonus = () => {
+          const get = call('get');
+          const view = rules.bonusView(get?.referrals, call('credits'), {
+            tokens,
+            freeTokens: store?.CREDITS?.freeTokens,
+          });
+          if (view.reward) setText($('[data-shop-reward]', bonusLine), view.reward);
+          bonusLine.hidden = !view.reward;
+          if (view.who) setText($('[data-shop-who]', bonusLine), view.who);
+          $('[data-shop-earned]', bonusLine).hidden = !view.who;
+          const tour = rules.bonusTour(get?.referrals?.capFriends, { terms });
+          if (bonusStep.getAttribute('data-tour-text') !== tour) bonusStep.setAttribute('data-tour-text', tour);
+        };
+
+        // ---------------------------------------------------------------- support
+
+        const supportForm = $('#shop-support-form');
+        const cadences = $$('input[name="cadence"]', supportForm);
+        const supportError = $('#shop-support-error');
+        const supportDone = $('#shop-support-done');
+        const withdraw = $('#shop-support-withdraw');
+        const listing = $('#shop-listing');
+        const listingOpt = $('#shop-listing-opt');
+        const listingDisplay = $('#shop-listing-display');
+        const displays = $$('input[name="display"]', listingDisplay);
+        const listingStatus = $('#shop-listing-status');
+        const benefitList = $('#shop-benefits');
+
+        // The How often group is described by its error only while the error shows (UAT-A-11).
+        const cadenceGroup = $('#shop-cadence');
+        const showSupportError = (on) => {
+          supportError.hidden = !on;
+          if (on) cadenceGroup.setAttribute('aria-describedby', 'shop-support-error');
+          else cadenceGroup.removeAttribute('aria-describedby');
+        };
+
+        const renderSupport = () => {
+          const view = rules.supportView(call('support'), { when: day });
+          supportForm.hidden = view.pledged;
+          supportDone.hidden = !view.pledged;
+          listing.hidden = !view.pledged;
+          if (view.pledged) {
+            setText($('#shop-support-done-title'), view.title);
+            setText($('#shop-support-done-message'), view.message);
+            for (const input of cadences) input.checked = input.value === view.cadence;
+            showSupportError(false);
+          }
+          if (listingOpt.checked !== view.listing.optIn) listingOpt.checked = view.listing.optIn;
+          for (const input of displays) {
+            const on = input.value === view.listing.display;
+            if (input.checked !== on) input.checked = on;
+          }
+          for (const name of $$('[data-shop-name]', listing)) {
+            const shown = view.listing.names[name.dataset.shopName];
+            if (shown) setText(name, shown);
+          }
+          setText(listingStatus, view.listing.status);
+          // The planned benefits, in the store's words.
+          const titles = view.benefits.map((benefit) => benefit.title);
+          if (titles.length && titles.join('|') !== $$('li', benefitList).map((item) => item.textContent).join('|')) {
+            benefitList.replaceChildren(
+              ...titles.map((title) => {
+                const item = document.createElement('li');
+                item.textContent = title;
+                return item;
+              }),
+            );
+          }
+          if (view.note) setText($('#shop-support-note'), view.note);
+        };
+
+        supportForm.addEventListener('change', () => showSupportError(false));
+        supportForm.addEventListener('submit', (event) => {
+          event.preventDefault();
+          const picked = cadences.find((input) => input.checked);
+          if (!picked) {
+            showSupportError(true);
+            cadences[0]?.focus();
+            announce('Choose once or monthly.');
+            return;
+          }
+          const result = call('pledgeSupport', picked.value);
+          if (!result) {
+            announce('We couldn’t record that. Try again, or reload the page.');
+            deputy?.react?.('error');
+            return;
+          }
+          renderSupport();
+          // The form is gone, so focus moves to the confirmation that replaced it.
+          supportDone.focus();
+          announce(
+            `You’re counted in, ${picked.value}. We’ll tell you when donations open. Nothing is charged. You can join the supporters list below.`,
+          );
+          deputy?.react?.('saved', { speech: 'I’ll tell you when they open.' });
+        });
+
+        withdraw.addEventListener('click', () => {
+          const before = rules.supportView(call('support'));
+          call('withdrawSupport');
+          renderSupport();
+          // The confirmation is gone; focus returns to the choice it recorded.
+          (cadences.find((input) => input.value === before.cadence) ?? cadences[0])?.focus();
+          announce(
+            `Your interest is withdrawn${before.listing.optIn ? ', and you’re off the supporters list' : ''}. Nothing was charged.`,
+          );
+          deputy?.react?.('saved', { speech: 'Withdrawn. Nothing was charged.' });
+        });
+
+        // The supporters list: in or out, and how your name shows (setSupporterListing).
+        listingOpt.addEventListener('change', () => {
+          const result = call('setSupporterListing', { optIn: listingOpt.checked });
+          if (!result) {
+            renderSupport();
+            announce('We couldn’t save that. Count yourself in first, then try again.');
+            deputy?.react?.('error');
+            return;
+          }
+          const view = rules.supportView(result);
+          announce(
+            view.listing.optIn
+              ? rules.sentence(`You’re on the supporters list as ${view.listing.names[view.listing.display]}`)
+              : 'You’re off the supporters list.',
+          );
+          deputy?.react?.('saved', {
+            speech: view.listing.optIn ? 'You’re on the list now.' : 'You’re off the list.',
+          });
+        });
+        listingDisplay.addEventListener('change', (event) => {
+          const input = event.target;
+          if (!(input instanceof HTMLInputElement) || input.name !== 'display') return;
+          const result = call('setSupporterListing', { display: input.value });
+          if (!result) {
+            renderSupport();
+            announce('We couldn’t save that. Try again, or reload the page.');
+            deputy?.react?.('error');
+            return;
+          }
+          const view = rules.supportView(result);
+          const name = view.listing.names[view.listing.display];
+          announce(
+            view.listing.optIn
+              ? rules.sentence(`Your name shows as ${name}`)
+              : rules.sentence(`Saved: if you join the list, your name shows as ${name}`),
+          );
+          deputy?.react?.('saved', { speech: 'Saved: your name, your way.' });
+        });
+
+        // ---------------------------------------------------------------- start
+
+        const render = () => {
+          renderNotes();
+          renderRuns();
+          renderTokens();
+          renderCredits();
+          renderChooser();
+          renderHow();
+          renderReceipts();
+          renderBonus();
+          renderSupport();
+          // Last, so a figure the sections just drew gets the store's text.
+          renderFigures();
+        };
+
+        // The rings fold on a phone (the runway line above them says the balance in one line) and
+        // open again on a wider screen, where there is no fold to open them from.
+        const rings = $('#shop-rings');
+        const phone = window.matchMedia?.('(max-width: 720px)');
+        if (rings && phone) {
+          rings.open = !phone.matches;
+          phone.addEventListener?.('change', (event) => {
+            if (!event.matches) rings.open = true;
+          });
+        }
+
+        chooseFromAddress();
+        render();
+        components?.boot?.ready?.();
+        // Arriving on the quick buy from another page (T3-25): Get more runs and Buy credits land
+        // on #buy (or #credits, #assist, #bundles) scrolled down, far under the intro's Back. So the
+        // Buy label's line gets the same Back (PL's own link, from place.back, cloned once PL has
+        // drawn it; pressing it marks the return as PL's does) and focus goes to the Buy heading.
+        if (rules.landsOnBuy(window.location.hash) && components?.place?.back) {
+          const buyLabel = $('#buy > .shop-head > .section-label');
+          const buyTitle = $('#shop-buy-title');
+          const mountBuyBack = () => {
+            const back = $('main .page-intro .page-back');
+            if (!back || !buyLabel || buyLabel.querySelector('.page-back')) return;
+            buyLabel.prepend(back.cloneNode(true));
+          };
+          if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountBuyBack, { once: true });
+          else mountBuyBack();
+          // After load: until then the browser's own scroll to the anchor moves focus to the page
+          // (the section is not focusable), undoing an earlier focus.
+          const focusBuy = () =>
+            components?.boot?.whenReady?.(() => {
+              if (!buyTitle) return;
+              buyTitle.tabIndex = -1;
+              buyTitle.focus({ preventScroll: true });
+            });
+          if (document.readyState === 'complete') focusBuy();
+          else window.addEventListener('load', focusBuy, { once: true });
+        }
+        // ?receipt=<id> (a receipt's own link) opens it once the page is drawn.
+        const asked = new URLSearchParams(window.location.search).get('receipt');
+        if (asked) {
+          components?.boot?.whenReady?.(() => openReceipt(asked, receiptsHeading));
+          // A one-time trigger: the address drops it, so a reload does not open it again.
+          try {
+            const query = new URLSearchParams(window.location.search);
+            query.delete('receipt');
+            const search = query.toString().replace(/=(?=&|$)/g, '');
+            window.history.replaceState(window.history.state, '', `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`);
+          } catch {
+            // The address keeps it; a reload opens the receipt again.
+          }
+        }
+        // A purchase in the checkout, another tab, a new platform model, or Reset sample data on
+        // Help: show it here too.
+        // A live progress tick (a tailoring step, a test's count) changes nothing here (T3-19).
+        store?.subscribe?.((_state, change) => {
+          if (change?.progress) return;
+          render();
+        });
+      })();
+    </script>
+    <span id="first-view" hidden></span>
+  </body>
+</html>

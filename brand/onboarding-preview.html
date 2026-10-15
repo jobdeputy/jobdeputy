@@ -1,0 +1,3541 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="JobDeputy setup: a few questions so your deputy searches the right places."
+    />
+    <title>JobDeputy · Set up your deputy</title>
+    <link rel="icon" href="./jobdeputy-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./app-chrome.css" />
+    <link rel="stylesheet" href="./app-components.css" />
+    <link rel="stylesheet" href="./deputy.css" />
+    <link rel="expect" href="#first-view" blocking="render" />
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #1b1a18;
+        --ink-soft: #2d2b27;
+        --muted: #706d66;
+        --quiet: #98948b;
+        --paper: #faf8f3;
+        --paper-deep: #f0ece3;
+        --surface: rgba(255, 255, 255, 0.82);
+        --surface-strong: rgba(255, 255, 255, 0.92);
+        --header-surface: rgba(250, 248, 243, 0.82);
+        --line: rgba(27, 26, 24, 0.12);
+        --line-soft: rgba(27, 26, 24, 0.08);
+        --line-strong: rgba(27, 26, 24, 0.24);
+        --green: #2f9e77;
+        --green-soft: #ccebdc;
+        --green-wash: rgba(204, 235, 220, 0.55);
+        --green-line: rgba(47, 158, 119, 0.36);
+        --green-ink: #23795b;
+        --orange: #f36b3f;
+        --orange-soft: #ffd5c6;
+        --danger-ink: #9c4028;
+        --blue: #526fe5;
+        --blue-soft: #d9def8;
+        --on-ink-muted: rgba(255, 255, 255, 0.68);
+        --shadow: 0 21px 55px rgba(55, 48, 36, 0.07);
+        --shadow-control: 0 10px 21px rgba(27, 26, 24, 0.15);
+        --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+        --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+        --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+        --font-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+        font-family: var(--font-text);
+        font-synthesis: none;
+      }
+
+      /*
+       * Shared chrome (header, page shell, intro, surfaces, and actions) lives in ./app-chrome.css,
+       * the shared components (choice cards, quick picks, step progress, upload zone, sample note)
+       * in ./app-components.css, and the deputy scene (with its phone row) in ./deputy.css. Setup
+       * uses the entry header and has no app sidebar or footer. The rules below are this page's
+       * layout only (.ob-*).
+       */
+
+      html {
+        min-height: 100%;
+        background: var(--paper);
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        overflow-x: clip;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 9% 4%, var(--surface-strong), transparent 27rem),
+          radial-gradient(
+            circle at 92% 18%,
+            color-mix(in srgb, var(--green-soft) 25%, transparent),
+            transparent 23rem
+          ),
+          var(--paper);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      button,
+      a {
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      p {
+        margin-top: 0;
+      }
+
+      /* Line icons used by the choice cards, the facts, and the upload zone (24 viewBox, 1.75
+         stroke). */
+      .ob-sprite {
+        position: absolute;
+        width: 0;
+        height: 0;
+        overflow: hidden;
+      }
+
+      /* The step progress sits on top at every width, in the header's free end: setup has no
+         account menu, and on phones it costs the question no height. */
+      .ob-progress {
+        flex: 0 1 233px;
+        min-width: 0;
+      }
+
+      .ob-progress .step-progress-label {
+        text-align: end;
+      }
+
+      /* The golden split, as on sign-in: the deputy's stage (1.618) beside the question (1). The
+         question keeps at least 390px of content (458px with the surface padding). */
+
+      .ob-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.618fr) minmax(min(100%, 458px), 1fr);
+        gap: 34px;
+        align-items: start;
+      }
+
+      /* The stage sticks beneath the header while a long step scrolls, so the deputy stays in view.
+         Its note shares the row under the art with Pause motion. */
+      .ob-stage {
+        position: sticky;
+        top: 106px;
+        display: grid;
+        min-width: 0;
+      }
+
+      .ob-stage > * {
+        grid-area: 1 / 1;
+      }
+
+      .ob-stage-note {
+        display: flex;
+        max-width: min(440px, 100% - 170px);
+        min-height: 44px;
+        margin: 0;
+        align-items: center;
+        align-self: end;
+        justify-self: end;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+        text-align: end;
+      }
+
+      /* The question: the form holds the surface, and the surface holds the intro, the step, its
+         feedback, and the actions. */
+
+      .ob-task {
+        display: grid;
+        min-width: 0;
+      }
+
+      .ob-surface {
+        display: grid;
+        min-width: 0;
+        gap: 21px;
+      }
+
+      .ob-intro {
+        margin: 0;
+      }
+
+      .ob-title:focus {
+        outline: none;
+      }
+
+      .ob-step {
+        display: grid;
+        min-width: 0;
+        gap: 21px;
+      }
+
+      .ob-step.is-entering {
+        animation: ob-step-in 380ms var(--ease-settle) both;
+      }
+
+      @keyframes ob-step-in {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+      }
+
+      /* Welcome: who you are, how you arrived, and where your data lives. */
+
+      .ob-account-title {
+        margin-bottom: -8px;
+      }
+
+      .ob-facts {
+        display: grid;
+        margin: 0;
+        padding: 0;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--surface);
+        list-style: none;
+      }
+
+      .ob-fact {
+        display: grid;
+        min-width: 0;
+        min-height: 60px;
+        grid-template-columns: 34px minmax(0, 1fr) auto;
+        gap: 13px;
+        padding: 13px 15px;
+        align-items: center;
+      }
+
+      .ob-fact + .ob-fact {
+        border-top: 1px solid var(--line);
+      }
+
+      .ob-fact-icon {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        place-items: center;
+        color: var(--ink-soft);
+        background: var(--paper-deep);
+      }
+
+      .ob-fact-icon svg {
+        width: 20px;
+        height: 20px;
+      }
+
+      .ob-fact-copy {
+        display: grid;
+        min-width: 0;
+        gap: 2px;
+      }
+
+      .ob-fact-label {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .ob-fact-value {
+        color: var(--ink);
+        font-size: 15px;
+        font-weight: 650;
+        line-height: 1.35;
+        overflow-wrap: break-word;
+      }
+
+      .ob-welcome-notes {
+        display: grid;
+        gap: 8px;
+      }
+
+      /* Quiet text links: Skip setup for now, Back to Help, and What is Keep watch? */
+      .ob-link {
+        display: inline-flex;
+        min-height: 44px;
+        align-items: center;
+        justify-self: start;
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 680;
+        text-decoration: underline;
+        text-decoration-color: var(--green-line);
+        text-underline-offset: 3px;
+        transition: text-decoration-color 180ms ease;
+      }
+
+      .ob-link:hover {
+        text-decoration-color: var(--green);
+      }
+
+      .ob-link:focus-visible {
+        border-radius: 4px;
+        outline: 2px solid var(--green);
+        outline-offset: 2px;
+      }
+
+      /* A tag inside a choice card's copy (Planned for launch) starts its own line. */
+      .ob-card-tag {
+        justify-self: start;
+        margin-top: 2px;
+      }
+
+      /* Target roles: a title field with suggestions, then the roles as checkbox chips. */
+
+      .ob-field {
+        display: grid;
+        min-width: 0;
+        gap: 8px;
+      }
+
+      .ob-entry {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+      }
+
+      .ob-chips {
+        display: flex;
+        min-width: 0;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        border: 0;
+      }
+
+      /* A rendered legend sits above the wrapping chips, outside their flex row. */
+      .ob-chips-label {
+        margin: 0 0 8px;
+        padding: 0;
+      }
+
+      /* Field feedback beside its field: ink text after an orange mark, never coloured text. */
+      .ob-error {
+        display: flex;
+        gap: 8px;
+        margin: 0;
+        align-items: flex-start;
+        color: var(--ink);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .ob-error::before {
+        display: inline-grid;
+        width: 17px;
+        height: 17px;
+        flex: 0 0 auto;
+        border-radius: 50%;
+        place-items: center;
+        color: var(--ink);
+        background: var(--orange-soft);
+        content: "!" / "";
+        font-size: 12px;
+        font-weight: 750;
+        line-height: 1;
+      }
+
+      /* First source: the confirmation line under the address, with the company mark. */
+      .ob-confirm {
+        display: flex;
+        min-width: 0;
+        min-height: 34px;
+        gap: 8px;
+        margin: 0;
+        align-items: center;
+        color: var(--ink);
+        font-size: 14px;
+        font-weight: 650;
+        line-height: 1.35;
+        overflow-wrap: break-word;
+      }
+
+      /* Your résumé: Import from LinkedIn as a quiet row under the upload zone (round 5, G2). */
+      .ob-import {
+        display: flex;
+        min-width: 0;
+        flex-wrap: wrap;
+        gap: 8px 13px;
+        padding: 13px;
+        border: 1px solid var(--line);
+        border-radius: 13px;
+        align-items: center;
+        background: var(--paper);
+      }
+
+      .ob-import-icon {
+        display: grid;
+        flex: 0 0 44px;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        place-items: center;
+        background: var(--paper-deep);
+      }
+
+      .ob-import-icon svg {
+        width: 20px;
+        height: 20px;
+      }
+
+      .ob-import-copy {
+        display: grid;
+        min-width: 0;
+        flex: 1 1 180px;
+        gap: 2px;
+        margin: 0;
+      }
+
+      .ob-import-title {
+        color: var(--ink);
+        font-size: 15px;
+        font-weight: 700;
+        line-height: 1.35;
+      }
+
+      .ob-import-meta {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+        overflow-wrap: break-word;
+      }
+
+      .ob-import > .secondary-action {
+        flex: 0 0 auto;
+      }
+
+      .ob-drawer-copy {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .ob-import-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 13px;
+      }
+
+      .ob-import-review,
+      .ob-import-groups {
+        display: grid;
+        gap: 21px;
+      }
+
+      .ob-import-review[hidden] {
+        display: none;
+      }
+
+      .ob-import-file {
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 15px;
+        font-weight: 650;
+        line-height: 1.4;
+        overflow-wrap: break-word;
+      }
+
+      .ob-import-group {
+        min-width: 0;
+        margin: 0;
+      }
+
+      .ob-import-group .choice-card-label,
+      .ob-import-group .choice-card-meta {
+        overflow-wrap: break-word;
+      }
+
+      .ob-import-group .ob-import-value {
+        color: var(--ink-soft);
+        font-size: 14px;
+      }
+
+      .ob-import-same > summary {
+        min-height: 44px;
+        margin-bottom: 13px;
+        color: var(--ink);
+        font-size: 14px;
+        font-weight: 680;
+        line-height: 44px;
+        cursor: pointer;
+      }
+
+      .ob-import-same > summary:focus-visible {
+        border-radius: 4px;
+        outline: 2px solid var(--green);
+        outline-offset: 2px;
+      }
+
+      /* Platform credits: the account's one model, under the choice it belongs to. */
+      .ob-models {
+        min-width: 0;
+      }
+
+      .ob-models[hidden] {
+        display: none;
+      }
+
+      .ob-models > .sample-note {
+        margin: 0 0 8px;
+      }
+
+      /* Done: what your deputy will work from, one answer per row. */
+
+      .ob-summary {
+        display: grid;
+        margin: 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .ob-summary-row {
+        display: grid;
+        min-width: 0;
+        min-height: 52px;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0 13px;
+        padding: 4px 0;
+        border-bottom: 1px solid var(--line);
+        align-items: center;
+      }
+
+      .ob-summary-row dt {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .ob-summary-row dd {
+        min-width: 0;
+        margin: 0;
+      }
+
+      .ob-summary-value {
+        color: var(--ink);
+        font-size: 15px;
+        line-height: 1.35;
+        overflow-wrap: break-word;
+      }
+
+      .ob-summary-value.is-empty {
+        color: var(--muted);
+      }
+
+      .ob-summary-change {
+        grid-row: 1 / span 2;
+        grid-column: 2;
+      }
+
+      /* Actions: Back on the start side; Skip and Continue on the end (Welcome has no Back, so its
+         button keeps the end). Under them, the quiet way out (round 6, G4): Skip setup for now on
+         Welcome, Skip the rest on every question after it, each beside "I’ll add what’s left to
+         your To-do."; a re-run's line goes back without saving. */
+
+      .ob-actions {
+        display: flex;
+        min-width: 0;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .ob-back {
+        margin-inline-end: auto;
+      }
+
+      .ob-back[hidden] ~ .ob-continue {
+        margin-inline-start: auto;
+      }
+
+      .ob-back-arrow {
+        font-weight: 400;
+      }
+
+      .ob-exit {
+        display: flex;
+        min-width: 0;
+        flex: 1 1 100%;
+        flex-wrap: wrap;
+        gap: 0 8px;
+        margin: 0;
+        align-items: center;
+      }
+
+      .ob-exit-note {
+        min-width: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      /* The stage's Pause motion row keeps its height when the button hides (reduced motion), so
+         the note beside it never rides up over the art. */
+      @media (min-width: 721px) {
+        .ob-stage .deputy-actions {
+          min-height: 44px;
+          margin-top: 13px;
+        }
+      }
+
+      /* Tablets keep the scene beside the task: a 233px column, as wide as the app sidebar, and
+         the question at least 458px wide. */
+      @media (min-width: 721px) and (max-width: 880px) {
+        .ob-layout {
+          grid-template-columns: 233px minmax(0, 1fr);
+          gap: 21px;
+        }
+
+        .ob-stage {
+          gap: 13px;
+        }
+
+        .ob-stage > * {
+          grid-area: auto;
+        }
+
+        .ob-stage .deputy-actions {
+          margin-top: 0;
+          justify-content: center;
+        }
+
+        .ob-stage-note {
+          max-width: none;
+          min-height: 0;
+          justify-self: center;
+          text-align: center;
+        }
+      }
+
+      /* Short desktop windows shrink the stage, never the copy: the question takes half the width,
+         so most questions fit one line, and a tight rhythm lets Continue clear the fold. */
+      @media (min-width: 881px) and (max-height: 800px) {
+        .ob-layout {
+          grid-template-columns: minmax(0, 1fr) minmax(min(100%, 458px), 1fr);
+        }
+
+        .ob-surface,
+        .ob-step {
+          gap: 13px;
+        }
+
+        .ob-intro .eyebrow {
+          margin-bottom: 8px;
+        }
+
+        .ob-account-title {
+          margin: 8px 0 0;
+        }
+
+        .ob-summary-row {
+          min-height: 48px;
+          padding-block: 2px;
+        }
+      }
+
+      /*
+       * Phones (720px and narrower), phone first: the step progress in the header, the deputy row
+       * (deputy.css lays the scene out as an 89px panda beside its speech), the question, its
+       * options, and a sticky bar with Back and Continue. The question goes edge to edge (the
+       * surface's box steps aside, its children keep their order), so most questions take one
+       * line. The bar pads for the home indicator, and while a text field has focus it rejoins the
+       * flow after the step, so the keyboard never hides it over the field.
+       */
+      @media (max-width: 720px) {
+        .ob-shell {
+          padding-block: 8px 0;
+        }
+
+        .ob-progress {
+          flex-basis: 160px;
+        }
+
+        /* The question fills the screen under the header, so a short step still ends with its bar
+           at the bottom edge. */
+        .ob-layout {
+          min-height: calc(100svh - 72px);
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-rows: auto 1fr;
+          gap: 8px;
+          align-items: stretch;
+        }
+
+        .ob-stage {
+          position: static;
+        }
+
+        .ob-stage > * {
+          grid-area: auto;
+        }
+
+        .ob-stage-note {
+          display: none;
+        }
+
+        .ob-surface {
+          display: contents;
+        }
+
+        .ob-title {
+          margin-bottom: 8px;
+        }
+
+        .ob-task {
+          position: relative;
+          z-index: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 13px;
+        }
+
+        .ob-step {
+          gap: 13px;
+        }
+
+        /* One row while it fits; a long last button (Go to your dashboard at 320px, Save and
+           return in a re-run, or WCAG text spacing) takes its own row instead of pushing the
+           page wider. */
+        .ob-actions {
+          position: sticky;
+          z-index: 10;
+          bottom: 0;
+          flex-wrap: wrap;
+          margin: auto -13px 0;
+          padding: 8px 13px max(13px, env(safe-area-inset-bottom));
+          border-top: 1px solid var(--line-soft);
+          background: var(--header-surface);
+          backdrop-filter: saturate(160%) blur(20px);
+        }
+
+        .ob-task.is-typing .ob-actions {
+          position: static;
+        }
+
+        .ob-task.is-touring .ob-actions {
+          position: static;
+        }
+
+        /* Setup has no footer, so during its tour the page gets room below the bar, enough for
+           the tour to bring the last step above its bottom sheet. */
+        main.is-touring .ob-shell {
+          padding-bottom: 75svh;
+        }
+
+        .ob-continue {
+          flex: 1 1 auto;
+        }
+
+        /* Keyboard focus scrolls a control clear of the sticky bar (WCAG 2.4.11). */
+        .ob-step :is(input, button, a, select, textarea) {
+          scroll-margin-bottom: 89px;
+        }
+      }
+
+      /* The narrowest phones: Back, Skip, and the last button keep one row with a little less
+         padding each (their 52px height stays). */
+      @media (max-width: 359px) {
+        .ob-actions > :is(.ob-back, .ob-skip, .ob-continue) {
+          padding-inline: 13px;
+        }
+      }
+
+      /* Short phones (667px tall and the like) leave out the eyebrow: the step progress above and
+         the question below already name the step. */
+      @media (max-width: 720px) and (max-height: 700px) {
+        .ob-intro .eyebrow {
+          display: none;
+        }
+
+        .ob-task {
+          gap: 8px;
+        }
+      }
+
+      @media (max-width: 520px) {
+        .ob-fact {
+          grid-template-columns: 34px minmax(0, 1fr);
+          row-gap: 8px;
+        }
+
+        .ob-fact .status-pill {
+          grid-column: 2;
+          justify-self: start;
+        }
+
+        .ob-summary-row {
+          grid-template-columns: minmax(0, 1fr);
+        }
+
+        .ob-summary-change {
+          grid-row: auto;
+          grid-column: 1;
+          justify-self: start;
+          margin-top: 4px;
+        }
+      }
+
+      /* The shared reset in ./app-chrome.css shortens every animation; the step entrance also stops. */
+      @media (prefers-reduced-motion: reduce) {
+        .ob-step.is-entering {
+          animation: none;
+        }
+
+        .ob-link {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#page-title">Skip to setup</a>
+
+    <svg class="ob-sprite" aria-hidden="true" focusable="false">
+      <defs>
+        <symbol id="ob-icon-magnifier" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="10.5" cy="10.5" r="6" />
+          <path d="m15 15 5 5" />
+        </symbol>
+        <symbol id="ob-icon-draft" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M11.5 20.5h-4a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2H14l4.5 4.5v3" />
+          <path d="M14 3.5V8h4.5M9 12h5M9 15.5h2.5" />
+          <path d="m14.5 20.5.6-2.7 4.4-4.4a1.4 1.4 0 0 1 2 2l-4.4 4.4z" />
+        </symbol>
+        <symbol id="ob-icon-form" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4.75" y="3.75" width="14.5" height="16.5" rx="2" />
+          <path d="M8.25 8.25h7.5M8.25 11.75h7.5" />
+          <path d="m8.5 15.75 1.5 1.5 3-3" />
+        </symbol>
+        <symbol id="ob-icon-board" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3.75" y="4.25" width="4.5" height="11.5" rx="1.25" />
+          <rect x="9.75" y="4.25" width="4.5" height="15.5" rx="1.25" />
+          <rect x="15.75" y="4.25" width="4.5" height="8" rx="1.25" />
+        </symbol>
+        <symbol id="ob-icon-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4.5 11 12 4.5l7.5 6.5M6.5 9.5v10h11v-10M10 19.5v-5h4v5" />
+        </symbol>
+        <symbol id="ob-icon-hybrid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4.5 10.5a7.5 7.5 0 0 1 13.4-3.9L19.5 8.5M19.5 4v4.5H15M19.5 13.5a7.5 7.5 0 0 1-13.4 3.9L4.5 15.5M4.5 20v-4.5H9" />
+        </symbol>
+        <symbol id="ob-icon-building" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="5.5" y="3.5" width="13" height="17" rx="1.5" />
+          <path d="M9 7.5h1.5M13.5 7.5H15M9 11h1.5M13.5 11H15M9 14.5h1.5M13.5 14.5H15M10.5 20.5v-3h3v3" />
+        </symbol>
+        <symbol id="ob-icon-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="8.25" />
+          <path d="M10.25 8.75v6.5l5-3.25z" />
+        </symbol>
+        <symbol id="ob-icon-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="13" r="7" />
+          <path d="M12 9.5V13l2.5 1.75M4.75 6 7.5 3.5M19.25 6 16.5 3.5" />
+        </symbol>
+        <symbol id="ob-icon-sparkle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3.5 13.6 9a2 2 0 0 0 1.4 1.4l5.5 1.6-5.5 1.6a2 2 0 0 0-1.4 1.4L12 20.5l-1.6-5.5A2 2 0 0 0 9 13.6L3.5 12 9 10.4A2 2 0 0 0 10.4 9z" />
+        </symbol>
+        <symbol id="ob-icon-key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="8.5" cy="15.5" r="4" />
+          <path d="m11.5 12.5 8-8M16.5 7.5l2 2M14 10l1.5 1.5" />
+        </symbol>
+        <symbol id="ob-icon-filter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 5.5h16l-6.2 7.2v5.6l-3.6 1.7v-7.3z" />
+        </symbol>
+        <symbol id="ob-icon-person" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="8.25" r="3.75" />
+          <path d="M4.75 20c.6-3.75 3.4-6 7.25-6s6.65 2.25 7.25 6" />
+        </symbol>
+        <symbol id="ob-icon-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3.75" y="5.75" width="16.5" height="12.5" rx="2" />
+          <path d="m4.5 7 7.5 6 7.5-6" />
+        </symbol>
+        <!-- LinkedIn's "in" mark keeps LinkedIn's blue, as on Continue with LinkedIn. -->
+        <symbol id="ob-icon-linkedin" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#0a66c2" />
+          <circle cx="6.25" cy="5.6" r="2.05" fill="#fff" />
+          <rect x="4.5" y="9" width="3.5" height="10.5" fill="#fff" />
+          <path fill="#fff" d="M10 9h3.3v1.5c.5-.9 1.7-1.8 3.5-1.8 3.5 0 4.2 2.3 4.2 5.3v5.5h-3.5v-4.9c0-1.2-.1-2.7-1.6-2.7-1.6 0-2.6 1.3-2.6 2.6v5H10z" />
+        </symbol>
+        <!-- The Google mark keeps its owner's colours, as on Continue with Google. -->
+        <symbol id="ob-icon-google" viewBox="0 0 18 18">
+          <path fill="#4285f4" d="M17.64 9.205c0-.638-.057-1.252-.164-1.841H9v3.482h4.844a4.14 4.14 0 0 1-1.797 2.714v2.258h2.909c1.703-1.568 2.684-3.878 2.684-6.613Z" />
+          <path fill="#34a853" d="M9 18c2.43 0 4.468-.806 5.956-2.182l-2.91-2.258c-.805.54-1.834.86-3.046.86-2.344 0-4.33-1.585-5.04-3.714H.952v2.333A9 9 0 0 0 9 18Z" />
+          <path fill="#fbbc05" d="M3.96 10.706A5.41 5.41 0 0 1 3.682 9c0-.592.102-1.167.278-1.706V4.96H.952A9 9 0 0 0 0 9c0 1.452.347 2.827.952 4.04l3.008-2.334Z" />
+          <path fill="#ea4335" d="M9 3.58c1.322 0 2.508.454 3.44 1.345l2.582-2.582C13.464.892 11.426 0 9 0A9 9 0 0 0 .952 4.96L3.96 7.294C4.67 5.165 6.656 3.58 9 3.58Z" />
+        </symbol>
+        <symbol id="ob-icon-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="5" y="10.5" width="14" height="10" rx="2" />
+          <path d="M8 10.5V8a4 4 0 0 1 8 0v2.5M12 14.5v2" />
+        </symbol>
+        <symbol id="ob-icon-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 15.5v-11M7.5 9 12 4.5 16.5 9M4.5 14.5V18a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3.5" />
+        </symbol>
+        <symbol id="ob-icon-document" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 3.5H7.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8z" />
+          <path d="M14 3.5V8h4.5M9 12.5h6M9 16h4" />
+        </symbol>
+        <symbol id="ob-icon-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="8.5" />
+          <path d="M12 7.5V13M12 16.5h.01" />
+        </symbol>
+      </defs>
+    </svg>
+
+    <header class="app-header">
+      <!-- Round 6 part 3 (T1-6): leaving setup through the logo does the same as Skip setup for
+           now; the script attaches that behaviour, so it keeps your answers and puts what you
+           didn't answer on your To-do. -->
+      <a class="brand" href="./home-preview.html?skipLoader" aria-label="JobDeputy dashboard">
+        <img
+          class="brand-logo"
+          src="./jobdeputy-mark.svg"
+          alt=""
+          width="400"
+          height="290"
+        />
+        <span class="brand-copy">
+          <span class="brand-name"><span>Job</span><span>Deputy</span></span>
+          <span class="brand-note">Your search partner</span>
+        </span>
+      </a>
+      <div class="step-progress ob-progress" id="ob-progress">
+        <p class="step-progress-label" id="ob-progress-label">8 short steps</p>
+        <ol class="step-progress-bar" id="ob-progress-bar" aria-hidden="true">
+          <li class="step-progress-step"></li>
+          <li class="step-progress-step"></li>
+          <li class="step-progress-step"></li>
+          <li class="step-progress-step"></li>
+          <li class="step-progress-step"></li>
+          <li class="step-progress-step"></li>
+          <li class="step-progress-step"></li>
+          <li class="step-progress-step"></li>
+        </ol>
+      </div>
+    </header>
+
+    <main class="onboarding-main" id="main">
+      <div class="page-shell ob-shell">
+        <div class="ob-layout">
+          <!-- The deputy's stage: one panda on this page (no dock), so the scene is the live host. -->
+          <div class="ob-stage">
+            <div
+              class="deputy-scene"
+              id="onboarding-deputy"
+              data-deputy
+              data-deputy-page="onboarding"
+              data-deputy-state="idle"
+            >
+              <div class="deputy-art" data-deputy-art aria-hidden="true"></div>
+              <p class="deputy-speech" data-deputy-speech>Hi, Alex. Let’s get going.</p>
+              <p class="deputy-duty"><span class="deputy-duty-dot" aria-hidden="true"></span><span data-deputy-duty>Ready</span></p>
+              <div class="deputy-actions"><button class="deputy-motion" type="button" data-deputy-motion>Pause motion</button></div>
+              <p class="sr-only" data-deputy-announce role="status"></p>
+            </div>
+            <p class="ob-stage-note" id="ob-stage-note">
+              Your answers stay in this browser until you finish. You can change them later in
+              Profile.
+            </p>
+          </div>
+
+          <form class="ob-task" id="ob-form" aria-labelledby="page-title" novalidate>
+            <div class="task-surface ob-surface">
+              <!-- The shared page intro (round 6, R6-3) with Take the tour. Setup's tour is offered on
+                   Welcome only (the script marks its steps there): how setup works, your Region,
+                   and how to skip. -->
+              <section
+                class="page-intro ob-intro"
+                id="ob-intro"
+                aria-labelledby="page-title"
+                data-ob-tour="1"
+                data-tour-title="Eight short steps."
+                data-tour-text="I ask one thing at a time and say why I ask it. It takes about two minutes, and you can change any answer later."
+              >
+                <div class="page-intro-copy">
+                  <p class="eyebrow" id="ob-eyebrow">Getting started</p>
+                  <h1 class="ob-title" id="page-title" tabindex="-1">Hi Alex, I’m your deputy.</h1>
+                  <p class="intro-copy" id="ob-why">
+                    About two minutes, so I search the right places.
+                  </p>
+                </div>
+                <div class="page-intro-actions">
+                  <button type="button" class="secondary-action page-tour" data-tour-open hidden>Take the tour</button>
+                </div>
+              </section>
+
+              <!-- 0 · Welcome: the door the person came through, and where the data lives -->
+              <div class="ob-step" data-step="welcome">
+                <h2 class="ob-account-title" id="ob-account-title">Your account is ready.</h2>
+                <ul
+                  class="ob-facts"
+                  aria-labelledby="ob-account-title"
+                  data-ob-tour="2"
+                  data-tour-title="Your account and its Region."
+                  data-tour-text="I keep your profile, searches, and files in this Region. It stays locked once your account exists."
+                >
+                  <li class="ob-fact">
+                    <span class="ob-fact-icon" aria-hidden="true"><svg aria-hidden="true" focusable="false"><use id="ob-account-icon" href="#ob-icon-person" /></svg></span>
+                    <span class="ob-fact-copy">
+                      <span class="ob-fact-label" id="ob-account-label">Signed in as</span>
+                      <strong class="ob-fact-value" id="ob-account-value">alex.morgan@example.com</strong>
+                    </span>
+                    <span class="status-pill" id="ob-account-pill" hidden>New account</span>
+                  </li>
+                  <li class="ob-fact">
+                    <span class="ob-fact-icon" aria-hidden="true"><svg aria-hidden="true" focusable="false"><use href="#ob-icon-lock" /></svg></span>
+                    <span class="ob-fact-copy">
+                      <span class="ob-fact-label">Home Region</span>
+                      <strong class="ob-fact-value" id="ob-region-value">United States (US)</strong>
+                    </span>
+                    <span class="status-pill is-neutral">Locked</span>
+                  </li>
+                </ul>
+                <div class="ob-welcome-notes">
+                  <p class="field-help">Your profile, searches, and files stay in this Region.</p>
+                  <p class="sample-note" id="ob-door-note" hidden>
+                    Google sign-up is simulated · no Google request was made
+                  </p>
+                </div>
+              </div>
+
+              <!-- 1 · Where should I help? -->
+              <div class="ob-step" data-step="focus" hidden>
+                <fieldset class="choice-cards" aria-labelledby="page-title" aria-describedby="ob-why">
+                  <label class="choice-card">
+                    <input type="checkbox" name="focus" value="roles" />
+                    <span class="choice-card-control" aria-hidden="true"></span>
+                    <span class="choice-card-copy">
+                      <span class="choice-card-label">Finding roles</span>
+                      <span class="choice-card-meta">On the sites and boards you choose</span>
+                    </span>
+                    <svg class="choice-card-icon" aria-hidden="true" focusable="false"><use href="#ob-icon-magnifier" /></svg>
+                  </label>
+                  <label class="choice-card">
+                    <input type="checkbox" name="focus" value="tailoring" />
+                    <span class="choice-card-control" aria-hidden="true"></span>
+                    <span class="choice-card-copy">
+                      <span class="choice-card-label">Tailoring résumés</span>
+                      <span class="choice-card-meta">A draft for each role, for your review</span>
+                    </span>
+                    <svg class="choice-card-icon" aria-hidden="true" focusable="false"><use href="#ob-icon-draft" /></svg>
+                  </label>
+                  <label class="choice-card">
+                    <input type="checkbox" name="focus" value="applying" />
+                    <span class="choice-card-control" aria-hidden="true"></span>
+                    <span class="choice-card-copy">
+                      <span class="choice-card-label">Filling in applications</span>
+                      <span class="choice-card-meta"
+                        >Needs read-only Gmail for one-time codes and status emails; you approve each form</span
+                      >
+                      <span class="tag ob-card-tag">Planned for launch</span>
+                    </span>
+                    <svg class="choice-card-icon" aria-hidden="true" focusable="false"><use href="#ob-icon-form" /></svg>
+                  </label>
+                  <label class="choice-card">
+                    <input type="checkbox" name="focus" value="tracking" />
+                    <span class="choice-card-control" aria-hidden="true"></span>
+                    <span class="choice-card-copy">
+                      <span class="choice-card-label">Tracking applications</span>
+                      <span class="choice-card-meta">Every stage and follow-up in one place</span>
+                    </span>
+                    <svg class="choice-card-icon" aria-hidden="true" focusable="false"><use href="#ob-icon-board" /></svg>
+                  </label>
+                </fieldset>
+              </div>
+
+              <!-- 2 · What roles should I look for? -->
+              <div class="ob-step" data-step="roles" hidden>
+                <div class="ob-field">
+                  <label class="field-label" for="ob-role-input">Job title</label>
+                  <div class="ob-entry">
+                    <input
+                      class="field-control"
+                      id="ob-role-input"
+                      type="text"
+                      list="ob-role-options"
+                      autocomplete="off"
+                      autocapitalize="sentences"
+                      enterkeyhint="done"
+                      maxlength="80"
+                      placeholder="e.g. Staff engineer"
+                      aria-describedby="ob-role-help"
+                    />
+                    <button class="secondary-action" id="ob-role-add" type="button">Add</button>
+                  </div>
+                  <p class="field-help" id="ob-role-help">
+                    <span id="ob-role-count">0 of 10 added</span> · Press Enter to add a title.
+                  </p>
+                  <p class="ob-error" id="ob-role-error" hidden></p>
+                  <datalist id="ob-role-options">
+                    <option value="Software engineer"></option>
+                    <option value="Senior software engineer"></option>
+                    <option value="Staff engineer"></option>
+                    <option value="Principal engineer"></option>
+                    <option value="Product engineer"></option>
+                    <option value="Engineering manager"></option>
+                    <option value="Backend engineer"></option>
+                    <option value="Frontend engineer"></option>
+                    <option value="Full-stack engineer"></option>
+                    <option value="Platform engineer"></option>
+                    <option value="Site reliability engineer"></option>
+                    <option value="Data engineer"></option>
+                    <option value="Machine learning engineer"></option>
+                    <option value="Mobile engineer"></option>
+                    <option value="Security engineer"></option>
+                    <option value="Solutions architect"></option>
+                    <option value="Technical program manager"></option>
+                    <option value="Product manager"></option>
+                  </datalist>
+                </div>
+                <fieldset class="ob-chips" id="ob-role-chips" aria-describedby="ob-role-count">
+                  <legend class="field-label ob-chips-label">Roles to look for</legend>
+                  <label class="choice-chip"><input type="checkbox" name="role" value="Software engineer" />Software engineer</label>
+                  <label class="choice-chip"><input type="checkbox" name="role" value="Product engineer" />Product engineer</label>
+                  <label class="choice-chip"><input type="checkbox" name="role" value="Engineering manager" />Engineering manager</label>
+                  <label class="choice-chip"><input type="checkbox" name="role" value="Backend engineer" />Backend engineer</label>
+                  <label class="choice-chip"><input type="checkbox" name="role" value="Platform engineer" />Platform engineer</label>
+                  <label class="choice-chip"><input type="checkbox" name="role" value="Site reliability engineer" />Site reliability engineer</label>
+                </fieldset>
+              </div>
+
+              <!-- 3 · Where can you work? -->
+              <div class="ob-step" data-step="workplace" hidden>
+                <fieldset class="choice-cards" aria-labelledby="page-title" aria-describedby="ob-why">
+                  <label class="choice-card">
+                    <input type="checkbox" name="workplace" value="remote" />
+                    <span class="choice-card-control" aria-hidden="true"></span>
+                    <span class="choice-card-copy">
+                      <span class="choice-card-label">Remote</span>
+                      <span class="choice-card-meta">From home, or anywhere the role allows</span>
+                    </span>
+                    <svg class="choice-card-icon" aria-hidden="true" focusable="false"><use href="#ob-icon-home" /></svg>
+                  </label>
+                  <label class="choice-card">
+                    <input type="checkbox" name="workplace" value="hybrid" />
+                    <span class="choice-card-control" aria-hidden="true"></span>
+                    <span class="choice-card-copy">
+                      <span class="choice-card-label">Hybrid</span>
+                      <span class="choice-card-meta">Some days in an office</span>
+                    </span>
+                    <svg class="choice-card-icon" aria-hidden="true" focusable="false"><use href="#ob-icon-hybrid" /></svg>
+                  </label>
+                  <label class="choice-card">
+                    <input type="checkbox" name="workplace" value="onsite" />
+                    <span class="choice-card-control" aria-hidden="true"></span>
+                    <span class="choice-card-copy">
+                      <span class="choice-card-label">On-site</span>
+                      <span class="choice-card-meta">In an office every day</span>
+                    </span>
+                    <svg class="choice-card-icon" aria-hidden="true" focusable="false"><use href="#ob-icon-building" /></svg>
+                  </label>
+                </fieldset>
+                <div class="ob-field">
+                  <label class="field-label" for="ob-location">In what location?</label>
+                  <input
+                    class="field-control"
+                    id="ob-location"
+                    type="text"
+                    autocomplete="address-level2"
+                    autocapitalize="words"
+                    enterkeyhint="next"
+                    maxlength="80"
+                    placeholder="e.g. Seattle, WA"
+                    aria-describedby="ob-location-help"
+                  />
+                  <p class="field-help" id="ob-location-help">
+                    Needed for hybrid and on-site roles. A city or region works.
+                  </p>
+                </div>
+              </div>
+
+              <!-- 4 · How often should I look for new roles? (the first source's schedule; Keep watch is
+                   planned for launch). Round 6, part 2 (N3): one Runs allowance for every search run,
+                   yours or Keep watch's, with the store's free runs a month. -->
+              <div class="ob-step" data-step="watch" hidden>
+                <fieldset class="choice-cards" aria-labelledby="page-title" aria-describedby="ob-why">
+                  <label class="choice-card">
+                    <input type="radio" name="schedule" value="manual" />
+                    <span class="choice-card-control" aria-hidden="true"></span>
+                    <span class="choice-card-copy">
+                      <span class="choice-card-label">When I ask</span>
+                      <span class="choice-card-meta">You start each search; each uses one run</span>
+                    </span>
+                    <svg class="choice-card-icon" aria-hidden="true" focusable="false"><use href="#ob-icon-play" /></svg>
+                  </label>
+                  <label class="choice-card">
+                    <input type="radio" name="schedule" value="nightly" />
+                    <span class="choice-card-control" aria-hidden="true"></span>
+                    <span class="choice-card-copy">
+                      <span class="choice-card-label">Every night with Keep watch</span>
+                      <span class="choice-card-meta">Each source it checks uses one run</span>
+                      <span class="tag ob-card-tag">Planned for launch</span>
+                    </span>
+                    <svg class="choice-card-icon" aria-hidden="true" focusable="false"><use href="#ob-icon-clock" /></svg>
+                  </label>
+                </fieldset>
+                <p class="field-help" id="ob-runs-note">
+                  <span data-metric="runs.free">10</span> free runs a month for every search, then get more.
+                </p>
+                <a class="ob-link" id="ob-watch-help" href="./trust-preview.html#keep-watch" target="_blank" rel="noopener"
+                  >What is Keep watch?<span class="sr-only"> Opens Help in a new tab.</span></a
+                >
+              </div>
+
+              <!-- 5 · Add your résumé -->
+              <div class="ob-step" data-step="resume" hidden>
+                <div class="upload-zone" id="ob-upload-zone">
+                  <span class="upload-zone-icon" aria-hidden="true"><svg aria-hidden="true" focusable="false"><use href="#ob-icon-upload" /></svg></span>
+                  <p class="upload-zone-title">Drop your résumé or CV here</p>
+                  <p class="upload-zone-meta" id="ob-upload-meta">
+                    PDF or DOCX, up to 5 MB, kept in your
+                    <span data-home-region-name>United States</span> home Region. In this
+                    prototype nothing is uploaded.
+                  </p>
+                  <div class="upload-zone-actions">
+                    <button class="secondary-action" id="ob-upload-choose" type="button" aria-describedby="ob-upload-meta">
+                      Choose a file
+                    </button>
+                    <button class="secondary-action" id="ob-upload-sample" type="button">
+                      Use a sample file
+                    </button>
+                  </div>
+                  <input
+                    id="ob-upload-file"
+                    type="file"
+                    accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    hidden
+                  />
+                </div>
+                <ol class="upload-list" id="ob-upload-list" aria-label="Your résumé" hidden></ol>
+                <!-- Import from LinkedIn (round 5, G2): your data export or profile PDF, reviewed
+                     item by item before anything is saved to your profile. -->
+                <div class="ob-import" id="ob-import">
+                  <span class="ob-import-icon" aria-hidden="true"><svg aria-hidden="true" focusable="false"><use href="#ob-icon-linkedin" /></svg></span>
+                  <p class="ob-import-copy">
+                    <span class="ob-import-title">Or import from LinkedIn</span>
+                    <span class="ob-import-meta" id="ob-import-meta">Your data export or profile PDF · you choose what joins</span>
+                  </p>
+                  <button class="secondary-action" id="ob-import-open" type="button" aria-describedby="ob-import-meta">
+                    Import from LinkedIn
+                  </button>
+                </div>
+              </div>
+
+              <!-- 6 · Where should I start? (the first source) -->
+              <div class="ob-step" data-step="source" hidden>
+                <div class="ob-field">
+                  <label class="field-label" for="ob-source">Careers page or job board</label>
+                  <input
+                    class="field-control"
+                    id="ob-source"
+                    type="text"
+                    inputmode="url"
+                    autocomplete="url"
+                    autocapitalize="off"
+                    autocorrect="off"
+                    spellcheck="false"
+                    enterkeyhint="go"
+                    maxlength="300"
+                    placeholder="e.g. amazon.jobs/en/search"
+                    aria-describedby="ob-source-help"
+                  />
+                  <p class="field-help" id="ob-source-help">
+                    Public pages only. Your deputy never signs in for you.
+                  </p>
+                  <p class="ob-confirm" id="ob-source-confirm" hidden></p>
+                  <p class="ob-error" id="ob-source-error" hidden>
+                    Enter a public web address, such as amazon.jobs/en/search.
+                  </p>
+                </div>
+                <fieldset class="quick-picks" id="ob-picks">
+                  <legend class="field-label">Or start with one of these</legend>
+                  <label class="quick-pick">
+                    <input type="radio" name="first-source" value="https://www.amazon.jobs/en/search" />
+                    <span class="company-mark" aria-hidden="true">A</span>
+                    <span class="quick-pick-copy">
+                      <span class="quick-pick-name">Amazon Jobs</span>
+                      <span class="quick-pick-host">amazon.jobs/en/search</span>
+                    </span>
+                  </label>
+                  <label class="quick-pick">
+                    <input type="radio" name="first-source" value="https://www.google.com/about/careers/applications/jobs/results" />
+                    <span class="company-mark" aria-hidden="true">G</span>
+                    <span class="quick-pick-copy">
+                      <span class="quick-pick-name">Google Careers</span>
+                      <span class="quick-pick-host">google.com/about/careers</span>
+                    </span>
+                  </label>
+                  <label class="quick-pick">
+                    <input type="radio" name="first-source" value="https://boards.greenhouse.io/example" />
+                    <span class="company-mark" aria-hidden="true">GH</span>
+                    <span class="quick-pick-copy">
+                      <span class="quick-pick-name">A Greenhouse board</span>
+                      <span class="quick-pick-host">boards.greenhouse.io/example</span>
+                    </span>
+                  </label>
+                </fieldset>
+              </div>
+
+              <!-- 7 · How should I run AI? (Deputy Assist: the account's one AI setting, R4-2, saved
+                   with JobDeputyStore.setAiChoice at Done; it runs every search, Keep watch check,
+                   and draft) -->
+              <div class="ob-step" data-step="ai" hidden>
+                <fieldset class="choice-cards" aria-labelledby="page-title" aria-describedby="ob-why">
+                  <label class="choice-card">
+                    <input type="radio" name="ai" value="platform" />
+                    <span class="choice-card-control" aria-hidden="true"></span>
+                    <span class="choice-card-copy">
+                      <span class="choice-card-label">Platform credits</span>
+                      <span class="choice-card-meta"
+                        ><span data-metric="ai.credits.free">250,000</span> free tokens each month, then buy credits</span
+                      >
+                    </span>
+                    <svg class="choice-card-icon" aria-hidden="true" focusable="false"><use href="#ob-icon-sparkle" /></svg>
+                  </label>
+                  <label class="choice-card">
+                    <input type="radio" name="ai" value="own-key" />
+                    <span class="choice-card-control" aria-hidden="true"></span>
+                    <span class="choice-card-copy">
+                      <span class="choice-card-label">Your own key</span>
+                      <span class="choice-card-meta">OpenAI or Anthropic; your provider may charge</span>
+                    </span>
+                    <svg class="choice-card-icon" aria-hidden="true" focusable="false"><use href="#ob-icon-key" /></svg>
+                  </label>
+                  <label class="choice-card">
+                    <input type="radio" name="ai" value="keywords" />
+                    <span class="choice-card-control" aria-hidden="true"></span>
+                    <span class="choice-card-copy">
+                      <span class="choice-card-label">Keyword filtering only</span>
+                      <span class="choice-card-meta">Deputy Assist off: no model, no tokens</span>
+                    </span>
+                    <svg class="choice-card-icon" aria-hidden="true" focusable="false"><use href="#ob-icon-filter" /></svg>
+                  </label>
+                </fieldset>
+                <!-- Platform credits run on one model for the whole account (setPlatformModel, saved
+                     at Done): the three JobDeputyStore.models() lists, with their prices, drawn by
+                     the script from the store (R5-1). -->
+                <fieldset class="choice-cards ob-models" id="ob-models" aria-describedby="ob-models-note" hidden>
+                  <legend class="field-label" id="ob-models-title">The model platform credits run on</legend>
+                  <p class="sample-note" id="ob-models-note">Sample prices · nothing is charged</p>
+                </fieldset>
+              </div>
+
+              <!-- 8 · Done -->
+              <div class="ob-step" data-step="done" hidden>
+                <dl class="ob-summary" id="ob-summary">
+                  <div class="ob-summary-row">
+                    <dt>Help most with</dt>
+                    <dd class="ob-summary-value" data-summary="focus">Not answered</dd>
+                    <dd class="ob-summary-change"><button class="compact-action" type="button" data-change="focus">Change<span class="sr-only"> help focus</span></button></dd>
+                  </div>
+                  <div class="ob-summary-row">
+                    <dt>Roles to look for</dt>
+                    <dd class="ob-summary-value" data-summary="roles">Not answered</dd>
+                    <dd class="ob-summary-change"><button class="compact-action" type="button" data-change="roles">Change<span class="sr-only"> roles</span></button></dd>
+                  </div>
+                  <div class="ob-summary-row">
+                    <dt>Where you can work</dt>
+                    <dd class="ob-summary-value" data-summary="workplace">Not answered</dd>
+                    <dd class="ob-summary-change"><button class="compact-action" type="button" data-change="workplace">Change<span class="sr-only"> workplace</span></button></dd>
+                  </div>
+                  <div class="ob-summary-row">
+                    <dt>How often I look</dt>
+                    <dd class="ob-summary-value" data-summary="watch">When you ask</dd>
+                    <dd class="ob-summary-change"><button class="compact-action" type="button" data-change="watch">Change<span class="sr-only"> how often I look</span></button></dd>
+                  </div>
+                  <div class="ob-summary-row">
+                    <dt>Résumé</dt>
+                    <dd class="ob-summary-value" data-summary="resume">Not added</dd>
+                    <dd class="ob-summary-change"><button class="compact-action" type="button" data-change="resume">Change<span class="sr-only"> résumé</span></button></dd>
+                  </div>
+                  <div class="ob-summary-row">
+                    <dt>First search</dt>
+                    <dd class="ob-summary-value" data-summary="source">Not added</dd>
+                    <dd class="ob-summary-change"><button class="compact-action" type="button" data-change="source">Change<span class="sr-only"> first search</span></button></dd>
+                  </div>
+                  <div class="ob-summary-row">
+                    <dt>Deputy Assist</dt>
+                    <dd class="ob-summary-value" data-summary="ai">Not answered</dd>
+                    <dd class="ob-summary-change"><button class="compact-action" type="button" data-change="ai">Change<span class="sr-only"> the AI setting</span></button></dd>
+                  </div>
+                </dl>
+                <p class="sample-note">Sample data · saved only in this browser, no API was called</p>
+              </div>
+
+              <section
+                class="feedback-panel"
+                id="ob-feedback"
+                data-kind="validation"
+                hidden
+                aria-labelledby="ob-feedback-title"
+                aria-describedby="ob-feedback-message"
+              >
+                <span class="feedback-panel-icon" aria-hidden="true">!</span>
+                <span class="feedback-panel-copy">
+                  <strong class="feedback-panel-title" id="ob-feedback-title">Check one detail before continuing</strong>
+                  <span class="feedback-panel-message" id="ob-feedback-message"></span>
+                </span>
+              </section>
+
+              <div
+                class="ob-actions"
+                id="ob-actions"
+                data-ob-tour="3"
+                data-tour-title="You can skip anytime."
+                data-tour-text="Skip passes one question, and Skip the rest opens your Dashboard. I add whatever you skip to your To-do."
+              >
+                <button class="secondary-action ob-back" id="ob-back" type="button" hidden>
+                  <span class="ob-back-arrow" aria-hidden="true">←</span> Back
+                </button>
+                <button class="secondary-action ob-skip" id="ob-skip" type="button" aria-label="Skip this step" hidden>
+                  Skip
+                </button>
+                <button class="primary-action ob-continue" id="ob-continue" type="submit">Let’s begin</button>
+                <a
+                  class="primary-action ob-continue"
+                  id="ob-finish"
+                  href="./home-preview.html?skipLoader&amp;state=new&amp;from=onboarding"
+                  hidden
+                  >Go to your dashboard</a
+                >
+                <!-- Leaving setup early (round 6, G4): what you didn't answer joins your To-do
+                     (JobDeputyStore.skipSetup), and the Dashboard's first run opens. -->
+                <p class="ob-exit" id="ob-exit">
+                  <a class="ob-link" id="ob-later" href="./home-preview.html?skipLoader&amp;state=new" aria-describedby="ob-exit-note"
+                    >Skip setup for now</a
+                  >
+                  <span class="ob-exit-note" id="ob-exit-note">I’ll add what’s left to your To-do.</span>
+                </p>
+              </div>
+            </div>
+
+            <p class="sr-only" id="ob-announcer" role="status" aria-live="polite" aria-atomic="true"></p>
+          </form>
+        </div>
+      </div>
+
+      <!-- Import from LinkedIn in setup (round 5, G2): the same review as Profile's. LinkedIn
+           sign-in shares only a name, email, and photo, so your deputy reads the file you choose.
+           The prototype reads the store's sample export (linkedinImport()); only the ticked items
+           are saved (applyLinkedinImport), after the October agreement. -->
+      <dialog
+        class="drawer"
+        id="ob-import-drawer"
+        aria-labelledby="ob-import-drawer-title"
+        aria-describedby="ob-import-drawer-meta"
+      >
+        <div class="drawer-header">
+          <p class="eyebrow">Your résumé</p>
+          <h2 class="drawer-title" id="ob-import-drawer-title">Import from LinkedIn</h2>
+          <p class="drawer-meta" id="ob-import-drawer-meta">You choose what joins your profile. It’s saved when you import.</p>
+          <button class="compact-action drawer-close" type="button" data-drawer-close>Close</button>
+        </div>
+        <div class="drawer-body">
+          <div class="drawer-section" id="ob-import-choose">
+            <h3 class="drawer-section-title">Your LinkedIn data</h3>
+            <p class="ob-drawer-copy">
+              On LinkedIn, open Settings, Data privacy, Get a copy of your data, and download the ZIP.
+              Or save your profile as a PDF.
+            </p>
+            <div class="ob-import-actions">
+              <button class="secondary-action" id="ob-import-choose-file" type="button" aria-describedby="ob-import-file-help">
+                Choose the ZIP or PDF
+              </button>
+              <button class="secondary-action" id="ob-import-sample" type="button">Use the sample export</button>
+            </div>
+            <input id="ob-import-file" type="file" accept=".zip,.pdf,application/zip,application/pdf" hidden />
+            <p class="field-help" id="ob-import-file-help">
+              A ZIP or PDF file. In this prototype nothing is uploaded: your deputy reads a sample
+              export instead.
+            </p>
+            <p class="ob-error" id="ob-import-file-error" hidden></p>
+          </div>
+          <div class="ob-import-review" id="ob-import-review" hidden>
+            <p class="ob-import-file" id="ob-import-file-name"></p>
+            <p class="sample-note" id="ob-import-note">Sample export: nothing was uploaded, and nothing was read from LinkedIn.</p>
+            <section
+              class="feedback-panel"
+              id="ob-import-gate"
+              data-kind="warning"
+              hidden
+              aria-labelledby="ob-import-gate-title"
+              aria-describedby="ob-import-gate-message"
+            >
+              <span class="feedback-panel-icon" aria-hidden="true">!</span>
+              <span class="feedback-panel-copy">
+                <strong class="feedback-panel-title" id="ob-import-gate-title">Sign the updated agreement first</strong>
+                <span class="feedback-panel-message" id="ob-import-gate-message"></span>
+              </span>
+            </section>
+            <section
+              class="feedback-panel"
+              id="ob-import-summary"
+              data-kind="validation"
+              tabindex="-1"
+              hidden
+              aria-labelledby="ob-import-summary-title"
+              aria-describedby="ob-import-summary-message"
+            >
+              <span class="feedback-panel-icon" aria-hidden="true">!</span>
+              <span class="feedback-panel-copy">
+                <strong class="feedback-panel-title" id="ob-import-summary-title"></strong>
+                <span class="feedback-panel-message" id="ob-import-summary-message"></span>
+              </span>
+            </section>
+            <div class="ob-import-groups" id="ob-import-groups"></div>
+          </div>
+        </div>
+        <div class="drawer-footer">
+          <button class="primary-action" id="ob-import-save" type="button" hidden>Import</button>
+          <a class="primary-action" id="ob-import-sign" href="./agreement-preview.html?mode=update" hidden>Review and sign</a>
+          <button class="secondary-action" type="button" data-drawer-close>Cancel</button>
+        </div>
+        <p class="sr-only" id="ob-import-status" role="status" aria-live="polite"></p>
+      </dialog>
+    </main>
+
+    <script src="./app-components.js"></script>
+    <script src="./prompt-guard.js"></script>
+    <script src="./agreement-text.js"></script>
+    <script src="./sample-store.js"></script>
+    <script src="./deputy.js"></script>
+    <script>
+      // Onboarding: one question per screen, asked by the deputy scene. Answers live in
+      // sessionStorage until Done, which writes store.profile, store.watch, store.checklist, and
+      // store.onboarding, and saves the account's one AI setting (Deputy Assist, R4-2) with
+      // JobDeputyStore.setAiChoice, in this browser only. Finish starts the first source's run on
+      // that setting (JobDeputyStore.startRun, via 'setup'; a new address joins the sources
+      // through addSource first) and opens the Dashboard, whose first-run tour starts
+      // (?state=new&from=onboarding). Nothing here calls an API.
+      // The welcome names the door: ?via=google or ?via=linkedin (each with &new=1 for an account
+      // that is not the sample Alex) or ?via=email; the agreement page sends people here after
+      // they sign (round 5, G1). ?rerun=1, Help's "Run setup again", fills in the saved answers,
+      // saves only from the last button, and returns to the page named by ?from= (Help otherwise).
+      const SESSION_KEY = 'jobdeputy.onboarding';
+      const MAX_ROLES = 10;
+      const EMAIL = 'alex.morgan@example.com';
+
+      // Every step in order. Questions and "why I ask" lines are the deputy's own words; speech
+      // and notice lines are six words or fewer, duty lines three or fewer.
+      const steps = [
+        {
+          id: 'welcome',
+          eyebrow: 'Getting started',
+          title: 'Hi Alex, I’m your deputy.',
+          why: 'About two minutes, so I search the right places.',
+          deputy: 'idle',
+          speech: 'Hi, Alex. Let’s get going.',
+        },
+        {
+          id: 'focus',
+          eyebrow: 'Your focus',
+          title: 'Where should I help?',
+          why: 'So I know where to start. Pick any.',
+          optional: true,
+          deputy: 'notice',
+          speech: 'Tell me where to start.',
+          notice: 'Pick as many as you like.',
+          missing: 'Choose at least one option, or skip this step.',
+        },
+        {
+          id: 'roles',
+          eyebrow: 'Target roles',
+          title: 'What roles should I look for?',
+          why: 'I search for these titles. Add up to 10.',
+          deputy: 'search',
+          speech: 'I’ll search for these titles.',
+          notice: 'Type a title, or pick one.',
+          missing: 'Add at least one role, or pick a suggestion.',
+        },
+        {
+          id: 'workplace',
+          eyebrow: 'Workplace',
+          title: 'Where can you work?',
+          why: 'I set aside roles that don’t fit.',
+          deputy: 'notice',
+          speech: 'Tell me what suits you.',
+          notice: 'Choose all that work.',
+          noticeFor: { 'ob-location': 'A city or region works.' },
+        },
+        {
+          id: 'watch',
+          eyebrow: 'Search schedule',
+          title: 'How often should I look for new roles?',
+          why: 'So I know when to search. Change it anytime.',
+          deputy: 'watch',
+          speech: 'I only watch if asked.',
+          notice: 'You choose when I look.',
+        },
+        {
+          id: 'resume',
+          eyebrow: 'Your résumé',
+          title: 'Add your résumé.',
+          why: 'I read it to judge fit and draft tailored versions.',
+          optional: true,
+          deputy: 'protect-data',
+          missing: 'Add a PDF or DOCX file, or skip this step.',
+        },
+        {
+          id: 'source',
+          eyebrow: 'First source',
+          title: 'Where should I start?',
+          why: 'One careers page or job board. Add more later.',
+          optional: true,
+          deputy: 'search',
+          speech: 'I’ll search there first.',
+          notice: 'A careers page or job board.',
+          missing: 'Enter an address, or skip this step.',
+        },
+        {
+          id: 'ai',
+          eyebrow: 'Deputy Assist',
+          title: 'How should I run AI?',
+          why: 'Deputy Assist is my AI work: one setting runs every search and draft.',
+          deputy: 'hold-key',
+          speech: 'You choose how I run AI.',
+          notice: 'Change it later in AI & credits.',
+          missing: 'Choose how I should run AI.',
+        },
+        {
+          id: 'done',
+          eyebrow: 'All set',
+          title: 'Thanks, Alex. I’m on it.',
+          why: 'Here’s what I’ll work from. Change any of it later.',
+          deputy: 'search',
+          speech: 'I’m on it.',
+        },
+      ];
+      const stepIds = steps.map((step) => step.id);
+      const counted = steps.length - 1;
+
+      // A re-run from Help keeps the questions and changes only the first and last screens.
+      const rerunCopy = {
+        welcome: {
+          eyebrow: 'Your setup',
+          title: 'Update your setup.',
+          why: 'Your answers are filled in. Change what you need.',
+          speech: 'Let’s update your setup.',
+        },
+        done: {
+          eyebrow: 'Your setup',
+          title: 'Check your setup.',
+          why: 'Nothing changes until you save.',
+          deputy: 'idle',
+          speech: 'Save when you’re ready.',
+        },
+      };
+
+      // How the person arrived, shown on Welcome: the account row and an honest note.
+      const doors = {
+        setup: { label: 'Signed in as', value: EMAIL, icon: 'person', note: '' },
+        email: {
+          label: 'Signed up with email',
+          value: EMAIL,
+          icon: 'mail',
+          note: 'Account creation is simulated · nothing was sent',
+        },
+        google: {
+          label: 'Signed up with Google',
+          value: EMAIL,
+          icon: 'google',
+          note: 'Google sign-up is simulated · no Google request was made',
+        },
+        'google-new': {
+          label: 'Signed up with Google',
+          value: 'Another Google account',
+          icon: 'google',
+          note: 'Google sign-up is simulated · a new account uses Alex Morgan’s sample data',
+        },
+        linkedin: {
+          label: 'Signed up with LinkedIn',
+          value: EMAIL,
+          icon: 'linkedin',
+          note: 'LinkedIn sign-up is simulated · no LinkedIn request was made',
+        },
+        'linkedin-new': {
+          label: 'Signed up with LinkedIn',
+          value: 'Another LinkedIn account',
+          icon: 'linkedin',
+          note: 'LinkedIn sign-up is simulated · a new account uses Alex Morgan’s sample data',
+        },
+      };
+
+      const labels = {
+        focus: {
+          roles: 'Finding roles',
+          tailoring: 'Tailoring résumés',
+          applying: 'Filling in applications',
+          tracking: 'Tracking applications',
+        },
+        workplace: { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' },
+        watch: {
+          manual: 'When you ask',
+          nightly: 'Every night with Keep watch · planned for launch',
+        },
+        ai: { platform: 'Platform credits', 'own-key': 'Your own key', keywords: 'Keyword filtering only' },
+      };
+      // The AI setting each choice saves (setAiChoice): Your own key is the sample OpenAI key,
+      // unless the setting already runs on one of your keys (ownKeySource).
+      const aiSources = { platform: 'platform', 'own-key': 'openai', keywords: 'none' };
+      // The AI setting as this page's choice, for a re-run.
+      const aiChoices = { platform: 'platform', openai: 'own-key', anthropic: 'own-key', none: 'keywords' };
+      // Where a re-run returns, by ?from= or by the page that linked here. Help is the default,
+      // because Run setup again lives there.
+      const returns = {
+        help: { file: 'trust-preview.html', href: './trust-preview.html#topics', name: 'Help' },
+        home: { file: 'home-preview.html', href: './home-preview.html?skipLoader', name: 'your dashboard' },
+        profile: { file: 'profile-preview.html', href: './profile-preview.html', name: 'Profile' },
+        searches: { file: 'searches-preview.html', href: './searches-preview.html', name: 'Searches' },
+        ai: { file: 'ai-preview.html', href: './ai-preview.html', name: 'AI & credits' },
+      };
+      // The three home Regions, as Create account names them, with the words the rest of setup
+      // uses for them (round 6 part 3, R9-6: every Region fact in setup names the one chosen).
+      const REGIONS = {
+        US: { label: 'United States (US)', name: 'United States', place: 'the United States' },
+        IN: { label: 'India (IN)', name: 'India', place: 'India' },
+        UK: { label: 'United Kingdom (UK)', name: 'United Kingdom', place: 'the United Kingdom' },
+      };
+      const upload = [
+        ['uploading', 'Uploading', 1200],
+        ['checking', 'Checking the file for malware', 1400],
+        ['reading', 'Reading the text', 1200],
+      ];
+
+      const parameters = new URLSearchParams(window.location.search);
+      const rerun = parameters.get('rerun') === '1';
+      const via = rerun ? null : parameters.get('via');
+      const door =
+        via === 'google' || via === 'linkedin'
+          ? parameters.get('new') === '1'
+            ? `${via}-new`
+            : via
+          : via === 'email'
+            ? 'email'
+            : 'setup';
+      const deputy = window.JobDeputyDeputy;
+      const store = window.JobDeputyStore;
+      const components = window.JobDeputyComponents;
+
+      // R9-6: the account's home Region, for every Region fact on this page. Before the account
+      // exists it is the one chosen above Create account's ways in (?region=us, in, or uk); after
+      // that it is the store's homeRegion() (the Region on your latest signed agreement), and the
+      // sample account's United States with neither.
+      const regionFromUrl = () => {
+        const code = String(parameters.get('region') ?? '').toUpperCase();
+        return !rerun && Object.hasOwn(REGIONS, code) ? code : null;
+      };
+      const regionFromStore = () => {
+        try {
+          const code = String(store?.homeRegion?.()?.code ?? '').toUpperCase();
+          return Object.hasOwn(REGIONS, code) ? code : null;
+        } catch {
+          // An older store has no homeRegion; the Region then comes from the address or the sample.
+          return null;
+        }
+      };
+      const homeRegionCode = () => regionFromUrl() ?? regionFromStore() ?? 'US';
+      const homeRegion = () => REGIONS[homeRegionCode()];
+
+      // The sources the store knows (the sample's and any you added), by the address Searches
+      // shows for them: a first source that is one of them runs that source; any other address
+      // joins your sources through addSource.
+      const knownSources = () =>
+        (store?.catalog?.().sources ?? [])
+          .filter((source) => source.status === 'active' && !source.legacy)
+          .map((source) => ({ id: source.id, name: source.name, address: String(source.address).toLowerCase() }));
+      const knownSourceFor = (address) =>
+        knownSources().find((source) => source.address === String(address).toLowerCase()) ?? null;
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+      const phone = window.matchMedia('(max-width: 720px)');
+
+      const form = document.querySelector('#ob-form');
+      const progressLabel = document.querySelector('#ob-progress-label');
+      const progressSteps = [...document.querySelectorAll('#ob-progress-bar .step-progress-step')];
+      const eyebrow = document.querySelector('#ob-eyebrow');
+      const title = document.querySelector('#page-title');
+      const why = document.querySelector('#ob-why');
+      const stepBodies = [...document.querySelectorAll('.ob-step[data-step]')];
+      const feedback = document.querySelector('#ob-feedback');
+      const feedbackTitle = document.querySelector('#ob-feedback-title');
+      const feedbackIcon = feedback.querySelector('.feedback-panel-icon');
+      const feedbackMessage = document.querySelector('#ob-feedback-message');
+      const actions = document.querySelector('#ob-actions');
+      const backButton = document.querySelector('#ob-back');
+      const skipButton = document.querySelector('#ob-skip');
+      const continueButton = document.querySelector('#ob-continue');
+      const finishLink = document.querySelector('#ob-finish');
+      const laterLink = document.querySelector('#ob-later');
+      const exitLine = document.querySelector('#ob-exit');
+      const exitNote = document.querySelector('#ob-exit-note');
+      const regionValue = document.querySelector('#ob-region-value');
+      const announcer = document.querySelector('#ob-announcer');
+      const roleInput = document.querySelector('#ob-role-input');
+      const roleAdd = document.querySelector('#ob-role-add');
+      const roleChips = document.querySelector('#ob-role-chips');
+      const roleCount = document.querySelector('#ob-role-count');
+      const roleError = document.querySelector('#ob-role-error');
+      const locationInput = document.querySelector('#ob-location');
+      const sourceInput = document.querySelector('#ob-source');
+      const sourceHelp = document.querySelector('#ob-source-help');
+      const sourceConfirm = document.querySelector('#ob-source-confirm');
+      const sourceError = document.querySelector('#ob-source-error');
+      const picks = document.querySelector('#ob-picks');
+      const uploadZone = document.querySelector('#ob-upload-zone');
+      const uploadChoose = document.querySelector('#ob-upload-choose');
+      const uploadSample = document.querySelector('#ob-upload-sample');
+      const uploadFile = document.querySelector('#ob-upload-file');
+      const uploadList = document.querySelector('#ob-upload-list');
+      const textFields = [roleInput, locationInput, sourceInput];
+
+      const blankAnswers = () => ({
+        focus: [],
+        roles: [],
+        extraRoles: [],
+        workplace: [],
+        location: '',
+        schedule: 'manual',
+        resume: null,
+        source: '',
+        sourceUrl: '',
+        ai: null,
+        model: null,
+        linkedin: 0,
+        // The steps you went past with Continue (round 6, G4): the schedule's first choice is
+        // filled in for you, so it counts as answered once you go past it, and a re-run marks done
+        // only the To-do items you answered in it.
+        passed: [],
+      });
+
+      // ------------------------------------------------------------------ addresses
+
+      // A public web address such as amazon.jobs/en/search, with or without https://.
+      const sourceAddress = (raw) => {
+        const text = String(raw ?? '').trim();
+        if (!text || /\s/.test(text)) return null;
+        try {
+          const url = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(text) ? text : `https://${text}`);
+          if (!['http:', 'https:'].includes(url.protocol) || !/\.[a-z]{2,}$/i.test(url.hostname))
+            return null;
+          return url;
+        } catch {
+          return null;
+        }
+      };
+      // The address as Searches saves it: the host without www. and the path without a trailing
+      // slash.
+      const shortAddress = (url) =>
+        `${url.hostname.replace(/^www\./, '')}${url.pathname.replace(/\/+$/, '')}`;
+      // Searches' initials for a company mark: two words give two initials; a host gives its first
+      // two letters, skipping generic labels such as "jobs" or "careers".
+      const markFor = (name) => {
+        const words = String(name).trim().split(/\s+/);
+        if (words.length > 1) return `${words[0][0]}${words[1][0]}`.toUpperCase();
+        const generic = new Set(['www', 'jobs', 'careers', 'boards', 'apply', 'job']);
+        const labels = String(name).split('/')[0].split('.').slice(0, -1);
+        const label = labels.find((part) => !generic.has(part)) ?? labels[0] ?? String(name);
+        return label.slice(0, 2).toUpperCase();
+      };
+      // Where a re-run returns: ?from=, then the linking page when the browser names it (pages
+      // opened from the folder name none), then Help.
+      const returnFor = (from, referrer, origin) => {
+        if (Object.hasOwn(returns, from)) return returns[from];
+        try {
+          const url = new URL(referrer);
+          const page = Object.values(returns).find((entry) =>
+            url.pathname.endsWith(`/${entry.file}`),
+          );
+          if (page && url.origin === origin) return page;
+        } catch {
+          // No referrer, or one that is not a web address.
+        }
+        return returns.help;
+      };
+
+      // A re-run starts from what the other pages saved (the platform model is the store's).
+      // A step still open on the To-do (round 6 part 3, T1-11) has no answer yet, so a re-run
+      // from one of those items leaves its field blank, rather than filling it from the sample
+      // profile the person never gave.
+      const answersFromStore = (state, savedAi, suggestions, savedModel = null, openSteps = []) => {
+        const profile = state?.profile ?? {};
+        const open = new Set(openSteps);
+        const roles =
+          open.has('roles')
+            ? []
+            : (Array.isArray(profile.targetRoles) ? profile.targetRoles : [])
+                .filter((role) => typeof role === 'string' && role.trim())
+                .slice(0, MAX_ROLES);
+        const library = state?.documents?.library ?? [];
+        const resume = open.has('resume')
+          ? null
+          : (library.find((doc) => doc.id === state?.documents?.defaultId) ?? library[0] ?? null);
+        const first = open.has('source')
+          ? null
+          : sourceAddress(state?.onboarding?.firstSource ?? '');
+        return {
+          ...blankAnswers(),
+          focus: open.has('focus')
+            ? []
+            : Object.keys(labels.focus).filter((value) => profile.helpWith?.includes(value)),
+          roles,
+          extraRoles: roles.filter((role) => !suggestions.includes(role)),
+          workplace: open.has('workplace')
+            ? []
+            : Object.keys(labels.workplace).filter((value) =>
+                profile.workStyles?.includes(value),
+              ),
+          location:
+            open.has('workplace') || typeof profile.location !== 'string' ? '' : profile.location,
+          schedule: open.has('watch')
+            ? 'manual'
+            : state?.watch?.requested === 'daily'
+              ? 'nightly'
+              : 'manual',
+          resume: resume ? { name: resume.name, state: 'ready', existing: true } : null,
+          source: first ? shortAddress(first) : '',
+          sourceUrl: first ? first.href : '',
+          ai: open.has('ai') ? null : (aiChoices[savedAi || 'openai'] ?? null),
+          model: open.has('ai') ? null : savedModel,
+        };
+      };
+
+      // ------------------------------------------------------------------ session
+
+      const readSession = () => {
+        try {
+          const saved = JSON.parse(window.sessionStorage.getItem(SESSION_KEY) || 'null');
+          if (saved && typeof saved === 'object') return saved;
+        } catch {
+          // Unreadable or unavailable storage starts a fresh setup.
+        }
+        return {};
+      };
+
+      // The account's one AI setting as the store reads it (aiChoice().source: 'openai',
+      // 'anthropic', 'platform', or 'none'), never the storage key itself.
+      const currentAiSource = () => {
+        try {
+          return store?.aiChoice?.().source ?? null;
+        } catch {
+          return null;
+        }
+      };
+
+      // The account's one platform model (models() marks it chosen; Ministral 3 14B in the seed).
+      const currentModel = () => {
+        try {
+          return (store?.models?.() ?? []).find((model) => model.chosen)?.id ?? null;
+        } catch {
+          return null;
+        }
+      };
+
+      // Your own key: the key the setting already runs on; otherwise a key that is ready (OpenAI
+      // first); otherwise the sample's OpenAI key, which setAiChoice refuses while it isn't ready.
+      const ownKeySource = () => {
+        const current = currentAiSource();
+        if (current === 'openai' || current === 'anthropic') return current;
+        const keys = store?.get?.()?.ai?.keys ?? {};
+        return ['openai', 'anthropic'].find((provider) => keys[provider]?.status === 'ready') ?? 'openai';
+      };
+
+      const mode = rerun ? 'rerun' : 'setup';
+      const requested = parameters.get('step');
+      const session = readSession();
+      // A setup keeps this tab's answers (round 1 sessions carry no mode). A re-run starts from the
+      // saved answers each time, and keeps this tab's edits only when reloading one of its steps.
+      const sameRun =
+        (session.mode ?? 'setup') === mode && (mode === 'setup' || stepIds.includes(requested));
+      const suggestions = [...roleChips.querySelectorAll('input[name="role"]')].map(
+        (box) => box.value,
+      );
+      // Steps still open on your To-do have no answer yet (round 6 part 3, T1-11), so a re-run
+      // leaves their fields blank rather than filling them in from the sample profile.
+      const openSetupSteps = (() => {
+        try {
+          return typeof store?.setupTodos === 'function'
+            ? store.setupTodos().map((item) => item.step)
+            : [];
+        } catch {
+          return [];
+        }
+      })();
+      const answers =
+        rerun && !sameRun
+          ? answersFromStore(
+              store?.get(),
+              currentAiSource(),
+              suggestions,
+              currentModel(),
+              openSetupSteps,
+            )
+          : { ...blankAnswers(), ...(sameRun ? session.answers || {} : {}) };
+      // Platform credits start on the account's model (the recommended one in the seed).
+      if (!answers.model) answers.model = currentModel();
+      // A round 2 tab saved "daily" for the same choice.
+      if (answers.schedule === 'daily') answers.schedule = 'nightly';
+      // A tab from before round 6 kept no steps passed.
+      if (!Array.isArray(answers.passed)) answers.passed = [];
+      const origin = returnFor(parameters.get('from'), document.referrer, window.location.origin);
+      let current = 'welcome';
+      // A re-run opened at one question (a To-do item such as "Tell your deputy where to help",
+      // round 6) goes from it straight to Check your setup, like Change on that screen.
+      const deepRerun =
+        rerun && !sameRun && stepIds.includes(requested) && !['welcome', 'done'].includes(requested);
+      let returnTo = (sameRun && session.returnTo === 'done') || deepRerun ? 'done' : null;
+      let saved = sameRun && session.saved === true;
+      // The first search Finish starts ({ address, ai, schedule }), and the address it started,
+      // so going back and finishing again never starts it twice.
+      let firstSearch = sameRun ? (session.firstSearch ?? null) : null;
+      let startedAddress = sameRun ? (session.startedAddress ?? null) : null;
+      let uploadTimer;
+      let announceTimer;
+
+      const writeSession = () => {
+        try {
+          window.sessionStorage.setItem(
+            SESSION_KEY,
+            JSON.stringify({ answers, returnTo, saved, mode, firstSearch, startedAddress }),
+          );
+        } catch {
+          // Storage is unavailable; the answers still hold for this page view.
+        }
+      };
+
+      // A saved re-run lives in the store now, so the next one (a To-do item, or Help's Run setup
+      // again) starts from it rather than from this tab's copy.
+      const forgetSession = () => {
+        try {
+          window.sessionStorage.removeItem(SESSION_KEY);
+        } catch {
+          // Storage is unavailable; the next re-run reads the store anyway.
+        }
+      };
+
+      // One announcement per event, through this page's StatusAnnouncement channel. Clearing first
+      // lets a repeated message be read again.
+      const announce = (message) => {
+        window.clearTimeout(announceTimer);
+        announcer.textContent = '';
+        announceTimer = window.setTimeout(() => {
+          announcer.textContent = message;
+        }, 40);
+      };
+
+      const whenDeputyReady = (callback) => {
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', callback, { once: true });
+        } else {
+          callback();
+        }
+      };
+
+      const stepOf = (id) => {
+        const step = steps.find((entry) => entry.id === id) ?? steps[0];
+        return rerun && rerunCopy[step.id] ? { ...step, ...rerunCopy[step.id] } : step;
+      };
+      const indexOf = (id) => stepIds.indexOf(id);
+      const escapeHtml = (text) =>
+        String(text).replace(
+          /[&<>"']/g,
+          (character) =>
+            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character],
+        );
+
+      // ------------------------------------------------------------------ answers
+
+      const needsLocation = () => answers.workplace.some((value) => value !== 'remote');
+
+      const isAnswered = (id) => {
+        if (id === 'focus') return answers.focus.length > 0;
+        if (id === 'roles') return answers.roles.length > 0;
+        if (id === 'workplace')
+          return answers.workplace.length > 0 && (!needsLocation() || answers.location.trim() !== '');
+        if (id === 'watch') return Boolean(labels.watch[answers.schedule]);
+        // A résumé, or details imported from LinkedIn, answer this step.
+        if (id === 'resume') return answers.resume?.state === 'ready' || answers.linkedin > 0;
+        if (id === 'source') return sourceInput.value.trim() !== '';
+        if (id === 'ai') return Boolean(answers.ai);
+        return true;
+      };
+
+      // What a step still needs, in the words of its feedback panel.
+      const missingFor = (id) => {
+        if (id === 'workplace')
+          return answers.workplace.length
+            ? 'Add a location for hybrid or on-site roles.'
+            : 'Choose at least one option.';
+        return stepOf(id).missing ?? 'Answer this question to continue.';
+      };
+
+      const isComplete = () =>
+        answers.roles.length > 0 && isAnswered('workplace') && Boolean(answers.ai);
+
+      // A résumé added here joins the Résumés library, the way that page adds one: same shape,
+      // the sample's date, and no duplicate of a file already there.
+      const libraryWith = (documents) => {
+        const library = documents?.library ?? [];
+        const file = answers.resume;
+        if (file?.state !== 'ready' || library.some((doc) => doc.name === file.name)) return documents;
+        if (library.length >= 10) return documents;
+        const doc = {
+          id: `doc-${Date.now().toString(36)}-setup`,
+          name: file.name,
+          variant: /(^|[^a-z])cv([^a-z]|$)/i.test(file.name) ? 'cv' : 'resume',
+          format: fileKind(file.name),
+          updated: '2026-10-02',
+        };
+        return { ...documents, library: [doc, ...library], defaultId: documents?.defaultId ?? doc.id };
+      };
+
+      // Done (or a re-run's last button) writes the answers for every signed-in page, with the
+      // value ids sample-store.js documents. Required steps must be answered, so a review link
+      // straight to Done never overwrites the sample profile with blanks. A skipped step leaves its
+      // checklist item as is; start timing is no longer asked, so an old answer stays readable.
+      // Keep watch lives on each source's schedule: choosing it makes the first source nightly
+      // when Finish starts it, and watch.requested keeps the answer for a re-run. A re-run keeps
+      // the first source unless a new one was entered, and keeps your Anthropic key as the setting
+      // when "Your own key" stays chosen. The AI choice is the account's one setting (R4-2), saved
+      // with setAiChoice: it runs every search, Keep watch check, and draft. setAiChoice refuses a
+      // key that isn't ready (null), so the first search records why it can't start instead. The
+      // first search itself starts on Finish.
+      const saveAnswers = () => {
+        if (!isComplete()) return false;
+        const place = answers.location.trim();
+        const firstSource = answers.sourceUrl || (answers.source ? `https://${answers.source}` : '');
+        const ai = answers.ai === 'own-key' ? ownKeySource() : aiSources[answers.ai];
+        let search = null;
+        try {
+          store?.update({ type: 'onboarding' }, (next) => {
+            const before = sourceAddress(next.onboarding?.firstSource ?? '');
+            const after = sourceAddress(firstSource);
+            const newSource = rerun
+              ? Boolean(after) && (!before || shortAddress(before) !== shortAddress(after))
+              : true;
+            next.profile = {
+              ...next.profile,
+              targetRoles: [...answers.roles],
+              workStyles: ['remote', 'hybrid', 'onsite'].filter((value) =>
+                answers.workplace.includes(value),
+              ),
+              ...(place ? { location: place, locations: [place] } : {}),
+              helpWith: [...answers.focus],
+            };
+            next.watch = {
+              ...next.watch,
+              schedule: 'manual',
+              requested: answers.schedule === 'nightly' ? 'daily' : null,
+            };
+            next.checklist = {
+              ...next.checklist,
+              account: true,
+              roles: true,
+              ai: true,
+              ...(answers.resume?.state === 'ready' ? { resume: true } : {}),
+              ...(firstSource ? { source: true } : {}),
+            };
+            next.onboarding = {
+              ...next.onboarding,
+              completed: true,
+              ...(newSource ? { firstSource: firstSource || null } : {}),
+            };
+            next.documents = libraryWith(next.documents);
+            if (newSource && after) {
+              search = {
+                address: shortAddress(after),
+                ai,
+                schedule: answers.schedule === 'nightly' ? 'nightly' : 'manual',
+              };
+            }
+          });
+        } catch {
+          return false;
+        }
+        // The one AI setting, for every page: aiChoice() on success, null for a key not ready. A
+        // re-run that keeps the setting and its model saves neither again (round 6: saving the
+        // same setting is not choosing it, so a skipped AI step stays on the To-do).
+        const kept = rerun && ai === currentAiSource();
+        const choice = kept ? (store?.aiChoice?.() ?? null) : (store?.setAiChoice?.(ai) ?? null);
+        // Platform credits run on the one model you chose (round 5, G3): every search and draft.
+        const sameModel = kept && answers.model === currentModel();
+        if (answers.ai === 'platform' && answers.model && !sameModel) store?.setPlatformModel?.(answers.model);
+        if (search) search.ready = choice !== null;
+        // A re-run that keeps its first source starts nothing; a first setup always plans one.
+        if (search || !rerun) firstSearch = search;
+        saved = true;
+        writeSession();
+        return true;
+      };
+
+      // Finish starts the first source's run, once: a source the store knows runs as it is (its
+      // nightly schedule turned on if you chose Keep watch), and any other address joins your
+      // sources through addSource first. It runs on the one AI setting Done saved (startRun
+      // without its own ai), and a live run of that source already counts. Whether it started,
+      // and why not (the key setAiChoice refused isn't ready, no platform credits are left, your
+      // key reached its token limit, or your deputy is paused for the agreement), goes to
+      // store.onboarding.firstRun for the Dashboard's first-run card; Finish opens it either way.
+      const startFirstSearch = () => {
+        const search = firstSearch;
+        if (!search || search.address === startedAddress || typeof store?.startRun !== 'function') {
+          return null;
+        }
+        let source = knownSourceFor(search.address);
+        if (source && search.schedule === 'nightly') {
+          store.updateSource(source.id, { schedule: 'nightly' });
+        }
+        if (!source) {
+          const result = store.addSource(
+            { address: search.address, roles: [...answers.roles], schedule: search.schedule },
+            { start: false },
+          );
+          source = result?.source ?? null;
+        }
+        if (!source) return null;
+        const run =
+          search.ready === false
+            ? { ok: false, reason: 'key-not-ready' }
+            : store.startRun(source.id, { via: 'setup' });
+        const started = Boolean(run?.ok) || run?.reason === 'already-running';
+        store.update({ type: 'onboarding' }, (next) => {
+          next.onboarding = {
+            ...next.onboarding,
+            firstRun: started
+              ? { sourceId: source.id, started: true, runId: run?.run?.id ?? null }
+              : {
+                  sourceId: source.id,
+                  started: false,
+                  reason: run?.reason ?? 'not-started',
+                  ai: search.ai,
+                  ...(run?.refreshesOn ? { refreshesOn: run.refreshesOn } : {}),
+                  ...(run?.resetsAt ? { resetsAt: run.resetsAt } : {}),
+                },
+          };
+        });
+        startedAddress = search.address;
+        writeSession();
+        return run;
+      };
+
+      // ------------------------------------------------------------------ skipping (round 6, G4)
+
+      // Never trapped in setup: Skip setup for now (Welcome) and Skip the rest (every question
+      // after it) keep what you answered, start the first source you chose, put every step you
+      // didn't answer on your To-do as its own item (JobDeputyStore.skipSetup), and open the
+      // Dashboard's first run (?state=new, without the tour). Done does the same for the steps
+      // you skipped one by one. A re-run's answers close the To-do items they answer.
+
+      // The steps the store can list on the To-do (JobDeputyStore.SETUP_STEPS), in setup order;
+      // none before the store has them, so nothing is added and the Dashboard still opens.
+      const setupSteps = () => {
+        const known = Array.isArray(store?.SETUP_STEPS)
+          ? store.SETUP_STEPS.map((step) => step?.id)
+          : [];
+        return stepIds.filter((id) => known.includes(id));
+      };
+
+      // Whether you answered a step: the schedule's first choice is filled in for you, so it counts
+      // once you chose another or went past it; the first source counts once it is set.
+      const chose = (id) => {
+        if (id === 'watch') return answers.passed.includes('watch') || answers.schedule !== 'manual';
+        if (id === 'source') return Boolean(answers.source);
+        return isAnswered(id);
+      };
+
+      // Each step you didn't answer becomes its own To-do item that opens the right place. Asking
+      // again for a step already listed changes nothing.
+      const noteSkipped = () => {
+        if (rerun || typeof store?.skipSetup !== 'function') return;
+        const open = setupSteps().filter((id) => !chose(id));
+        if (!open.length) return;
+        try {
+          store.skipSetup(open);
+        } catch {
+          // The To-do simply doesn't list them; setup itself is saved.
+        }
+      };
+
+      // A re-run closes the To-do items of the steps you answered in it (the store also closes an
+      // item when you do the thing elsewhere).
+      const completeAnswered = () => {
+        if (typeof store?.setupTodos !== 'function' || typeof store?.completeSetupStep !== 'function')
+          return;
+        try {
+          for (const item of store.setupTodos()) {
+            if (answers.passed.includes(item.step) && chose(item.step)) store.completeSetupStep(item.step);
+          }
+        } catch {
+          // The items stay on the To-do until you do the thing.
+        }
+      };
+
+      // What you answered before skipping is saved as Done saves it, field by field; nothing you
+      // left unanswered overwrites your profile. The first search is planned as Done plans it, on
+      // your AI choice, or on the account's one setting if you skipped that step.
+      const saveSkipped = () => {
+        const place = answers.location.trim();
+        const firstSource = answers.sourceUrl || (answers.source ? `https://${answers.source}` : '');
+        const aiChosen = chose('ai');
+        const ai = !aiChosen ? null : answers.ai === 'own-key' ? ownKeySource() : aiSources[answers.ai];
+        let search = null;
+        try {
+          store?.update({ type: 'onboarding', skipped: true }, (next) => {
+            next.profile = {
+              ...next.profile,
+              ...(chose('roles') ? { targetRoles: [...answers.roles] } : {}),
+              ...(chose('workplace')
+                ? {
+                    workStyles: ['remote', 'hybrid', 'onsite'].filter((value) =>
+                      answers.workplace.includes(value),
+                    ),
+                    ...(place ? { location: place, locations: [place] } : {}),
+                  }
+                : {}),
+              ...(chose('focus') ? { helpWith: [...answers.focus] } : {}),
+            };
+            if (chose('watch')) {
+              next.watch = {
+                ...next.watch,
+                schedule: 'manual',
+                requested: answers.schedule === 'nightly' ? 'daily' : null,
+              };
+            }
+            next.checklist = {
+              ...next.checklist,
+              account: true,
+              ...(chose('roles') ? { roles: true } : {}),
+              ...(aiChosen ? { ai: true } : {}),
+              ...(answers.resume?.state === 'ready' ? { resume: true } : {}),
+              ...(firstSource ? { source: true } : {}),
+            };
+            next.onboarding = {
+              ...next.onboarding,
+              completed: false,
+              skipped: true,
+              firstSource: firstSource || null,
+            };
+            next.documents = libraryWith(next.documents);
+            const url = sourceAddress(firstSource);
+            if (url) {
+              search = {
+                address: shortAddress(url),
+                ai,
+                schedule: answers.schedule === 'nightly' ? 'nightly' : 'manual',
+              };
+            }
+          });
+        } catch {
+          return false;
+        }
+        if (aiChosen) {
+          const choice = store?.setAiChoice?.(ai) ?? null;
+          if (answers.ai === 'platform' && answers.model) store?.setPlatformModel?.(answers.model);
+          if (search) search.ready = choice !== null;
+        }
+        firstSearch = search;
+        writeSession();
+        return true;
+      };
+
+      const skipRest = () => {
+        if (current === 'resume') cancelUpload();
+        // An address typed or picked on this screen counts as your first source.
+        if (current === 'source') {
+          const pick = picks.querySelector('input:checked');
+          const url = sourceAddress(pick?.value ?? sourceInput.value);
+          answers.source = url ? shortAddress(url) : '';
+          answers.sourceUrl = url ? url.href : '';
+        }
+        if (!saveSkipped()) return;
+        startFirstSearch();
+        noteSkipped();
+      };
+
+      // ------------------------------------------------------------------ controls
+
+      const roleBoxes = () => [...roleChips.querySelectorAll('input[name="role"]')];
+
+      const syncRoles = () => {
+        answers.roles = roleBoxes()
+          .filter((box) => box.checked)
+          .map((box) => box.value);
+        roleCount.textContent = `${answers.roles.length} of ${MAX_ROLES} added`;
+      };
+
+      const roleChip = (value, checked) => {
+        const label = document.createElement('label');
+        label.className = 'choice-chip';
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.name = 'role';
+        box.value = value;
+        box.checked = checked;
+        label.append(box, value);
+        return label;
+      };
+
+      const showRoleError = (message) => {
+        roleError.textContent = message;
+        roleError.hidden = !message;
+        roleInput.setAttribute('aria-describedby', message ? 'ob-role-help ob-role-error' : 'ob-role-help');
+      };
+
+      // Typed titles become chips at the front of the list, checked; an existing chip is checked.
+      // The field keeps focus, so the next title can follow.
+      const addRole = () => {
+        const value = roleInput.value.replace(/\s+/g, ' ').trim();
+        if (!value) {
+          showRoleError('Type a job title first, or pick one below.');
+          announce('Type a job title first, or pick one below.');
+          return;
+        }
+        const existing = roleBoxes().find((box) => box.value.toLowerCase() === value.toLowerCase());
+        if (existing?.checked) {
+          showRoleError(`${existing.value} is already on your list.`);
+          announce(`${existing.value} is already on your list.`);
+          return;
+        }
+        if (answers.roles.length >= MAX_ROLES) {
+          showRoleError('You’ve added 10 roles. Remove one to add another.');
+          announce('You’ve added 10 roles. Remove one to add another.');
+          return;
+        }
+        if (existing) {
+          existing.checked = true;
+        } else {
+          const legend = roleChips.querySelector('legend');
+          legend.after(roleChip(value, true));
+          answers.extraRoles = [value, ...answers.extraRoles.filter((role) => role !== value)];
+        }
+        roleInput.value = '';
+        showRoleError('');
+        syncRoles();
+        refresh();
+        writeSession();
+        announce(`Added ${existing?.value ?? value}. ${answers.roles.length} of ${MAX_ROLES} roles.`);
+      };
+
+      roleAdd.addEventListener('click', () => {
+        addRole();
+        roleInput.focus({ preventScroll: true });
+      });
+      // Enter adds the typed title; on an empty field with roles chosen, it continues as usual.
+      roleInput.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' || event.isComposing) return;
+        if (!roleInput.value.trim() && answers.roles.length) return;
+        event.preventDefault();
+        addRole();
+      });
+      roleInput.addEventListener('input', () => showRoleError(''));
+
+      roleChips.addEventListener('change', (event) => {
+        const box = event.target;
+        if (!(box instanceof HTMLInputElement) || box.name !== 'role') return;
+        if (box.checked && answers.roles.length >= MAX_ROLES) {
+          box.checked = false;
+          showRoleError('You’ve added 10 roles. Remove one to add another.');
+          announce('You’ve added 10 roles. Remove one to add another.');
+          return;
+        }
+        showRoleError('');
+        syncRoles();
+        refresh();
+        writeSession();
+      });
+
+      // The deputy's line for a schedule: Keep watch is planned, so it says what happens until then.
+      const watchSpeech = { manual: 'I’ll search when you ask.', nightly: 'I’ll look every night.' };
+
+      form.addEventListener('change', (event) => {
+        const input = event.target;
+        if (!(input instanceof HTMLInputElement)) return;
+        if (input.name === 'focus' || input.name === 'workplace') {
+          answers[input.name] = [...form.querySelectorAll(`input[name="${input.name}"]:checked`)].map(
+            (box) => box.value,
+          );
+        } else if (input.name === 'ai') {
+          answers.ai = input.value;
+          syncModels();
+        } else if (input.name === 'model') {
+          answers.model = input.value;
+          deputy?.set('hold-key', { speech: 'I’ll use that model.' });
+        } else if (input.name === 'schedule') {
+          answers.schedule = input.value;
+          deputy?.set('watch', { speech: watchSpeech[input.value] });
+        } else if (input.name === 'first-source') {
+          choosePick(input);
+          return;
+        } else {
+          return;
+        }
+        refresh();
+        writeSession();
+      });
+
+      locationInput.addEventListener('input', () => {
+        answers.location = locationInput.value;
+        refresh();
+        writeSession();
+      });
+
+      // ------------------------------------------------------------------ first source
+
+      const showSourceError = (show) => {
+        sourceError.hidden = !show;
+        sourceInput.setAttribute('aria-invalid', String(show));
+        describeSource();
+      };
+
+      // The address field describes itself with its help, or with the confirmation once a source is
+      // chosen, and with the error while one shows.
+      const describeSource = () => {
+        const ids = [sourceConfirm.hidden ? 'ob-source-help' : 'ob-source-confirm'];
+        if (!sourceError.hidden) ids.push('ob-source-error');
+        sourceInput.setAttribute('aria-describedby', ids.join(' '));
+        sourceHelp.hidden = !sourceConfirm.hidden;
+      };
+
+      // "First search: Amazon Jobs · amazon.jobs/en/search" with the company mark, for a quick
+      // pick, one of the sample's sources, or any public address; hidden while there is none.
+      const confirmSource = (pick) => {
+        const url = sourceAddress(sourceInput.value);
+        sourceConfirm.replaceChildren();
+        sourceConfirm.hidden = !pick && !url;
+        if (!sourceConfirm.hidden) {
+          const address = url ? shortAddress(url) : '';
+          const known = knownSourceFor(address);
+          const label = pick?.closest('.quick-pick');
+          const name = label?.querySelector('.quick-pick-name').textContent ?? known?.name ?? '';
+          const host = label?.querySelector('.quick-pick-host').textContent ?? address;
+          const mark = document.createElement('span');
+          mark.className = 'company-mark';
+          mark.setAttribute('aria-hidden', 'true');
+          mark.textContent =
+            label?.querySelector('.company-mark').textContent ?? markFor(name || url.hostname);
+          const words = document.createElement('span');
+          words.textContent = `First search: ${name ? `${name} · ${host}` : host}`;
+          sourceConfirm.append(mark, words);
+        }
+        describeSource();
+      };
+
+      // Typing an address selects the pick it matches, and editing it away clears the pick.
+      sourceInput.addEventListener('input', () => {
+        const before = picks.querySelector('input:checked');
+        const match = components?.matchQuickPick(picks, sourceInput.value) ?? null;
+        showSourceError(false);
+        confirmSource(match);
+        refresh();
+        if (match && match !== before) announce(`${sourceConfirm.textContent}.`);
+      });
+
+      // Choosing a pick fills in its address and confirms it; focus stays on the pick.
+      const choosePick = (input) => {
+        sourceInput.value = shortAddress(sourceAddress(input.value));
+        showSourceError(false);
+        confirmSource(input);
+        refresh();
+        deputy?.set('search', { speech: 'Got it. I’ll start there.' });
+        announce(`${sourceConfirm.textContent}.`);
+      };
+
+      // ------------------------------------------------------------------ résumé upload (local)
+
+      const uploadIcons = {
+        document: '<use href="#ob-icon-document" />',
+        alert: '<use href="#ob-icon-alert" />',
+      };
+      const uploadIcon = (name) =>
+        `<span class="upload-item-icon" aria-hidden="true"><svg aria-hidden="true" focusable="false">${uploadIcons[name]}</svg></span>`;
+      const uploadBar = (index) =>
+        `<div class="step-progress"><ol class="step-progress-bar" aria-hidden="true">${upload
+          .map(
+            (_, step) =>
+              `<li class="step-progress-step${step < index ? ' is-done' : step === index ? ' is-current' : ''}"></li>`,
+          )
+          .join('')}</ol></div>`;
+      const fileKind = (name) => (/\.docx$/i.test(name) ? 'DOCX' : 'PDF');
+
+      const renderUpload = () => {
+        const file = answers.resume;
+        uploadList.hidden = !file;
+        if (!file) {
+          uploadList.replaceChildren();
+          return;
+        }
+        const name = escapeHtml(file.name);
+        const item = document.createElement('li');
+        item.className = 'upload-item';
+        item.dataset.state = file.state;
+        if (file.state === 'ready' && file.existing) {
+          item.innerHTML = `${uploadIcon('document')}<div class="upload-item-copy"><p class="upload-item-name">${name}</p><p class="upload-item-status">Your default résumé · ${fileKind(file.name)} · in Résumés</p></div><div class="upload-item-actions"><span class="status-pill">Ready</span><button class="compact-action" type="button" data-upload-retry>Use another file</button></div>`;
+        } else if (file.state === 'ready') {
+          item.innerHTML = `${uploadIcon('document')}<div class="upload-item-copy"><p class="upload-item-name">${name}</p><p class="upload-item-status">Résumé · ${fileKind(file.name)} · ready · stays in ${escapeHtml(homeRegion().place)}${file.sample ? ' · sample file' : ''}</p></div><div class="upload-item-actions"><span class="status-pill">Ready</span><button class="compact-action" type="button" data-upload-remove>Remove<span class="sr-only"> ${name}</span></button></div>`;
+        } else if (file.state === 'failed') {
+          item.innerHTML = `${uploadIcon('alert')}<div class="upload-item-copy"><p class="upload-item-name">${name}</p><p class="upload-item-status">We couldn’t use this file. Choose a PDF or DOCX file under 5 MB.</p></div><div class="upload-item-actions"><button class="compact-action" type="button" data-upload-retry>Choose another file</button></div>`;
+        } else {
+          const index = upload.findIndex(([state]) => state === file.state);
+          item.innerHTML = `${uploadIcon('document')}<div class="upload-item-copy"><p class="upload-item-name">${name}</p><p class="upload-item-status">${upload[index][1]} · step ${index + 1} of ${upload.length}</p></div><div class="upload-item-actions"><button class="compact-action" type="button" data-upload-cancel>Cancel<span class="sr-only"> ${name}</span></button></div>${uploadBar(index)}`;
+        }
+        uploadList.replaceChildren(item);
+      };
+
+      const cancelUpload = () => {
+        window.clearTimeout(uploadTimer);
+        if (answers.resume && answers.resume.state !== 'ready' && answers.resume.state !== 'failed') {
+          answers.resume = null;
+        }
+      };
+
+      // Uploading → Checking the file → Reading the text → Ready, each step shown and timed here.
+      const addResume = (name, size, sample = false) => {
+        cancelUpload();
+        if (!/\.(pdf|docx)$/i.test(name) || size > 5 * 1024 * 1024) {
+          answers.resume = { name, state: 'failed' };
+          renderUpload();
+          refresh();
+          deputy?.set('protect-data');
+          deputy?.flash('error', { ms: 2605 });
+          announce(`We couldn’t use ${name}. Choose a PDF or DOCX file under 5 MB.`);
+          return;
+        }
+        answers.resume = { name, state: upload[0][0], sample };
+        renderUpload();
+        refresh();
+        keepClear(uploadList);
+        deputy?.set('pending', {
+          working: true,
+          duty: 'Checking your file',
+          speech: 'I check it before reading.',
+        });
+        announce(`Uploading ${name}. In this prototype nothing leaves your browser.`);
+        let index = 0;
+        const advance = () => {
+          index += 1;
+          if (index < upload.length) {
+            answers.resume = { ...answers.resume, state: upload[index][0] };
+            renderUpload();
+            uploadTimer = window.setTimeout(advance, upload[index][2]);
+            return;
+          }
+          answers.resume = { ...answers.resume, state: 'ready' };
+          renderUpload();
+          refresh();
+          writeSession();
+          deputy?.set('tailor', { speech: 'I’ll tailor from this one.' });
+          deputy?.flash('success', { speech: 'Your résumé is ready.' });
+          announce(`${name} is ready.`);
+        };
+        uploadTimer = window.setTimeout(advance, upload[0][2]);
+      };
+
+      uploadChoose.addEventListener('click', () => uploadFile.click());
+      uploadSample.addEventListener('click', () =>
+        addResume('Alex_Morgan_Resume.pdf', 184320, true),
+      );
+      uploadFile.addEventListener('change', () => {
+        const [file] = uploadFile.files;
+        if (file) addResume(file.name, file.size);
+        uploadFile.value = '';
+      });
+
+      uploadList.addEventListener('click', (event) => {
+        if (!(event.target instanceof Element)) return;
+        const name = answers.resume?.name ?? 'The file';
+        if (event.target.closest('[data-upload-retry]')) {
+          if (answers.resume?.state === 'failed') answers.resume = null;
+          renderUpload();
+          refresh();
+          deputy?.set('protect-data');
+          uploadChoose.focus();
+          uploadFile.click();
+        } else if (event.target.closest('[data-upload-cancel], [data-upload-remove]')) {
+          window.clearTimeout(uploadTimer);
+          answers.resume = null;
+          renderUpload();
+          refresh();
+          writeSession();
+          deputy?.set('protect-data');
+          uploadChoose.focus();
+          announce(`${name} removed.`);
+        }
+      });
+
+      let dragDepth = 0;
+      uploadZone.addEventListener('dragenter', (event) => {
+        event.preventDefault();
+        dragDepth += 1;
+        uploadZone.classList.add('is-dragover');
+      });
+      uploadZone.addEventListener('dragover', (event) => event.preventDefault());
+      uploadZone.addEventListener('dragleave', () => {
+        dragDepth = Math.max(0, dragDepth - 1);
+        if (!dragDepth) uploadZone.classList.remove('is-dragover');
+      });
+      uploadZone.addEventListener('drop', (event) => {
+        event.preventDefault();
+        dragDepth = 0;
+        uploadZone.classList.remove('is-dragover');
+        const [file] = event.dataTransfer?.files ?? [];
+        if (file) addResume(file.name, file.size);
+      });
+
+      // ------------------------------------------------------------------ summary
+
+      const listOf = (values, names) => values.map((value) => names[value] ?? value).join(', ');
+
+      const summaryFor = (id) => {
+        if (id === 'focus')
+          return answers.focus
+            .map((value) =>
+              value === 'applying' ? `${labels.focus.applying} (planned for launch)` : labels.focus[value],
+            )
+            .join(', ');
+        if (id === 'roles') return answers.roles.join(', ');
+        if (id === 'workplace') {
+          const styles = listOf(
+            ['remote', 'hybrid', 'onsite'].filter((value) => answers.workplace.includes(value)),
+            labels.workplace,
+          );
+          const place = answers.location.trim();
+          return styles ? `${styles}${place ? ` · ${place}` : ''}` : '';
+        }
+        if (id === 'watch') return labels.watch[answers.schedule] ?? '';
+        if (id === 'resume') {
+          const file =
+            answers.resume?.state === 'ready'
+              ? `${answers.resume.name} · ${answers.resume.existing ? 'in Résumés' : 'ready'}`
+              : '';
+          const linkedin = answers.linkedin > 0
+            ? `${answers.linkedin === 1 ? '1 detail' : `${answers.linkedin} details`} from LinkedIn`
+            : '';
+          return [file, linkedin].filter(Boolean).join(' · ');
+        }
+        if (id === 'source') {
+          const url = sourceAddress(answers.sourceUrl || answers.source);
+          if (!url) return '';
+          const address = shortAddress(url);
+          const known = knownSourceFor(address);
+          // Finish spends a run on it (R10-9, T1-20), so the line says so.
+          return `${known ? `${known.name} · ` : ''}${address}${rerun ? '' : ' · starts when you finish, uses 1 run'}`;
+        }
+        if (id === 'ai') {
+          if (!answers.ai) return '';
+          const model = answers.ai === 'platform' ? modelName(answers.model) : '';
+          return model ? `${labels.ai.platform} · ${model}` : labels.ai[answers.ai];
+        }
+        return '';
+      };
+      const emptySummary = {
+        focus: 'Skipped · you can choose later in Profile',
+        roles: 'Not answered',
+        workplace: 'Not answered',
+        watch: 'Not answered',
+        resume: 'Skipped · add one in Résumés',
+        source: 'Skipped · add one in Searches',
+        ai: 'Not answered',
+      };
+
+      // Long addresses break where a reader expects, after an @ or a /, and never mid-word (round 7,
+      // T1-10): the text with a line-break opportunity after each, as text nodes, never as HTML.
+      function setBreakable(element, text) {
+        const parts = String(text ?? '').split(/(?<=[@/])/);
+        element.replaceChildren(
+          ...parts.flatMap((part, index) => (index ? [document.createElement('wbr'), part] : [part])),
+        );
+      }
+
+      // A first setup puts a skipped optional step on your To-do (round 6, G4), and says so.
+      const todoSummary = 'Skipped · I’ll add it to your To-do';
+      const renderSummary = () => {
+        const listed = !rerun && setupSteps().length > 0 && typeof store?.skipSetup === 'function';
+        for (const value of document.querySelectorAll('[data-summary]')) {
+          const id = value.dataset.summary;
+          const text = summaryFor(id);
+          const skipped = listed && ['focus', 'resume', 'source'].includes(id);
+          setBreakable(value, text || (skipped ? todoSummary : emptySummary[id]));
+          value.classList.toggle('is-empty', !text);
+        }
+      };
+
+      // ------------------------------------------------------------------ steps
+
+      const hideFeedback = () => {
+        feedback.hidden = true;
+        feedback.dataset.kind = 'validation';
+        feedbackIcon.textContent = '!';
+        continueButton.removeAttribute('aria-describedby');
+        finishLink.removeAttribute('aria-describedby');
+      };
+
+      // A résumé still on its way (uploading, checking, or reading) is not missing.
+      const isUploading = () =>
+        current === 'resume' &&
+        Boolean(answers.resume) &&
+        !['ready', 'failed'].includes(answers.resume.state);
+
+      // Continue, Skip, and Back follow the step: Continue carries aria-disabled until the step
+      // is answered, and Skip shows only while an optional step has no answer.
+      const refresh = () => {
+        const step = stepOf(current);
+        const answered = isAnswered(current);
+        const isDone = current === 'done';
+        backButton.hidden = current === 'welcome';
+        continueButton.hidden = isDone;
+        finishLink.hidden = !isDone;
+        // The way out is on every screen but Done (round 6, G4): Skip setup for now on Welcome,
+        // Skip the rest after it. A re-run's line goes back without saving (showDoor names it).
+        exitLine.hidden = isDone;
+        if (!rerun) laterLink.textContent = current === 'welcome' ? 'Skip setup for now' : 'Skip the rest';
+        if (answered) continueButton.removeAttribute('aria-disabled');
+        else continueButton.setAttribute('aria-disabled', 'true');
+        continueButton.textContent =
+          current === 'welcome'
+            ? rerun
+              ? 'Review my answers'
+              : 'Let’s begin'
+            : returnTo === 'done'
+              ? 'Save and review'
+              : 'Continue';
+        const hideSkip = !step.optional || answered;
+        if (hideSkip && document.activeElement === skipButton) continueButton.focus();
+        skipButton.hidden = hideSkip;
+        // A missing answer's message goes once it is answered, or once a file is on its way (the
+        // person began the recovery); the upload notice goes once the file is ready or stops.
+        if (feedback.dataset.kind === 'validation' && (answered || isUploading())) hideFeedback();
+        if (feedback.dataset.kind === 'notice' && (answered || !isUploading())) hideFeedback();
+      };
+
+      const showMissing = () => {
+        if (isUploading()) {
+          // A notice, not a validation error: the file only needs a few seconds more.
+          feedback.dataset.kind = 'notice';
+          feedbackIcon.textContent = 'i';
+          feedbackTitle.textContent = 'Your file is still uploading';
+          feedbackMessage.textContent = 'Wait for it to finish, then continue, or skip this step.';
+          feedback.hidden = false;
+          continueButton.setAttribute('aria-describedby', 'ob-feedback-title ob-feedback-message');
+          keepClear(feedback);
+          announce('Your file is still uploading. Wait for it to finish, then continue, or skip this step.');
+          return;
+        }
+        feedback.dataset.kind = 'validation';
+        feedbackIcon.textContent = '!';
+        feedbackTitle.textContent = 'Check one detail before continuing';
+        feedbackMessage.textContent = missingFor(current);
+        feedback.hidden = false;
+        continueButton.setAttribute('aria-describedby', 'ob-feedback-title ob-feedback-message');
+        keepClear(feedback);
+        announce(`Check one detail before continuing. ${feedbackMessage.textContent}`);
+      };
+
+      // The deputy's pose and speech for a step; notice steps rest on idle with the same words.
+      const deputyFor = (id) => {
+        const step = stepOf(id);
+        if (!deputy) return;
+        if (id === 'resume' && answers.resume?.state === 'ready') {
+          deputy.set('tailor', { speech: 'I’ll tailor from this one.' });
+        } else if (id === 'done' && !rerun && !answers.source) {
+          // Without a first source there is nothing to search yet, so the deputy waits.
+          deputy.set('idle', { speech: 'Add a source when ready.' });
+        } else if (step.deputy === 'notice') {
+          deputy.set('idle', { speech: step.speech });
+          deputy.set('notice', { speech: step.speech });
+        } else {
+          deputy.set(step.deputy, step.speech ? { speech: step.speech } : {});
+        }
+      };
+
+      const syncAddress = () => {
+        try {
+          const url = new URL(window.location.href);
+          if (current === 'welcome') url.searchParams.delete('step');
+          else url.searchParams.set('step', current);
+          window.history.replaceState(null, '', url);
+        } catch {
+          // A browser that refuses history changes on file: URLs simply reloads at Welcome.
+        }
+      };
+
+      const showStep = (id, { initial = false } = {}) => {
+        if (current === 'resume' && id !== 'resume') {
+          cancelUpload();
+          renderUpload();
+        }
+        const step = stepOf(id);
+        const index = indexOf(step.id);
+        current = step.id;
+        progressLabel.textContent =
+          index === 0 ? (rerun ? '8 steps to check' : '8 short steps') : `Step ${index} of ${counted}`;
+        progressSteps.forEach((bar, position) => {
+          bar.classList.toggle('is-done', position + 1 < index);
+          bar.classList.toggle('is-current', position + 1 === index);
+        });
+        eyebrow.textContent = step.eyebrow;
+        title.textContent = step.title;
+        why.textContent = step.why;
+        for (const body of stepBodies) {
+          const shown = body.dataset.step === step.id;
+          body.hidden = !shown;
+          body.classList.remove('is-entering');
+          if (shown && !initial && !reducedMotion.matches && !deputy?.paused) {
+            body.getBoundingClientRect();
+            body.classList.add('is-entering');
+          }
+        }
+        hideFeedback();
+        if (step.id === 'done') renderSummary();
+        // Reaching Done ends a "Change" visit; any other step keeps it, so Continue returns to Done.
+        if (step.id === 'done') returnTo = null;
+        refresh();
+        writeSession();
+        syncAddress();
+        syncTour();
+        document.title =
+          index === 0
+            ? `JobDeputy · ${rerun ? 'Update your setup' : 'Set up your deputy'}`
+            : `${step.title} · Step ${index} of ${counted} · JobDeputy`;
+        if (initial) {
+          // A first visit keeps the deputy's greeting; a restored step shows its own pose once
+          // deputy.js has adopted the scene (it starts on DOMContentLoaded, after this script).
+          if (step.id !== 'welcome') whenDeputyReady(() => deputyFor(step.id));
+          return;
+        }
+        // A new screen starts at the top, with the question focused.
+        window.scrollTo({ top: 0, behavior: 'instant' });
+        title.focus({ preventScroll: true });
+        deputyFor(step.id);
+        announce(
+          index === 0
+            ? `Back at the start. ${progressLabel.textContent}.`
+            : `Step ${index} of ${counted}.`,
+        );
+      };
+
+      const goNext = () => {
+        const next = returnTo === 'done' ? 'done' : stepIds[indexOf(current) + 1];
+        if (next === 'done') {
+          showStep('done');
+          // A first setup saves on arrival; a re-run waits for its last button.
+          if (!rerun && saveAnswers()) {
+            noteSkipped();
+            if (deputy?.react) deputy.react('celebrate', { speech: 'Thanks, Alex. All set.' });
+            else deputy?.flash('success', { speech: 'Thanks, Alex. All set.' });
+          }
+          return;
+        }
+        showStep(next);
+      };
+
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        if (current === 'done') return;
+        if (continueButton.getAttribute('aria-disabled') === 'true') {
+          showMissing();
+          return;
+        }
+        if (current === 'source') {
+          // A selected pick is the exact address it names; typing away from it clears it.
+          const pick = picks.querySelector('input:checked');
+          const url = sourceAddress(pick?.value ?? sourceInput.value);
+          if (!url) {
+            showSourceError(true);
+            sourceInput.focus();
+            announce('Enter a public web address, such as amazon.jobs/en/search.');
+            return;
+          }
+          answers.source = shortAddress(url);
+          answers.sourceUrl = url.href;
+          sourceInput.value = answers.source;
+        }
+        if (!answers.passed.includes(current)) answers.passed.push(current);
+        goNext();
+      });
+
+      skipButton.addEventListener('click', () => {
+        if (current === 'resume') cancelUpload();
+        if (current === 'source') {
+          answers.source = '';
+          answers.sourceUrl = '';
+          sourceInput.value = '';
+          components?.matchQuickPick(picks, '');
+          confirmSource(null);
+          showSourceError(false);
+        }
+        goNext();
+      });
+
+      backButton.addEventListener('click', () => {
+        returnTo = null;
+        showStep(stepIds[Math.max(0, indexOf(current) - 1)]);
+      });
+
+      document.querySelector('#ob-summary').addEventListener('click', (event) => {
+        const change = event.target instanceof Element && event.target.closest('[data-change]');
+        if (!change) return;
+        returnTo = 'done';
+        showStep(change.dataset.change);
+      });
+
+      // What a re-run still needs before it can save: the required answers, in step order.
+      const requiredMissing = () => {
+        if (!answers.roles.length) return 'Add at least one role to look for.';
+        if (!isAnswered('workplace')) return missingFor('workplace');
+        return 'Choose how I should run AI.';
+      };
+
+      // Leaving for the dashboard saves the answers if Done has not saved them yet and starts the
+      // first search, so the Dashboard opens on it with its first-run tour. A re-run saves here,
+      // starts a new first source's search, and returns to where it started; if it can't save,
+      // the person stays and is told why. A re-run opened from a To-do item (round 6 part 3,
+      // T1-11) only saves the step you answered, so no sample answers write themselves to the
+      // profile; the To-do items you answered close with it (completeAnswered).
+      finishLink.addEventListener('click', (event) => {
+        if (!rerun) {
+          if (!saved && saveAnswers()) noteSkipped();
+          startFirstSearch();
+          return;
+        }
+        if (deepRerun && !isComplete()) {
+          if (saveSkipped()) {
+            completeAnswered();
+            forgetSession();
+            return;
+          }
+        } else if (saveAnswers()) {
+          completeAnswered();
+          startFirstSearch();
+          forgetSession();
+          return;
+        }
+        event.preventDefault();
+        const incomplete = !isComplete();
+        feedback.dataset.kind = incomplete ? 'validation' : 'error';
+        feedbackTitle.textContent = incomplete
+          ? 'Check one detail before saving'
+          : 'We couldn’t save your setup';
+        feedbackMessage.textContent = incomplete
+          ? requiredMissing()
+          : 'Check that this browser allows storage, then try again.';
+        feedback.hidden = false;
+        finishLink.setAttribute('aria-describedby', 'ob-feedback-title ob-feedback-message');
+        keepClear(feedback);
+        announce(`${feedbackTitle.textContent}. ${feedbackMessage.textContent}`);
+      });
+
+      // ------------------------------------------------------------------ the deputy notices
+
+      // Focus on a step's own control turns the deputy toward it; focus that leaves the question
+      // returns the deputy to the step's pose.
+      const stepControl = (element) =>
+        element instanceof Element &&
+        element.closest('.ob-step') &&
+        element.matches('input, textarea, select') &&
+        !element.closest('[data-step="resume"]');
+
+      form.addEventListener('focusin', (event) => {
+        const step = stepOf(current);
+        if (!deputy || !stepControl(event.target) || !step.notice) return;
+        deputy.set('notice', { speech: step.noticeFor?.[event.target.id] ?? step.notice });
+      });
+
+      form.addEventListener('focusout', (event) => {
+        if (!deputy || !stepControl(event.target)) return;
+        const next = event.relatedTarget;
+        if (next instanceof Element && form.contains(next)) return;
+        if (current !== 'resume') deputyFor(current);
+      });
+
+      // ------------------------------------------------------------------ the tour
+
+      // Setup's tour (round 6, R6-3) is offered on Welcome only, before the questions start: its
+      // steps carry data-tour-step there (app-components.js shows Take the tour while a step is
+      // marked), and a re-run, which knows setup already, has none. While it runs the sticky bar
+      // rejoins the flow, so the tour can ring it above its bottom sheet on phones.
+      const tourTargets = [...document.querySelectorAll('[data-ob-tour]')];
+      function syncTour() {
+        const offered = current === 'welcome' && !rerun;
+        for (const target of tourTargets) {
+          if (offered) target.setAttribute('data-tour-step', target.dataset.obTour);
+          else target.removeAttribute('data-tour-step');
+        }
+      }
+      document.addEventListener('jobdeputy:tour', (event) => {
+        const touring = event.detail?.type === 'start';
+        form.classList.toggle('is-touring', touring);
+        document.querySelector('#main').classList.toggle('is-touring', touring);
+      });
+
+      // ------------------------------------------------------------------ phones: the sticky bar
+
+      // While a text field has focus the bar rejoins the flow (an on-screen keyboard would cover a
+      // bar stuck to the bottom). Add, beside the job title, counts as staying in the field.
+      form.addEventListener('focusin', (event) => {
+        if (textFields.includes(event.target)) form.classList.add('is-typing');
+        window.requestAnimationFrame(() => keepClear(event.target));
+      });
+
+      form.addEventListener('focusout', (event) => {
+        if (!textFields.includes(event.target)) return;
+        const next = event.relatedTarget;
+        if (textFields.includes(next) || next === roleAdd) return;
+        form.classList.remove('is-typing');
+      });
+
+      // Keyboard focus never hides under the bar: a control (or the card around its radio) that
+      // ends below the bar's top edge scrolls up past it. Feedback and the upload row that appear
+      // under the bar on a short phone scroll up the same way.
+      const keepClear = (element) => {
+        if (!phone.matches || !(element instanceof Element) || actions.contains(element)) return;
+        const bar = actions.getBoundingClientRect();
+        if (getComputedStyle(actions).position !== 'sticky' || bar.bottom < window.innerHeight - 1)
+          return;
+        const box = (element.closest('label') ?? element).getBoundingClientRect();
+        const overlap = box.bottom - (bar.top - 8);
+        if (overlap > 0) window.scrollBy({ top: overlap, behavior: 'instant' });
+      };
+
+      // The on-screen keyboard shrinks only the visual viewport: keep the field in view above it.
+      window.visualViewport?.addEventListener('resize', () => {
+        const field = document.activeElement;
+        if (!textFields.includes(field)) return;
+        const view = window.visualViewport;
+        const box = field.getBoundingClientRect();
+        const bottom = view.offsetTop + view.height - 13;
+        if (box.bottom > bottom) window.scrollBy({ top: box.bottom - bottom, behavior: 'instant' });
+      });
+
+      // ------------------------------------------------------------------ phones: the deputy row
+
+      // In reduced motion Pause motion hides, and the phone scene (deputy.css) keeps an empty band
+      // under the panda, as tall as its duty line (asked of the deputy's owner). Until that is
+      // fixed there, the stage gives back only the empty space below the scene's lowest visible
+      // part, so the question keeps its place; with nothing empty, nothing changes.
+      const stage = document.querySelector('.ob-stage');
+      const scene = document.querySelector('.deputy-scene');
+      const trimStage = () => {
+        stage.style.removeProperty('margin-bottom');
+        if (!phone.matches) return;
+        const parts = [...scene.children].filter(
+          (part) => part.getClientRects().length && getComputedStyle(part).position !== 'absolute',
+        );
+        const content = Math.max(...parts.map((part) => part.getBoundingClientRect().bottom));
+        const empty = Math.floor(scene.getBoundingClientRect().bottom - content);
+        if (empty > 0) stage.style.marginBottom = `-${empty}px`;
+      };
+      if ('ResizeObserver' in window) new ResizeObserver(trimStage).observe(scene);
+      phone.addEventListener('change', trimStage);
+
+      // ------------------------------------------------------------------ start
+
+      const restore = () => {
+        // Typed titles come back in the order they were added, newest first.
+        for (const value of [...answers.extraRoles].reverse()) {
+          if (!roleBoxes().some((box) => box.value === value)) {
+            roleChips.querySelector('legend').after(roleChip(value, false));
+          }
+        }
+        for (const box of roleBoxes()) box.checked = answers.roles.includes(box.value);
+        syncRoles();
+        for (const name of ['focus', 'workplace']) {
+          for (const box of form.querySelectorAll(`input[name="${name}"]`)) {
+            box.checked = answers[name].includes(box.value);
+          }
+        }
+        for (const name of ['schedule', 'ai']) {
+          for (const radio of form.querySelectorAll(`input[name="${name}"]`)) {
+            radio.checked = radio.value === answers[name];
+          }
+        }
+        renderModels();
+        renderImported();
+        locationInput.value = answers.location;
+        sourceInput.value = answers.source;
+        confirmSource(components?.matchQuickPick(picks, answers.source) ?? null);
+        // A file still being read when the page reloaded starts over.
+        if (answers.resume && !['ready', 'failed'].includes(answers.resume.state)) answers.resume = null;
+        renderUpload();
+      };
+
+      // Skipping setup keeps what you answered (nothing on Welcome), starts the first source you
+      // chose (none, and the Dashboard's first run says "Add your first source."), and puts what's
+      // left on your To-do; then the link opens the Dashboard. A re-run's link only goes back.
+      laterLink.addEventListener('click', () => {
+        if (rerun) return;
+        skipRest();
+      });
+
+      // Round 6 part 3 (T1-6): leaving setup through the logo acts as Skip setup for now, so what
+      // the person did answer is kept and what is left joins the To-do; a re-run's logo still
+      // goes straight home (the setup isn't being changed).
+      const brandLink = document.querySelector('header .brand');
+      brandLink?.addEventListener('click', (event) => {
+        if (rerun || event.defaultPrevented) return;
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+        event.preventDefault();
+        skipRest();
+        window.location.assign(laterLink.getAttribute('href') ?? brandLink.getAttribute('href'));
+      });
+
+      // The welcome names the door, and the last button names where a re-run returns.
+      const showDoor = () => {
+        const entry = doors[door];
+        document.querySelector('#ob-account-label').textContent = entry.label;
+        setBreakable(document.querySelector('#ob-account-value'), entry.value);
+        document.querySelector('#ob-account-icon').setAttribute('href', `#ob-icon-${entry.icon}`);
+        document.querySelector('#ob-account-pill').hidden = door === 'setup';
+        const note = document.querySelector('#ob-door-note');
+        note.textContent = entry.note;
+        note.hidden = !entry.note;
+        // The home Region (round 6, G3 and R9-6): the one chosen at Create account, or the one
+        // your signed agreement keeps, or the sample account's United States. Every Region fact
+        // on the page says the same one: Welcome, the résumé step's line, the file once it is
+        // ready, and the deputy's shield and its "your data stays in" line (data-deputy-region,
+        // which deputy.js reads when it adopts the scene).
+        const region = homeRegion();
+        regionValue.textContent = region.label;
+        for (const node of document.querySelectorAll('[data-home-region-name]')) {
+          node.textContent = region.name;
+        }
+        document.querySelector('#onboarding-deputy').dataset.deputyRegion = homeRegionCode();
+        if (rerun) {
+          laterLink.textContent = `Back to ${origin.name}`;
+          laterLink.href = origin.href;
+          exitNote.textContent = 'Your setup stays as it was.';
+          finishLink.textContent = `Save and return to ${origin.name}`;
+          finishLink.href = origin.href;
+          document.querySelector('#ob-stage-note').textContent =
+            'Nothing changes until you save. Your answers stay in this browser.';
+        }
+      };
+
+      // Step 4's free runs a month is the store's figure (R3-3).
+      for (const figure of document.querySelectorAll('[data-metric]')) {
+        const text = store?.metricText?.(figure.getAttribute('data-metric'));
+        if (text) figure.textContent = text;
+      }
+
+      // Your own key, as the account has it: the key and its one model when one is ready (one
+      // model for every search and draft, R4-2), or where to add one.
+      const ownKeyMeta = document
+        .querySelector('input[name="ai"][value="own-key"]')
+        ?.closest('label')
+        ?.querySelector('.choice-card-meta');
+      const describeOwnKey = () => {
+        if (!ownKeyMeta || typeof store?.get !== 'function') return;
+        const provider = ownKeySource();
+        const key = store.get()?.ai?.keys?.[provider];
+        const name = provider === 'anthropic' ? 'Anthropic' : 'OpenAI';
+        ownKeyMeta.textContent =
+          key?.status === 'ready'
+            ? `${key.model ? `${key.model} on your ${name} key` : `Your ${name} key`}; your provider may charge`
+            : 'OpenAI or Anthropic, added in AI & credits; your provider may charge';
+      };
+      describeOwnKey();
+
+      // ------------------------------------------------------------------ platform model
+
+      // Platform credits run on one model for the account (setPlatformModel at Done): the three
+      // models() lists, each with its speed and price per million tokens from the store (AWS's
+      // rate plus the margin, R5-1), the recommended one first. Shown while Platform credits is
+      // chosen.
+      const modelsField = document.querySelector('#ob-models');
+      const modelName = (id) => (store?.models?.() ?? []).find((model) => model.id === id)?.name ?? '';
+      function renderModels() {
+        const models = typeof store?.models === 'function' ? store.models() : [];
+        if (!modelsField || !models.length) return;
+        const rate = (value) => store.format?.rate?.(value) ?? `$${value}`;
+        const cards = models.map((model) => {
+          const label = document.createElement('label');
+          label.className = 'choice-card';
+          const input = document.createElement('input');
+          input.type = 'radio';
+          input.name = 'model';
+          input.value = model.id;
+          input.checked = model.id === answers.model;
+          const control = document.createElement('span');
+          control.className = 'choice-card-control';
+          control.setAttribute('aria-hidden', 'true');
+          const copy = document.createElement('span');
+          copy.className = 'choice-card-copy';
+          const name = document.createElement('span');
+          name.className = 'choice-card-label';
+          name.textContent = model.name;
+          const meta = document.createElement('span');
+          meta.className = 'choice-card-meta';
+          const speed = Number.isFinite(model.speedSeconds) ? `${model.speedSeconds} s a call` : model.speed;
+          meta.textContent = `${model.recommended ? 'Recommended · ' : ''}${speed} · ${rate(model.rateIn)} in, ${rate(model.rateOut)} out per million tokens`;
+          copy.append(name, meta);
+          label.append(input, control, copy);
+          return label;
+        });
+        for (const old of modelsField.querySelectorAll('.choice-card')) old.remove();
+        modelsField.append(...cards);
+        const note = document.querySelector('#ob-models-note');
+        if (store.PRICING?.note) note.textContent = store.PRICING.note;
+        syncModels();
+      }
+      function syncModels() {
+        if (modelsField) modelsField.hidden = answers.ai !== 'platform';
+      }
+
+      // ------------------------------------------------------------------ Import from LinkedIn
+
+      // The résumé step's Import from LinkedIn: the file (the prototype reads the sample export),
+      // then the review, each item ticked or not, then Import, which saves only the ticked ones
+      // to your profile at once. Before the October agreement is signed, the review asks for it
+      // in place, and Review and sign comes back here (?step=resume&import=linkedin) with your
+      // ticks kept. The step counts as answered once something was imported.
+      const importDrawer = document.querySelector('#ob-import-drawer');
+      const importOpen = document.querySelector('#ob-import-open');
+      const importChoose = document.querySelector('#ob-import-choose');
+      const importReview = document.querySelector('#ob-import-review');
+      const importGroups = document.querySelector('#ob-import-groups');
+      const importSave = document.querySelector('#ob-import-save');
+      const importSign = document.querySelector('#ob-import-sign');
+      const importGate = document.querySelector('#ob-import-gate');
+      const importSummary = document.querySelector('#ob-import-summary');
+      const importStatus = document.querySelector('#ob-import-status');
+      const importFile = document.querySelector('#ob-import-file');
+      const importFileError = document.querySelector('#ob-import-file-error');
+      const IMPORT_KEY = 'jobdeputy.onboarding.import';
+      const IMPORT_ORDER = ['new', 'differs', 'same'];
+      const IMPORT_WORDS = {
+        new: 'New to your profile',
+        differs: 'Different from yours',
+        same: 'Already in your profile',
+      };
+      let importing = null;
+      let importDone = null;
+
+      const sayImport = (message) => {
+        importStatus.textContent = '';
+        window.setTimeout(() => {
+          importStatus.textContent = message;
+        }, 40);
+      };
+      const readImport = () => {
+        try {
+          const saved = JSON.parse(window.sessionStorage.getItem(IMPORT_KEY) || 'null');
+          return saved && Array.isArray(saved.keys) ? saved : null;
+        } catch {
+          return null;
+        }
+      };
+      const writeImport = () => {
+        try {
+          if (importing) {
+            window.sessionStorage.setItem(IMPORT_KEY, JSON.stringify({ file: importing.file, keys: [...importing.keys] }));
+          } else {
+            window.sessionStorage.removeItem(IMPORT_KEY);
+          }
+        } catch {
+          // Storage is unavailable; the ticks still hold for this page view.
+        }
+      };
+      const importLabel = (count) =>
+        count ? `Import ${count === 1 ? '1 detail' : `${count} details`}` : 'Choose what to import';
+      const SECTION_WORDS = { about: 'About you', career: 'Career' };
+
+      const importCard = (item, checked) => {
+        const label = document.createElement('label');
+        label.className = 'choice-card';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.name = 'ob-import';
+        input.value = item.key;
+        input.checked = checked;
+        const control = document.createElement('span');
+        control.className = 'choice-card-control';
+        control.setAttribute('aria-hidden', 'true');
+        const copy = document.createElement('span');
+        copy.className = 'choice-card-copy';
+        const name = document.createElement('span');
+        name.className = 'choice-card-label';
+        name.textContent = item.label;
+        const value = document.createElement('span');
+        value.className = 'choice-card-meta ob-import-value';
+        value.textContent = item.value;
+        const meta = document.createElement('span');
+        meta.className = 'choice-card-meta';
+        meta.textContent =
+          item.compare === 'differs'
+            ? `Yours now: ${item.current}`
+            : item.compare === 'same'
+              ? 'Already the same in your profile'
+              : `Joins ${SECTION_WORDS[item.section] ?? 'your profile'} in Profile`;
+        copy.append(name, value, meta);
+        label.append(input, control, copy);
+        return label;
+      };
+
+      const syncImport = () => {
+        const gate = typeof store?.requiresAgreement === 'function' ? store.requiresAgreement('linkedin-import') : null;
+        const reviewing = Boolean(importing) && !importReview.hidden;
+        importGate.hidden = !gate || !reviewing;
+        if (gate) {
+          document.querySelector('#ob-import-gate-message').textContent = `Version ${gate.version} covers ${String(gate.label ?? 'importing from LinkedIn').replace(/^./, (c) => c.toLowerCase())}. Sign it, and you come back here with your choices kept.`;
+          importSign.setAttribute(
+            'href',
+            `./agreement-preview.html?mode=update&return=${encodeURIComponent('onboarding-preview.html?step=resume&import=linkedin')}`,
+          );
+        }
+        importSign.hidden = !gate || !reviewing;
+        importSave.hidden = Boolean(gate) || !reviewing;
+        importSave.textContent = importLabel(importing?.keys.size ?? 0);
+      };
+
+      const renderReview = () => {
+        const parsed = store?.linkedinImport?.();
+        if (!parsed || !importing) return;
+        document.querySelector('#ob-import-file-name').textContent = importing.file;
+        document.querySelector('#ob-import-note').textContent = parsed.note;
+        const nodes = IMPORT_ORDER.map((compare) => {
+          const items = parsed.items.filter((item) => item.compare === compare);
+          if (!items.length) return null;
+          const fieldset = document.createElement('fieldset');
+          fieldset.className = 'choice-cards ob-import-group';
+          fieldset.dataset.compare = compare;
+          const legend = document.createElement('legend');
+          legend.className = 'field-label';
+          legend.textContent = `${IMPORT_WORDS[compare]} (${items.length})`;
+          fieldset.append(legend, ...items.map((item) => importCard(item, importing.keys.has(item.key))));
+          if (compare !== 'same') return fieldset;
+          // What your profile already has stays folded: ticking it changes nothing.
+          const details = document.createElement('details');
+          details.className = 'ob-import-same';
+          const summary = document.createElement('summary');
+          summary.textContent = `${IMPORT_WORDS.same}: ${items.length}`;
+          details.append(summary, fieldset);
+          return details;
+        }).filter(Boolean);
+        importGroups.replaceChildren(...nodes);
+        syncImport();
+      };
+
+      const startImport = (file) => {
+        const saved = readImport();
+        const parsed = store?.linkedinImport?.();
+        const keys =
+          saved?.file === file
+            ? saved.keys
+            : (parsed?.items ?? []).filter((item) => item.compare !== 'same').map((item) => item.key);
+        importing = { file, keys: new Set(keys) };
+        writeImport();
+        importChoose.hidden = true;
+        importReview.hidden = false;
+        importSummary.hidden = true;
+        renderReview();
+        const counts = parsed?.counts ?? {};
+        sayImport(
+          `${file}: ${counts.total ?? 0} details found, ${counts.new ?? 0} new, ${counts.differs ?? 0} different from yours. Sample export, nothing was uploaded.`,
+        );
+        (importGroups.querySelector('input[name="ob-import"]') ?? importSave).focus();
+      };
+
+      const openImport = ({ review = false } = {}) => {
+        importFileError.hidden = true;
+        importReview.hidden = true;
+        importChoose.hidden = false;
+        importing = null;
+        syncImport();
+        components?.openDrawer(importDrawer, importOpen);
+        if (review) startImport(readImport()?.file ?? store.linkedinImport().file);
+        else document.querySelector('#ob-import-choose-file').focus();
+      };
+
+      // How many details came from LinkedIn in this setup, beside the button.
+      const renderImported = () => {
+        const meta = document.querySelector('#ob-import-meta');
+        meta.textContent = answers.linkedin > 0
+          ? `Saved ${answers.linkedin === 1 ? '1 detail' : `${answers.linkedin} details`} to your profile · import again any time in Connections`
+          : 'Your data export or profile PDF · you choose what joins';
+      };
+
+      importOpen?.addEventListener('click', () => openImport());
+      document.querySelector('#ob-import-choose-file')?.addEventListener('click', () => importFile.click());
+      document.querySelector('#ob-import-sample')?.addEventListener('click', () => startImport(store.linkedinImport().file));
+      importFile?.addEventListener('change', () => {
+        const [file] = importFile.files;
+        importFile.value = '';
+        if (!file) return;
+        if (!/\.(zip|pdf)$/i.test(file.name)) {
+          importFileError.textContent = 'Choose the ZIP from Get a copy of your data, or your profile PDF.';
+          importFileError.hidden = false;
+          sayImport(importFileError.textContent);
+          document.querySelector('#ob-import-choose-file').focus();
+          return;
+        }
+        startImport(`${file.name} · read as the sample export`);
+      });
+      importGroups?.addEventListener('change', (event) => {
+        const input = event.target;
+        if (!(input instanceof HTMLInputElement) || input.name !== 'ob-import' || !importing) return;
+        if (input.checked) importing.keys.add(input.value);
+        else importing.keys.delete(input.value);
+        importSummary.hidden = true;
+        writeImport();
+        syncImport();
+      });
+      importSave?.addEventListener('click', () => {
+        if (!importing) return;
+        const result = store?.applyLinkedinImport?.([...importing.keys]);
+        if (!result?.ok) {
+          const words = {
+            'nothing-chosen': ['Choose what to import', 'Tick at least one detail, or close without importing.'],
+            'agreement-required': ['Sign the updated agreement first', 'Importing from LinkedIn is new in version 2026.10.'],
+          }[result?.reason] ?? ['We couldn’t import that', 'Nothing was saved. Try again.'];
+          document.querySelector('#ob-import-summary-title').textContent = words[0];
+          document.querySelector('#ob-import-summary-message').textContent = words[1];
+          importSummary.hidden = false;
+          importSummary.focus();
+          syncImport();
+          if (deputy?.react) deputy.react('error');
+          return;
+        }
+        importDone = result;
+        importing = null;
+        writeImport();
+        components?.closeDrawer(importDrawer);
+      });
+      // After an import the step is answered, the button says what was saved, and it is said once.
+      importDrawer?.addEventListener('close', () => {
+        const result = importDone;
+        importDone = null;
+        if (!result) return;
+        answers.linkedin += result.applied.length;
+        renderImported();
+        refresh();
+        writeSession();
+        importOpen.focus();
+        announce(
+          result.applied.length
+            ? `Saved ${result.applied.length === 1 ? '1 detail' : `${result.applied.length} details`} from LinkedIn to your profile.`
+            : 'Nothing new to save: what you chose already matches your profile.',
+        );
+        if (deputy?.react) {
+          deputy.react('saved', { speech: result.applied.length ? 'Saved from LinkedIn.' : 'Already up to date.' });
+        }
+      });
+
+      showDoor();
+      restore();
+      if (rerun) document.querySelector('[data-deputy-speech]').textContent = stepOf('welcome').speech;
+      // The address holds the step (kept in sync as you move), so a reload stays put; a new visit,
+      // such as the Google path, starts at Welcome with any answers from this tab kept.
+      const start = stepIds.includes(requested) ? requested : 'welcome';
+      showStep(start, { initial: true });
+      // Back from signing the agreement (?import=linkedin): the review opens again with your
+      // ticks, and the address drops the parameter so a reload doesn't.
+      if (parameters.get('import') === 'linkedin' && current === 'resume') {
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('import');
+          window.history.replaceState(null, '', url);
+        } catch {
+          // The address keeps the parameter; a reload opens the review again.
+        }
+        openImport({ review: true });
+      }
+    </script>
+    <span id="first-view" hidden></span>
+  </body>
+</html>

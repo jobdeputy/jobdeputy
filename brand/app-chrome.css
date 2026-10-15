@@ -1,0 +1,2965 @@
+/*
+ * JobDeputy shared chrome for the signed-in pages: Dashboard, Searches, Job matches, Applications,
+ * Résumés (and the Materials editor), Profile, AI & credits, and Help.
+ *
+ * This file implements the component contract in docs/design-system.md, the app shell (the
+ * sidebar navigation, rail, and mobile app bar), the header actions, the account menu, the
+ * Feedback drawer's layout (feedback.js), the Prompt and Get more runs panels (app-panels.js),
+ * and the Pause motion reset. Each page links it before its inline <style> and keeps the canonical
+ * :root token block inline, so there is no :root here. Page styles may add layout (grid placement,
+ * widths, and margins) but must not restyle these components.
+ *
+ * Layers, lowest first: the page; the sidebar or app bar (15); the header with the account menu
+ * and its scrim (20); the opening loader (100); the skip link (120). Drawers and dialogs open in
+ * the top layer, above all of them.
+ */
+
+/* Base */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* The 320px floor matches the entry routes. Scroll padding keeps anchor targets and keyboard
+   focus clear of the sticky header (72px, 64px at mobile); on phones the app bar adds 55px, so the
+   mobile rules below raise it. */
+html {
+  min-width: 320px;
+  scroll-padding-top: 89px;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+/* Components below set display, which would otherwise override the hidden attribute. */
+[hidden] {
+  /* biome-ignore lint/complexity/noImportantStyles: the hidden attribute must beat every component display value */
+  display: none !important;
+}
+
+/* Visually hidden text: StatusAnnouncement channels and names only assistive technology needs. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Skip link */
+
+.skip-link {
+  position: fixed;
+  z-index: 120;
+  top: 13px;
+  left: 13px;
+  display: inline-flex;
+  min-height: 44px;
+  padding: 0 13px;
+  border-radius: 11px;
+  align-items: center;
+  color: white;
+  background: var(--ink);
+  font-size: 13px;
+  font-weight: 680;
+  line-height: normal;
+  text-decoration: none;
+  white-space: nowrap;
+  transform: translateY(-180%);
+  transition: transform 180ms ease;
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
+/* Header and brand lockup */
+
+.app-header {
+  position: sticky;
+  z-index: 20;
+  top: 0;
+  display: flex;
+  min-height: 72px;
+  gap: 13px;
+  padding: 0 clamp(21px, 4vw, 55px);
+  border-bottom: 1px solid var(--line-soft);
+  align-items: center;
+  justify-content: space-between;
+  background: var(--header-surface);
+  backdrop-filter: saturate(160%) blur(20px);
+}
+
+.brand {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 44px;
+  gap: 8px;
+  padding-right: 8px;
+  border-radius: 15px;
+  align-items: center;
+  color: var(--ink);
+  text-decoration: none;
+  transition: background 180ms ease;
+}
+
+.brand:hover {
+  background: var(--surface);
+}
+
+.brand-logo {
+  display: block;
+  width: 62px;
+  height: auto;
+  flex: 0 0 auto;
+  transition: transform 180ms ease;
+}
+
+.brand:hover .brand-logo {
+  transform: translateY(-1px);
+}
+
+.brand-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  line-height: 1;
+}
+
+.brand-name {
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 720;
+  letter-spacing: -0.05em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.brand-name > span:first-child {
+  font-weight: 620;
+}
+
+.brand-note {
+  color: var(--muted);
+  font-size: 8.5px;
+  font-weight: 680;
+  letter-spacing: 0.075em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.header-actions {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+  margin-left: auto;
+  align-items: center;
+}
+
+/* Header pills: the Back action (ContextBackAction, a plain .header-action on child routes) and the
+   HeaderActions block on every internal page, Feedback (button.header-feedback) and Invite friends
+   (a.header-invite). Those two show an icon and a label at 1101px and wider, and only the icon
+   (44px, the label still its accessible name) at 1100px and narrower. On a phone the account
+   menu repeats both, so they leave the header first when a Back action needs the room. */
+
+.header-action {
+  display: inline-flex;
+  min-height: 44px;
+  gap: 8px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  align-items: center;
+  cursor: pointer;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 680;
+  line-height: normal;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    transform 180ms ease;
+}
+
+.header-action:hover {
+  border-color: var(--line-strong);
+  background: white;
+  transform: translateY(-1px);
+}
+
+/* The Invite page marks its own header link current (it has no nav item): a 2px green ring, as
+   the current nav link carries a green rule. It stays on hover. */
+.header-action[aria-current="page"] {
+  border-color: var(--green);
+  box-shadow: inset 0 0 0 1px var(--green);
+}
+
+.header-action-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+/* Account chip and menu */
+
+.account-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.account-menu > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.account-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.account-link {
+  display: inline-flex;
+  min-height: 44px;
+  gap: 8px;
+  padding: 4px 13px 4px 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  align-items: center;
+  color: var(--ink);
+  background: var(--surface);
+  text-decoration: none;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    transform 180ms ease;
+}
+
+/* The empty alternative keeps the chevron out of the chip's accessible name. */
+.account-link::after {
+  color: var(--quiet);
+  content: "⌄" / "";
+  font-size: 12px;
+  line-height: 1;
+}
+
+.account-link:hover {
+  border-color: var(--line-strong);
+  background: white;
+  transform: translateY(-1px);
+}
+
+/* An open chip holds still: a hover lift would also move the phone scrim drawn by its ::before. */
+.account-menu[open] > summary {
+  border-color: var(--line-strong);
+  background: white;
+  transform: none;
+}
+
+.account-avatar {
+  display: block;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--green-soft);
+}
+
+.account-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.account-copy {
+  display: grid;
+  gap: 2px;
+  line-height: 1.2;
+  text-align: left;
+}
+
+.account-copy strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.account-copy > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+/* The menu is opaque white with the surface shadow and a 1px line, so nothing on the page reads
+   through it; it sits in the header's layer, above the sidebar, the app bar, and the page. On
+   phones it becomes a full-width sheet under the header (see the mobile rules). */
+.account-popover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  width: min(270px, calc(100vw - 26px));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: white;
+  box-shadow: var(--shadow);
+}
+
+.account-popover > * + * {
+  border-top: 1px solid var(--line);
+}
+
+/* The last row follows the menu's inner corner so its hover fill and focus ring are not cut off. */
+.account-popover > :last-child {
+  border-radius: 0 0 14px 14px;
+}
+
+.account-popover-status {
+  display: grid;
+  gap: 4px;
+  padding: 13px;
+  color: var(--muted);
+  background: var(--paper);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.account-popover-status strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.account-popover a {
+  display: flex;
+  min-height: 48px;
+  padding: 0 13px;
+  align-items: center;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 620;
+  text-decoration: none;
+  transition: background 180ms ease;
+}
+
+.account-popover a:hover {
+  background: var(--paper);
+}
+
+/* Send feedback opens a dialog, so it is a button; it reads as one of the menu's rows. */
+.account-popover-action {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 13px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  align-items: center;
+  cursor: pointer;
+  color: var(--ink);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 620;
+  line-height: normal;
+  text-align: start;
+  transition: background 180ms ease;
+}
+
+.account-popover-action:hover {
+  background: var(--paper);
+}
+
+.account-popover .account-signout {
+  color: var(--danger-ink);
+}
+
+/* Page shell and editorial intro */
+
+.page-shell {
+  width: min(1280px, calc(100% - 42px));
+  margin: 0 auto;
+  padding: 34px 0 55px;
+}
+
+.page-intro {
+  margin: 0 0 34px;
+}
+
+.eyebrow {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 13px;
+  align-items: center;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.eyebrow::before {
+  width: 13px;
+  height: 3px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--green);
+  content: "";
+}
+
+main h1 {
+  margin: 0 0 13px;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(40px, 4vw, 52px);
+  font-weight: 500;
+  letter-spacing: -0.05em;
+  line-height: 1;
+  text-wrap: balance;
+}
+
+.intro-copy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+/* Page intro with the tour slot (round 6, R6-3): section.page-intro holding .page-intro-copy (an
+   optional eyebrow, the h1, the lede) and .page-intro-actions (Take the tour,
+   button.secondary-action.page-tour[data-tour-open]). From 721px the actions sit at the right end
+   of the title row, top aligned with the h1: they start below the eyebrow's line and its 13px
+   margin. At 720px and below they take their own row under the lede, at the start. An actions box
+   whose only button is hidden (a page without a tour) takes no room. */
+.page-intro:has(> .page-intro-actions) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.page-intro-copy {
+  min-width: 0;
+  grid-column: 1;
+}
+
+.page-intro-copy > :last-child {
+  margin-bottom: 0;
+}
+
+.page-intro-actions {
+  display: flex;
+  min-width: 0;
+  grid-column: 2;
+  grid-row: 1;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.page-intro:has(> .page-intro-copy > .eyebrow:first-child) > .page-intro-actions {
+  padding-top: calc(12px * 1.2 + 13px);
+}
+
+.page-intro-actions:has(> :not([hidden])) {
+  margin-inline-start: 34px;
+}
+
+.page-intro-actions:not(:has(> :not([hidden]))) {
+  display: none;
+}
+
+/* Boot without flicker (round 7, R10-1): Take the tour keeps its room from the first paint. It
+   ships hidden and the tour engine shows it once it finds the page's steps, which used to move
+   everything under the intro by 73px on phones and rewrap the lede in the rail. While scripting is
+   enabled the hidden button is laid out but invisible (out of the accessibility tree and the tab
+   order), and it takes no room only once the engine has found no tour after the page booted
+   (data-tour-none). The signed-out Help (html[data-help-view="public"], set in its head) has no
+   tour, so it reserves nothing. */
+@media (scripting: enabled) {
+  html:not([data-help-view="public"])
+    .page-intro-actions
+    > .page-tour[hidden]:not([data-tour-none]) {
+    /* biome-ignore lint/complexity/noImportantStyles: the reserved button must beat the shared [hidden] rule, which is !important */
+    display: inline-flex !important;
+    visibility: hidden;
+  }
+
+  html:not([data-help-view="public"])
+    .page-intro-actions:has(> .page-tour[hidden]:not([data-tour-none])) {
+    display: flex;
+    margin-inline-start: 34px;
+  }
+}
+
+/* One focus ring (T4-21, T4-22): an element focused for you (a heading after a pager, the
+   control Back returns you to) shows the green ring, never the browser's blue one, and only where
+   you were on the keyboard (data-focus-ring is the shared scripts' stand-in for :focus-visible). */
+main [tabindex="-1"]:focus {
+  outline: none;
+}
+
+main [tabindex="-1"]:focus-visible,
+[data-focus-ring]:focus {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+
+main h1[tabindex="-1"]:focus-visible,
+main h2[tabindex="-1"]:focus-visible,
+main h3[tabindex="-1"]:focus-visible,
+main h4[tabindex="-1"]:focus-visible {
+  border-radius: 4px;
+}
+
+/* Back to <page> (round 7, R10-3): on a home reached from another page (?return=), the link back
+   sits at the start of the intro's eyebrow line, before the eyebrow's mark and words. Its 44px
+   target reaches over the line's own height (negative block margins), so adding it after the
+   first paint moves nothing. Sentence case, ink, the green focus ring. */
+.page-back {
+  display: inline-flex;
+  min-height: 44px;
+  gap: 4px;
+  margin-block: -15px;
+  margin-inline: -8px 13px;
+  padding: 0 8px;
+  border-radius: 11px;
+  align-items: center;
+  order: -1;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 680;
+  letter-spacing: 0;
+  line-height: 1.2;
+  text-decoration: underline;
+  text-decoration-color: var(--green-line);
+  text-decoration-thickness: 1px;
+  text-transform: none;
+  text-underline-offset: 3px;
+}
+
+.page-back:hover {
+  text-decoration-color: currentColor;
+}
+
+.page-back:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
+.page-back-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.page-back-line {
+  margin: 0 0 13px;
+}
+
+/* SettingsTabs (round 6, T1): nav.settings-tabs of a.settings-tab links, one page each, directly
+   under the page intro of the five Settings pages. The current tab (aria-current="page") takes
+   the shared tabs' selected look: the green underline, ink text, and the surface fill. Every tab
+   is 44px. Round 7 (T2-10): one row at every width; where the seven do not fit it scrolls
+   sideways, and the edge with more tabs past it fades (data-more="start", "end", or "both", set
+   by app-components.js as it scrolls), so a partial tab shows there are more. It never wraps a
+   lone tab onto a second row, and never widens its column. The fades are masks: any opaque
+   colour (the ink) keeps a tab, transparent hides it. */
+/* The rule under the strip is the nav's, so the fades never thin it; the list reaches 6px past
+   it on each side, room for a tab's focus ring inside the scrolling row. */
+.settings-tabs {
+  min-width: 0;
+  max-width: 100%;
+  margin: -13px 0 34px;
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-tabs-list {
+  display: flex;
+  min-width: 0;
+  flex-wrap: nowrap;
+  gap: 4px;
+  margin: -6px -6px 0;
+  padding: 6px 6px 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  list-style: none;
+  scroll-padding-inline: 55px;
+  scrollbar-width: thin;
+}
+
+.settings-tabs-list > li {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+.settings-tabs-list[data-more="end"] {
+  mask-image: linear-gradient(to right, var(--ink) calc(100% - 55px), transparent);
+}
+
+.settings-tabs-list[data-more="start"] {
+  mask-image: linear-gradient(to left, var(--ink) calc(100% - 55px), transparent);
+}
+
+.settings-tabs-list[data-more="both"] {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    var(--ink) 55px,
+    var(--ink) calc(100% - 55px),
+    transparent
+  );
+}
+
+.settings-tab {
+  display: inline-flex;
+  min-height: 44px;
+  padding: 0 13px;
+  border: 1px solid transparent;
+  border-bottom: 3px solid transparent;
+  border-radius: 11px;
+  align-items: center;
+  color: var(--muted);
+  background: transparent;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: normal;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease;
+}
+
+.settings-tab:hover {
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.settings-tab[aria-current="page"] {
+  border-color: var(--line);
+  border-bottom-color: var(--green);
+  color: var(--ink);
+  background: var(--surface);
+  font-weight: 700;
+}
+
+.settings-tab:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+
+/* Section headings, labels, and item titles */
+
+main h2 {
+  margin: 0 0 8px;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(28px, 2.6vw, 34px);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+}
+
+.section-label {
+  display: block;
+  margin: 0 0 13px;
+  color: var(--green-ink);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+main h3,
+.item-title {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-text);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+/* Task surface */
+
+.task-surface {
+  padding: 34px;
+  border: 1px solid var(--line-soft);
+  border-radius: 34px;
+  background: var(--surface);
+  box-shadow:
+    var(--shadow),
+    inset 0 1px 0 var(--surface-strong);
+}
+
+/* Actions */
+
+.primary-action,
+.secondary-action {
+  display: inline-flex;
+  min-height: 52px;
+  gap: 8px;
+  padding: 0 21px;
+  border-radius: 15px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 680;
+  line-height: normal;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+/* The transparent border is invisible here but becomes the button's boundary in forced colours. */
+.primary-action {
+  border: 1px solid transparent;
+  color: white;
+  background: var(--ink);
+  box-shadow: var(--shadow-control);
+}
+
+.primary-action:hover {
+  background: var(--ink-soft);
+  transform: translateY(-1px);
+}
+
+.primary-action:active {
+  transform: translateY(1px);
+}
+
+.primary-action[aria-busy="true"] {
+  cursor: progress;
+  background: var(--ink-soft);
+  transform: none;
+}
+
+/* aria-disabled keeps an unanswered step's action focusable, so it can explain what is missing. */
+.primary-action:disabled,
+.primary-action[aria-disabled="true"],
+.primary-action[aria-disabled="true"]:hover,
+.primary-action[aria-disabled="true"]:active {
+  cursor: not-allowed;
+  color: var(--ink-soft);
+  background: var(--paper-deep);
+  box-shadow: none;
+  transform: none;
+}
+
+.secondary-action {
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.secondary-action:hover {
+  border-color: var(--line-strong);
+  background: white;
+}
+
+.secondary-action:active {
+  transform: translateY(1px);
+}
+
+.secondary-action:disabled {
+  border-color: var(--line-soft);
+  cursor: not-allowed;
+  color: var(--muted);
+  background: transparent;
+  transform: none;
+}
+
+.compact-action {
+  display: inline-flex;
+  min-height: 44px;
+  gap: 6px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 14px;
+  font-weight: 680;
+  line-height: normal;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    transform 180ms ease;
+}
+
+.compact-action:hover {
+  border-color: var(--line-strong);
+  background: white;
+}
+
+.compact-action:active {
+  transform: translateY(1px);
+}
+
+.compact-action:disabled {
+  border-color: var(--line-soft);
+  cursor: not-allowed;
+  color: var(--muted);
+  background: transparent;
+  transform: none;
+}
+
+/* Form fields (FormField) */
+
+.field-label {
+  display: block;
+  padding: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 680;
+  letter-spacing: 0.01em;
+  line-height: 1.3;
+}
+
+.field-control {
+  width: 100%;
+  min-width: 0;
+  min-height: 52px;
+  padding: 0 15px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 15px;
+  line-height: 1.4;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.field-control::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+.field-control:hover {
+  border-color: var(--line-strong);
+}
+
+.field-control:focus {
+  border-color: var(--green);
+  outline: 2px solid transparent;
+  box-shadow: 0 0 0 4px var(--green-wash);
+}
+
+.field-control[aria-invalid="true"] {
+  border-color: var(--orange);
+}
+
+/* A focused field in error keeps its orange boundary and adds a green-ink ring, so the focus stays
+   plain to see (round 4, UAT-A-8). */
+.field-control[aria-invalid="true"]:focus {
+  outline: 2px solid var(--green-ink);
+  outline-offset: 2px;
+}
+
+textarea.field-control {
+  padding-block: 13px;
+  resize: vertical;
+}
+
+.field-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Status pills, tags, and choice chips */
+
+.status-pill {
+  display: inline-flex;
+  min-height: 28px;
+  gap: 6px;
+  padding: 0 11px;
+  border-radius: 999px;
+  align-items: center;
+  color: var(--green-ink);
+  background: var(--green-wash);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: normal;
+  white-space: nowrap;
+}
+
+/* Forced colours drop the pill fill; the transparent outline becomes its boundary instead, without
+   changing the pill's size. */
+.status-pill,
+.tag {
+  outline: 1px solid transparent;
+  outline-offset: -1px;
+}
+
+.status-pill.is-neutral {
+  color: var(--ink-soft);
+  background: var(--paper-deep);
+}
+
+.tag {
+  display: inline-flex;
+  min-height: 28px;
+  padding: 0 11px;
+  border-radius: 999px;
+  align-items: center;
+  color: var(--ink-soft);
+  background: var(--paper-deep);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: normal;
+  white-space: nowrap;
+}
+
+.choice-chip {
+  position: relative;
+  display: inline-flex;
+  min-height: 44px;
+  max-width: 100%;
+  gap: 6px;
+  padding: 8px 13px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  align-items: center;
+  cursor: pointer;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: normal;
+  /* A long answer of your own (a role title up to 80 characters, T1-7) wraps inside its card
+     instead of running past it; a word longer than the chip breaks. */
+  overflow-wrap: anywhere;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease;
+}
+
+.choice-chip input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.choice-chip:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+  background: white;
+}
+
+/* The one selected style every choice control shares (brief 3.7): a green-soft fill, a 2px green
+   boundary, a green-ink check, and an ink 700 label. The inline padding gives back the extra 1px
+   of border, so the chip keeps its size. */
+.choice-chip:has(input:checked) {
+  padding-inline: 12px;
+  border: 2px solid var(--green);
+  color: var(--ink);
+  background: var(--green-soft);
+  font-weight: 700;
+}
+
+/* The checkbox already states the selection, so the check stays out of the accessible name. */
+.choice-chip:has(input:checked)::before {
+  color: var(--green-ink);
+  content: "✓" / "";
+  font-weight: 800;
+}
+
+/* Feedback panel (FeedbackPanel). Color sits only on the leading rule and icon; text states the
+   meaning. */
+
+.feedback-panel {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 13px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-inline-start: 3px solid var(--quiet);
+  border-radius: 13px;
+  align-items: start;
+  color: var(--ink);
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+
+.feedback-panel[hidden] {
+  display: none;
+}
+
+/* A link that names something missing (R9-2): one notice under the page's intro and its Settings
+   tabs, with the page's usual room before its content. */
+.page-link-notice {
+  margin: 0 0 34px;
+}
+
+.feedback-panel.has-action {
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.feedback-panel[data-kind="validation"],
+.feedback-panel[data-kind="warning"],
+.feedback-panel[data-kind="error"] {
+  border-inline-start-color: var(--orange);
+}
+
+.feedback-panel[data-kind="success"] {
+  border-inline-start-color: var(--green);
+}
+
+.feedback-panel-icon {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  place-items: center;
+  color: var(--ink);
+  background: var(--paper-deep);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.feedback-panel[data-kind="validation"] .feedback-panel-icon,
+.feedback-panel[data-kind="warning"] .feedback-panel-icon,
+.feedback-panel[data-kind="error"] .feedback-panel-icon {
+  background: var(--orange-soft);
+}
+
+.feedback-panel[data-kind="success"] .feedback-panel-icon {
+  color: var(--green-ink);
+  background: var(--green-soft);
+}
+
+.feedback-panel-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.feedback-panel-title {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.feedback-panel-message {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.feedback-panel-action {
+  display: inline-flex;
+  min-height: 44px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 14px;
+  font-weight: 680;
+  line-height: normal;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease;
+}
+
+.feedback-panel-action:hover {
+  border-color: var(--line-strong);
+  background: white;
+  transform: translateY(-1px);
+}
+
+.feedback-panel-action:active {
+  transform: translateY(0);
+}
+
+.feedback-panel:focus-visible,
+.feedback-panel-action:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+
+/* Footer (AppFooter) */
+
+.site-footer {
+  padding: 34px 0;
+  border-top: 0;
+  color: var(--on-ink-muted);
+  background: var(--ink);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* The footer content uses the page-shell width so both edges align at every viewport. */
+.footer-inner {
+  display: grid;
+  width: min(1280px, calc(100% - 42px));
+  gap: 21px;
+  margin: 0 auto;
+}
+
+.footer-primary,
+.footer-secondary {
+  display: flex;
+  gap: 21px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.footer-secondary {
+  padding-top: 21px;
+  border-top: 1px solid var(--ink-soft);
+}
+
+.footer-secondary strong {
+  color: white;
+  font-weight: 600;
+}
+
+.footer-brand {
+  display: grid;
+  gap: 4px;
+}
+
+.footer-brand strong {
+  color: white;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.footer-brand span {
+  color: var(--on-ink-muted);
+  font-size: 12px;
+}
+
+/* Beside the brand or Region copy the nav keeps its full width, so that copy wraps instead. */
+.footer-nav {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 0 21px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+/* The primary row's nav is the longer one, so it gives way first: its groups wrap, and the brand
+   copy keeps at least 233px beside it at every width. */
+.footer-primary .footer-brand {
+  flex: 1 0 233px;
+}
+
+.footer-primary .footer-nav {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+/* Related links wrap together, so a narrow row never ends with one orphaned link. */
+.footer-nav-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 21px;
+}
+
+.footer-link {
+  position: relative;
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  color: white;
+  font-size: 13px;
+  font-weight: 620;
+  text-decoration: underline;
+  text-decoration-color: var(--green-line);
+  text-underline-offset: 3px;
+  white-space: nowrap;
+  transition: text-decoration-color 180ms ease;
+}
+
+/* Short labels such as Help keep a 44px-wide target without widening the visible 21px gap. */
+.footer-link::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: max(100%, 44px);
+  content: "";
+  transform: translateX(-50%);
+}
+
+.footer-link:hover {
+  text-decoration-color: var(--green);
+}
+
+/* Section links: a row of in-page anchors above a long page's sections (Help). Each link is a
+   compact action; the row wraps instead of adding a second rail beside the app sidebar. */
+
+.section-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 21px;
+}
+
+/* Feedback drawer (feedback.js renders it once per page, a shared drawer with the feedback-drawer
+   class). The drawer component gives it its frame, focus return, Escape, backdrop close, and
+   scroll lock; these rules lay out the rating, the topic, the note, and the thank-you, and make it
+   a bottom sheet on phones. They name only feedback classes, never the drawer's own, so neither
+   file restyles the other. The rating and the topic use the one selected style. */
+
+/* Under the title, in the title's column: what the note is about (when an opener says), then the
+   honest line that the note stays in this browser. */
+.feedback-head-notes {
+  grid-column: 1;
+  min-width: 0;
+}
+
+.feedback-drawer .feedback-note {
+  margin-top: 8px;
+}
+
+.feedback-form {
+  display: grid;
+  min-width: 0;
+  gap: 21px;
+  padding: 21px 0;
+  container: feedback-form / inline-size;
+}
+
+.feedback-group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.feedback-group > legend.field-label {
+  margin-bottom: 8px;
+}
+
+/* Five faces in a row while the form is at least 402px wide (the desktop drawer); a narrower
+   sheet lists them, so the longest label (Frustrated) never clips. */
+.feedback-rates {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.feedback-rate {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 76px;
+  gap: 6px;
+  padding: 10px 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  align-content: center;
+  justify-items: center;
+  cursor: pointer;
+  color: var(--ink-soft);
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-align: center;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease;
+}
+
+.feedback-rate input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Each face carries its rating's tone (finding 13): the two low ratings in danger-ink, Okay in
+   blue, and the two high ratings in green-ink. The tone follows the rating's value, so every
+   rating control takes it. A face is drawn on a white disc, so each stroke keeps at least 3:1
+   (on white: blue 4.4:1, danger-ink 6.6:1, green-ink 5.3:1). Once chosen, the face's soft tint
+   fills its card (the chosen rating exception below) and the ring around the face, so the two
+   read as one. */
+.feedback-rate:has(input[value="1"]),
+.feedback-rate:has(input[value="2"]) {
+  --feedback-tone: var(--danger-ink);
+  --feedback-tint: var(--orange-soft);
+}
+
+.feedback-rate:has(input[value="3"]) {
+  --feedback-tone: var(--blue);
+  --feedback-tint: var(--blue-soft);
+}
+
+.feedback-rate:has(input[value="4"]),
+.feedback-rate:has(input[value="5"]) {
+  --feedback-tone: var(--green-ink);
+  --feedback-tint: var(--green-soft);
+}
+
+.feedback-face {
+  display: block;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  color: var(--feedback-tone, currentColor);
+}
+
+.feedback-face circle {
+  fill: white;
+}
+
+.feedback-rate:has(input:checked) .feedback-face {
+  background: var(--feedback-tint, transparent);
+}
+
+.feedback-rate:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+  background: white;
+}
+
+.feedback-rate:has(input:checked) {
+  padding: 9px 3px 7px;
+  border: 2px solid var(--green);
+  color: var(--ink);
+  background: var(--green-soft);
+  font-weight: 700;
+}
+
+/* The radio already states the selection, so the check stays out of the accessible name. */
+.feedback-rate:has(input:checked)::after {
+  position: absolute;
+  top: 5px;
+  right: 7px;
+  color: var(--green-ink);
+  content: "✓" / "";
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* The one documented exception to the one selected style: a chosen rating keeps its own colour,
+   because the owner reads green as "good" and a chosen Frustrated on the shared green card said
+   the opposite of the rating (finding 13). Ratings 1 and 2 take an orange-soft card with a 2px
+   danger-ink border and check; rating 3 a blue-soft card with a 2px blue border and an ink check
+   (blue, not orange, so every part keeps 3:1); 4 and 5 keep the shared green style. Everything
+   else stays shared: the 2px border with its padding give-back, the ink 700 label, the check
+   glyph, the focus ring, and Highlight in forced colours. Measured: danger-ink 4.90:1 on
+   orange-soft and 6.23:1 on paper; blue 3.31:1 on blue-soft and 4.15:1 on paper; the ink check
+   13.05:1 on blue-soft. */
+.feedback-rate:has(input[value="1"]:checked),
+.feedback-rate:has(input[value="2"]:checked) {
+  border-color: var(--danger-ink);
+  background: var(--orange-soft);
+}
+
+.feedback-rate:has(input[value="1"]:checked)::after,
+.feedback-rate:has(input[value="2"]:checked)::after {
+  color: var(--danger-ink);
+}
+
+.feedback-rate:has(input[value="3"]:checked) {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+}
+
+.feedback-rate:has(input[value="3"]:checked)::after {
+  color: var(--ink);
+}
+
+@container feedback-form (max-width: 401px) {
+  .feedback-rates {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .feedback-rate {
+    min-height: 44px;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 13px;
+    padding: 4px 34px 4px 13px;
+    justify-items: start;
+    align-items: center;
+    text-align: start;
+  }
+
+  .feedback-rate:has(input:checked) {
+    padding: 3px 33px 3px 12px;
+  }
+
+  .feedback-rate:has(input:checked)::after {
+    top: 50%;
+    right: 13px;
+    transform: translateY(-50%);
+  }
+
+  .feedback-face {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* The topics always break the same way (three, then Praise), so the check a choice adds never
+   moves the rows below. */
+.feedback-topic-list {
+  display: flex;
+  max-width: 360px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.feedback-field {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.feedback-checks {
+  display: grid;
+  gap: 4px;
+}
+
+.feedback-check {
+  display: grid;
+  min-height: 44px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 13px;
+  align-items: center;
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.feedback-check input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--green);
+}
+
+/* FieldFeedback: ink text beside an orange mark, never orange text. */
+.feedback-error {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  align-items: flex-start;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.feedback-error::before {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  place-items: center;
+  color: var(--ink);
+  background: var(--orange-soft);
+  box-shadow: inset 0 0 0 1px var(--orange);
+  content: "!" / "";
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1;
+}
+
+/* The thank-you is the deputy's own line, so it is attributed and set like its speech. */
+.feedback-thanks {
+  display: grid;
+  padding: 34px 0 21px;
+  justify-items: start;
+}
+
+.feedback-thanks-icon {
+  display: grid;
+  width: 55px;
+  height: 55px;
+  margin-bottom: 21px;
+  border-radius: 50%;
+  place-items: center;
+  color: var(--green-ink);
+  background: var(--green-soft);
+}
+
+.feedback-thanks-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.feedback-thanks-title {
+  margin: 0 0 13px;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+
+/* Prompt drawer and Get more runs (app-panels.js renders both once per page, shared drawers with
+   the prompt-drawer and topup-drawer classes). As with Feedback, the drawer component gives them
+   their frame, focus return, Escape, backdrop close, and scroll lock; these rules lay out their
+   parts with their own classes only, and the mobile rules make them bottom sheets. */
+
+/* The task's model, caps, and state, as label and value rows. */
+.prompt-facts {
+  display: grid;
+  margin: 0;
+  gap: 0;
+}
+
+.prompt-facts > div {
+  display: grid;
+  min-height: 44px;
+  grid-template-columns: 89px minmax(0, 1fr);
+  gap: 13px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-soft);
+  align-items: baseline;
+}
+
+.prompt-facts dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.prompt-facts dd {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  gap: 4px;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.prompt-facts-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* The locked safety rules: read-only, behind a disclosure that starts closed. */
+.prompt-rules {
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+}
+
+.prompt-rules-toggle {
+  display: flex;
+  min-height: 44px;
+  gap: 8px;
+  padding: 0 13px;
+  border-radius: 12px;
+  align-items: center;
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 680;
+  line-height: 1.3;
+  list-style: none;
+}
+
+.prompt-rules-toggle::-webkit-details-marker {
+  display: none;
+}
+
+/* A chevron that flips when the rules open; the empty alternative keeps it out of the name. */
+.prompt-rules-toggle::after {
+  margin-inline-start: auto;
+  color: var(--muted);
+  content: "⌄" / "";
+  font-size: 13px;
+  line-height: 1;
+}
+
+.prompt-rules[open] > .prompt-rules-toggle::after {
+  transform: rotate(180deg);
+}
+
+.prompt-rules-list {
+  display: grid;
+  margin: 0;
+  gap: 8px;
+  padding: 0 13px 13px 34px;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* The instructions field: the label row carries the Default or Customized pill. */
+.prompt-field {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.prompt-field-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.prompt-field textarea {
+  min-height: 178px;
+}
+
+.prompt-applies {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* The full prompt, as the model receives it: a labelled, focusable region that scrolls inside. */
+.prompt-preview {
+  max-height: 233px;
+  margin: 0;
+  padding: 13px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  color: var(--ink);
+  background: var(--paper-deep);
+  font-family: var(--font-text);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.prompt-preview:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+
+/* The Prompt drawer, round 5 (A3): the system prompt outline, the guardrail checks, versions, and
+   How it performs, scoped to .prompt-drawer, canonical tokens only. */
+.prompt-drawer .prompt-system-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  align-items: center;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+.prompt-drawer .prompt-outline {
+  display: grid;
+  margin: 13px 0 0;
+  gap: 8px;
+  padding: 0 0 0 21px;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.prompt-drawer .prompt-outline > li {
+  min-width: 0;
+  padding-inline-start: 4px;
+}
+.prompt-drawer .prompt-outline-name {
+  font-weight: 650;
+}
+.prompt-drawer .prompt-outline-meta {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.prompt-drawer .prompt-outline .prompt-rules {
+  margin-top: 8px;
+}
+.prompt-drawer .prompt-full,
+.prompt-drawer .prompt-history,
+.prompt-drawer .prompt-numbers {
+  margin-top: 13px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+}
+.prompt-drawer .prompt-full > .prompt-preview {
+  margin: 0 13px 13px;
+}
+.prompt-drawer .prompt-guard {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+}
+.prompt-drawer .prompt-guard-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.prompt-drawer .prompt-guard-summary {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.prompt-drawer .prompt-guard-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.prompt-drawer .prompt-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(144px, 1fr));
+  gap: 4px 13px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.prompt-drawer .prompt-check {
+  display: grid;
+  min-width: 0;
+  min-height: 28px;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 2px 8px;
+  align-items: center;
+}
+.prompt-drawer .prompt-check:not([data-status="passed"]) {
+  grid-column: 1 / -1;
+  align-items: start;
+}
+.prompt-drawer .prompt-check-icon {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  place-items: center;
+  color: var(--green-ink);
+  background: var(--green-soft);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1;
+}
+.prompt-drawer .prompt-check-icon::before {
+  content: "✓" / "";
+}
+.prompt-drawer .prompt-check[data-status="blocked"] .prompt-check-icon {
+  color: var(--danger-ink);
+  background: var(--orange-soft);
+  box-shadow: inset 0 0 0 1px var(--danger-ink);
+}
+.prompt-drawer .prompt-check[data-status="blocked"] .prompt-check-icon::before {
+  content: "×" / "";
+  font-size: 15px;
+}
+.prompt-drawer .prompt-check[data-status="warn"] .prompt-check-icon {
+  color: var(--ink);
+  background: var(--orange-soft);
+}
+.prompt-drawer .prompt-check[data-status="warn"] .prompt-check-icon::before {
+  content: "!" / "";
+}
+.prompt-drawer .prompt-check-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.prompt-drawer .prompt-check-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+  align-items: baseline;
+}
+.prompt-drawer .prompt-check-name {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+.prompt-drawer .prompt-check-state {
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+.prompt-drawer .prompt-check[data-status="blocked"] .prompt-check-state {
+  color: var(--danger-ink);
+}
+.prompt-drawer .prompt-check-detail {
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.prompt-drawer .prompt-versions-now {
+  margin: 0 0 13px;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.prompt-drawer .prompt-versions {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.prompt-drawer .prompt-version {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 13px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  align-items: center;
+  background: var(--surface);
+}
+.prompt-drawer .prompt-version-head {
+  display: flex;
+  grid-column: 1;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+}
+.prompt-drawer .prompt-version-name {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.prompt-drawer .prompt-version-meta {
+  margin: 0;
+  grid-column: 1;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.prompt-drawer .prompt-version-text {
+  margin: 0;
+  grid-column: 1 / -1;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.prompt-drawer .prompt-version > .compact-action {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  justify-self: end;
+}
+.prompt-drawer .prompt-versions-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.prompt-drawer .prompt-reset {
+  margin-top: 13px;
+}
+.prompt-drawer .prompt-history-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0 13px 13px 34px;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.prompt-drawer .prompt-history-when {
+  color: var(--muted);
+  font-size: 12px;
+}
+.prompt-drawer .prompt-chart {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  margin: 13px 0 0;
+}
+.prompt-drawer .prompt-chart-title {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.prompt-drawer .prompt-chart-meaning {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.prompt-drawer .prompt-chart-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 13px;
+  margin: 0;
+}
+.prompt-drawer .prompt-trend-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 13px;
+  margin: 0;
+  align-items: center;
+  color: var(--ink);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+.prompt-drawer .prompt-numbers > .data-table-wrap {
+  margin: 0 13px 13px;
+}
+.prompt-drawer .prompt-metrics-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.prompt-drawer .prompt-save-why {
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* Get more runs: the packs, then the planned-for-launch line. */
+.topup-form {
+  display: grid;
+  min-width: 0;
+  gap: 21px;
+  padding: 21px 0;
+}
+
+/* The deputy's confirmation after Add runs, set like the Feedback thank-you's success line. */
+.topup-done,
+.prompt-saved {
+  margin-top: 21px;
+}
+
+/* On phones the drawers are bottom sheets that slide up (see the mobile rules below). */
+@keyframes jd-panel-sheet-in {
+  0% {
+    opacity: 0;
+    transform: translateY(34px);
+  }
+}
+
+/* App shell (AppNav and the DeputyDock slot). The sidebar is a fixed 233px column under the header
+   at 1101px and wider and an 89px rail from 721px to 1100px, so it stays whole for the entire
+   page, footer included (findings 1 and 32). The frame's first grid column is its spacer, and the
+   footer starts after it, so .footer-inner and .page-shell share both edges at every width. At
+   720px and narrower the sidebar is the app bar, held under the header (see the mobile rules), and
+   app-shell.js turns the list into a Menu disclosure. */
+
+.app-frame,
+.app-frame ~ .site-footer {
+  --app-sidebar-width: 233px;
+}
+
+.app-frame {
+  display: grid;
+  grid-template-columns: var(--app-sidebar-width) minmax(0, 1fr);
+  align-items: start;
+}
+
+.app-main {
+  min-width: 0;
+  grid-column: 2;
+}
+
+/* The fixed sidebar runs beside the footer too, so the footer fills only the main column. */
+.app-frame ~ .site-footer {
+  margin-inline-start: var(--app-sidebar-width);
+}
+
+/* A page that hides its sidebar (the public Help page) keeps one column, footer included. */
+.app-frame:has(> .app-sidebar[hidden]),
+.app-frame:has(> .app-sidebar[hidden]) ~ .site-footer {
+  --app-sidebar-width: 0px;
+}
+
+/* The sidebar is not a landmark; its nav and the deputy's aside are. It is fixed, so the page
+   never pushes it under the header; it scrolls inside when its content is taller than the
+   viewport, and it has no transform or filter, so a fixed-position popover inside it is not
+   clipped. The end padding is 1px shorter than the start because the 1px rule sits there, so the
+   content box is exactly 207px. */
+.app-sidebar {
+  position: fixed;
+  z-index: 15;
+  top: 72px;
+  inset-inline-start: 0;
+  display: flex;
+  width: var(--app-sidebar-width);
+  height: calc(100dvh - 72px);
+  flex-direction: column;
+  gap: 21px;
+  padding-block: 21px;
+  padding-inline: 13px 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-inline-end: 1px solid var(--line-soft);
+  background: var(--header-surface);
+}
+
+/* The Menu button exists only on phones (its wrapper is hidden wider); app-shell.js reveals it. */
+.app-menu {
+  display: none;
+}
+
+.app-menu-toggle {
+  position: relative;
+  max-width: 100%;
+}
+
+.app-menu-toggle[aria-expanded="true"] {
+  border-color: var(--line-strong);
+  background: white;
+}
+
+.app-menu-icon,
+.app-nav-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.app-menu-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* app-shell.js adds the scrim behind the open phone Menu; it shows only there. */
+.app-menu-scrim {
+  display: none;
+}
+
+.app-nav {
+  min-width: 0;
+}
+
+.app-nav-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The transparent border is the link's boundary in forced colours. */
+.app-nav-link {
+  position: relative;
+  display: flex;
+  min-height: 48px;
+  gap: 13px;
+  padding: 0 13px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  align-items: center;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-decoration: none;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease;
+}
+
+.app-nav-label {
+  min-width: 0;
+}
+
+.app-nav-link:hover {
+  border-color: var(--line);
+  background: var(--surface);
+}
+
+/* The current section: a real 3px leading border, so the state survives forced colours. The
+   padding gives back the extra 2px, so the label does not move. */
+.app-nav-link[aria-current="page"],
+.app-nav-link[aria-current="true"] {
+  padding-inline-start: 11px;
+  border-color: var(--line);
+  border-inline-start: 3px solid var(--green);
+  color: var(--ink);
+  background: var(--surface);
+  font-weight: 700;
+}
+
+/* Count badge: neutral by default, attention for work that needs the person. */
+.app-nav-count {
+  display: inline-flex;
+  min-width: 24px;
+  min-height: 24px;
+  margin-inline-start: auto;
+  padding: 0 7px;
+  border-radius: 999px;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+  background: var(--paper-deep);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+  outline: 1px solid transparent;
+  outline-offset: -1px;
+}
+
+.app-nav-count.is-attention {
+  color: var(--ink);
+  background: var(--orange-soft);
+}
+
+/* The deputy's slot fills the sidebar's content width (207px, or the rail's 81px) at its foot. */
+.app-sidebar-deputy {
+  min-width: 0;
+  margin-top: auto;
+}
+
+/* Focus: one visible green ring for every chrome control */
+
+.skip-link:focus-visible,
+.brand:focus-visible,
+.header-action:focus-visible,
+.account-link:focus-visible,
+.primary-action:focus-visible,
+.secondary-action:focus-visible,
+.compact-action:focus-visible,
+.choice-chip:has(input:focus-visible),
+.feedback-rate:has(input:focus-visible),
+.feedback-check input:focus-visible,
+.footer-link:focus-visible,
+.app-nav-link:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+
+/* Menu rows are clipped by their rounded container, so their ring sits just inside the row. */
+.account-popover a:focus-visible,
+.account-popover-action:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: -3px;
+}
+
+/* Rail: from 721px to 1100px the sidebar is an 89px column of icons over 12px labels, each label
+   on one line (T5-1: the longest, Job matches and Applications, are about 77px in the current
+   link's bold, inside its 77px), and the header's Feedback and Invite friends become icons. */
+
+@media (max-width: 1100px) {
+  .app-frame,
+  .app-frame ~ .site-footer {
+    --app-sidebar-width: 89px;
+  }
+
+  /* Eight 64px links and the medallion need most of a 768px-tall viewport, so the rail keeps
+     its vertical spacing tight. */
+  .app-sidebar {
+    gap: 8px;
+    padding-block: 8px;
+    padding-inline: 4px 3px;
+  }
+
+  .app-nav-list {
+    gap: 0;
+  }
+
+  /* The label takes the link's whole width (no inline padding; the current link's 3px leading
+     border is its only inset), so every label stays on one line, current or not (T5-1). */
+  .app-nav-link {
+    min-height: 64px;
+    flex-direction: column;
+    gap: 4px;
+    padding: 5px 0;
+    justify-content: center;
+    font-size: 12px;
+    line-height: 1.1;
+    text-align: center;
+  }
+
+  .app-nav-link[aria-current="page"],
+  .app-nav-link[aria-current="true"] {
+    padding-inline-start: 0;
+  }
+
+  /* A label never runs past its link: under wider text spacing (WCAG 1.4.12) a long word
+     (Applications, Dashboard) breaks at a hyphen, or anywhere, inside the link (UAT-RD RD-2).
+     At the usual spacing the letters sit a touch closer, so the longest label keeps 2px of room
+     in the current link's bold (T5-1). */
+  .app-nav-label {
+    max-width: 100%;
+    letter-spacing: -0.02em;
+    overflow-wrap: anywhere;
+    hyphens: auto;
+  }
+
+  /* Only 4px separate a rail link from the rail's edge, so the ring sits just inside the link. */
+  .app-nav-link:focus-visible {
+    outline-offset: -3px;
+  }
+
+  /* The count rides on the icon's corner, so the label keeps the link's full width. */
+  .app-nav-count {
+    position: absolute;
+    top: 6px;
+    right: 13px;
+    min-width: 20px;
+    min-height: 20px;
+    margin: 0;
+    padding: 0 5px;
+  }
+
+  /* Feedback and Invite friends become 44px icons; the label stays their accessible name. */
+  .header-feedback,
+  .header-invite {
+    position: relative;
+    width: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .header-action-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+}
+
+/* Short desktop: 44px rows and tighter sidebar spacing keep the compact dock in view. */
+
+@media (min-width: 1101px) and (max-height: 820px) {
+  .app-sidebar {
+    gap: 13px;
+    padding-block: 13px;
+  }
+
+  .app-nav-list {
+    gap: 2px;
+  }
+
+  .app-nav-link {
+    min-height: 44px;
+  }
+}
+
+/* Mobile */
+
+@media (max-width: 720px) {
+  .app-header {
+    min-height: 64px;
+  }
+
+  .brand-name {
+    font-size: 18px;
+  }
+
+  .brand-note {
+    display: none;
+  }
+
+  /* Beside a Back action (a header pill that is not one of the HeaderActions) the account text
+     collapses, and Invite friends leaves the header; the account menu still lists it. */
+  .app-header:has(.header-action:not(.header-feedback, .header-invite, [hidden])) .account-copy,
+  .app-header:has(.header-action:not(.header-feedback, .header-invite, [hidden])) .header-invite {
+    display: none;
+  }
+
+  .page-shell,
+  .footer-inner {
+    width: min(100% - 26px, 1280px);
+  }
+
+  main h1 {
+    font-size: clamp(35px, 10.5vw, 42px);
+  }
+
+  main h2 {
+    font-size: 28px;
+  }
+
+  .task-surface {
+    padding: 21px;
+    border-radius: 22px;
+  }
+
+  .footer-primary,
+  .footer-secondary {
+    display: grid;
+    gap: 13px;
+    justify-content: start;
+  }
+
+  .footer-nav {
+    justify-content: flex-start;
+  }
+
+  /* The account menu becomes a full-width sheet under the header, over a scrim. The header (a
+     sticky box) anchors both, so they stay put while the page scrolls. The scrim is the open
+     chip's own ::before, so tapping it is tapping the chip, which closes the menu. */
+  .account-menu {
+    position: static;
+  }
+
+  .account-popover {
+    top: calc(100% + 1px);
+    right: 0;
+    left: 0;
+    width: auto;
+    max-height: calc(100dvh - 64px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-width: 0 0 1px;
+    border-radius: 0 0 22px 22px;
+  }
+
+  .account-popover > :last-child {
+    border-radius: 0 0 21px 21px;
+  }
+
+  .account-menu[open] > summary::before {
+    position: absolute;
+    top: calc(100% + 1px);
+    right: 0;
+    left: 0;
+    height: 100dvh;
+    cursor: default;
+    background: var(--line-strong);
+    content: "";
+  }
+
+  /* App bar: the Menu button and the deputy chip share one compact row under the header (64px
+     plus 55px, one 119px unit). The frame's own box steps aside, so the bar's sticky range is the
+     whole page and it stays under the header when the footer arrives. One column for the frame
+     and the footer. */
+  .app-frame,
+  .app-frame ~ .site-footer {
+    --app-sidebar-width: 0px;
+  }
+
+  .app-frame {
+    display: contents;
+  }
+
+  .app-sidebar {
+    position: static;
+    inset-inline-start: auto;
+    display: grid;
+    width: auto;
+    height: auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0 8px;
+    padding: 5px 13px;
+    overflow: visible;
+    overscroll-behavior: auto;
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--line-soft);
+    align-items: center;
+  }
+
+  /* With app-shell.js running (data-menu set), the bar holds under the header, frosted like it,
+     and anchors and focus clear both. Without the script it stays in the page with the list open,
+     so nothing tall ever sticks. */
+  .app-sidebar[data-menu] {
+    position: sticky;
+    top: 64px;
+    backdrop-filter: saturate(160%) blur(20px);
+  }
+
+  html:has(.app-sidebar[data-menu]:not([hidden])) {
+    scroll-padding-top: 144px;
+  }
+
+  /* The wrapper measures the room beside the deputy chip, which sets the Menu label below. */
+  .app-menu {
+    display: block;
+    min-width: 0;
+    container: app-menu / inline-size;
+  }
+
+  /* The deputy's column keeps the width of its longest duty (Guarding your data), so the Menu label
+     beside it never flips as the duty changes during a run. */
+  .app-sidebar-deputy {
+    display: flex;
+    min-width: 178px;
+    grid-row: 1;
+    grid-column: 2;
+    margin: 0;
+    justify-content: flex-end;
+  }
+
+  .app-nav {
+    grid-column: 1 / -1;
+    padding-top: 8px;
+  }
+
+  /* The open Menu is an opaque overlay under the bar, over a scrim: it never moves the page and
+     scrolls inside itself down to the bottom of the viewport. app-shell.js marks the menu closed;
+     without the script the list stays visible in the page. */
+  /* grid-column: auto makes the bar's padding box its containing block, so the overlay runs edge
+     to edge like the bar (a placed grid item would take the inset content box). */
+  .app-sidebar[data-menu] .app-nav {
+    position: absolute;
+    z-index: 1;
+    top: calc(100% + 1px);
+    right: 0;
+    left: 0;
+    grid-column: auto;
+    max-height: calc(100dvh - 119px);
+    padding: 8px 13px 13px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0 0 22px 22px;
+    background: var(--paper);
+    box-shadow: var(--shadow);
+  }
+
+  .app-sidebar[data-menu="closed"] .app-nav {
+    display: none;
+  }
+
+  .app-sidebar[data-menu="open"] > .app-menu-scrim {
+    position: absolute;
+    top: calc(100% + 1px);
+    right: 0;
+    left: 0;
+    display: block;
+    height: 100dvh;
+    background: var(--line-strong);
+  }
+
+  .app-nav-list {
+    gap: 4px;
+  }
+
+  .app-nav-link {
+    min-height: 48px;
+    flex-direction: row;
+    gap: 13px;
+    padding: 0 13px;
+    justify-content: flex-start;
+    font-size: 14px;
+    line-height: 1.2;
+    text-align: start;
+  }
+
+  .app-nav-link[aria-current="page"],
+  .app-nav-link[aria-current="true"] {
+    padding-inline-start: 11px;
+  }
+
+  .app-nav-link:focus-visible {
+    outline-offset: 3px;
+  }
+
+  .app-nav-count {
+    position: static;
+    min-width: 24px;
+    min-height: 24px;
+    margin-inline-start: auto;
+    padding: 0 7px;
+  }
+
+  /* The Feedback, Prompt, and Get more runs drawers become bottom sheets: full width, at most 89%
+     of the viewport tall, and their actions clear the home indicator. dialog.feedback-drawer
+     (and the others) outrank the drawer component's own phone rules without naming them. */
+  dialog.feedback-drawer,
+  dialog.prompt-drawer,
+  dialog.topup-drawer {
+    inset: auto 0 0;
+    width: 100%;
+    height: auto;
+    max-height: 89svh;
+    border-radius: 22px 22px 0 0;
+  }
+
+  dialog.feedback-drawer[open],
+  dialog.prompt-drawer[open],
+  dialog.topup-drawer[open] {
+    animation-name: jd-panel-sheet-in;
+  }
+
+  .feedback-drawer .feedback-actions,
+  .prompt-drawer .prompt-actions,
+  .topup-drawer .topup-actions {
+    padding-bottom: calc(21px + env(safe-area-inset-bottom));
+  }
+
+  /* The page intro (round 6, R6-3): Take the tour takes its own row under the lede, at the
+     start. */
+  .page-intro:has(> .page-intro-actions) {
+    display: block;
+  }
+
+  .page-intro-actions {
+    justify-content: flex-start;
+  }
+
+  .page-intro-actions:has(> :not([hidden])) {
+    margin: 21px 0 0;
+  }
+
+  .page-intro:has(> .page-intro-copy > .eyebrow:first-child) > .page-intro-actions {
+    padding-top: 0;
+  }
+
+  .settings-tabs {
+    margin-top: -8px;
+  }
+}
+
+/* Seven Settings tabs on a phone (round 7, SP's request 9): the one row scrolls sideways (above,
+   at every width now), so the intro stays short; the components bring the current tab into view
+   as the page starts. */
+
+/* Boot without flicker (round 7, R10-1): the page paints before app-shell.js runs (the scripts
+   sit at the end of the body), and the open list in the page pushed main 400px down until the
+   script closed it. While scripting is enabled the bar has its closed, sticky form from the
+   first paint, the Menu button included; app-shell.js then wires it. */
+@media (scripting: enabled) and (max-width: 720px) {
+  .app-sidebar:not([data-menu]) {
+    position: sticky;
+    top: 64px;
+    backdrop-filter: saturate(160%) blur(20px);
+  }
+
+  .app-sidebar:not([data-menu]) .app-nav {
+    display: none;
+  }
+
+  .app-sidebar:not([data-menu]) .app-menu-toggle[hidden] {
+    /* biome-ignore lint/complexity/noImportantStyles: the Menu button must beat the shared [hidden] rule, which is !important, until app-shell.js reveals it */
+    display: inline-flex !important;
+  }
+
+  /* Take the tour's reserved row under the lede (see the page intro). */
+  html:not([data-help-view="public"])
+  .page-intro-actions:has(> .page-tour[hidden]:not([data-tour-none])) {
+    margin: 21px 0 0;
+  }
+}
+
+/* Phones (round 7, T2-12, the owner's "concise"): where the intro starts with an eyebrow, Take the
+   tour sits compact at the end of the eyebrow's line, instead of a row of its own under the lede,
+   so the page's first item is about 50px nearer the top. The h1 and the lede keep the full width
+   under it. An intro without an eyebrow keeps the row under the lede (above). */
+@media screen and (max-width: 720px) {
+  html:not([data-help-view="public"])
+    .page-intro:has(> .page-intro-copy > .eyebrow:first-child):has(
+      > .page-intro-actions > .page-tour:not([data-tour-none])
+    ) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 13px;
+    align-items: center;
+  }
+
+  html:not([data-help-view="public"])
+    .page-intro:has(> .page-intro-copy > .eyebrow:first-child):has(
+      > .page-intro-actions > .page-tour:not([data-tour-none])
+    )
+    > .page-intro-copy {
+    display: contents;
+  }
+
+  html:not([data-help-view="public"])
+    .page-intro:has(> .page-intro-copy > .eyebrow:first-child):has(
+      > .page-intro-actions > .page-tour:not([data-tour-none])
+    )
+    > .page-intro-copy
+    > * {
+    grid-column: 1 / -1;
+  }
+
+  html:not([data-help-view="public"])
+    .page-intro:has(> .page-intro-copy > .eyebrow:first-child):has(
+      > .page-intro-actions > .page-tour:not([data-tour-none])
+    )
+    > .page-intro-copy
+    > .eyebrow:first-child {
+    flex-wrap: wrap;
+    row-gap: 4px;
+    grid-column: 1;
+    grid-row: 1;
+    margin: 0;
+  }
+
+  html:not([data-help-view="public"])
+    .page-intro:has(> .page-intro-copy > .eyebrow:first-child):has(
+      > .page-intro-actions > .page-tour:not([data-tour-none])
+    )
+    > .page-intro-copy
+    > .eyebrow:first-child
+    + * {
+    margin-top: 8px;
+  }
+
+  html:not([data-help-view="public"])
+    .page-intro:has(> .page-intro-copy > .eyebrow:first-child):has(
+      > .page-intro-actions > .page-tour:not([data-tour-none])
+    )
+    > .page-intro-actions {
+    grid-column: 2;
+    grid-row: 1;
+    margin: 0;
+    padding: 0;
+  }
+
+  html:not([data-help-view="public"])
+    .page-intro:has(> .page-intro-copy > .eyebrow:first-child)
+    > .page-intro-actions
+    > .page-tour {
+    min-height: 44px;
+    padding: 0 13px;
+    font-size: 13px;
+  }
+}
+
+/* The Menu label names the current page while the longest label (Menu · Job matches, about 192px)
+   fits beside the deputy chip; with less room it reads "Menu" and the page name stays in its
+   accessible name. */
+
+@container app-menu (max-width: 193px) {
+  .app-menu-current {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+}
+
+/* Compact header: supporting brand and account text collapse before the Back action. */
+
+@media (max-width: 520px) {
+  .app-header:has(.header-action:not(.header-feedback, .header-invite, [hidden])) .brand {
+    padding-right: 0;
+  }
+
+  .app-header:has(.header-action:not(.header-feedback, .header-invite, [hidden])) .brand-copy {
+    display: none;
+  }
+
+  .account-copy {
+    display: none;
+  }
+
+  .account-link {
+    padding: 4px;
+  }
+
+  .account-link::after {
+    display: none;
+  }
+}
+
+/* Narrow phones: the wordmark, two 44px icons, and the avatar still fit at 360px with tighter
+   spacing. */
+
+@media (max-width: 389px) {
+  .app-header {
+    gap: 8px;
+  }
+
+  .brand {
+    padding-right: 0;
+  }
+}
+
+/* At 359px and narrower Invite friends leaves the header, and beside a Back action Feedback does
+   too; both stay in the account menu. */
+
+@media (max-width: 359px) {
+  .header-invite,
+  .app-header:has(.header-action:not(.header-feedback, .header-invite, [hidden])) .header-feedback {
+    display: none;
+  }
+}
+
+/* Reduced motion and Pause motion share one reset (R3-2). Under prefers-reduced-motion, and while
+   html[data-motion="paused"] is set (deputy.js sets it to "paused" while Pause motion is on or the
+   person prefers reduced motion, and to "on" with Play motion), every animation and transition on
+   the page settles at once: the deputy, chart growth, live pulses, tours, cards, drawers, and their
+   backdrops. Run data keeps updating; only motion stops. The two blocks below are the same rules;
+   a test compares them. */
+
+@media (prefers-reduced-motion: reduce) {
+  /* One reset for every internal page. Without !important, any class with an animation or
+     transition shorthand would beat this zero-specificity selector. */
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: the reduced-motion reset must beat every animation shorthand */
+    animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: the reduced-motion reset must stop every infinite loop */
+    animation-iteration-count: 1 !important;
+    /* biome-ignore lint/complexity/noImportantStyles: the reduced-motion reset must beat every transition shorthand */
+    transition-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: a waiting delay would keep motion pending, so it ends at once */
+    animation-delay: 0s !important;
+    /* biome-ignore lint/complexity/noImportantStyles: a waiting delay would keep a transition pending, so it ends at once */
+    transition-delay: 0s !important;
+    /* biome-ignore lint/complexity/noImportantStyles: the reduced-motion reset must beat page-level smooth scrolling */
+    scroll-behavior: auto !important;
+  }
+
+  /* A drawer's backdrop is not matched by * or its ::before and ::after, so it has its own rule
+     (kept apart, so an older browser that drops it keeps the reset above). */
+  ::backdrop {
+    /* biome-ignore lint/complexity/noImportantStyles: the reduced-motion reset must beat every animation shorthand */
+    animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: the reduced-motion reset must beat every transition shorthand */
+    transition-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: a waiting delay would keep motion pending, so it ends at once */
+    animation-delay: 0s !important;
+    /* biome-ignore lint/complexity/noImportantStyles: a waiting delay would keep a transition pending, so it ends at once */
+    transition-delay: 0s !important;
+  }
+
+  .skip-link,
+  .brand,
+  .brand-logo,
+  .header-action,
+  .account-link,
+  .account-popover a,
+  .account-popover-action,
+  .primary-action,
+  .secondary-action,
+  .compact-action,
+  .field-control,
+  .choice-chip,
+  .feedback-rate,
+  .feedback-panel-action,
+  .footer-link,
+  .app-nav-link {
+    transition: none;
+  }
+
+  .brand:hover .brand-logo,
+  .header-action:hover,
+  .account-link:hover,
+  .primary-action:hover,
+  .primary-action:active,
+  .secondary-action:active,
+  .compact-action:active,
+  .feedback-panel-action:hover {
+    transform: none;
+  }
+}
+
+html[data-motion="paused"],
+html[data-motion="paused"] *,
+html[data-motion="paused"] *::before,
+html[data-motion="paused"] *::after {
+  /* biome-ignore lint/complexity/noImportantStyles: the Pause motion reset must beat every animation shorthand */
+  animation-duration: 0.01ms !important;
+  /* biome-ignore lint/complexity/noImportantStyles: the Pause motion reset must stop every infinite loop */
+  animation-iteration-count: 1 !important;
+  /* biome-ignore lint/complexity/noImportantStyles: the Pause motion reset must beat every transition shorthand */
+  transition-duration: 0.01ms !important;
+  /* biome-ignore lint/complexity/noImportantStyles: a waiting delay would keep motion pending, so it ends at once */
+  animation-delay: 0s !important;
+  /* biome-ignore lint/complexity/noImportantStyles: a waiting delay would keep a transition pending, so it ends at once */
+  transition-delay: 0s !important;
+  /* biome-ignore lint/complexity/noImportantStyles: the Pause motion reset must beat page-level smooth scrolling */
+  scroll-behavior: auto !important;
+}
+
+html[data-motion="paused"] ::backdrop {
+  /* biome-ignore lint/complexity/noImportantStyles: the Pause motion reset must beat every animation shorthand */
+  animation-duration: 0.01ms !important;
+  /* biome-ignore lint/complexity/noImportantStyles: the Pause motion reset must beat every transition shorthand */
+  transition-duration: 0.01ms !important;
+  /* biome-ignore lint/complexity/noImportantStyles: a waiting delay would keep motion pending, so it ends at once */
+  animation-delay: 0s !important;
+  /* biome-ignore lint/complexity/noImportantStyles: a waiting delay would keep a transition pending, so it ends at once */
+  transition-delay: 0s !important;
+}
+
+html[data-motion="paused"]
+  :is(
+    .skip-link,
+    .brand,
+    .brand-logo,
+    .header-action,
+    .account-link,
+    .account-popover a,
+    .account-popover-action,
+    .primary-action,
+    .secondary-action,
+    .compact-action,
+    .field-control,
+    .choice-chip,
+    .feedback-rate,
+    .feedback-panel-action,
+    .footer-link,
+    .app-nav-link
+  ) {
+  transition: none;
+}
+
+html[data-motion="paused"]
+  :is(
+    .brand:hover .brand-logo,
+    .header-action:hover,
+    .account-link:hover,
+    .primary-action:hover,
+    .primary-action:active,
+    .secondary-action:active,
+    .compact-action:active,
+    .feedback-panel-action:hover
+  ) {
+  transform: none;
+}
+
+/* Forced colours keep every nav link's boundary; the current section's real 3px leading border
+   also takes the system highlight, as selected tabs and cards do on the internal pages. */
+
+@media (forced-colors: active) {
+  .primary-action[aria-disabled="true"] {
+    border-color: GrayText;
+    color: GrayText;
+  }
+
+  /* The Prompt drawer's checks and versions (round 5) keep their boundaries. */
+  .prompt-drawer .prompt-check-icon,
+  .prompt-drawer .prompt-version,
+  .prompt-drawer .prompt-guard {
+    border-color: CanvasText;
+  }
+
+  .app-nav-link[aria-current="page"],
+  .app-nav-link[aria-current="true"] {
+    border-inline-start-color: Highlight;
+  }
+
+  /* The current Settings tab keeps its boundary (round 6, T1). */
+  .settings-tab[aria-current="page"] {
+    border-color: Highlight;
+  }
+
+  /* The one selected style keeps its 2px boundary in the system highlight, and so does the
+     current header link. */
+  .choice-chip:has(input:checked),
+  .feedback-rate:has(input:checked),
+  .header-action[aria-current="page"] {
+    border-color: Highlight;
+  }
+
+  .feedback-error::before {
+    border: 1px solid CanvasText;
+  }
+
+  /* The faces' lines take the system text colour (an SVG keeps an author colour here, so it is
+     set), their disc the system canvas, and the chosen ring steps aside, so the drawing stays
+     visible on a dark system canvas; the text labels carry the rating. */
+  .feedback-face {
+    color: CanvasText;
+  }
+
+  .feedback-face circle {
+    fill: Canvas;
+  }
+
+  .feedback-rate:has(input:checked) .feedback-face {
+    background: transparent;
+  }
+
+  /* The chosen rating exception keeps the same Highlight boundary as the one selected style. */
+  .feedback-rate:has(input[value]:checked) {
+    border-color: Highlight;
+  }
+}
+
+/* Print: the page content only. The sidebar carries the navigation, the deputy, and the app bar. */
+
+@media print {
+  .app-sidebar,
+  .app-frame ~ .site-footer {
+    display: none;
+  }
+
+  .app-frame {
+    display: block;
+  }
+}

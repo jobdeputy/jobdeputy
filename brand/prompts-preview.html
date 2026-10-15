@@ -1,0 +1,2066 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="JobDeputy Settings, Prompts: each prompt your deputy runs, its versions, its tests, and how much of its work you kept."
+    />
+    <title>JobDeputy · Settings · Prompts</title>
+    <link rel="icon" href="./jobdeputy-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./app-chrome.css" />
+    <link rel="stylesheet" href="./app-components.css" />
+    <link rel="stylesheet" href="./deputy.css" />
+    <link rel="expect" href="#first-view" blocking="render" />
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #1b1a18;
+        --ink-soft: #2d2b27;
+        --muted: #706d66;
+        --quiet: #98948b;
+        --paper: #faf8f3;
+        --paper-deep: #f0ece3;
+        --surface: rgba(255, 255, 255, 0.82);
+        --surface-strong: rgba(255, 255, 255, 0.92);
+        --header-surface: rgba(250, 248, 243, 0.82);
+        --line: rgba(27, 26, 24, 0.12);
+        --line-soft: rgba(27, 26, 24, 0.08);
+        --line-strong: rgba(27, 26, 24, 0.24);
+        --green: #2f9e77;
+        --green-soft: #ccebdc;
+        --green-wash: rgba(204, 235, 220, 0.55);
+        --green-line: rgba(47, 158, 119, 0.36);
+        --green-ink: #23795b;
+        --orange: #f36b3f;
+        --orange-soft: #ffd5c6;
+        --danger-ink: #9c4028;
+        --blue: #526fe5;
+        --blue-soft: #d9def8;
+        --on-ink-muted: rgba(255, 255, 255, 0.68);
+        --shadow: 0 21px 55px rgba(55, 48, 36, 0.07);
+        --shadow-control: 0 10px 21px rgba(27, 26, 24, 0.15);
+        --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+        --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+        --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+        --font-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+        font-family: var(--font-text);
+        font-synthesis: none;
+      }
+
+      /*
+       * Shared chrome lives in ./app-chrome.css and the shared components in ./app-components.css;
+       * the prompt control (each card's dropdown, measures, test, and stats) is app-panels.js's,
+       * with its own rules. This page's rules are prefixed .prompts-.
+       */
+
+      html {
+        min-height: 100%;
+        scroll-behavior: smooth;
+        background: var(--paper);
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        overflow-x: clip;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 9% 4%, var(--surface-strong), transparent 27rem),
+          radial-gradient(
+            circle at 92% 18%,
+            color-mix(in srgb, var(--blue-soft) 30%, transparent),
+            transparent 23rem
+          ),
+          var(--paper);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      button,
+      a {
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      p {
+        margin-top: 0;
+      }
+
+      .prompts-layout {
+        display: grid;
+        gap: 34px;
+      }
+
+      .prompts-section,
+      .prompts-more {
+        min-width: 0;
+      }
+
+      .prompts-head {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        margin-bottom: 21px;
+        align-items: baseline;
+      }
+
+      .prompts-head > .section-label {
+        grid-column: 1 / -1;
+      }
+
+      .prompts-head h2 {
+        margin-bottom: 0;
+      }
+
+      /* The window every count on this page covers ("Last 30 days"), said once, beside the title. */
+      .prompts-window {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 650;
+        line-height: 1.4;
+      }
+
+      /* T7-6: while a test runs, "1 testing now" is the Tests stat's second meta line, in the same
+         line box as "Last 30 days" but under it, never on top of it. */
+      .prompts-running:not([hidden]) {
+        display: block;
+      }
+
+      .prompts-summary {
+        min-width: 0;
+      }
+
+      /* Round 7 (SE2, R10-5): every prompt is the shared prompt summary row (app-panels.js draws
+         it: name, version and state, the score trend, Kept by you, tokens, the model mix), with
+         Details beside it. Details opens the prompt in place: the full prompt control, the
+         version x model table, its tokens over time, and its own rollback rules. The rows are in
+         the markup from the start, so nothing under them moves when the store's figures arrive. */
+      /* R10-1: until the page has drawn (the large account's store can paint first), the list is
+         a skeleton at least as tall as its eight rows on the usual sample at each width, so it
+         reaches past the fold and nothing in view moves when the rows appear. */
+      .prompts-list {
+        --skeleton-min: 915px;
+        display: grid;
+        gap: 0;
+        margin: 21px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      @media (max-width: 1100px) {
+        .prompts-list {
+          --skeleton-min: 1420px;
+        }
+      }
+
+      @media (max-width: 800px) {
+        .prompts-list {
+          --skeleton-min: 1925px;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .prompts-list {
+          --skeleton-min: 2576px;
+        }
+      }
+
+      @media (max-width: 360px) {
+        .prompts-list {
+          --skeleton-min: 2896px;
+        }
+      }
+
+      .prompts-item {
+        display: grid;
+        min-width: 0;
+        gap: 13px;
+        padding: 13px 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .prompts-item-row {
+        display: grid;
+        min-width: 0;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px 21px;
+        align-items: center;
+      }
+
+      .prompts-item-summary {
+        min-width: 0;
+      }
+
+      .prompts-item-toggle {
+        align-self: start;
+      }
+
+      .prompts-item-toggle::after {
+        display: inline-block;
+        margin-inline-start: 8px;
+        color: var(--muted);
+        content: "⌄" / "";
+      }
+
+      .prompts-item-toggle[aria-expanded="true"]::after {
+        transform: rotate(180deg);
+      }
+
+      .prompts-row-more {
+        display: grid;
+        min-width: 0;
+        gap: 21px;
+        padding: 21px;
+        border: 1px solid var(--line);
+        border-radius: 21px;
+        background: var(--surface-strong);
+      }
+
+      .prompts-row-more[hidden] {
+        display: none;
+      }
+
+      .prompts-part {
+        display: grid;
+        min-width: 0;
+        gap: 13px;
+      }
+
+      .prompts-part:empty {
+        display: none;
+      }
+
+      .prompts-part-head {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 21px;
+        margin: 0;
+        align-items: baseline;
+        justify-content: space-between;
+      }
+
+      .prompts-part-title {
+        margin: 0;
+        color: var(--ink);
+        font-size: 15px;
+        font-weight: 700;
+        line-height: 1.35;
+      }
+
+      .prompts-part-meta {
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .prompts-part-empty {
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      /* The version x model table: the version names its rows; a version's later models leave the
+         name to the row above. */
+      .prompts-models-table .prompts-models-repeat {
+        color: var(--muted);
+      }
+
+      .prompts-models-table .prompts-models-version {
+        font-weight: 650;
+      }
+
+      /* The key a model ran on, under its name. */
+      .prompts-models-table .prompts-models-model {
+        display: grid;
+        gap: 2px;
+      }
+
+      .prompts-tested-foot {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0 21px;
+        margin-top: 13px;
+        padding-top: 13px;
+        border-top: 1px solid var(--line);
+        align-items: center;
+        justify-content: flex-end;
+      }
+
+      .prompts-tested-numbers:has(> details[open]) {
+        flex-basis: 100%;
+      }
+
+      @media (max-width: 720px) {
+        .prompts-item-row {
+          grid-template-columns: minmax(0, 1fr);
+        }
+
+        .prompts-item-toggle {
+          justify-self: start;
+        }
+
+        .prompts-row-more {
+          padding: 13px;
+          border-radius: 13px;
+        }
+      }
+
+      /* The prompts still on the system default, as one line of buttons that open each one. */
+      .prompts-untested {
+        margin-top: 21px;
+        padding-top: 21px;
+        border-top: 1px solid var(--line);
+      }
+
+      .prompts-untested-title {
+        margin: 0 0 8px;
+        color: var(--ink);
+        font-size: 14px;
+        font-weight: 650;
+        line-height: 1.4;
+      }
+
+      .prompts-untested-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .prompts-untested-list > li[hidden] {
+        display: none;
+      }
+
+      .prompts-model {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 13px;
+        margin: 21px 0 0;
+        align-items: center;
+        color: var(--ink);
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      .prompts-sample {
+        margin: 13px 0 0;
+      }
+
+      /* More about your prompts: the definitions, the rollback rules (one place), and How testing
+         works, each one click away. */
+      .prompts-more {
+        display: grid;
+        gap: 13px;
+      }
+
+      .prompts-fold {
+        border: 1px solid var(--line);
+        border-radius: 13px;
+        background: var(--surface);
+      }
+
+      /* The summary's words (and the rules' few words) wrap within their own box, so the chevron
+         stays at the end of the first line at every width (UAT-RM RM-10). */
+      .prompts-fold > summary {
+        display: flex;
+        box-sizing: border-box;
+        min-height: 52px;
+        padding: 13px 15px;
+        gap: 13px;
+        align-items: center;
+        cursor: pointer;
+        color: var(--ink);
+        font-size: 14px;
+        font-weight: 680;
+        list-style: none;
+      }
+
+      .prompts-fold > summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .prompts-fold-name {
+        display: flex;
+        min-width: 0;
+        flex: 1 1 auto;
+        flex-wrap: wrap;
+        gap: 4px 13px;
+        align-items: baseline;
+      }
+
+      .prompts-fold > summary::after {
+        flex: none;
+        margin-inline-start: auto;
+        color: var(--muted);
+        content: "⌄" / "";
+      }
+
+      .prompts-fold[open] > summary::after {
+        transform: rotate(180deg);
+      }
+
+      .prompts-fold > summary:focus-visible {
+        outline: 2px solid var(--green);
+        outline-offset: 3px;
+        border-radius: 13px;
+      }
+
+      .prompts-fold-meta {
+        color: var(--ink-soft);
+        font-size: 13px;
+        font-weight: 400;
+      }
+
+      .prompts-fold-body {
+        display: grid;
+        min-width: 0;
+        gap: 21px;
+        padding: 0 15px 15px;
+      }
+
+      .prompts-measures {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+        gap: 13px 34px;
+        margin: 0;
+        padding: 0 15px 15px;
+      }
+
+      .prompts-measure dt {
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1.3;
+      }
+
+      .prompts-measure dd {
+        margin: 4px 0 0;
+        color: var(--ink-soft);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .prompts-more-note {
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .prompts-rules-sentence {
+        max-width: 760px;
+        margin: 0;
+        color: var(--ink);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .prompts-own-note {
+        max-width: 760px;
+        margin: 0;
+      }
+
+      .prompts-own > .prompts-fold-body {
+        padding-top: 0;
+      }
+
+      /* Rollback rules: two groups of fields, each with the effect of its value in one line. */
+      .prompts-rules {
+        display: grid;
+        min-width: 0;
+        gap: 21px;
+      }
+
+      .prompts-rules-groups {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+        gap: 21px 34px;
+      }
+
+      .prompts-rules-group {
+        display: grid;
+        min-width: 0;
+        gap: 21px;
+        margin: 0;
+        padding: 0;
+        border: 0;
+      }
+
+      .prompts-rules-group > legend {
+        margin-bottom: 13px;
+      }
+
+      .prompts-rule {
+        display: grid;
+        min-width: 0;
+        gap: 8px;
+      }
+
+      .prompts-rule-input {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 13px;
+        align-items: center;
+      }
+
+      .prompts-rule-input > .field-control {
+        width: 8em;
+        min-width: 0;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .prompts-unit {
+        color: var(--ink-soft);
+        font-size: 14px;
+        line-height: 1.4;
+      }
+
+      .prompts-effect {
+        max-width: 46ch;
+        color: var(--ink-soft);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .prompts-check {
+        display: grid;
+        min-height: 44px;
+        grid-template-columns: 22px minmax(0, 1fr);
+        gap: 13px;
+        align-items: center;
+        cursor: pointer;
+        color: var(--ink);
+        font-size: 14px;
+        font-weight: 650;
+        line-height: 1.4;
+      }
+
+      .prompts-check input {
+        width: 20px;
+        height: 20px;
+        margin: 0;
+        accent-color: var(--green);
+      }
+
+      .prompts-check input:focus-visible {
+        outline: 2px solid var(--green);
+        outline-offset: 3px;
+      }
+
+      .prompts-rules-state {
+        margin: 0;
+        color: var(--ink);
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      .prompts-rules-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 13px;
+        align-items: center;
+      }
+
+      /* How testing works: four steps, side by side when there is room. */
+      .prompts-steps {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 233px), 1fr));
+        gap: 13px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .prompts-step {
+        display: grid;
+        min-width: 0;
+        grid-template-columns: 34px minmax(0, 1fr);
+        gap: 13px;
+        align-items: start;
+      }
+
+      .prompts-step-mark {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        place-items: center;
+        color: var(--ink);
+        background: var(--green-soft);
+        font-size: 15px;
+        font-weight: 750;
+      }
+
+      .prompts-step-copy {
+        color: var(--ink-soft);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .prompts-step-copy strong {
+        display: block;
+        color: var(--ink);
+      }
+
+      .prompts-how-note {
+        max-width: 720px;
+        margin: 0;
+        color: var(--ink);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      @media (max-width: 720px) {
+        .prompts-section,
+        .prompts-more {
+          padding: 21px;
+          border-radius: 22px;
+        }
+      }
+
+      @media (forced-colors: active) {
+        .prompts-fold,
+        .prompts-row-more {
+          border-color: CanvasText;
+        }
+
+        .prompts-step-mark {
+          border: 1px solid CanvasText;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#page-title">Skip to Prompts</a>
+
+    <header class="app-header">
+      <a class="brand" href="./home-preview.html?skipLoader" aria-label="JobDeputy dashboard">
+        <img
+          class="brand-logo"
+          src="./jobdeputy-mark.svg"
+          alt=""
+          width="400"
+          height="290"
+        />
+        <span class="brand-copy">
+          <span class="brand-name"><span>Job</span><span>Deputy</span></span>
+          <span class="brand-note">Your search partner</span>
+        </span>
+      </a>
+      <div class="header-actions">
+        <!-- HeaderActions: start -->
+        <button class="header-action header-feedback" type="button" data-feedback-open aria-haspopup="dialog" data-tip="Send feedback">
+          <svg class="header-action-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5.75 4.75h12.5c1.1 0 2 .9 2 2v8c0 1.1-.9 2-2 2h-6.5l-4.25 3.5v-3.5H5.75c-1.1 0-2-.9-2-2v-8c0-1.1.9-2 2-2Z" /><path d="M8.25 9.25h7.5M8.25 12.5h4.5" /></svg>
+          <span class="header-action-label">Feedback</span>
+        </button>
+        <a class="header-action header-invite" href="./invite-preview.html" data-tip="Invite friends">
+          <svg class="header-action-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.75" y="8.25" width="16.5" height="4" rx="1" /><path d="M5.25 12.25v6.5c0 .55.45 1 1 1h11.5c.55 0 1-.45 1-1v-6.5" /><path d="M12 8.25v11.5" /><path d="M12 8.25c-2.25 0-4.25-.75-4.25-2.25 0-1 .75-1.75 1.75-1.75 1.75 0 2.5 2 2.5 4Zm0 0c2.25 0 4.25-.75 4.25-2.25 0-1-.75-1.75-1.75-1.75-1.75 0-2.5 2-2.5 4Z" /></svg>
+          <span class="header-action-label">Invite friends</span>
+        </a>
+        <!-- HeaderActions: end -->
+        <details class="account-menu">
+          <summary class="account-link" aria-label="Alex Morgan, Free access, account menu">
+            <span class="account-avatar">
+              <img src="./profile-avatar.svg" alt="" width="160" height="160" />
+            </span>
+            <span class="account-copy">
+              <strong>Alex Morgan</strong>
+              <span>Free access</span>
+            </span>
+          </summary>
+          <nav class="account-popover" aria-label="Account">
+            <span class="account-popover-status">
+              <span data-account-credits>339,100 tokens of AI credits left</span>
+            </span>
+            <a href="./profile-preview.html">Profile</a>
+            <a href="./account-preview.html">Settings</a>
+            <a href="./ai-preview.html">AI &amp; credits</a>
+            <a href="./shop-preview.html">Purchases</a>
+            <a href="./invite-preview.html">Invite friends</a>
+            <a href="./trust-preview.html#help">Help &amp; support</a>
+            <button class="account-popover-action" type="button" data-tour-open hidden>Show me around</button>
+            <button class="account-popover-action" type="button" data-feedback-open aria-haspopup="dialog">Send feedback</button>
+            <a class="account-signout" href="./login-preview.html?skipLoader">Sign out</a>
+          </nav>
+        </details>
+      </div>
+    </header>
+
+    <div class="app-frame">
+      <div class="app-sidebar" id="app-sidebar">
+        <div class="app-menu">
+          <button
+            class="compact-action app-menu-toggle"
+            id="app-menu-toggle"
+            type="button"
+            aria-expanded="true"
+            aria-controls="app-nav"
+            hidden
+          >
+            <svg class="app-menu-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+            <span class="app-menu-text">Menu<span class="app-menu-current"> · Settings</span></span>
+          </button>
+        </div>
+        <!-- AppNav: start -->
+        <nav class="app-nav" id="app-nav" aria-label="Primary">
+          <ul class="app-nav-list">
+            <li>
+              <a class="app-nav-link" href="./home-preview.html?skipLoader">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.75 10.5 12 3.75l8.25 6.75" /><path d="M5.75 9v10.5h12.5V9" /><path d="M10 19.5v-5h4v5" /></svg>
+                <span class="app-nav-label">Dashboard</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./searches-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.25" /><path d="m15.25 15.25 4.75 4.75" /></svg>
+                <span class="app-nav-label">Searches</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./jobs-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="7.25" width="17" height="12.5" rx="2" /><path d="M8.75 7.25V5.5c0-.83.67-1.5 1.5-1.5h3.5c.83 0 1.5.67 1.5 1.5v1.75" /><path d="M3.5 12.5h17" /></svg>
+                <span class="app-nav-label">Job matches</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./applications-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.75" y="4.25" width="4.5" height="11.5" rx="1.25" /><rect x="9.75" y="4.25" width="4.5" height="15.5" rx="1.25" /><rect x="15.75" y="4.25" width="4.5" height="8" rx="1.25" /></svg>
+                <span class="app-nav-label">Applications</span>
+                <span class="app-nav-count is-attention">3<span class="sr-only"> need you</span></span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./documents-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.75 3.75h-6.5c-.97 0-1.75.78-1.75 1.75v13c0 .97.78 1.75 1.75 1.75h9.5c.97 0 1.75-.78 1.75-1.75V8.25Z" /><path d="M13.75 3.75v4.5h4.5" /><path d="M8.75 12.25h6.5M8.75 15.75h6.5" /></svg>
+                <span class="app-nav-label">Résumés</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./profile-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="8.25" r="3.75" /><path d="M4.75 20c.6-3.75 3.4-6 7.25-6s6.65 2.25 7.25 6" /></svg>
+                <span class="app-nav-label">Profile</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./account-preview.html" aria-current="true">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9.88 5.85L10.48 3.38L13.52 3.38L14.12 5.85L16.26 7.09L18.7 6.38L20.22 9.01L18.38 10.76L18.38 13.24L20.22 14.99L18.7 17.62L16.26 16.91L14.12 18.15L13.52 20.62L10.48 20.62L9.88 18.15L7.74 16.91L5.3 17.62L3.78 14.99L5.62 13.24L5.62 10.76L3.78 9.01L5.3 6.38L7.74 7.09Z" /><circle cx="12" cy="12" r="3" /></svg>
+                <span class="app-nav-label">Settings</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./trust-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.75" /><path d="M9.6 9.6a2.5 2.5 0 1 1 3.3 2.36c-.53.2-.9.7-.9 1.27v.52" /><path d="M12 16.75h.01" /></svg>
+                <span class="app-nav-label">Help</span>
+              </a>
+            </li>
+          </ul>
+        </nav>
+        <!-- AppNav: end -->
+        <div class="app-sidebar-deputy">
+          <!-- DeputyDock: start -->
+          <aside
+            class="deputy-dock"
+            id="deputy-dock"
+            aria-labelledby="deputy-dock-title"
+            data-deputy
+            data-deputy-page="prompts"
+            data-deputy-state="test"
+          >
+            <h2 class="sr-only" id="deputy-dock-title">Your deputy</h2>
+            <div class="deputy-art" data-deputy-art aria-hidden="true"></div>
+            <p class="deputy-speech" data-deputy-speech>I test before I switch.</p>
+            <p class="deputy-duty"><span class="deputy-duty-dot" aria-hidden="true"></span><span data-deputy-duty>Checking prompts</span></p>
+            <div class="deputy-actions">
+              <details class="deputy-activity">
+                <summary class="deputy-activity-toggle">Activity</summary>
+                <!-- biome-ignore lint/a11y/useSemanticElements: the panel groups links and lists, not form controls, so a fieldset would be wrong -->
+                <div class="deputy-activity-panel" role="group" aria-labelledby="deputy-activity-title">
+                  <p class="deputy-activity-title" id="deputy-activity-title">What your deputy is doing</p>
+                  <h3 class="deputy-activity-label">Now</h3>
+                  <ul class="deputy-activity-list">
+                    <li>Searching Amazon Jobs</li>
+                  </ul>
+                  <h3 class="deputy-activity-label">Needs you</h3>
+                  <ul class="deputy-activity-list">
+                    <li>
+                      <a href="./materials-preview.html?app=search-infra&amp;from=applications"
+                        >Approve materials for Search Infrastructure (Google)</a
+                      >
+                    </li>
+                    <li><a href="./applications-preview.html?open=amazon-sde2">Follow up with Amazon</a></li>
+                    <li><a href="./searches-preview.html?source=acme">Fix the Acme source</a></li>
+                  </ul>
+                  <h3 class="deputy-activity-label">Done recently</h3>
+                  <ul class="deputy-activity-list">
+                    <li>Tailored a résumé and cover letter for Cloud Reliability · Oct 2</li>
+                    <li>Checked Google Careers: no new roles · Oct 2</li>
+                    <li>Saved 7 new roles from Google Careers · Oct 1</li>
+                  </ul>
+                  <p class="sample-note">Sample data · not connected</p>
+                </div>
+              </details>
+              <button class="deputy-motion" type="button" data-deputy-motion>Pause motion</button>
+            </div>
+            <p class="sr-only" data-deputy-announce role="status"></p>
+          </aside>
+          <!-- DeputyDock: end -->
+        </div>
+      </div>
+      <main class="app-main" id="main">
+        <div class="page-shell">
+          <section class="page-intro prompts-intro" aria-labelledby="page-title" data-page-back>
+            <div class="page-intro-copy" data-tour-step="1" data-tour-title="I run these prompts for you." data-tour-text="Each prompt is one job I give the AI, like reading listings or scoring fit. Here you choose which version I use, test a new one, and say when I roll back.">
+              <p class="eyebrow">Settings</p>
+              <h1 id="page-title">The prompts your deputy runs.</h1>
+              <p class="intro-copy">Each prompt’s version, its tests, and how much of its work you kept.</p>
+            </div>
+            <div class="page-intro-actions">
+              <button type="button" class="secondary-action page-tour" data-tour-open hidden>Take the tour</button>
+            </div>
+          </section>
+
+          <!-- SettingsTabs: start -->
+          <nav class="settings-tabs" aria-label="Settings">
+            <ul class="settings-tabs-list">
+              <li><a class="settings-tab" href="./account-preview.html">Account</a></li>
+              <li><a class="settings-tab" href="./connections-preview.html">Connections</a></li>
+              <li><a class="settings-tab" href="./prompts-preview.html" aria-current="page">Prompts</a></li>
+              <li><a class="settings-tab" href="./ai-preview.html">AI &amp; credits</a></li>
+              <li><a class="settings-tab" href="./usage-preview.html">Usage</a></li>
+              <li><a class="settings-tab" href="./shop-preview.html">Purchases</a></li>
+              <li><a class="settings-tab" href="./activity-preview.html">Activity</a></li>
+            </ul>
+          </nav>
+          <!-- SettingsTabs: end -->
+
+          <div class="prompts-layout">
+            <section class="task-surface prompts-section" id="prompts" aria-labelledby="prompts-list-title">
+              <div class="prompts-head">
+                <p class="section-label">Prompt tests</p>
+                <h2 id="prompts-list-title">How your prompts are doing.</h2>
+                <p class="prompts-window" id="prompts-window">Last 30 days</p>
+              </div>
+              <div
+                class="prompts-summary"
+                id="summary"
+                data-tour-step="2"
+                data-tour-title="Here is how they’re doing."
+                data-tour-text="I count the tests of the last 30 days, how many passed, the versions I’m trying on a share of runs, and the rollbacks."
+              >
+                <dl class="stat-row prompts-stats">
+                  <div class="stat">
+                    <dt class="stat-label">Tests</dt>
+                    <dd class="stat-figure" data-metric="prompts.tests.last30">13</dd>
+                    <dd class="stat-meta"><span class="prompts-running" id="prompts-running" hidden><span data-metric="prompts.testsRunning">0</span> testing now</span></dd>
+                  </div>
+                  <div class="stat">
+                    <dt class="stat-label">Pass rate</dt>
+                    <dd class="stat-figure" data-metric="prompts.tests.passRateLast30">77%</dd>
+                    <dd class="stat-meta"><span data-metric="prompts.tests.passedLast30">10</span> passed · <span data-metric="prompts.tests.failedLast30">3</span> did not pass</dd>
+                  </div>
+                  <div class="stat">
+                    <dt class="stat-label">On trial</dt>
+                    <dd class="stat-figure" data-metric="prompts.canaries">2</dd>
+                    <dd class="stat-meta">On a share of runs now</dd>
+                  </div>
+                  <div class="stat">
+                    <dt class="stat-label">Rollbacks</dt>
+                    <dd class="stat-figure" data-metric="prompts.rollbacksLast30">2</dd>
+                  </div>
+                </dl>
+              </div>
+              <ul class="prompts-list" id="prompts-list" data-prompt-summaries aria-label="Your prompts" data-skeleton="rows">
+                <li class="prompts-item" id="read" data-prompt-card="read">
+                  <div class="prompts-item-row">
+                    <div class="prompts-item-summary" data-prompt-summary="read" data-prompt-size="row" data-prompt-open="off" data-prompt-fold="off" data-prompt-heading="3" data-tour-step="3" data-tour-title="This is each version’s test." data-tour-text="Each point is a version I tested on your last 40 decisions, against your minimum. Then Kept by you, the tokens it used, and the models it ran on."><h3>Read job listings</h3></div>
+                    <button type="button" class="compact-action prompts-item-toggle" data-prompt-expand="read" aria-expanded="false" aria-controls="prompts-read-more" data-tour-step="4" data-tour-title="Open one to see it all." data-tour-text="Details has every version and its tests, each model I ran it on, the tokens it used day by day, and its rollback rules. You choose and test versions there too.">Details<span class="sr-only"> of Read job listings</span></button>
+                  </div>
+                  <section class="prompts-row-more" id="prompts-read-more" aria-label="Read job listings: versions, tests, models, and rules" hidden>
+                    <div class="prompts-part" data-prompt-control="read" data-prompt-stats="folded" data-prompt-heading="4" data-prompt-note="off" data-prompt-metric="off"></div>
+                    <div class="prompts-part" data-models-host="read"></div>
+                    <div class="prompts-part" data-burn-host="read"></div>
+                    <details class="prompts-fold prompts-own" data-own-rules="read">
+                      <summary><span class="prompts-fold-name">This prompt’s rollback rules<span class="prompts-fold-meta" data-own-state="read"></span></span></summary>
+                      <div class="prompts-fold-body"><form class="prompts-rules" data-rules-scope="read" novalidate></form></div>
+                    </details>
+                  </section>
+                </li>
+                <li class="prompts-item" id="rank" data-prompt-card="rank">
+                  <div class="prompts-item-row">
+                    <div class="prompts-item-summary" data-prompt-summary="rank" data-prompt-size="row" data-prompt-open="off" data-prompt-fold="off" data-prompt-heading="3"><h3>Score fit and give reasons</h3></div>
+                    <button type="button" class="compact-action prompts-item-toggle" data-prompt-expand="rank" aria-expanded="false" aria-controls="prompts-rank-more">Details<span class="sr-only"> of Score fit and give reasons</span></button>
+                  </div>
+                  <section class="prompts-row-more" id="prompts-rank-more" aria-label="Score fit and give reasons: versions, tests, models, and rules" hidden>
+                    <div class="prompts-part" data-prompt-control="rank" data-prompt-stats="folded" data-prompt-heading="4" data-prompt-note="off" data-prompt-metric="off"></div>
+                    <div class="prompts-part" data-models-host="rank"></div>
+                    <div class="prompts-part" data-burn-host="rank"></div>
+                    <details class="prompts-fold prompts-own" data-own-rules="rank">
+                      <summary><span class="prompts-fold-name">This prompt’s rollback rules<span class="prompts-fold-meta" data-own-state="rank"></span></span></summary>
+                      <div class="prompts-fold-body"><form class="prompts-rules" data-rules-scope="rank" novalidate></form></div>
+                    </details>
+                  </section>
+                </li>
+                <li class="prompts-item" id="tailor" data-prompt-card="tailor">
+                  <div class="prompts-item-row">
+                    <div class="prompts-item-summary" data-prompt-summary="tailor" data-prompt-size="row" data-prompt-open="off" data-prompt-fold="off" data-prompt-heading="3"><h3>Tailor the résumé</h3></div>
+                    <button type="button" class="compact-action prompts-item-toggle" data-prompt-expand="tailor" aria-expanded="false" aria-controls="prompts-tailor-more">Details<span class="sr-only"> of Tailor the résumé</span></button>
+                  </div>
+                  <section class="prompts-row-more" id="prompts-tailor-more" aria-label="Tailor the résumé: versions, tests, models, and rules" hidden>
+                    <div class="prompts-part" data-prompt-control="tailor" data-prompt-stats="folded" data-prompt-heading="4" data-prompt-note="off" data-prompt-metric="off"></div>
+                    <div class="prompts-part" data-models-host="tailor"></div>
+                    <div class="prompts-part" data-burn-host="tailor"></div>
+                    <details class="prompts-fold prompts-own" data-own-rules="tailor">
+                      <summary><span class="prompts-fold-name">This prompt’s rollback rules<span class="prompts-fold-meta" data-own-state="tailor"></span></span></summary>
+                      <div class="prompts-fold-body"><form class="prompts-rules" data-rules-scope="tailor" novalidate></form></div>
+                    </details>
+                  </section>
+                </li>
+                <li class="prompts-item" id="letter" data-prompt-card="letter">
+                  <div class="prompts-item-row">
+                    <div class="prompts-item-summary" data-prompt-summary="letter" data-prompt-size="row" data-prompt-open="off" data-prompt-fold="off" data-prompt-heading="3"><h3>Write the cover letter</h3></div>
+                    <button type="button" class="compact-action prompts-item-toggle" data-prompt-expand="letter" aria-expanded="false" aria-controls="prompts-letter-more">Details<span class="sr-only"> of Write the cover letter</span></button>
+                  </div>
+                  <section class="prompts-row-more" id="prompts-letter-more" aria-label="Write the cover letter: versions, tests, models, and rules" hidden>
+                    <div class="prompts-part" data-prompt-control="letter" data-prompt-stats="folded" data-prompt-heading="4" data-prompt-note="off" data-prompt-metric="off"></div>
+                    <div class="prompts-part" data-models-host="letter"></div>
+                    <div class="prompts-part" data-burn-host="letter"></div>
+                    <details class="prompts-fold prompts-own" data-own-rules="letter">
+                      <summary><span class="prompts-fold-name">This prompt’s rollback rules<span class="prompts-fold-meta" data-own-state="letter"></span></span></summary>
+                      <div class="prompts-fold-body"><form class="prompts-rules" data-rules-scope="letter" novalidate></form></div>
+                    </details>
+                  </section>
+                </li>
+                <li class="prompts-item" id="answer" data-prompt-card="answer">
+                  <div class="prompts-item-row">
+                    <div class="prompts-item-summary" data-prompt-summary="answer" data-prompt-size="row" data-prompt-open="off" data-prompt-fold="off" data-prompt-heading="3"><h3>Draft application answers</h3></div>
+                    <button type="button" class="compact-action prompts-item-toggle" data-prompt-expand="answer" aria-expanded="false" aria-controls="prompts-answer-more">Details<span class="sr-only"> of Draft application answers</span></button>
+                  </div>
+                  <section class="prompts-row-more" id="prompts-answer-more" aria-label="Draft application answers: versions, tests, models, and rules" hidden>
+                    <div class="prompts-part" data-prompt-control="answer" data-prompt-stats="folded" data-prompt-heading="4" data-prompt-note="off" data-prompt-metric="off"></div>
+                    <div class="prompts-part" data-models-host="answer"></div>
+                    <div class="prompts-part" data-burn-host="answer"></div>
+                    <details class="prompts-fold prompts-own" data-own-rules="answer">
+                      <summary><span class="prompts-fold-name">This prompt’s rollback rules<span class="prompts-fold-meta" data-own-state="answer"></span></span></summary>
+                      <div class="prompts-fold-body"><form class="prompts-rules" data-rules-scope="answer" novalidate></form></div>
+                    </details>
+                  </section>
+                </li>
+                <li class="prompts-item" id="check" data-prompt-card="check">
+                  <div class="prompts-item-row">
+                    <div class="prompts-item-summary" data-prompt-summary="check" data-prompt-size="row" data-prompt-open="off" data-prompt-fold="off" data-prompt-heading="3"><h3>Check résumé readiness</h3></div>
+                    <button type="button" class="compact-action prompts-item-toggle" data-prompt-expand="check" aria-expanded="false" aria-controls="prompts-check-more">Details<span class="sr-only"> of Check résumé readiness</span></button>
+                  </div>
+                  <section class="prompts-row-more" id="prompts-check-more" aria-label="Check résumé readiness: versions, tests, models, and rules" hidden>
+                    <div class="prompts-part" data-prompt-control="check" data-prompt-stats="folded" data-prompt-heading="4" data-prompt-note="off" data-prompt-metric="off"></div>
+                    <div class="prompts-part" data-models-host="check"></div>
+                    <div class="prompts-part" data-burn-host="check"></div>
+                    <details class="prompts-fold prompts-own" data-own-rules="check">
+                      <summary><span class="prompts-fold-name">This prompt’s rollback rules<span class="prompts-fold-meta" data-own-state="check"></span></span></summary>
+                      <div class="prompts-fold-body"><form class="prompts-rules" data-rules-scope="check" novalidate></form></div>
+                    </details>
+                  </section>
+                </li>
+                <li class="prompts-item" id="mail" data-prompt-card="mail">
+                  <div class="prompts-item-row">
+                    <div class="prompts-item-summary" data-prompt-summary="mail" data-prompt-size="row" data-prompt-open="off" data-prompt-fold="off" data-prompt-heading="3"><h3>Read application emails</h3></div>
+                    <button type="button" class="compact-action prompts-item-toggle" data-prompt-expand="mail" aria-expanded="false" aria-controls="prompts-mail-more">Details<span class="sr-only"> of Read application emails</span></button>
+                  </div>
+                  <section class="prompts-row-more" id="prompts-mail-more" aria-label="Read application emails: versions, tests, models, and rules" hidden>
+                    <div class="prompts-part" data-prompt-control="mail" data-prompt-stats="folded" data-prompt-heading="4" data-prompt-note="off" data-prompt-metric="off"></div>
+                    <div class="prompts-part" data-models-host="mail"></div>
+                    <div class="prompts-part" data-burn-host="mail"></div>
+                    <details class="prompts-fold prompts-own" data-own-rules="mail">
+                      <summary><span class="prompts-fold-name">This prompt’s rollback rules<span class="prompts-fold-meta" data-own-state="mail"></span></span></summary>
+                      <div class="prompts-fold-body"><form class="prompts-rules" data-rules-scope="mail" novalidate></form></div>
+                    </details>
+                  </section>
+                </li>
+                <li class="prompts-item" id="reply" data-prompt-card="reply">
+                  <div class="prompts-item-row">
+                    <div class="prompts-item-summary" data-prompt-summary="reply" data-prompt-size="row" data-prompt-open="off" data-prompt-fold="off" data-prompt-heading="3"><h3>Draft a reply</h3></div>
+                    <button type="button" class="compact-action prompts-item-toggle" data-prompt-expand="reply" aria-expanded="false" aria-controls="prompts-reply-more">Details<span class="sr-only"> of Draft a reply</span></button>
+                  </div>
+                  <section class="prompts-row-more" id="prompts-reply-more" aria-label="Draft a reply: versions, tests, models, and rules" hidden>
+                    <div class="prompts-part" data-prompt-control="reply" data-prompt-stats="folded" data-prompt-heading="4" data-prompt-note="off" data-prompt-metric="off"></div>
+                    <div class="prompts-part" data-models-host="reply"></div>
+                    <div class="prompts-part" data-burn-host="reply"></div>
+                    <details class="prompts-fold prompts-own" data-own-rules="reply">
+                      <summary><span class="prompts-fold-name">This prompt’s rollback rules<span class="prompts-fold-meta" data-own-state="reply"></span></span></summary>
+                      <div class="prompts-fold-body"><form class="prompts-rules" data-rules-scope="reply" novalidate></form></div>
+                    </details>
+                  </section>
+                </li>
+              </ul>
+              <div class="prompts-tested-foot" id="prompts-tested-foot">
+                <div class="prompts-tested-numbers" data-trend-numbers="prompts"></div>
+              </div>
+              <div class="prompts-untested" id="prompts-untested" hidden>
+                <p class="prompts-untested-title"><span data-metric="prompts.untested">0</span> not tested yet, on the system default</p>
+                <ul class="prompts-untested-list" aria-label="Prompts not tested yet">
+                  <li data-untested="read" hidden><a class="compact-action" href="#read">Read job listings<span class="sr-only">: open it, read it, and test a version</span></a></li>
+                  <li data-untested="rank" hidden><a class="compact-action" href="#rank">Score fit and give reasons<span class="sr-only">: open it, read it, and test a version</span></a></li>
+                  <li data-untested="tailor" hidden><a class="compact-action" href="#tailor">Tailor the résumé<span class="sr-only">: open it, read it, and test a version</span></a></li>
+                  <li data-untested="letter" hidden><a class="compact-action" href="#letter">Write the cover letter<span class="sr-only">: open it, read it, and test a version</span></a></li>
+                  <li data-untested="answer" hidden><a class="compact-action" href="#answer">Draft application answers<span class="sr-only">: open it, read it, and test a version</span></a></li>
+                  <li data-untested="check" hidden><a class="compact-action" href="#check">Check résumé readiness<span class="sr-only">: open it, read it, and test a version</span></a></li>
+                  <li data-untested="mail" hidden><a class="compact-action" href="#mail">Read application emails<span class="sr-only">: open it, read it, and test a version</span></a></li>
+                  <li data-untested="reply" hidden><a class="compact-action" href="#reply">Draft a reply<span class="sr-only">: open it, read it, and test a version</span></a></li>
+                </ul>
+              </div>
+              <p class="prompts-model" id="prompts-model" data-tour-step="5" data-tour-title="They all run on one setting." data-tour-text="I run new work on the AI you chose in AI &amp; credits. Usage shows what each one used, by key, model, and day.">New work runs on your one AI setting. <a class="chart-action" href="./ai-preview.html#ai" data-return-link data-focus-key="prompts-ai-setting">Change it in AI &amp; credits</a></p>
+              <p class="sample-note prompts-sample" id="prompts-sample">Sample data · real figures start when runs are recorded per version</p>
+            </section>
+
+            <section class="task-surface prompts-more" aria-labelledby="prompts-more-title">
+              <h2 id="prompts-more-title">More about your prompts</h2>
+              <details class="prompts-fold" id="what-these-mean">
+                <summary><span class="prompts-fold-name">What Kept by you and Test score mean</span></summary>
+                <dl class="prompts-measures" id="prompts-measures">
+                  <div class="prompts-measure"><dt>Kept by you</dt><dd>Of what this prompt produced in real use, the share you kept. Each prompt says what kept means in its drawer.</dd></div>
+                  <div class="prompts-measure"><dt>Test score</dt><dd>A version replayed on your last 40 decisions: how often it agreed with what you decided, and the guardrail checks.</dd></div>
+                </dl>
+              </details>
+              <details
+                class="prompts-fold prompts-rules-edit"
+                id="rollout"
+                data-tour-step="6"
+                data-tour-title="You decide when I roll back."
+                data-tour-text="A version that passes its test tries a share of runs first. If Kept by you falls below your minimum, or more than your allowed points below the one in use, I bring back the one before and tell you."
+              >
+                <summary><span class="prompts-fold-name">Rollback rules<span class="prompts-fold-meta" id="prompts-rules-now"></span></span></summary>
+                <div class="prompts-fold-body">
+                  <p class="prompts-rules-sentence" id="prompts-rules-sentence">A version that passes its test runs on a share of runs first, and rolls back if Kept by you falls too low.</p>
+                  <form class="prompts-rules" id="prompts-rules" data-rules-scope="account" novalidate></form>
+                  <p class="field-help prompts-own-note" id="prompts-own-note">A prompt can keep its own rules: open its Details, then This prompt’s rollback rules. Only what you change there differs from these.</p>
+                </div>
+              </details>
+              <details class="prompts-fold" id="how-testing-works">
+                <summary><span class="prompts-fold-name">How testing works</span></summary>
+                <div class="prompts-fold-body">
+                  <ol class="prompts-steps">
+                    <li class="prompts-step"><span class="prompts-step-mark" aria-hidden="true">1</span><span class="prompts-step-copy"><strong>You save a version.</strong> It’s a draft: nothing runs it yet.</span></li>
+                    <li class="prompts-step"><span class="prompts-step-mark" aria-hidden="true">2</span><span class="prompts-step-copy"><strong>Your deputy tests it.</strong> It replays your last 40 decisions and runs the guardrail checks. That’s the Test score. It doesn’t pass if the Test score is below your minimum, or more than the points you allow below the Test score of the version in use; then it never runs, so nothing rolls back.</span></li>
+                    <li class="prompts-step"><span class="prompts-step-mark" aria-hidden="true">3</span><span class="prompts-step-copy"><strong>It passes, then it’s tried.</strong> It runs on a share of runs for a few days while Kept by you is watched.</span></li>
+                    <li class="prompts-step"><span class="prompts-step-mark" aria-hidden="true">4</span><span class="prompts-step-copy"><strong>It goes into use, or it rolls back.</strong> If Kept by you falls short of your rules in its trial, it rolls back and the version before is used again.</span></li>
+                  </ol>
+                  <p class="prompts-how-note">You’re told each time: a notice on the page you’re on, a line in your deputy’s Activity, and a To-do when a test doesn’t pass or a version rolls back.</p>
+                  <p class="sample-note">Sample: tests replay your decisions in this prototype; nothing is sent.</p>
+                </div>
+              </details>
+              <p class="prompts-more-note">The system prompt, every version’s words, and the editor open from each prompt’s Details: See the prompt, or Edit as a new version.</p>
+            </section>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <div class="footer-primary">
+          <span class="footer-brand">
+            <strong>JobDeputy</strong>
+            <span>Your private workspace for finding relevant roles.</span>
+          </span>
+          <nav class="footer-nav" aria-label="Footer">
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./home-preview.html?skipLoader">Dashboard</a>
+              <a class="footer-link" href="./searches-preview.html">Searches</a>
+              <a class="footer-link" href="./jobs-preview.html">Job matches</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./applications-preview.html">Applications</a>
+              <a class="footer-link" href="./documents-preview.html">Résumés</a>
+              <a class="footer-link" href="./profile-preview.html">Profile</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./account-preview.html">Settings</a>
+              <a class="footer-link" href="./ai-preview.html">AI &amp; credits</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./shop-preview.html">Purchases</a>
+              <a class="footer-link" href="./invite-preview.html">Invite friends</a>
+            </span>
+          </nav>
+        </div>
+        <div class="footer-secondary">
+          <span
+            ><strong>United States home Region</strong> · Your profile, searches, and stored keys
+            stay encrypted here.</span
+          >
+          <nav class="footer-nav" aria-label="Trust and support">
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./trust-preview.html#privacy">Privacy</a>
+              <a class="footer-link" href="./trust-preview.html#security">Security</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./trust-preview.html#accessibility">Accessibility</a>
+              <a class="footer-link" href="./trust-preview.html#help">Help</a>
+            </span>
+          </nav>
+        </div>
+      </div>
+    </footer>
+
+    <script src="./app-shell.js"></script>
+    <script src="./app-components.js"></script>
+    <script src="./prompt-guard.js"></script>
+    <script src="./agreement-text.js"></script>
+    <script src="./sample-store.js"></script>
+    <script src="./deputy.js"></script>
+    <script src="./feedback.js"></script>
+    <script src="./app-panels.js"></script>
+    <script>
+      // Settings, Prompts (round 6, S1; round 7, SE2 and S4). Every prompt is the shared prompt
+      // summary row (app-panels.js draws [data-prompt-summary] hosts and keeps them in step with
+      // the store); this script opens one in place (Details, a link to #<task id>, or
+      // ?prompt=<task id>&return=<page>): the full prompt control (also app-panels.js), the version
+      // x model table, its tokens over time, and its own rollback rules. It also fills the
+      // summary's figures, the one AI setting's line, and the account's rollback rules (#rollout),
+      // saved with JobDeputyStore.setRolloutSettings. Its pure parts sit between the prompts-rules
+      // markers, so prompts.test.ts runs them against the real store.
+      (() => {
+        const store = window.JobDeputyStore;
+        const components = window.JobDeputyComponents;
+        const deputy = () => window.JobDeputyDeputy;
+        const main = document.querySelector('main');
+        const $ = (selector, root = document) => root.querySelector(selector);
+        const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+        const call = (name, ...args) => {
+          if (typeof store?.[name] !== 'function') return null;
+          try {
+            return store[name](...args) ?? null;
+          } catch {
+            return null;
+          }
+        };
+
+        /* prompts-rules: start */
+        const count = (value) => Number(value).toLocaleString('en-US');
+        const plural = (n, one, many) => `${count(n)} ${n === 1 ? one : many}`;
+        // The six rollback rules, in the order the form shows them, each with its range and the
+        // effect of its value said in one line.
+        const RULES = [
+          {
+            key: 'canarySharePct',
+            group: 'trial',
+            kind: 'number',
+            label: 'Share of runs to try it on',
+            unit: '%',
+            min: 0,
+            max: 50,
+            effect: (value) =>
+              value === 0
+                ? 'A version that passes goes into use on every run at once.'
+                : `A version that passes runs on ${count(value)}% of runs first; the version in use runs the rest.`,
+          },
+          {
+            key: 'canaryDays',
+            group: 'trial',
+            kind: 'number',
+            label: 'For how many days',
+            unit: 'days',
+            min: 1,
+            max: 14,
+            effect: (value, all) =>
+              all.canarySharePct === 0
+                ? 'Not used while the share is 0.'
+                : `Its trial lasts ${plural(value, 'day', 'days')}, then the rules below decide.`,
+          },
+          {
+            key: 'autoPromote',
+            group: 'trial',
+            kind: 'toggle',
+            label: 'Use it on every run when its trial goes well',
+            effect: (on) =>
+              on
+                ? 'On: your deputy moves every run to it when the trial ends within the rules.'
+                : 'Off: it waits on its trial until you choose Use this version.',
+          },
+          {
+            key: 'minAgreementPct',
+            group: 'back',
+            kind: 'number',
+            label: 'Roll back if Kept by you falls below',
+            unit: '%',
+            min: 50,
+            max: 99,
+            // Round 6 part 3 (T6-6): say only what this setting does. Kept by you is the share of
+            // this prompt's results you kept in real use; the trend's dashed line (Minimum N%) is
+            // the Test score minimum, a different rule above.
+            effect: (value) =>
+              `In its trial, a version that keeps less than ${count(value)}% of what it produced rolls back.`,
+          },
+          {
+            key: 'maxDropPoints',
+            group: 'back',
+            kind: 'number',
+            label: 'Or if it drops more than',
+            unit: 'points below the version in use',
+            min: 1,
+            max: 20,
+            // R9-9: one rule said one way. More than N points below fails (exactly N passes), by
+            // Test score in a test and by Kept by you in a trial.
+            effect: (value, all) =>
+              `Even above ${count(all.minAgreementPct)}%, more than ${plural(value, 'point', 'points')} below the version in use fails: in a test by Test score, in a trial by Kept by you. Exactly ${plural(value, 'point', 'points')} below passes.`,
+          },
+          {
+            key: 'autoRollback',
+            group: 'back',
+            kind: 'toggle',
+            label: 'Roll back by itself',
+            effect: (on) =>
+              on
+                ? 'On: the version before comes back at once, and you’re told.'
+                : 'Off: your deputy tells you and waits for you to choose.',
+          },
+        ];
+        const GROUPS = { trial: 'Trying a new version', back: 'Rolling back' };
+        const RULE_NAMES = {
+          canarySharePct: 'the share of runs',
+          canaryDays: 'the days on trial',
+          autoPromote: 'using it on every run',
+          minAgreementPct: 'the Kept by you minimum',
+          maxDropPoints: 'the largest drop',
+          autoRollback: 'rolling back by itself',
+        };
+        const ruleValue = (rule, value) =>
+          rule.kind === 'toggle' ? (value ? 'on' : 'off') : `${count(value)}${rule.unit === '%' ? '%' : ''}`;
+        // A field's value, checked as the store checks it: a whole number in the range, or the
+        // reason in words.
+        const readRule = (rule, raw) => {
+          if (rule.kind === 'toggle') return { ok: true, value: Boolean(raw) };
+          const text = String(raw ?? '').trim();
+          const value = Number(text);
+          if (!text || !Number.isInteger(value) || value < rule.min || value > rule.max) {
+            return { ok: false, why: `Choose a whole number from ${rule.min} to ${rule.max}.` };
+          }
+          return { ok: true, value };
+        };
+        // What differs from the system default, in words.
+        const changedFrom = (settings, base) =>
+          RULES.filter((rule) => base && settings[rule.key] !== base[rule.key]);
+        const stateLine = (settings, scope) => {
+          if (scope !== 'account') {
+            const own = Array.isArray(settings.overridden) ? settings.overridden : [];
+            if (!own.length) return 'This prompt follows your account’s rules.';
+            const names = RULES.filter((rule) => own.includes(rule.key)).map(
+              (rule) => `${RULE_NAMES[rule.key]} (${ruleValue(rule, settings[rule.key])})`,
+            );
+            return `This prompt’s own rules: ${names.join(', ')}. The rest follow your account’s.`;
+          }
+          const changed = changedFrom(settings, settings.systemDefault);
+          if (!changed.length) return 'These are the defaults.';
+          return `Changed from the defaults: ${changed.map((rule) => `${RULE_NAMES[rule.key]} (${ruleValue(rule, settings[rule.key])})`).join(', ')}.`;
+        };
+        // The account's rules in one plain sentence, as the section says them while closed.
+        const rulesSentence = (settings) => {
+          if (!settings) return '';
+          const share = Number(settings.canarySharePct);
+          const trial =
+            share === 0
+              ? 'A version that passes its test goes into use at once'
+              : `A version that passes its test runs on ${count(share)}% of runs for ${plural(Number(settings.canaryDays), 'day', 'days')} first${settings.autoPromote ? ', then on every run' : ', then waits for you'}`;
+          const back = settings.autoRollback
+            ? `it rolls back by itself if Kept by you falls below ${count(settings.minAgreementPct)}% or more than ${plural(Number(settings.maxDropPoints), 'point', 'points')} below the version in use`
+            : `below ${count(settings.minAgreementPct)}% or more than ${plural(Number(settings.maxDropPoints), 'point', 'points')} down, you’re told and choose`;
+          return `${trial}; ${back}.`;
+        };
+        // The rules in a few words, for the closed disclosure ("20% of runs for 3 days; below 80%
+        // or more than 5 points down rolls back").
+        const rulesBrief = (settings) => {
+          if (!settings) return '';
+          const trial =
+            Number(settings.canarySharePct) === 0
+              ? 'straight into use'
+              : `${count(settings.canarySharePct)}% of runs for ${plural(Number(settings.canaryDays), 'day', 'days')}`;
+          const back = `below ${count(settings.minAgreementPct)}% or more than ${plural(Number(settings.maxDropPoints), 'point', 'points')} down ${settings.autoRollback ? 'rolls back' : 'asks you'}`;
+          return `${trial}; ${back}`;
+        };
+        // N4 and P-7: a tested prompt's one line of state, from promptTests(): a test running
+        // first, with how far it is ("Testing version 3: 23 of 40 decisions replayed"), then the
+        // version in use and a trial with its end (its share is the chip's): "System default in
+        // use. Version 2 on trial until Sun, Oct 4."
+        const runningWords = (running) => {
+          const name = running.n ? `version ${running.n}` : 'a new version';
+          const of = Number(running.of) || 40;
+          const done = Math.min(Math.max(0, Number(running.replayed) || 0), of);
+          return done >= of
+            ? `Testing ${name}: all ${count(of)} decisions replayed, checking the guardrails`
+            : `Testing ${name}: ${count(done)} of ${count(of)} decisions replayed`;
+        };
+        // A date the page writes keeps together on one line (no-break spaces inside it).
+        const glue = (text) => String(text ?? '').replace(/ /g, '\u00a0');
+        const stateWords = (entry, day = (value) => String(value ?? '')) => {
+          const parts = entry?.running ? [runningWords(entry.running)] : [];
+          // T7-19: "Version 9 in use", as every other line says it (not "Yours, version 9").
+          const inUse = String(entry?.inUse?.label ?? 'System default').replace(
+            /^Yours, version /,
+            'Version ',
+          );
+          parts.push(`${inUse} in use`);
+          if (entry?.trial) {
+            const until = glue(day(entry.trial.endsAt));
+            parts.push(`${entry.trial.label} on trial${until ? ` until ${until}` : ''}`);
+          }
+          // Round 6 part 3: what happened last, in the store's words, when it is not the trial
+          // or a test running (a version going into use, a failed test, a rollback).
+          const latest = entry?.latest;
+          if (!entry?.running && !entry?.trial && latest?.text && latest.kind !== 'trial') {
+            return `${latest.text}.`;
+          }
+          return `${parts.join('. ')}.`;
+        };
+        // S4: the version x model table, from promptVersionModels(id): a row for each version
+        // and each model it ran on, in the store's order, every figure in words (R9-4: an empty
+        // value reads a word). A version's second model leaves its name to the row above.
+        const MODEL_COLUMNS = [
+          { key: 'version', label: 'Version' },
+          { key: 'model', label: 'Model' },
+          { key: 'runs', label: 'Runs', numeric: true },
+          { key: 'kept', label: 'Kept by you', numeric: true },
+          { key: 'test', label: 'Test score', numeric: true },
+          { key: 'perRun', label: 'Tokens per run', numeric: true },
+          { key: 'tokens', label: 'Tokens in total', numeric: true },
+          { key: 'seconds', label: 'Seconds per run', numeric: true },
+        ];
+        const whole = (value) => Math.max(0, Math.round(Number(value) || 0));
+        const seconds = (value) => {
+          const number = Math.max(0, Number(value) || 0);
+          return `${number.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} s`;
+        };
+        // T7-6: every version is listed (the one in use even before its first run), and every
+        // figure says its count: Kept by you is "83% of 23 runs" (the runs you decided on, R9-5),
+        // a version with no runs says so in words, never a percentage.
+        const keptWords = (row) => {
+          const runs = whole(row.runs);
+          const decided = whole(row.decided ?? row.runs);
+          const pct = Number(row.keptPct);
+          if (!runs) return 'No runs yet';
+          if (!decided || row.keptPct === null || row.keptPct === undefined || !Number.isFinite(pct)) {
+            return 'None decided yet';
+          }
+          return `${count(Math.round(pct))}% of ${plural(decided, 'run', 'runs')}`;
+        };
+        const modelRows = (table) => {
+          const given = Array.isArray(table?.rows) ? table.rows : [];
+          const versions = Array.isArray(table?.versions) ? table.versions : [];
+          // The store's rows, version by version in its order; a version with none gets one row.
+          const ordered = [];
+          const placed = new Set();
+          for (const version of versions) {
+            const id = String(version.versionId ?? '');
+            const own = given.filter((row) => String(row.versionId) === id);
+            if (own.length) ordered.push(...own);
+            else ordered.push({ ...version, model: '', modelLabel: '', keyLabel: '', runs: 0, none: true });
+            placed.add(id);
+          }
+          ordered.push(...given.filter((row) => !placed.has(String(row.versionId))));
+          let last = '';
+          return ordered.map((row) => {
+            const repeat = String(row.versionId) === last;
+            last = String(row.versionId);
+            const runs = whole(row.runs);
+            const test = Number(row.testScore);
+            return {
+              versionId: String(row.versionId ?? ''),
+              repeat,
+              version: String(row.label ?? row.versionId ?? ''),
+              model: row.none ? 'Not run yet' : String(row.modelLabel ?? row.model ?? ''),
+              key: String(row.keyLabel ?? ''),
+              runs: count(runs),
+              kept: keptWords(row),
+              test:
+                row.testScore === null || row.testScore === undefined || !Number.isFinite(test)
+                  ? 'Not tested'
+                  : `${count(Math.round(test))}%`,
+              perRun: runs ? count(whole(row.tokensPerRun)) : 'None yet',
+              tokens: count(whole(row.tokens)),
+              seconds: runs ? seconds(row.secondsPerRun) : 'None yet',
+            };
+          });
+        };
+        // The table's window, said once: since the prompt's first recorded run.
+        const sinceWords = (table, day = (value) => String(value ?? '')) =>
+          table?.since
+            ? `Every run since ${day(table.since)}, each on the model it ran on.`
+            : 'Every run, each on the model it ran on.';
+        // R6-4 and R10-6: a long table (the large account's 44 rows) shows a page at a time with
+        // the shared pagination; a page's first row names its version again.
+        const MODEL_SIZES = [12, 24, 48];
+        const pageOf = (rows, page = 1, size = MODEL_SIZES[0]) => {
+          const list = Array.isArray(rows) ? rows : [];
+          const per = MODEL_SIZES.includes(Number(size)) ? Number(size) : MODEL_SIZES[0];
+          const pages = Math.max(1, Math.ceil(list.length / per));
+          const at = Math.min(Math.max(1, Math.round(Number(page) || 1)), pages);
+          const shown = list.slice((at - 1) * per, at * per);
+          if (shown[0]) shown[0] = { ...shown[0], repeat: false };
+          return { rows: shown, page: at, pages, size: per, total: list.length };
+        };
+        // T5-18: what runs the prompts, as the store says it: new work on your one AI setting,
+        // the work a run already pays for (reading job email inside each Gmail scan's run) on its
+        // own model, and each row's own line for what it ran on in the last 30 days.
+        const modelWords = (choice, included = null) => {
+          if (!choice || choice.source === 'none' || choice.runsModel === false) {
+            return 'No prompt runs while Deputy Assist is off.';
+          }
+          const parts = [`New work runs on your AI setting, ${choice.text}.`];
+          const models = (Array.isArray(included?.models) ? included.models : []).filter(Boolean);
+          if (included?.text && models.length) {
+            const list =
+              models.length > 1
+                ? `${models.slice(0, -1).join(', ')} and ${models.at(-1)}`
+                : models[0];
+            parts.push(`${String(included.text).replace(/\.$/, '')}, on ${list}.`);
+          }
+          parts.push('Each prompt says what it ran on in the last 30 days.');
+          return parts.join(' ');
+        };
+        // The table's last row: the runs and tokens of every version and model together.
+        const modelTotals = (table) => ({
+          runs: count(whole(table?.totals?.runs)),
+          tokens: count(whole(table?.totals?.tokens)),
+        });
+        /* prompts-rules: end */
+
+        if (!store || !main) {
+          components?.tour?.sync?.();
+          components?.boot?.ready?.();
+          return;
+        }
+
+        const esc = (value) =>
+          String(value ?? '').replace(
+            /[&<>"']/g,
+            (character) =>
+              ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character],
+          );
+        const say = (words) => components?.announce?.(words);
+        const panels = () => window.JobDeputyPanels;
+        const nameOf = (id) => String(call('prompt', id)?.name ?? '');
+
+        // Every figure outside the prompt controls and summaries shows the store's text for its
+        // key (they write their own).
+        const fillMetrics = () => {
+          for (const element of $$('[data-metric]', main)) {
+            if (element.closest('.prompt-control, .prompt-summary, [data-prompt-summary]')) continue;
+            if (element.closest('.usage-chart, .bar-chart, [data-burn-host]')) continue;
+            const text = String(store.metricText?.(element.dataset.metric) ?? '');
+            if (element.textContent !== text) element.textContent = text;
+          }
+        };
+
+        // The rows are always shown (every prompt has a summary row, R10-5); a prompt never tested
+        // is named once more in the line under the list, which links to its row.
+        const testsNow = () => call('promptTests') ?? { prompts: [] };
+        const dayText = (value) => store.format?.date?.(value) ?? '';
+        const shownAsTested = (entry) => Boolean(entry.tested || entry.running);
+        const drawUntested = (list) => {
+          let some = false;
+          for (const entry of list) {
+            const tested = shownAsTested(entry);
+            const button = $(`[data-untested="${entry.id}"]`, main);
+            if (button && button.hidden !== tested) button.hidden = tested;
+            if (!tested) some = true;
+          }
+          const line = $('#prompts-untested');
+          if (line.hidden === some) line.hidden = !some;
+        };
+        // One Show the numbers for every test of the last 30 days (T7-9: a version tested again
+        // included), under the list; the summaries draw the trends and their one key.
+        let numbersSignature = '';
+        const drawNumbers = (list) => {
+          const host = $('[data-trend-numbers="prompts"]', main);
+          if (!host || !components?.scoreTrend?.numbers) return;
+          const rows = list.filter(shownAsTested).flatMap((entry) =>
+            (entry.history ?? entry.tests ?? []).map((test) => ({
+              prompt: entry.name,
+              href: `#${entry.id}`,
+              version: test.label,
+              // T7-16: the Dashboard's table reads the same (the store's words and dates).
+              date: store.format.shortDate(test.at).replace(/\s/g, '\u00a0'),
+              score: test.score,
+              result: test.status === 'failed' ? 'failed' : 'passed',
+              state: test.where ?? '',
+            })),
+          );
+          const signature = JSON.stringify(rows);
+          if (signature === numbersSignature) return;
+          numbersSignature = signature;
+          components.scoreTrend.numbers(host, { title: 'Prompt tests, last 30 days', rows });
+        };
+        // Each open prompt's state in one line (a test running and how far, then the version in
+        // use, then a trial and its end), once a second while a test runs (store.onWork) and on
+        // every change, so a test started anywhere shows how far it is.
+        const fillStates = (list = testsNow().prompts ?? [], all = list) => {
+          for (const entry of list) {
+            const line = $(`[data-prompt-state-line="${entry.id}"]`, main);
+            if (!line) continue;
+            const words = stateWords(entry, dayText);
+            if (line.textContent !== words) line.textContent = words;
+          }
+          const running = $('#prompts-running');
+          const some = all.some((entry) => entry.running);
+          if (running.hidden === some) running.hidden = !some;
+        };
+
+        // ---------------------------------------------------------------- one prompt in full
+
+        // S4: the version x model table. Built as markup from the store's words (escaped), drawn
+        // again only when its figures change.
+        const tableMarkup = (id, table, rows) => {
+          const name = nameOf(id);
+          const head = MODEL_COLUMNS.map(
+            (column) =>
+              `<th role="columnheader" scope="col"${column.numeric ? ' class="data-table-numeric"' : ''}>${esc(column.label)}</th>`,
+          ).join('');
+          const body = rows
+            .map((row) => {
+              const cells = MODEL_COLUMNS.map((column) => {
+                if (column.key === 'version') {
+                  return `<td role="cell" class="prompts-models-version${row.repeat ? ' prompts-models-repeat' : ''}" data-label="Version">${esc(row.version)}</td>`;
+                }
+                if (column.key === 'model') {
+                  // One value for the cell (the name over its key), so a phone's stacked row keeps
+                  // the key beside its label.
+                  return `<td role="cell" data-label="Model"><span class="prompts-models-model">${esc(row.model)}${row.key ? `<span class="data-table-meta prompts-models-key">${esc(row.key)}</span>` : ''}</span></td>`;
+                }
+                return `<td role="cell" class="data-table-numeric" data-label="${esc(column.label)}">${esc(row[column.key])}</td>`;
+              }).join('');
+              return `<tr role="row" data-version="${esc(row.versionId)}">${cells}</tr>`;
+            })
+            .join('');
+          const totals = modelTotals(table);
+          const foot = MODEL_COLUMNS.map((column) => {
+            if (column.key === 'version') return '<td role="cell">All versions</td>';
+            if (column.key === 'runs' || column.key === 'tokens') {
+              return `<td role="cell" class="data-table-numeric" data-label="${esc(column.label)}">${esc(totals[column.key])}</td>`;
+            }
+            return '<td role="cell" aria-hidden="true"></td>';
+          }).join('');
+          return `<section class="data-table-wrap" aria-labelledby="prompts-${esc(id)}-models" tabindex="0"><table class="data-table prompts-models-table" role="table" aria-label="${esc(name)}: each version on each model"><thead role="rowgroup"><tr role="row">${head}</tr></thead><tbody role="rowgroup">${body}</tbody><tfoot role="rowgroup"><tr role="row">${foot}</tr></tfoot></table></section>`;
+        };
+        // Its tokens over time: the last 30 days by version (the shared usage chart), and the way
+        // to every range in Usage.
+        const BURN_RANGE = '30d';
+        const drawBurn = (id, host) => {
+          // The store's usage of this prompt (ST contract 5: promptBurn is this query), by
+          // version, at the range's step.
+          const usage = call('usage', { range: BURN_RANGE, group: 'prompt', filter: { task: [id] } });
+          if (!usage || typeof components?.usageChart !== 'function') {
+            if (host.childElementCount) host.replaceChildren();
+            return;
+          }
+          const signature = JSON.stringify([usage.totals, usage.buckets?.length, usage.groups]);
+          if (host.dataset.signature === signature) return;
+          host.dataset.signature = signature;
+          host.innerHTML = `<div class="prompts-part-head"><p class="prompts-part-title" id="prompts-${esc(id)}-burn">Tokens over time</p><a class="chart-action" href="./usage-preview.html?task=${esc(id)}&amp;group=prompt&amp;range=${BURN_RANGE}" data-return-link data-focus-key="prompts-burn-usage-${esc(id)}">See every range in Usage</a></div><div class="prompts-burn-chart" data-burn-chart></div>`;
+          components.usageChart($('[data-burn-chart]', host), {
+            usage,
+            measure: 'tokens',
+            // The store already folds the tail into one Other (top 5 plus Other, R6-4), so the
+            // chart folds nothing more (T3-9).
+            cap: 6,
+            otherLabel: 'Other versions',
+            title: 'Tokens a day, last 30 days, by version',
+            labelledBy: `prompts-${id}-burn`,
+            empty: 'No tokens in the last 30 days.',
+          });
+        };
+        // The part's frame is drawn once (its title, the pagers' places); the table inside it is
+        // drawn again only when its figures or its page change.
+        const modelPages = new Map();
+        const drawModels = (id, host) => {
+          const table = call('promptVersionModels', id);
+          if (!table) {
+            if (host.childElementCount) host.replaceChildren();
+            return;
+          }
+          const rows = modelRows(table);
+          if (!rows.length) {
+            const empty = `<p class="prompts-part-title">By version and model</p><p class="prompts-part-empty">It hasn’t run on any model yet.</p>`;
+            if (host.dataset.signature !== empty) {
+              host.dataset.signature = empty;
+              host.innerHTML = empty;
+            }
+            return;
+          }
+          if (!host.querySelector('[data-models-table]')) {
+            host.dataset.signature = '';
+            host.innerHTML = `<div class="prompts-part-head"><p class="prompts-part-title" id="prompts-${esc(id)}-models">By version and model</p><p class="prompts-part-meta" data-models-since></p></div><div class="prompts-models-pager" data-models-top></div><div data-models-table></div><div class="prompts-models-pager" data-models-bottom></div>`;
+          }
+          const since = $('[data-models-since]', host);
+          const sinceText = sinceWords(table, (value) => store.format?.date?.(value) ?? '');
+          if (since && since.textContent !== sinceText) since.textContent = sinceText;
+          // T6-8: the page and its size are in the address (?vpage=, ?vsize=), read for the first
+          // prompt drawn.
+          if (!modelPages.has(id) && !modelPages.size && components?.pagination?.fromAddress) {
+            const saved = components.pagination.fromAddress({ param: 'vpage', sizeParam: 'vsize', sizes: MODEL_SIZES });
+            if (saved?.page || saved?.size) modelPages.set(id, { page: saved.page || 1, size: saved.size || MODEL_SIZES[0] });
+          }
+          const wanted = modelPages.get(id) ?? { page: 1, size: MODEL_SIZES[0] };
+          const shown = pageOf(rows, wanted.page, wanted.size);
+          const markup = tableMarkup(id, table, shown.rows);
+          const holder = $('[data-models-table]', host);
+          if (host.dataset.signature !== markup) {
+            host.dataset.signature = markup;
+            holder.innerHTML = markup;
+          }
+          const paged = shown.total > MODEL_SIZES[0];
+          const bottom = $('[data-models-bottom]', host);
+          const top = $('[data-models-top]', host);
+          bottom.hidden = !paged;
+          top.hidden = !paged;
+          if (!paged || typeof components?.pagination !== 'function') return;
+          const change = (page, size = shown.size) => {
+            modelPages.set(id, { page, size });
+            drawModels(id, host);
+          };
+          if (!host.pager) {
+            host.pager = components.pagination(bottom, {
+              total: shown.total,
+              pageSize: shown.size,
+              page: shown.page,
+              label: `Pages of ${nameOf(id)}’s versions and models`,
+              noun: ['row', 'rows'],
+              top,
+              sizes: MODEL_SIZES,
+              onChange: (page) => change(page),
+              onSize: (size) => change(1, size),
+              list: holder,
+              heading: $(`#prompts-${id}-models`, host),
+              address: true,
+              param: 'vpage',
+              sizeParam: 'vsize',
+            });
+          } else {
+            host.pager.render?.({ total: shown.total, page: shown.page, pageSize: shown.size });
+          }
+        };
+        // The state line leads the open prompt (the control under it has every action).
+        const ensureStateLine = (id, panel) => {
+          if ($(`[data-prompt-state-line="${id}"]`, panel)) return;
+          const line = document.createElement('p');
+          line.className = 'prompts-part-meta prompts-state-line';
+          line.dataset.promptStateLine = id;
+          panel.prepend(line);
+        };
+        const drawPanel = (id) => {
+          const panel = document.getElementById(`prompts-${id}-more`);
+          if (!panel || panel.hidden) return;
+          ensureStateLine(id, panel);
+          const all = testsNow().prompts ?? [];
+          const entry = all.find((item) => item.id === id);
+          if (entry) fillStates([entry], all);
+          const models = $(`[data-models-host="${id}"]`, panel);
+          if (models) drawModels(id, models);
+          const burn = $(`[data-burn-host="${id}"]`, panel);
+          if (burn) drawBurn(id, burn);
+          const form = $(`form[data-rules-scope="${id}"]`, panel);
+          if (form) drawForm(form);
+          fillOwnState(id);
+        };
+
+        // Details opens one prompt at a time, in place. A link to a prompt (#read, ?prompt=read,
+        // or a data-prompt-open anywhere on this page) opens its row; a test started from a row
+        // opens it, so it can be watched.
+        let openId = null;
+        const toggleOf = (id) => $(`[data-prompt-expand="${id}"]`, main);
+        // On phones the shared summary folds to one line with its own Details (PL); here both
+        // open the same prompt, so they stay in step (until data-prompt-fold="off" turns the
+        // summary's off on this page).
+        const syncFold = (id, open) => {
+          const host = $(`[data-prompt-summary="${id}"]`, main);
+          if (!host) return;
+          if (host.hasAttribute('data-prompt-unfolded') !== open) host.toggleAttribute('data-prompt-unfolded', open);
+          const fold = $('.prompt-summary-fold', host);
+          if (fold && fold.getAttribute('aria-expanded') !== String(open)) fold.setAttribute('aria-expanded', String(open));
+        };
+        const setRow = (id, open, { sync = true } = {}) => {
+          const panel = document.getElementById(`prompts-${id}-more`);
+          if (!panel) return;
+          if (panel.hidden === open) panel.hidden = !open;
+          toggleOf(id)?.setAttribute('aria-expanded', String(open));
+          if (sync) syncFold(id, open);
+          if (open) drawPanel(id);
+        };
+        // T4-7: scrolling and focus wait for the first paint (the page holds its render until
+        // #first-view, and Chrome drops a focus asked for before then), then two frames.
+        const afterPaint = (work) => {
+          const frames = () => requestAnimationFrame(() => requestAnimationFrame(work));
+          if (typeof components?.boot?.whenReady === 'function') components.boot.whenReady(frames);
+          else frames();
+        };
+        const openRow = (id, { reveal = false, focus = false, sync = true } = {}) => {
+          const item = document.getElementById(id);
+          if (!item?.matches('.prompts-item')) return false;
+          if (openId && openId !== id) setRow(openId, false);
+          setRow(id, true, { sync });
+          openId = id;
+          if (reveal || focus) {
+            afterPaint(() => {
+              if (openId !== id) return;
+              if (reveal) item.scrollIntoView({ block: 'start' });
+              if (focus) (toggleOf(id) ?? item).focus({ preventScroll: true });
+            });
+          }
+          return true;
+        };
+        const closeRow = (id, { sync = true } = {}) => {
+          setRow(id, false, { sync });
+          if (openId === id) openId = null;
+        };
+        main.addEventListener('click', (event) => {
+          // The summary's own Details (phones): the shared panels toggle the summary after this
+          // (their listener is on the document), so read what it is about to become.
+          const fold = event.target.closest('.prompt-summary-fold');
+          const folded = fold?.closest('.prompts-item');
+          if (folded) {
+            const opening = !fold.closest('[data-prompt-summary]')?.hasAttribute('data-prompt-unfolded');
+            if (opening) openRow(folded.id, { sync: false });
+            else closeRow(folded.id, { sync: false });
+            return;
+          }
+          const toggle = event.target.closest('[data-prompt-expand]');
+          if (!toggle) return;
+          const id = toggle.dataset.promptExpand;
+          if (toggle.getAttribute('aria-expanded') === 'true') closeRow(id);
+          else openRow(id);
+        });
+        // On this page a prompt opens here, not in the drawer (PL contract 2.2): a plain open
+        // (a link from the untested line, Open in Prompts, ?prompt=) expands its row; Edit as a
+        // new version, Compare, and See the prompt from inside a prompt's control keep the
+        // drawer, this page's editor and the system prompt's reader.
+        document.addEventListener('jobdeputy:prompt-open', (event) => {
+          const detail = event.detail ?? {};
+          if (detail.edit || detail.compare) return;
+          if (detail.opener?.closest?.('.prompt-control, .prompt-drawer')) return;
+          if (!document.getElementById(String(detail.id ?? ''))?.matches('.prompts-item')) return;
+          event.preventDefault();
+          openRow(detail.id, { reveal: true, focus: true });
+        });
+        // T7-21: a link that names a version (?version=tailor-v2#tailor, the Dashboard's) opens
+        // the prompt on that version, chosen in its menu as you would, once per visit.
+        const parameters = new URLSearchParams(window.location.search);
+        let namedVersion = parameters.get('version') ?? '';
+        const chooseNamed = (item) => {
+          if (!namedVersion) return;
+          // The control draws its menu when the shared panels start; until then, wait.
+          const select = item.querySelector('.prompt-control-select');
+          if (!select) return;
+          const wanted = namedVersion;
+          namedVersion = '';
+          if (select.value === wanted) return;
+          if (![...select.options].some((option) => option.value === wanted)) return;
+          select.value = wanted;
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+        };
+        const followHash = () => {
+          const id = window.location.hash.slice(1);
+          const item = id ? document.getElementById(id) : null;
+          if (!item?.matches('.prompts-item')) return;
+          openRow(id);
+          chooseNamed(item);
+        };
+        window.addEventListener('hashchange', followHash);
+        // R10-3: ?prompt=<task id or alias>&return=<page> opens that prompt here, under the sticky
+        // header, with Back to <page> in the intro (the shared place helper draws it from
+        // data-page-back). &edit=<version id> and &compare=1 then open the editor or Compare.
+        const asked = parameters.get('prompt') ?? '';
+        const askedId = asked && typeof panels()?.promptFor === 'function' ? panels().promptFor(asked) : '';
+        const followAsked = () => {
+          if (!askedId) return;
+          openRow(askedId, { reveal: true, focus: true });
+          const edit = parameters.get('edit');
+          if (edit) panels()?.openPrompt?.(askedId, { edit, opener: toggleOf(askedId) });
+          else if (parameters.get('compare') === '1') {
+            panels()?.openPrompt?.(askedId, { compare: true, opener: toggleOf(askedId) });
+          }
+        };
+        main.addEventListener('prompt-control', (event) => {
+          if (event.detail?.action === 'test' && event.detail.ok) openRow(event.detail.id);
+        });
+        // A test running, wherever it was started, opens its prompt with the live view, on load
+        // and when it starts; once per test, so closing it keeps it closed.
+        const shownRunning = new Set();
+        const openRunning = () => {
+          const running = (testsNow().prompts ?? []).find(
+            (entry) => entry.running && !shownRunning.has(`${entry.id}|${entry.running.versionId}`),
+          );
+          if (!running) return;
+          shownRunning.add(`${running.id}|${running.running.versionId}`);
+          openRow(running.id);
+        };
+
+        // What runs the prompts (T5-18), from the store: the AI setting, and the models of the work
+        // a run includes in the last 30 days.
+        const fillModel = () => {
+          const choice = call('aiChoice');
+          const line = $('#prompts-model');
+          const run = call('usage', { range: '30d', group: 'model', filter: { key: ['run'] } });
+          const included = run?.totals?.included ?? {};
+          const words = modelWords(choice, {
+            text: included.text ?? '',
+            models: (run?.groups ?? []).filter((group) => !group.other && group.calls > 0).map((group) => group.label),
+          });
+          const first = line.firstChild;
+          if (first?.nodeType === 3 && first.textContent !== `${words} `) first.textContent = `${words} `;
+        };
+
+        // ---------------------------------------------------------------- rollback rules
+
+        // A rules form for the account or one prompt: the fields, each one's effect, the state in
+        // words, and Save; the account's has Reset to the defaults, a prompt's Use your account's
+        // rules.
+        const fieldId = (scope, key) => `rules-${scope}-${key}`;
+        const formMarkup = (scope, settings) => {
+          const groups = Object.entries(GROUPS).map(([group, legend]) => {
+            const fields = RULES.filter((rule) => rule.group === group).map((rule) => {
+              const id = fieldId(scope, rule.key);
+              const effect = `<p class="field-help prompts-effect" id="${id}-effect" data-rule-effect="${rule.key}">${esc(rule.effect(settings[rule.key], settings))}</p>`;
+              const error = `<p class="feedback-error" id="${id}-error" data-rule-error="${rule.key}" hidden></p>`;
+              // The field's own id, name, and description, written once for either kind.
+              const field = `id="${id}" name="${rule.key}" aria-describedby="${id}-effect"`;
+              if (rule.kind === 'toggle') {
+                return `<div class="prompts-rule"><label class="prompts-check"><input type="checkbox" ${field}${settings[rule.key] ? ' checked' : ''} /><span>${esc(rule.label)}</span></label>${effect}${error}</div>`;
+              }
+              return `<div class="prompts-rule"><label class="field-label" for="${id}">${esc(rule.label)}</label><span class="prompts-rule-input"><input class="field-control" type="number" inputmode="numeric" ${field} min="${rule.min}" max="${rule.max}" step="1" value="${esc(settings[rule.key])}" /><span class="prompts-unit">${esc(rule.unit)}</span></span>${effect}${error}</div>`;
+            });
+            return `<fieldset class="prompts-rules-group"><legend class="field-label">${esc(legend)}</legend>${fields.join('')}</fieldset>`;
+          });
+          const account = scope === 'account';
+          const second = account
+            ? '<button type="button" class="secondary-action" data-rules-reset>Reset to the defaults</button>'
+            : `<button type="button" class="secondary-action" data-rules-clear${(settings.overridden ?? []).length ? '' : ' hidden'}>Use your account’s rules</button>`;
+          return `<div class="prompts-rules-groups">${groups.join('')}</div><p class="prompts-rules-state" data-rules-state>${esc(stateLine(settings, scope))}</p><div class="prompts-rules-actions"><button type="submit" class="primary-action">${account ? 'Save the rules' : 'Save this prompt’s rules'}</button>${second}</div>`;
+        };
+        const settingsFor = (scope) => call('rolloutSettings', scope === 'account' ? undefined : scope);
+
+        // T3-2: a form you changed and have not saved is never drawn again (the large account's
+        // store changes every few seconds); a clean one is drawn again only when its settings
+        // change, so its controls stay put (R9-3). Save, Reset, and Use your account's rules draw
+        // it fresh.
+        const drawForm = (form, { force = false } = {}) => {
+          if (!force && form.dataset.dirty === 'true') return;
+          const scope = form.dataset.rulesScope;
+          const settings = settingsFor(scope);
+          const signature = settings ? JSON.stringify(settings) : 'none';
+          if (!force && form.dataset.signature === signature) return;
+          form.dataset.signature = signature;
+          delete form.dataset.dirty;
+          if (!settings) {
+            form.innerHTML = '<p class="prompts-rules-state">Rollback rules aren’t available here.</p>';
+            return;
+          }
+          form.innerHTML = formMarkup(scope, settings);
+        };
+        // A prompt's own rules in a few words on its fold's summary.
+        const fillOwnState = (id) => {
+          const meta = $(`[data-own-state="${id}"]`, main);
+          const settings = settingsFor(id);
+          if (!meta || !settings) return;
+          const own = Array.isArray(settings.overridden) ? settings.overridden.length : 0;
+          const words = own ? `${plural(own, 'rule', 'rules')} of its own` : 'Your account’s rules';
+          if (meta.textContent !== words) meta.textContent = words;
+        };
+        // The effect lines follow what you type, before you save.
+        const draftOf = (form) => {
+          const settings = { ...(settingsFor(form.dataset.rulesScope) ?? {}) };
+          for (const rule of RULES) {
+            const input = form.elements[rule.key];
+            if (!input) continue;
+            const read = readRule(rule, rule.kind === 'toggle' ? input.checked : input.value);
+            if (read.ok) settings[rule.key] = read.value;
+          }
+          return settings;
+        };
+        const syncEffects = (form) => {
+          const draft = draftOf(form);
+          for (const rule of RULES) {
+            const line = $(`[data-rule-effect="${rule.key}"]`, form);
+            if (line) line.textContent = rule.effect(draft[rule.key], draft);
+          }
+        };
+        const showError = (form, key, why) => {
+          const input = form.elements[key];
+          const error = $(`[data-rule-error="${key}"]`, form);
+          if (!input || !error) return;
+          error.textContent = why ?? '';
+          error.hidden = !why;
+          const described = [`${input.id}-effect`, ...(why ? [`${input.id}-error`] : [])];
+          input.setAttribute('aria-describedby', described.join(' '));
+          if (why) input.setAttribute('aria-invalid', 'true');
+          else input.removeAttribute('aria-invalid');
+        };
+        const saved = (form, words, speech) => {
+          drawForm(form, { force: true });
+          say(words);
+          deputy()?.react?.('saved', { speech });
+          const state = $('[data-rules-state]', form);
+          if (state) state.textContent = `${words} ${state.textContent}`;
+          if (form.dataset.rulesScope !== 'account') fillOwnState(form.dataset.rulesScope);
+        };
+        const save = (form) => {
+          const scope = form.dataset.rulesScope;
+          const patch = {};
+          let first = null;
+          for (const rule of RULES) {
+            const input = form.elements[rule.key];
+            if (!input) continue;
+            const read = readRule(rule, rule.kind === 'toggle' ? input.checked : input.value);
+            showError(form, rule.key, read.ok ? '' : read.why);
+            if (!read.ok) first ??= input;
+            else patch[rule.key] = read.value;
+          }
+          if (first) {
+            first.focus();
+            say('Check the rules: one needs a whole number in its range.');
+            deputy()?.react?.('error');
+            return;
+          }
+          let result;
+          if (scope === 'account') {
+            result = call('setRolloutSettings', patch);
+          } else {
+            // A prompt keeps as its own only what differs from your account's rules.
+            const account = settingsFor('account') ?? {};
+            const own = Object.fromEntries(
+              Object.entries(patch).filter(([key, value]) => account[key] !== value),
+            );
+            call('setRolloutSettings', null, { promptId: scope });
+            result = Object.keys(own).length
+              ? call('setRolloutSettings', own, { promptId: scope })
+              : { ok: true };
+          }
+          if (!result || result.ok === false) {
+            if (result?.field) {
+              showError(form, result.field, result.why);
+              form.elements[result.field]?.focus();
+            }
+            say(result?.why ?? 'The rules couldn’t be saved. Try again.');
+            deputy()?.react?.('error');
+            return;
+          }
+          saved(form, 'Saved.', 'I’ll follow these rules.');
+          form.querySelector('[type="submit"]')?.focus();
+        };
+        const resetAccount = (form) => {
+          const base = settingsFor('account')?.systemDefault;
+          const result = base
+            ? call(
+                'setRolloutSettings',
+                Object.fromEntries(RULES.map((rule) => [rule.key, base[rule.key]])),
+              )
+            : null;
+          if (!result || result.ok === false) {
+            say('The defaults couldn’t be put back. Try again.');
+            return;
+          }
+          saved(form, 'Back to the defaults.', 'Back to the defaults.');
+          form.querySelector('[data-rules-reset]')?.focus();
+        };
+        const clearOwn = (form) => {
+          const result = call('setRolloutSettings', null, { promptId: form.dataset.rulesScope });
+          if (!result || result.ok === false) {
+            say('That didn’t work. Try again.');
+            return;
+          }
+          saved(form, 'This prompt follows your account’s rules again.', 'Account rules again.');
+          form.querySelector('[type="submit"]')?.focus();
+        };
+        for (const form of $$('.prompts-rules', main)) {
+          form.addEventListener('submit', (event) => {
+            event.preventDefault();
+            save(form);
+          });
+          const edited = () => {
+            form.dataset.dirty = 'true';
+            syncEffects(form);
+          };
+          form.addEventListener('input', edited);
+          form.addEventListener('change', edited);
+          form.addEventListener('click', (event) => {
+            if (event.target.closest('[data-rules-reset]')) resetAccount(form);
+            else if (event.target.closest('[data-rules-clear]')) clearOwn(form);
+          });
+        }
+        // The account's rules in one short line on their disclosure's summary.
+        const fillRulesNow = () => {
+          const settings = settingsFor('account');
+          for (const [selector, words] of [
+            ['#prompts-rules-now', rulesBrief(settings)],
+            ['#prompts-rules-sentence', rulesSentence(settings)],
+          ]) {
+            const line = $(selector);
+            if (words && line.textContent !== words) line.textContent = words;
+          }
+        };
+        // A link to the rules (a result's Rollback rules, the drawer's Change the rules) opens them.
+        const openRules = () => {
+          if (window.location.hash === '#rollout') $('#rollout').open = true;
+        };
+        openRules();
+        window.addEventListener('hashchange', openRules);
+        // The account's form (unless you changed it and have not saved); each prompt's own form is
+        // drawn when its prompt opens (drawPanel).
+        const drawAccountForm = () => drawForm($('#prompts-rules'));
+
+        // ---------------------------------------------------------------- start
+
+        const render = () => {
+          const list = Array.isArray(testsNow().prompts) ? testsNow().prompts : [];
+          fillMetrics();
+          drawUntested(list);
+          drawNumbers(list);
+          fillStates(list);
+          fillModel();
+          fillRulesNow();
+          drawAccountForm();
+          if (openId) drawPanel(openId);
+          openRunning();
+        };
+        render();
+        // The summaries and the controls are the shared panels' (drawn when they start, just
+        // after this script); a link that names a prompt, a version, or a return opens once they
+        // are there, and the page shows itself in one frame (R10-1).
+        const begin = () => {
+          followHash();
+          followAsked();
+          if (namedVersion && openId) chooseNamed(document.getElementById(openId));
+          components?.place?.remember?.(() => ({ open: openId }));
+          components?.place?.restore?.((saved) => {
+            if (saved?.open && !askedId) openRow(saved.open);
+          });
+          components?.boot?.ready?.();
+        };
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', begin, { once: true });
+        } else {
+          begin();
+        }
+        // A named version waits for its prompt's menu (drawn by the shared panels at their start).
+        if (namedVersion) {
+          const named = () => {
+            if (openId) chooseNamed(document.getElementById(openId));
+          };
+          window.addEventListener('load', named, { once: true });
+        }
+        // T3-19: a work tick's live progress (a test's decisions) saves nothing and changes only
+        // the state lines; every other change draws the page again, in place.
+        store.subscribe?.((_state, change) => {
+          if (change?.progress) fillStates();
+          else render();
+        });
+        store.onWork?.(() => fillStates());
+
+        // A link to a prompt (#read) or to the rules (#rollout) lands on it below the fixed
+        // header; the shared scroll rules do the rest.
+        components?.tour?.sync?.();
+      })();
+    </script>
+    <span id="first-view" hidden></span>
+  </body>
+</html>

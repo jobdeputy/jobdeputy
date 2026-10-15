@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A sample of JobDeputy's daily summary email: today's figures, your To-do, what changed since yesterday, and a link to your live Dashboard."
+    />
+    <title>JobDeputy · Sample daily email</title>
+    <link rel="icon" href="./jobdeputy-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./app-chrome.css" />
+    <link rel="stylesheet" href="./app-components.css" />
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #1b1a18;
+        --ink-soft: #2d2b27;
+        --muted: #706d66;
+        --quiet: #98948b;
+        --paper: #faf8f3;
+        --paper-deep: #f0ece3;
+        --surface: rgba(255, 255, 255, 0.82);
+        --surface-strong: rgba(255, 255, 255, 0.92);
+        --header-surface: rgba(250, 248, 243, 0.82);
+        --line: rgba(27, 26, 24, 0.12);
+        --line-soft: rgba(27, 26, 24, 0.08);
+        --line-strong: rgba(27, 26, 24, 0.24);
+        --green: #2f9e77;
+        --green-soft: #ccebdc;
+        --green-wash: rgba(204, 235, 220, 0.55);
+        --green-line: rgba(47, 158, 119, 0.36);
+        --green-ink: #23795b;
+        --orange: #f36b3f;
+        --orange-soft: #ffd5c6;
+        --danger-ink: #9c4028;
+        --blue: #526fe5;
+        --blue-soft: #d9def8;
+        --on-ink-muted: rgba(255, 255, 255, 0.68);
+        --shadow: 0 21px 55px rgba(55, 48, 36, 0.07);
+        --shadow-control: 0 10px 21px rgba(27, 26, 24, 0.15);
+        --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+        --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+        --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+        --font-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+        font-family: var(--font-text);
+        font-synthesis: none;
+      }
+
+      /*
+       * The sample daily email (round 7, D8): the email as it would arrive, not a page of the app,
+       * so it has no app header, sidebar, deputy, or tour. A preview bar (Back, and that it is a
+       * sample), then the email in a 600px column on the paper canvas: who it is from and to, the
+       * subject, then the body: today's figures, the To-do, what changed since yesterday, Open
+       * your live Dashboard, and the footer (why you get it, what it costs, Unsubscribe).
+       */
+
+      html {
+        min-height: 100%;
+        background: var(--paper);
+      }
+
+      body {
+        margin: 0;
+        color: var(--ink);
+        background: var(--paper);
+        font-size: 16px;
+        line-height: 1.5;
+      }
+
+      .email-bar {
+        display: flex;
+        width: min(600px, calc(100% - 26px));
+        flex-wrap: wrap;
+        gap: 8px 21px;
+        margin: 0 auto;
+        padding: 21px 0 13px;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .email-bar .page-back {
+        margin: 0 0 0 -8px;
+        order: 0;
+      }
+
+      .email-bar .sample-note {
+        margin: 0;
+      }
+
+      .email-stage {
+        width: min(600px, calc(100% - 26px));
+        margin: 0 auto;
+        padding: 0 0 55px;
+      }
+
+      .email {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: var(--surface-strong);
+        box-shadow: var(--shadow);
+      }
+
+      /* The envelope: from, to, and the subject, as a mail app shows them. */
+      .email-envelope {
+        display: grid;
+        grid-template-columns: max-content minmax(0, 1fr);
+        gap: 4px 13px;
+        margin: 0;
+        padding: 21px 34px;
+        border-bottom: 1px solid var(--line);
+        color: var(--ink-soft);
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      .email-envelope dt {
+        color: var(--muted);
+        font-weight: 650;
+      }
+
+      .email-envelope dd {
+        min-width: 0;
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+
+      .email-subject {
+        color: var(--ink);
+        font-weight: 700;
+      }
+
+      .email-body {
+        display: grid;
+        gap: 34px;
+        padding: 34px;
+      }
+
+      .email-head {
+        display: flex;
+        gap: 13px;
+        align-items: center;
+      }
+
+      .email-mark {
+        display: block;
+        width: 55px;
+        height: auto;
+      }
+
+      .email-brand {
+        margin: 0;
+        font-size: 19px;
+        font-weight: 720;
+        letter-spacing: -0.05em;
+        line-height: 1;
+      }
+
+      .email-title {
+        display: grid;
+        gap: 4px;
+      }
+
+      .email-title h1 {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: clamp(32px, 6vw, 40px);
+        font-weight: 500;
+        letter-spacing: -0.05em;
+        line-height: 1;
+      }
+
+      .email-date,
+      .email-lede {
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+      }
+
+      .email-section {
+        display: grid;
+        gap: 13px;
+      }
+
+      .email-section h2 {
+        margin: 0;
+        color: var(--ink);
+        font-size: 15px;
+        font-weight: 700;
+        line-height: 1.35;
+      }
+
+      /* Today's figures, two to a row (one on the narrowest phones). */
+      .email-glance {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 13px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      /* An odd last figure takes the whole row, so no cell stands empty. */
+      .email-glance > li:last-child:nth-child(odd) {
+        grid-column: 1 / -1;
+      }
+
+      @media (width <= 360px) {
+        .email-glance {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+
+      .email-figure {
+        display: grid;
+        gap: 4px;
+        padding: 13px 21px;
+        border: 1px solid var(--line);
+        border-radius: 13px;
+        color: inherit;
+        background: var(--paper);
+        text-decoration: none;
+      }
+
+      a.email-figure:hover {
+        border-color: var(--line-strong);
+      }
+
+      a.email-figure:focus-visible,
+      .email-list a:focus-visible,
+      .email-foot a:focus-visible {
+        outline: 2px solid var(--green);
+        outline-offset: 2px;
+      }
+
+      .email-figure-value {
+        color: var(--ink);
+        font-family: var(--font-display);
+        font-size: 28px;
+        font-variant-numeric: lining-nums tabular-nums;
+        font-weight: 500;
+        letter-spacing: -0.04em;
+        line-height: 1.05;
+      }
+
+      .email-figure-label {
+        color: var(--ink-soft);
+        font-size: 13px;
+        font-weight: 650;
+        line-height: 1.4;
+      }
+
+      .email-list {
+        display: grid;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .email-list > li + li {
+        border-top: 1px solid var(--line);
+      }
+
+      .email-list a,
+      .email-list .email-item {
+        display: grid;
+        min-height: 44px;
+        gap: 2px;
+        padding: 8px 0;
+        align-content: center;
+        color: var(--ink);
+        font-size: 15px;
+        line-height: 1.4;
+        text-decoration: none;
+      }
+
+      .email-item-title {
+        font-weight: 650;
+      }
+
+      .email-list.is-plain .email-item-title {
+        font-weight: 400;
+      }
+
+      .email-list a:hover .email-item-title {
+        text-decoration: underline;
+        text-decoration-color: var(--green-line);
+        text-underline-offset: 3px;
+      }
+
+      .email-item-detail,
+      .email-more,
+      .email-none {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      .email-cta {
+        margin: 0;
+      }
+
+      .email-foot {
+        display: grid;
+        gap: 6px;
+        padding-top: 21px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .email-foot p {
+        margin: 0;
+      }
+
+      /* Each footer link keeps a 44px target in its line. */
+      .email-foot a {
+        display: inline-flex;
+        min-height: 44px;
+        align-items: center;
+        color: var(--ink);
+        font-weight: 650;
+        text-decoration: underline;
+        text-decoration-color: var(--green-line);
+        text-underline-offset: 3px;
+      }
+
+      @media (width <= 720px) {
+        .email-envelope,
+        .email-body {
+          padding-inline: 21px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="email-bar">
+      <a class="page-back" id="email-back" href="./home-preview.html?skipLoader" data-page-back-link><svg class="page-back-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9.75 3.5-4.5 4.5 4.5 4.5"></path></svg><span id="email-back-name">Back to the Dashboard</span></a>
+      <p class="sample-note">Sample email · nothing is sent</p>
+    </header>
+    <main class="email-stage" id="main">
+      <article class="email" aria-labelledby="email-title">
+        <dl class="email-envelope" id="email-envelope"><dt>From</dt><dd>JobDeputy</dd><dt>To</dt><dd>alex.morgan@example.com</dd><dt>Subject</dt><dd class="email-subject">Your JobDeputy summary for Fri, Oct 2</dd></dl>
+        <div class="email-body">
+          <div class="email-head">
+            <img class="email-mark" src="./jobdeputy-mark.svg" alt="" width="400" height="290" />
+            <p class="email-brand">JobDeputy</p>
+          </div>
+          <div class="email-title">
+            <p class="email-date" id="email-date">Friday, October 2</p>
+            <h1 id="email-title">Your morning summary</h1>
+            <p class="email-lede" id="email-lede">Good morning, Alex. Here is where things stand.</p>
+          </div>
+          <section class="email-section" aria-labelledby="glance-title">
+            <h2 id="glance-title">Today at a glance</h2>
+            <ul class="email-glance" id="email-glance"><li><a class="email-figure" href="./shop-preview.html#nightly"><span class="email-figure-value" data-metric="summary.asOf.runs.left">5</span><span class="email-figure-label">Runs left</span></a></li><li><a class="email-figure" href="./jobs-preview.html"><span class="email-figure-value" data-metric="summary.asOf.jobs.toReview">23</span><span class="email-figure-label">Roles to review</span></a></li><li><a class="email-figure" href="./applications-preview.html"><span class="email-figure-value" data-metric="summary.asOf.apps.waiting">0</span><span class="email-figure-label">Waiting for your approval</span></a></li><li><a class="email-figure" href="./applications-preview.html"><span class="email-figure-value" data-metric="summary.asOf.apps.interviews">1</span><span class="email-figure-label">Interviews coming up</span></a></li><li><a class="email-figure" href="./usage-preview.html"><span class="email-figure-value" data-metric="summary.asOf.tokens.left">242,820</span><span class="email-figure-label">Tokens left</span></a></li></ul>
+            <p class="email-more" id="email-asof">A sample with this morning’s figures, as of 08:00; the To-do is as of now.</p>
+          </section>
+          <section class="email-section" aria-labelledby="todo-title">
+            <h2 id="todo-title">Your To-do</h2>
+            <div id="email-todo"><ol class="email-list"><li><a href="./agreement-preview.html?mode=update"><span class="email-item-title">Review and sign the updated agreement</span><span class="email-item-detail">Version 2026.10 · your deputy pauses Thu, Oct 15 if it isn’t signed</span></a></li><li><a href="./materials-preview.html?app=search-infra&amp;from=applications"><span class="email-item-title">Approve materials for Search Infrastructure</span><span class="email-item-detail">Google · tailored résumé and cover letter</span></a></li><li><a href="./shop-preview.html#nightly"><span class="email-item-title">Runs last through Sat, Oct 3</span><span class="email-item-detail">83 more runs keep both sources watched and Gmail scanned through Oct 31</span></a></li><li><a href="./applications-preview.html?open=northwind-backend"><span class="email-item-title">Prepare for the Northwind interview</span><span class="email-item-detail">Phone screen Tue, Oct 6, 10:00</span></a></li><li><a href="./searches-preview.html?source=acme"><span class="email-item-title">Fix the Acme source</span><span class="email-item-detail">Stopped Sep 28: The page took too long to load</span></a></li></ol><p class="email-more">And 1 more on your Dashboard.</p></div>
+          </section>
+          <section class="email-section" aria-labelledby="changes-title">
+            <h2 id="changes-title">What changed since yesterday</h2>
+            <div id="email-changes"><ul class="email-list is-plain"><li><a href="./applications-preview.html?open=northwind-platform"><span class="email-item-title">Read an email from Jamie Chen, Northwind Labs: Needs your reply</span><span class="email-item-detail">Your deputy · Today, 07:00</span></a></li><li><a href="./applications-preview.html?open=amazon-sde2"><span class="email-item-title">Read an email from Amazon Recruiting: No change</span><span class="email-item-detail">Your deputy · Today, 07:00</span></a></li><li><a href="./applications-preview.html?open=northwind-backend"><span class="email-item-title">Read an email from Riley Park, Northwind Labs: Needs your reply</span><span class="email-item-detail">Your deputy · Today, 07:00</span></a></li><li><a href="./applications-preview.html?open=devex"><span class="email-item-title">Read an email from Casey Nguyen, Google: Move to Closed waits for your signature</span><span class="email-item-detail">Your deputy · Today, 07:00</span></a></li><li><a href="./applications-preview.html?open=amazon-sde2"><span class="email-item-title">Read an email from Amazon Recruiting: Move to Interviewing waits for your signature</span><span class="email-item-detail">Your deputy · Today, 07:00</span></a></li><li><a href="./applications-preview.html?open=devex"><span class="email-item-title">Read an email from Google Careers: No change</span><span class="email-item-detail">Your deputy · Today, 07:00</span></a></li><li><a href="./connections-preview.html#gmail"><span class="email-item-title">Scanned Gmail: read 6 job emails</span><span class="email-item-detail">Your deputy · Today, 07:00</span></a></li><li><a href="./jobs-preview.html?job=azure-sre"><span class="email-item-title">Saved Senior Site Reliability Engineer, Azure Compute at Microsoft</span><span class="email-item-detail">Your deputy · Today, 02:02</span></a></li></ul></div>
+          </section>
+          <p class="email-cta"><a class="primary-action" id="email-open" href="./home-preview.html?skipLoader">Open your live Dashboard</a></p>
+          <footer class="email-foot" id="email-foot"><p>You get this because you turned on the daily summary in Settings, Account.</p><p>Each summary uses 1 run.</p><p><a href="./account-preview.html#emails">Unsubscribe</a> or <a href="./account-preview.html#emails">change the time</a> in Settings, Account.</p><p>JobDeputy keeps your data in your home Region.</p></footer>
+        </div>
+      </article>
+    </main>
+
+    <script src="./sample-store.js"></script>
+    <script src="./app-components.js"></script>
+    <script>
+      // EmailModel: start (pure functions of the shared sample store; dashboard.test.ts runs them)
+      // Every figure is the store's summaryEmail() glance, each on its own element with its
+      // data-metric, once. The words are the store's: the To-do, what changed since yesterday's
+      // email, and the footer's reason, cost, and links.
+      // `date` (YYYY-MM-DD) shows an email already sent (Activity's rows link ?date=, T5-17).
+      const emailModel = (store, date = null) => {
+        if (typeof store?.summaryEmail !== 'function') return null;
+        const email = store.summaryEmail(date ? { date } : {});
+        return {
+          subject: email.subject,
+          to: email.to,
+          at: email.at,
+          // The day it was sent, written out ("Friday, October 2").
+          date: email.at
+            ? new Date(`${String(email.at).slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+                timeZone: 'UTC',
+              })
+            : '',
+          greeting: email.greeting ?? '',
+          // The glance is as it stood when it was sent; the store says so (T6-15).
+          asOf:
+            email.figuresNote ??
+            (email.figuresAsOf && email.figuresAsOf !== email.at
+              ? `With today’s figures, as of ${store.format.time(email.figuresAsOf)}.`
+              : ''),
+          glance: (email.glance ?? []).map((item) => ({
+            id: item.id,
+            label: item.label,
+            figure: item.metric
+              ? { key: item.metric, text: store.metricText(item.metric) || String(item.text ?? item.value ?? '') }
+              : { text: String(item.text ?? item.value ?? '') },
+            href: item.href ?? '',
+          })),
+          todo: (email.todo ?? []).map((item) => ({
+            id: item.id,
+            title: item.title,
+            detail: item.detail ?? '',
+            href: item.href ?? '',
+          })),
+          todoMore: Number(email.todoMore) || 0,
+          // Each change with who did it and when, its day in the store's words ("Your deputy ·
+          // Yesterday, 12:00", T1-26); the time alone only from a store without them.
+          changes: (email.changes ?? []).map((item) => ({
+            id: item.id,
+            text: item.text,
+            when: [WHO[item.who] ?? '', item.when || (item.at ? store.format.time(item.at) : '')]
+              .filter(Boolean)
+              .join(' · '),
+            href: item.href ?? '',
+          })),
+          dashboard: email.dashboard ?? { label: 'Open your live Dashboard', href: './home-preview.html' },
+          footer: email.footer ?? {},
+        };
+      };
+      const WHO = { you: 'You', deputy: 'Your deputy', jobdeputy: 'JobDeputy' };
+      // Back goes where you came from (?return=, a page of this prototype only), else the
+      // Dashboard; it names the page.
+      const BACK_NAMES = { home: 'the Dashboard', account: 'Account' };
+      const backTo = (search) => {
+        let value = '';
+        try {
+          value = decodeURIComponent(String(search).match(/[?&]return=([^&#]*)/)?.[1] ?? '');
+        } catch {
+          value = '';
+        }
+        const page = value.match(/^(?:\.\/)?([a-z]+)-preview\.html(?:[?#][^\s]*)?$/)?.[1];
+        if (!page || !Object.hasOwn(BACK_NAMES, page)) {
+          return { href: './home-preview.html?skipLoader', name: 'Back to the Dashboard' };
+        }
+        return { href: `./${value.replace(/^\.\//, '')}`, name: `Back to ${BACK_NAMES[page]}` };
+      };
+      // EmailModel: end
+      // EmailViews: start (markup for the regions the model fills; the page ships the seed's render)
+      const escapeHtml = (value) =>
+        String(value).replace(
+          /[&<>"']/g,
+          (character) =>
+            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character],
+        );
+      const attr = (name, value) => `${name}="${escapeHtml(value)}"`;
+      const metricMarkup = (fig, className) =>
+        fig.key
+          ? `<span class="${className}" data-metric="${escapeHtml(fig.key)}">${escapeHtml(fig.text)}</span>`
+          : `<span class="${className}">${escapeHtml(fig.text)}</span>`;
+      const envelopeMarkup = (email) =>
+        `<dt>From</dt><dd>JobDeputy</dd><dt>To</dt><dd>${escapeHtml(email.to)}</dd><dt>Subject</dt><dd class="email-subject">${escapeHtml(email.subject)}</dd>`;
+      const glanceMarkup = (email) =>
+        email.glance
+          .map((item) => {
+            const inner = `${metricMarkup(item.figure, 'email-figure-value')}<span class="email-figure-label">${escapeHtml(item.label)}</span>`;
+            return `<li>${item.href ? `<a class="email-figure" ${attr('href', item.href)}>${inner}</a>` : `<span class="email-figure">${inner}</span>`}</li>`;
+          })
+          .join('');
+      const itemMarkup = (item, title, detail) => {
+        const inner = `<span class="email-item-title">${escapeHtml(title)}</span>${detail ? `<span class="email-item-detail">${escapeHtml(detail)}</span>` : ''}`;
+        return `<li>${item.href ? `<a ${attr('href', item.href)}>${inner}</a>` : `<span class="email-item">${inner}</span>`}</li>`;
+      };
+      const todoMarkup = (email) =>
+        email.todo.length
+          ? `<ol class="email-list">${email.todo.map((item) => itemMarkup(item, item.title, item.detail)).join('')}</ol>${email.todoMore ? `<p class="email-more">And ${email.todoMore} more on your Dashboard.</p>` : ''}`
+          : '<p class="email-none">Nothing needs you today.</p>';
+      const changesMarkup = (email) =>
+        email.changes.length
+          ? `<ul class="email-list is-plain">${email.changes.map((item) => itemMarkup(item, item.text, item.when)).join('')}</ul>`
+          : '<p class="email-none">Nothing changed since yesterday’s email.</p>';
+      const footMarkup = (email) =>
+        `${email.footer.why ? `<p>${escapeHtml(email.footer.why)}</p>` : ''}${email.footer.runs ? `<p>${escapeHtml(email.footer.runs)}</p>` : ''}<p><a ${attr('href', email.footer.manageHref ?? './account-preview.html#emails')}>Unsubscribe</a> or <a ${attr('href', email.footer.manageHref ?? './account-preview.html#emails')}>change the time</a> in Settings, Account.</p><p>JobDeputy keeps your data in your home Region.</p>`;
+      const emailRegions = (store, date = null) => {
+        const email = emailModel(store, date);
+        if (!email) return null;
+        return {
+          'email-envelope': envelopeMarkup(email),
+          'email-date': escapeHtml(email.date),
+          'email-lede': escapeHtml(email.greeting),
+          'email-asof': escapeHtml(email.asOf),
+          'email-glance': glanceMarkup(email),
+          'email-todo': todoMarkup(email),
+          'email-changes': changesMarkup(email),
+          'email-foot': footMarkup(email),
+        };
+      };
+      // EmailViews: end
+
+      const store = window.JobDeputyStore;
+      const sentOn = (window.location.search.match(/[?&]date=(\d{4}-\d\d-\d\d)/) ?? [])[1] ?? null;
+      // Back is the shared place's (R10-3, T4-10): it goes to the page you came from as you left it
+      // (its scroll, the control you pressed), and says that page's name; without the shared
+      // components, the page's own safe ?return= reading.
+      const shared = window.JobDeputyComponents?.place?.back ?? null;
+      const back = shared?.href ? { href: shared.href, name: `Back to ${shared.name}` } : backTo(window.location.search);
+      document.querySelector('#email-back').setAttribute('href', back.href);
+      document.querySelector('#email-back-name').textContent = back.name;
+      // Draws the email from the store, only where it differs from what is shown, so the first
+      // paint (the seed's render) is never drawn twice; it follows the store's changes.
+      const render = () => {
+        const regions = emailRegions(store, sentOn);
+        if (!regions) return;
+        for (const [id, html] of Object.entries(regions)) {
+          const element = document.getElementById(id);
+          if (element && element.innerHTML !== html) element.innerHTML = html;
+        }
+        const email = emailModel(store, sentOn);
+        const open = document.querySelector('#email-open');
+        open.textContent = email.dashboard.label;
+        open.setAttribute('href', email.dashboard.href.includes('?') ? email.dashboard.href : `${email.dashboard.href}?skipLoader`);
+      };
+      render();
+      store?.subscribe?.(() => render());
+    </script>
+  </body>
+</html>

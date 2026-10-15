@@ -1,0 +1,718 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="JobDeputy's animated identity and loading-story prototype."
+    />
+    <title>JobDeputy · Brand Preview</title>
+    <link rel="icon" href="./jobdeputy-mark.svg" type="image/svg+xml" />
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #1b1a18;
+        --ink-soft: #2d2b27;
+        --muted: #706d66;
+        --quiet: #98948b;
+        --paper: #faf8f3;
+        --paper-deep: #f0ece3;
+        --surface: rgba(255, 255, 255, 0.82);
+        --surface-strong: rgba(255, 255, 255, 0.92);
+        --header-surface: rgba(250, 248, 243, 0.82);
+        --line: rgba(27, 26, 24, 0.12);
+        --line-soft: rgba(27, 26, 24, 0.08);
+        --line-strong: rgba(27, 26, 24, 0.24);
+        --green: #2f9e77;
+        --green-soft: #ccebdc;
+        --green-wash: rgba(204, 235, 220, 0.55);
+        --green-line: rgba(47, 158, 119, 0.36);
+        --green-ink: #23795b;
+        --orange: #f36b3f;
+        --orange-soft: #ffd5c6;
+        --danger-ink: #9c4028;
+        --blue: #526fe5;
+        --blue-soft: #d9def8;
+        --on-ink-muted: rgba(255, 255, 255, 0.68);
+        --shadow: 0 21px 55px rgba(55, 48, 36, 0.07);
+        --shadow-control: 0 10px 21px rgba(27, 26, 24, 0.15);
+        --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+        --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+        --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+        --font-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+        font-family: var(--font-text);
+        font-synthesis: none;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        min-width: 320px;
+        background: var(--paper);
+        scroll-behavior: smooth;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 50% 18%, rgba(255, 255, 255, 0.98), transparent 34rem),
+          var(--paper);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      button {
+        font: inherit;
+      }
+
+      .nav {
+        position: sticky;
+        z-index: 10;
+        top: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 72px;
+        padding: 0 clamp(21px, 4vw, 55px);
+        border-bottom: 1px solid var(--line-soft);
+        background: var(--header-surface);
+        backdrop-filter: saturate(180%) blur(20px);
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      /* The canonical wordmark lockup (docs/design-system.md, Component contract). */
+      .brand {
+        display: inline-flex;
+        min-width: 0;
+        min-height: 44px;
+        gap: 8px;
+        padding-right: 8px;
+        border-radius: 15px;
+        align-items: center;
+        color: var(--ink);
+        text-decoration: none;
+        transition: background 180ms ease;
+      }
+
+      .brand:hover {
+        background: var(--surface);
+      }
+
+      .brand:focus-visible {
+        outline: 2px solid var(--green);
+        outline-offset: 3px;
+      }
+
+      .brand-logo {
+        display: block;
+        width: 62px;
+        height: auto;
+        flex: 0 0 auto;
+      }
+
+      .brand-copy {
+        display: grid;
+        min-width: 0;
+        gap: 3px;
+        line-height: 1;
+      }
+
+      .brand-name {
+        font-size: 19px;
+        font-weight: 720;
+        letter-spacing: -0.05em;
+        line-height: 1;
+        white-space: nowrap;
+      }
+
+      .brand-name > span:first-child {
+        font-weight: 620;
+      }
+
+      .brand-note {
+        color: var(--muted);
+        font-size: 8.5px;
+        font-weight: 680;
+        letter-spacing: 0.075em;
+        line-height: 1;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      .nav-note {
+        color: var(--muted);
+        font-size: 13px;
+        text-decoration: none;
+        transition: color 180ms ease;
+      }
+
+      .nav-note:hover {
+        color: var(--ink);
+      }
+
+      .nav-note:focus-visible {
+        outline: 2px solid var(--green);
+        outline-offset: 3px;
+      }
+
+      main {
+        overflow: hidden;
+      }
+
+      .hero {
+        width: min(987px, calc(100% - 42px));
+        margin: 0 auto;
+        padding: 89px 0 55px;
+        text-align: center;
+      }
+
+      .eyebrow {
+        margin: 0 0 13px;
+        color: var(--green-ink);
+        font-size: 13px;
+        font-weight: 750;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        max-width: 900px;
+        margin: 0 auto;
+        font-family: var(--font-display);
+        font-size: clamp(48px, 6.6vw, 82px);
+        font-weight: 500;
+        letter-spacing: -0.055em;
+        line-height: 0.98;
+        text-wrap: balance;
+      }
+
+      .intro {
+        max-width: 610px;
+        margin: 34px auto 0;
+        color: var(--muted);
+        font-size: clamp(17px, 1.6vw, 21px);
+        letter-spacing: -0.02em;
+        line-height: 1.5;
+        text-wrap: pretty;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 13px;
+        justify-content: center;
+        margin-top: 34px;
+      }
+
+      .button {
+        min-height: 52px;
+        padding: 0 21px;
+        border: 1px solid transparent;
+        border-radius: 999px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 620;
+        transition:
+          transform 180ms ease,
+          color 180ms ease,
+          border-color 180ms ease,
+          background 180ms ease;
+      }
+
+      .button:hover {
+        transform: translateY(-1px);
+      }
+
+      /* The shared focus ring (brand/app-chrome.css); the 24% green ring was too faint to see. */
+      .button:focus-visible {
+        outline: 2px solid var(--green);
+        outline-offset: 3px;
+      }
+
+      .primary {
+        color: white;
+        background: var(--ink);
+      }
+
+      .primary:hover {
+        background: var(--ink-soft);
+      }
+
+      .secondary {
+        border-color: var(--line);
+        color: var(--ink);
+        background: var(--surface);
+      }
+
+      .secondary:hover {
+        background: white;
+      }
+
+      .stage-wrap {
+        width: min(987px, calc(100% - 42px));
+        margin: 0 auto;
+        padding-bottom: 89px;
+      }
+
+      .stage {
+        position: relative;
+        display: grid;
+        overflow: hidden;
+        width: 100%;
+        aspect-ratio: 1.618;
+        place-items: center;
+        border: 1px solid var(--line-soft);
+        border-radius: clamp(34px, 5vw, 55px);
+        background:
+          radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.98), transparent 58%),
+          linear-gradient(145deg, var(--paper), var(--paper-deep));
+        box-shadow:
+          0 34px 89px rgba(27, 26, 24, 0.08),
+          inset 0 1px 0 white;
+      }
+
+      .stage::before,
+      .stage::after {
+        position: absolute;
+        border-radius: 50%;
+        content: "";
+        filter: blur(1px);
+        pointer-events: none;
+      }
+
+      .stage::before {
+        top: -46%;
+        right: -17%;
+        width: 52%;
+        aspect-ratio: 1;
+        background: rgba(255, 213, 198, 0.54);
+      }
+
+      .stage::after {
+        bottom: -58%;
+        left: -13%;
+        width: 56%;
+        aspect-ratio: 1;
+        background: rgba(217, 222, 248, 0.5);
+      }
+
+      .logo-shell {
+        position: relative;
+        z-index: 2;
+        width: min(680px, 78%);
+        aspect-ratio: 610 / 377;
+      }
+
+      .logo {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .logo-progress {
+        position: absolute;
+        top: 93.63%;
+        left: 40.49%;
+        width: 19.02%;
+        height: max(3px, 1.06%);
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(27, 26, 24, 0.1);
+        opacity: 1;
+      }
+
+      .logo-progress-fill {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--green);
+        transform: scaleX(0);
+        transform-origin: left center;
+      }
+
+      .stage-status {
+        position: absolute;
+        z-index: 3;
+        bottom: 21px;
+        left: 50%;
+        min-width: 144px;
+        padding: 8px 13px;
+        border: 1px solid var(--line-soft);
+        border-radius: 999px;
+        color: var(--muted);
+        background: var(--surface);
+        font-size: 12px;
+        opacity: 0;
+        text-align: center;
+        transform: translateX(-50%);
+        backdrop-filter: blur(13px);
+        transition: opacity 180ms ease;
+      }
+
+      .stage.is-controlling .stage-status {
+        opacity: 1;
+      }
+
+      .principles {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        width: min(987px, calc(100% - 42px));
+        margin: 0 auto 144px;
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .principle {
+        min-height: 178px;
+        padding: 34px;
+      }
+
+      .principle + .principle {
+        border-left: 1px solid var(--line);
+      }
+
+      .principle-number {
+        display: block;
+        margin-bottom: 21px;
+        color: var(--green-ink);
+        font-size: 12px;
+        font-weight: 750;
+        letter-spacing: 0.12em;
+      }
+
+      .principle h2 {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: 34px;
+        font-weight: 500;
+        letter-spacing: -0.045em;
+      }
+
+      .principle p {
+        margin: 13px 0 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      footer {
+        padding: 34px 21px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 12px;
+        text-align: center;
+      }
+
+      @media (max-width: 720px) {
+        .nav {
+          min-height: 64px;
+          padding: 0 17px;
+        }
+
+        .nav-note {
+          display: none;
+        }
+
+        .brand-name {
+          font-size: 18px;
+        }
+
+        .brand-note {
+          display: none;
+        }
+
+        .hero {
+          padding-top: 55px;
+        }
+
+        .stage {
+          aspect-ratio: 1;
+        }
+
+        .logo-shell {
+          width: 108%;
+        }
+
+        .stage-status {
+          bottom: 13px;
+        }
+
+        .principles {
+          grid-template-columns: 1fr;
+          margin-bottom: 89px;
+        }
+
+        .principle {
+          min-height: 0;
+          padding: 34px 8px;
+        }
+
+        .principle + .principle {
+          border-top: 1px solid var(--line);
+          border-left: 0;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto;
+          transition-duration: 0.01ms;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="nav" aria-label="Brand preview navigation">
+      <!-- As on every app page, the name starts with the visible wordmark and leaves out the
+           tagline (docs/design-system.md, Typography). Sign-in uses the same name for this page. -->
+      <a
+        class="brand"
+        href="./preview.html"
+        aria-label="JobDeputy brand preview"
+        aria-current="page"
+      >
+        <img class="brand-logo" src="./jobdeputy-mark.svg" alt="" width="400" height="290" />
+        <span class="brand-copy">
+          <span class="brand-name"><span>Job</span><span>Deputy</span></span>
+          <span class="brand-note">Your search partner</span>
+        </span>
+      </a>
+      <a class="nav-note" href="./login-preview.html">View login concept →</a>
+    </nav>
+
+    <main>
+      <section class="hero">
+        <p class="eyebrow">A thoughtful search partner</p>
+        <h1>Your next role, thoughtfully found.</h1>
+        <p class="intro">
+          JobDeputy searches, sorts, and brings back the promising work, then waits for you to decide
+          what happens next.
+        </p>
+        <div class="actions">
+          <button class="button primary" id="replay" type="button">Replay search</button>
+          <button class="button secondary" id="progress-demo" type="button">
+            Test loading progress
+          </button>
+        </div>
+        <!-- StatusAnnouncement: set once when a run starts and once when it ends. -->
+        <p
+          class="sr-only"
+          id="stage-announcement"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        ></p>
+      </section>
+
+      <section class="stage-wrap" aria-label="Animated JobDeputy identity">
+        <div class="stage" id="stage">
+          <div class="logo-shell">
+            <img
+              class="logo"
+              id="logo"
+              src="./jobdeputy-animated.svg"
+              alt="A smiling panda scans job cards with a magnifier, keeps the promising one, and completes the loading bar"
+              width="610"
+              height="377"
+            />
+            <span class="logo-progress" aria-hidden="true">
+              <span class="logo-progress-fill" id="logo-progress-fill"></span>
+            </span>
+          </div>
+          <!-- Visible percentage only; #stage-announcement carries the announcements. -->
+          <p class="stage-status" id="stage-status" aria-hidden="true">Searching · sorting · ready</p>
+        </div>
+      </section>
+
+      <section class="principles" aria-label="Animation story">
+        <article class="principle">
+          <span class="principle-number">01 · SEARCH</span>
+          <h2>Look carefully.</h2>
+          <p>
+            The smiling panda carries a magnifier in its right paw across the job cards, its bamboo
+            standing beside it.
+          </p>
+        </article>
+        <article class="principle">
+          <span class="principle-number">02 · SORT</span>
+          <h2>Keep the signal.</h2>
+          <p>Weak options leave the frame; one promising role receives the green check.</p>
+        </article>
+        <article class="principle">
+          <span class="principle-number">03 · RETURN</span>
+          <h2>Bring it back.</h2>
+          <p>
+            The magnifier is put away and the selected role lands in the deputy’s right paw as
+            loading reaches one hundred percent.
+          </p>
+        </article>
+      </section>
+    </main>
+
+    <footer>JobDeputy brand study · Motion respects reduced-motion preferences.</footer>
+
+    <script>
+      const logo = document.querySelector('#logo');
+      const stage = document.querySelector('#stage');
+      const logoProgressFill = document.querySelector('#logo-progress-fill');
+      const replay = document.querySelector('#replay');
+      const progressDemo = document.querySelector('#progress-demo');
+      const stageStatus = document.querySelector('#stage-status');
+      const stageAnnouncement = document.querySelector('#stage-announcement');
+      const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
+      // jobdeputy-animated.svg#settled is the settled final pose without animation. Reduced motion
+      // asks for it by fragment, because not every browser passes the preference into an image.
+      const logoSource = './jobdeputy-animated.svg';
+      const storyDuration = 2605;
+      // Under reduced motion a run ends after this short display, as the opening loader does.
+      const reducedDisplay = 120;
+      // A finished story holds a still pose: this long after it settles, the logo switches to
+      // #settled once, so the breathe and blink loops never run (WCAG 2.2.2). The margin covers
+      // the image starting a little after the fill; the loops barely move this early.
+      const settleMargin = 180;
+      let progressTimer;
+      let doneTimer;
+      let settleTimer;
+      let announcementTimer;
+      let run = 0;
+
+      // The one visually hidden status. Clearing it first lets a repeated message announce again.
+      const announce = (message) => {
+        window.clearTimeout(announcementTimer);
+        stageAnnouncement.textContent = '';
+        announcementTimer = window.setTimeout(() => {
+          stageAnnouncement.textContent = message;
+        }, 40);
+      };
+
+      const showProgress = (progress, showStatus) => {
+        logoProgressFill.style.transform = `scaleX(${progress})`;
+        if (showStatus) {
+          const percent = Math.round(progress * 100);
+          stageStatus.textContent = progress < 1 ? `Loading · ${percent}%` : 'Ready · 100%';
+        }
+      };
+
+      const stopRun = () => {
+        window.clearInterval(progressTimer);
+        window.clearTimeout(doneTimer);
+        window.clearTimeout(settleTimer);
+      };
+
+      // The host fills the underline over the 2.605s story, or at once under reduced motion, then
+      // calls done.
+      const runProgress = (showStatus, done = () => {}) => {
+        stopRun();
+        stage.classList.toggle('is-controlling', showStatus);
+        if (motionPreference.matches) {
+          showProgress(1, showStatus);
+          doneTimer = window.setTimeout(done, reducedDisplay);
+          return;
+        }
+        showProgress(0, showStatus);
+        const startedAt = performance.now();
+        const updateProgress = () => {
+          const progress = Math.min(1, (performance.now() - startedAt) / storyDuration);
+          showProgress(progress, showStatus);
+          if (progress >= 1) {
+            window.clearInterval(progressTimer);
+            done();
+            settleTimer = window.setTimeout(showSettled, settleMargin);
+          }
+        };
+        updateProgress();
+        progressTimer = window.setInterval(updateProgress, 80);
+      };
+
+      // In Chrome, setting an image URL that was used before plays the story again and ignores the
+      // fragment, so #settled goes on the current source, which is unique for every replay.
+      const showSettled = () => {
+        const source = logo.getAttribute('src') ?? logoSource;
+        if (!source.endsWith('#settled')) {
+          logo.src = `${source.split('#')[0]}#settled`;
+        }
+      };
+
+      // Calls back once the logo's current source loads or fails, unless a newer run has started.
+      const whenLogoLoads = (callback) => {
+        const current = run;
+        const ready = () => {
+          logo.removeEventListener('load', ready);
+          logo.removeEventListener('error', ready);
+          if (current === run) {
+            callback();
+          }
+        };
+        logo.addEventListener('load', ready);
+        logo.addEventListener('error', ready);
+      };
+
+      // A fresh query restarts the story at its beginning. Reduced motion shows the settled pose
+      // at once, so there is nothing to wait for.
+      const restartLogo = (onReady) => {
+        stopRun();
+        run += 1;
+        if (motionPreference.matches) {
+          showSettled();
+          onReady();
+          return;
+        }
+        whenLogoLoads(onReady);
+        logo.src = `${logoSource}?replay=${Date.now()}`;
+      };
+
+      const startRun = (showStatus, started, finished) => {
+        announce(started);
+        restartLogo(() => runProgress(showStatus, () => announce(finished)));
+      };
+
+      replay.addEventListener('click', () => {
+        stageStatus.textContent = 'Searching · sorting · ready';
+        startRun(false, 'Replaying the search story.', 'The search story is complete.');
+      });
+
+      progressDemo.addEventListener('click', () => {
+        startRun(true, 'Loading JobDeputy…', 'JobDeputy is ready.');
+      });
+
+      // A run already in progress still finishes and announces its end.
+      motionPreference.addEventListener('change', () => {
+        if (motionPreference.matches) {
+          showSettled();
+        }
+      });
+
+      // The first story starts with the page; the fill follows it from the logo's load.
+      if (motionPreference.matches) {
+        showSettled();
+        runProgress(false);
+      } else if (logo.complete) {
+        runProgress(false);
+      } else {
+        whenLogoLoads(() => runProgress(false));
+      }
+    </script>
+  </body>
+</html>
