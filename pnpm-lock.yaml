@@ -326,8 +326,8 @@ importers:
   packages/llm:
     dependencies:
       '@anthropic-ai/sdk':
-        specifier: 0.109.1
-        version: 0.109.1(zod@4.6.5)
+        specifier: 0.133.0
+        version: 0.133.0(zod@4.6.5)
       '@aws-sdk/client-bedrock-runtime':
         specifier: 3.1141.0
         version: 3.1141.0
@@ -336,7 +336,7 @@ importers:
         version: link:../shared
       '@strands-agents/sdk':
         specifier: 1.19.0
-        version: 1.19.0(@anthropic-ai/sdk@0.109.1(zod@4.6.5))(@aws-sdk/client-s3@3.1141.0)(@modelcontextprotocol/sdk@1.31.0(zod@4.6.5))(@opentelemetry/api@1.9.1)(@smithy/types@4.19.0)(express@5.2.1)(openai@6.49.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(zod@4.6.5))(zod@4.6.5)
+        version: 1.19.0(@anthropic-ai/sdk@0.133.0(zod@4.6.5))(@aws-sdk/client-s3@3.1141.0)(@modelcontextprotocol/sdk@1.31.0(zod@4.6.5))(@opentelemetry/api@1.9.1)(@smithy/types@4.19.0)(express@5.2.1)(openai@6.49.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(zod@4.6.5))(zod@4.6.5)
       openai:
         specifier: 6.49.0
         version: 6.49.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(zod@4.6.5)
@@ -391,8 +391,8 @@ importers:
 
 packages:
 
-  '@anthropic-ai/sdk@0.109.1':
-    resolution: {integrity: sha512-q9OnEKLr5H9nxSuXdgDgJhxfYMiE+AaUEBze2Gk91UcaaLnsN+Lx5fbCYywiqurU/APLdwv23x03Wm6WN3EBsg==}
+  '@anthropic-ai/sdk@0.133.0':
+    resolution: {integrity: sha512-jlqUN8p8ESTJj+GJnA4KjzbEfF1waEoGzRT8jwytlYGFFgv+/DUQOxlYGvYw10UzhD1kwLqYzxvA3FrTB2YWuQ==}
     hasBin: true
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
@@ -2014,7 +2014,7 @@ packages:
 
 snapshots:
 
-  '@anthropic-ai/sdk@0.109.1(zod@4.6.5)':
+  '@anthropic-ai/sdk@0.133.0(zod@4.6.5)':
     dependencies:
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.1.1
@@ -2658,7 +2658,7 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@strands-agents/sdk@1.19.0(@anthropic-ai/sdk@0.109.1(zod@4.6.5))(@aws-sdk/client-s3@3.1141.0)(@modelcontextprotocol/sdk@1.31.0(zod@4.6.5))(@opentelemetry/api@1.9.1)(@smithy/types@4.19.0)(express@5.2.1)(openai@6.49.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(zod@4.6.5))(zod@4.6.5)':
+  '@strands-agents/sdk@1.19.0(@anthropic-ai/sdk@0.133.0(zod@4.6.5))(@aws-sdk/client-s3@3.1141.0)(@modelcontextprotocol/sdk@1.31.0(zod@4.6.5))(@opentelemetry/api@1.9.1)(@smithy/types@4.19.0)(express@5.2.1)(openai@6.49.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(zod@4.6.5))(zod@4.6.5)':
     dependencies:
       '@aws-sdk/client-bedrock-runtime': 3.1141.0
       '@modelcontextprotocol/sdk': 1.31.0(zod@4.6.5)
@@ -2669,7 +2669,7 @@ snapshots:
       yaml: 2.9.1
       zod: 4.6.5
     optionalDependencies:
-      '@anthropic-ai/sdk': 0.109.1(zod@4.6.5)
+      '@anthropic-ai/sdk': 0.133.0(zod@4.6.5)
       '@aws-sdk/client-s3': 3.1141.0
       '@smithy/types': 4.19.0
       express: 5.2.1
