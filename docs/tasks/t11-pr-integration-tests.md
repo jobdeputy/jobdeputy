@@ -26,7 +26,7 @@ PR closed → destroy again (safety net)
 Daily → delete any jobdeputy-dev-pr* stack older than 24 hours (backstop)
 ```
 
-It is **one required check, "Integration"**. For PRs that change only Markdown files, the job detects this in its first step and passes without deploying, because a skipped required check would block the merge.
+It is **one required check, "Integration"**. For PRs that change only Markdown files or the static design prototype (`brand/`, `tests/prototype/`, `agent-sops/`, `scripts/ui-audit.mjs`), the job detects this in its first step and passes without deploying, because a skipped required check would block the merge.
 
 ### Who can run it (security)
 

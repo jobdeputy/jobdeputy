@@ -21,6 +21,9 @@ page-specific logo.
 
 ## Run the prototype
 
+The latest prototype on `main` is published at <https://jobdeputy.github.io/jobdeputy/> (sample
+data only; [`.github/workflows/pages.yml`](../.github/workflows/pages.yml)). To run it locally:
+
 The prototype is static HTML, CSS, and JavaScript with no build step. Serve the repository root so
 every page shares one origin (and one sample world in `localStorage`):
 

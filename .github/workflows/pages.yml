@@ -1,0 +1,53 @@
+name: Prototype site
+
+# Publishes the static design prototype (brand/) to GitHub Pages on every push to
+# main that changes it: https://jobdeputy.github.io/jobdeputy/. Sample data only;
+# nothing here talks to a stack.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "brand/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish the prototype
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: write # upload and deploy the site
+      id-token: write # deploy-pages proves the run with OIDC
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - name: Build the site from brand/
+        run: |
+          mkdir _site
+          cp -R brand/. _site/
+          touch _site/.nojekyll
+          # The site root opens sign-in, the prototype's entry route.
+          cat > _site/index.html <<'HTML'
+          <!doctype html>
+          <meta charset="utf-8">
+          <title>JobDeputy prototype</title>
+          <meta http-equiv="refresh" content="0; url=login-preview.html">
+          <a href="login-preview.html">Open the JobDeputy prototype</a>
+          HTML
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

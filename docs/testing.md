@@ -55,12 +55,13 @@ Every feature PR adds integration tests for its own feature, and the **whole** s
 |---|---|
 | `pnpm verify` | Lint, typecheck, unit and infrastructure tests |
 | `JD_OWNER=<you> JD_FULL=1 AWS_PROFILE=jobdeputy-dev-iad pnpm test:integration` | Integration tests against your personal stack; `JD_FULL=1` adds the queue-level tests |
+| `pnpm --filter @jobdeputy/prototype-tests test` | The design prototype's tests (`tests/prototype/`). CI runs them on every push to main, and on a PR only when it changes `brand/`, `docs/`, `tests/`, `agent-sops/`, `.github/`, `scripts/ui-audit.mjs`, a root file, or `packages/shared/src/profile.ts` or `documents.ts` (everything the tests read) |
 
 The full suite (`JD_FULL=1`) runs automatically:
 
 - **Every night** against the shared dev stack, even with no code changes (T13). A failure emails the alert list ([alarms runbook](runbooks/alarms.md)).
 
-- **On every PR, before merge** (required check **Integration**, T11). Dependabot PRs run only after a maintainer adds the `safe-to-test` label ([CONTRIBUTING.md](../CONTRIBUTING.md#integration-tests-on-prs)): the PR's code is deployed to its own stack `jobdeputy-dev-pr<N>-iad`, tested, and deleted. PRs that change only Markdown pass without deploying, and a push that changes only Markdown **reuses** the previous commit's passing result instead of running again (the code is identical). PRs from forks get no AWS access; a maintainer pushes the branch to this repo after review.
+- **On every PR, before merge** (required check **Integration**, T11). Dependabot PRs run only after a maintainer adds the `safe-to-test` label ([CONTRIBUTING.md](../CONTRIBUTING.md#integration-tests-on-prs)): the PR's code is deployed to its own stack `jobdeputy-dev-pr<N>-iad`, tested, and deleted. PRs that change only Markdown or the static design prototype (`brand/`, `tests/prototype/`, `agent-sops/`, `scripts/ui-audit.mjs`, which no stack deploys) pass without deploying, and a push that changes only those **reuses** the previous commit's passing result instead of running again (the deployed code is identical). PRs from forks get no AWS access; a maintainer pushes the branch to this repo after review.
 - **After every merge to `main`**, against the shared `jobdeputy-dev-iad`.
 
 The CI roles that run these tests can do only what the tests need (`infra/lib/cicd-stack.ts`): read stack outputs, manage throwaway test users, send to and clear the stack's queues, and (dev only, T07c) `PutItem`/`UpdateItem` on the tested stacks' `-jobs` and `-sources` tables, to seed data no test page can produce, such as a job a page listed before. They never read or delete table data, and the prod role gets none of this.
