@@ -1,0 +1,3745 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="JobDeputy application-material review and editing prototype."
+    />
+    <title>JobDeputy · Review application materials</title>
+    <link rel="icon" href="./jobdeputy-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./app-chrome.css" />
+    <link rel="stylesheet" href="./app-components.css" />
+    <link rel="stylesheet" href="./deputy.css" />
+    <!-- R10-1: the first paint waits for the page's first render (the marker after the last script),
+         so the editor is drawn once, as it is, and nothing moves. A browser without render
+         blocking shows the data-skeleton holds instead. -->
+    <link rel="expect" href="#first-view" blocking="render" />
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #1b1a18;
+        --ink-soft: #2d2b27;
+        --muted: #706d66;
+        --quiet: #98948b;
+        --paper: #faf8f3;
+        --paper-deep: #f0ece3;
+        --surface: rgba(255, 255, 255, 0.82);
+        --surface-strong: rgba(255, 255, 255, 0.92);
+        --header-surface: rgba(250, 248, 243, 0.82);
+        --line: rgba(27, 26, 24, 0.12);
+        --line-soft: rgba(27, 26, 24, 0.08);
+        --line-strong: rgba(27, 26, 24, 0.24);
+        --green: #2f9e77;
+        --green-soft: #ccebdc;
+        --green-wash: rgba(204, 235, 220, 0.55);
+        --green-line: rgba(47, 158, 119, 0.36);
+        --green-ink: #23795b;
+        --orange: #f36b3f;
+        --orange-soft: #ffd5c6;
+        --danger-ink: #9c4028;
+        --blue: #526fe5;
+        --blue-soft: #d9def8;
+        --on-ink-muted: rgba(255, 255, 255, 0.68);
+        --shadow: 0 21px 55px rgba(55, 48, 36, 0.07);
+        --shadow-control: 0 10px 21px rgba(27, 26, 24, 0.15);
+        --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+        --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+        --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+        --font-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+        font-family: var(--font-text);
+        font-synthesis: none;
+      }
+
+
+      /*
+       * Shared chrome (header, app shell, account menu, page shell, intro, surfaces, actions,
+       * fields, pills, feedback panels, and footer) lives in ./app-chrome.css, and the shared
+       * components (tabs, segmented control, meter, timeline, empty state, company mark, count
+       * pill, paper pages, and sample note) in ./app-components.css. The rules below are the
+       * Materials layout and the Markdown editor only; the live pages are the shared paper.
+       */
+
+      html {
+        min-height: 100%;
+        background: var(--paper);
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        overflow-x: clip;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 9% 4%, var(--surface-strong), transparent 27rem),
+          radial-gradient(
+            circle at 87% 13%,
+            color-mix(in srgb, var(--green-soft) 27%, transparent),
+            transparent 23rem
+          ),
+          var(--paper);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      button,
+      a {
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      p {
+        margin-top: 0;
+      }
+
+      .mat-intro .intro-copy,
+      .mat-intro-note {
+        max-width: 680px;
+      }
+
+      /* Take the tour is the shared intro's (R6-3). */
+      .mat-intro-note {
+        margin-top: 13px;
+      }
+
+      .mat-notice {
+        margin-bottom: 21px;
+      }
+
+      /* The splits follow the width of the page column, not the viewport. */
+      .mat-page {
+        container: mat-page / inline-size;
+      }
+
+      .mat-surface + .mat-surface {
+        margin-top: 34px;
+      }
+
+      .mat-copy {
+        max-width: 600px;
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+        text-wrap: pretty;
+      }
+
+      .mat-meta {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      /* Workspace: the role it is for, the tabs, then one desk per tab. */
+      .mat-workspace {
+        display: grid;
+        gap: 21px;
+      }
+
+      /* The role this desk is for: its name across the surface, then where it stands. */
+      .mat-context {
+        padding-bottom: 21px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .mat-role {
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr);
+        gap: 13px;
+        align-items: center;
+      }
+
+      .mat-role h2 {
+        margin: 0;
+        text-wrap: balance;
+      }
+
+      .mat-context-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 21px;
+        margin-top: 8px;
+        padding-inline-start: 47px;
+        align-items: center;
+      }
+
+      /* Approve and apply at the top (round 6, A2): your deputy's review (the score in its verdict's
+         colour, the checks that need a look, every check on demand) beside the action. */
+      .mat-apply {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 13px 34px;
+        margin-top: 21px;
+        padding: 13px 21px;
+        border: 1px solid var(--line-soft);
+        border-radius: 22px;
+        align-items: flex-start;
+        justify-content: space-between;
+        background: var(--paper);
+      }
+
+      .mat-apply-review {
+        display: grid;
+        min-width: 0;
+        flex: 1 1 320px;
+        gap: 8px;
+      }
+
+      .mat-apply-actions {
+        display: grid;
+        min-width: 0;
+        flex: 0 1 280px;
+        gap: 8px;
+        justify-items: stretch;
+      }
+
+      .mat-apply-done {
+        flex: 1 0 100%;
+      }
+
+      .mat-apply-links {
+        margin-top: 8px;
+      }
+
+      .mat-review-head {
+        display: flex;
+        min-width: 0;
+        gap: 13px;
+        margin: 0;
+        align-items: center;
+      }
+
+      .mat-review-score {
+        display: grid;
+        width: 52px;
+        height: 52px;
+        flex: 0 0 auto;
+        border-radius: 15px;
+        place-items: center;
+        color: var(--green-ink);
+        background: var(--green-wash);
+        font-family: var(--font-display);
+        font-size: 24px;
+        font-variant-numeric: lining-nums tabular-nums;
+        letter-spacing: -0.04em;
+        line-height: 1;
+        outline: 1px solid transparent;
+        outline-offset: -1px;
+      }
+
+      .mat-apply-review[data-status="warned"] .mat-review-score {
+        color: var(--ink);
+        background: var(--orange-soft);
+      }
+
+      .mat-apply-review[data-status="failed"] .mat-review-score {
+        color: var(--danger-ink);
+        background: var(--orange-soft);
+      }
+
+      .mat-review-words {
+        display: grid;
+        min-width: 0;
+        gap: 2px;
+      }
+
+      .mat-review-label {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 650;
+        line-height: 1.3;
+      }
+
+      .mat-review-verdict {
+        color: var(--ink);
+        font-size: 14px;
+        font-weight: 680;
+        line-height: 1.35;
+      }
+
+      .mat-review-checks {
+        display: grid;
+        gap: 6px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .mat-review-check {
+        display: flex;
+        min-width: 0;
+        gap: 8px;
+        align-items: flex-start;
+        color: var(--ink-soft);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .mat-review-check-label {
+        color: var(--ink);
+        font-weight: 650;
+      }
+
+      .mat-review-mark {
+        display: inline-grid;
+        width: 18px;
+        height: 18px;
+        flex: 0 0 auto;
+        margin-top: 1px;
+        border-radius: 50%;
+        place-items: center;
+        color: var(--green-ink);
+        background: var(--green-wash);
+        font-size: 12px;
+        font-weight: 800;
+        line-height: 1;
+        outline: 1px solid transparent;
+        outline-offset: -1px;
+      }
+
+      .mat-review-check[data-status="warn"] .mat-review-mark {
+        color: var(--ink);
+        background: var(--orange-soft);
+      }
+
+      .mat-review-check[data-status="fail"] .mat-review-mark {
+        color: var(--danger-ink);
+        background: var(--orange-soft);
+      }
+
+      .mat-review-all > summary {
+        display: flex;
+        width: fit-content;
+        min-height: 44px;
+        gap: 8px;
+        align-items: center;
+        cursor: pointer;
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 680;
+        list-style: none;
+      }
+
+      .mat-review-all > summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .mat-review-all > summary::after {
+        color: var(--ink-soft);
+        content: "▾" / "";
+        font-size: 13px;
+      }
+
+      .mat-review-all[open] > summary::after {
+        transform: rotate(180deg);
+      }
+
+      .mat-review-all > summary:focus-visible,
+      .mat-apply-done:focus-visible {
+        border-radius: 6px;
+        outline: 2px solid var(--green);
+        outline-offset: 2px;
+      }
+
+      .mat-review-all .mat-review-checks {
+        padding-bottom: 8px;
+      }
+
+      .mat-role-meta {
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      .mat-context-link {
+        margin-inline-start: auto;
+      }
+
+      /* Each draft tab: the file it becomes, then the editor beside its page. */
+      .mat-panel {
+        container: mat-panel / inline-size;
+      }
+
+      /* The file this draft becomes, where it came from, and whether it is saved. */
+      .mat-file {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 13px;
+        margin-bottom: 21px;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .mat-file-copy {
+        display: flex;
+        min-width: 0;
+        flex: 1 1 320px;
+        flex-wrap: wrap;
+        gap: 2px 13px;
+        margin: 0;
+        align-items: baseline;
+        overflow-wrap: anywhere;
+      }
+
+      /* The prompt behind the draft, between its file line and the desk (R1). */
+      .mat-prompt {
+        margin-bottom: 21px;
+      }
+
+      .mat-desk {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 34px;
+        align-items: start;
+      }
+
+      .mat-column {
+        display: grid;
+        min-width: 0;
+        gap: 8px;
+        align-content: start;
+      }
+
+      .mat-column-head {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 13px;
+        min-height: 17px;
+        margin: 0;
+        align-items: baseline;
+        justify-content: space-between;
+      }
+
+      /* The draft in Markdown, on white beside its pages. The text face keeps the marks (#, -,
+         **) easy to see. */
+      .document-editor {
+        display: block;
+        width: 100%;
+        min-height: 640px;
+        padding: 21px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        color: var(--ink);
+        background: white;
+        font-family: var(--font-text);
+        font-size: 15px;
+        line-height: 1.6;
+        resize: vertical;
+        transition:
+          border-color 180ms ease,
+          box-shadow 180ms ease;
+      }
+
+      .document-editor:hover {
+        border-color: var(--line-strong);
+      }
+
+      .document-editor:focus {
+        border-color: var(--green);
+        outline: 2px solid transparent;
+        box-shadow: 0 0 0 4px var(--green-wash);
+      }
+
+      /* Approved drafts are final: readable, copyable, and printable, but not editable. */
+      .document-editor[readonly] {
+        cursor: default;
+        background: var(--paper);
+      }
+
+      .mat-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 13px;
+        align-items: center;
+      }
+
+      .mat-feedback {
+        margin-top: 13px;
+      }
+
+      /* Why Draft materials can't start, or what it runs on, while your key is at its limit: the
+         store's words beside the action, read left to right inside the centred empty state. */
+      .mat-draft-note {
+        width: 100%;
+        margin-top: 8px;
+        text-align: start;
+      }
+
+      /* The template and the page setting, over both drafts of the role. */
+      .mat-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 13px 34px;
+        align-items: flex-end;
+      }
+
+      .mat-control {
+        display: grid;
+        min-width: 0;
+        gap: 8px;
+      }
+
+      .mat-template-control {
+        flex: 0 1 260px;
+      }
+
+      .mat-control-label {
+        margin: 0;
+      }
+
+      /* The page setting, read only, with its one link to Résumés (R10-3). */
+      .mat-page-setting {
+        display: flex;
+        min-width: 0;
+        flex-wrap: wrap;
+        gap: 8px 13px;
+        margin: 0;
+        align-items: center;
+        color: var(--ink-soft);
+        font-size: 14px;
+        line-height: 1.4;
+      }
+
+      .mat-page-setting strong {
+        color: var(--ink);
+        font-weight: 700;
+      }
+
+      .mat-control-note {
+        flex: 1 1 100%;
+        margin: 0;
+      }
+
+      /* How the draft fits the page setting, in words, under its pages. */
+      .mat-fit {
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1.45;
+      }
+
+      /* No drafts yet, or materials prepared outside JobDeputy. */
+      .mat-blank {
+        border: 1px solid var(--line-soft);
+        border-radius: 22px;
+        background: var(--paper);
+      }
+
+      /* Job match: the count and what it means, beside the keywords themselves. */
+      .mat-match {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.618fr);
+        gap: 34px 55px;
+        align-items: start;
+      }
+
+      .mat-match-summary {
+        display: grid;
+        min-width: 0;
+        gap: 21px;
+        justify-items: start;
+      }
+
+      .mat-match-summary .meter-group {
+        width: 100%;
+      }
+
+      .mat-panel-head {
+        display: grid;
+        gap: 8px;
+      }
+
+      .mat-panel-head .section-label {
+        margin: 0;
+      }
+
+      .mat-chip-group + .mat-chip-group {
+        margin-top: 21px;
+        padding-top: 21px;
+        border-top: 1px solid var(--line);
+      }
+
+      .mat-chip-title {
+        margin: 0 0 13px;
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1.35;
+      }
+
+      .mat-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .mat-chip-found::before {
+        content: "✓" / "";
+        font-weight: 800;
+      }
+
+      .mat-chip-hint {
+        margin: 13px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      /* Changes: each change against the base résumé, with a way to find it and confirm it. */
+      .mat-changes {
+        display: grid;
+        max-width: 880px;
+        gap: 21px;
+      }
+
+      .mat-change-list {
+        display: grid;
+        margin: 0;
+        padding: 0;
+        border-top: 1px solid var(--line);
+        list-style: none;
+      }
+
+      .mat-change {
+        display: grid;
+        gap: 13px;
+        padding: 21px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .mat-change-head {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 13px;
+        align-items: center;
+      }
+
+      .mat-diff {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 13px;
+        margin: 0;
+      }
+
+      .mat-diff-side {
+        display: grid;
+        min-width: 0;
+        gap: 4px;
+        padding: 13px;
+        border: 1px solid var(--line);
+        border-radius: 13px;
+        align-content: start;
+        background: var(--paper);
+      }
+
+      .mat-diff-side.is-now {
+        background: white;
+      }
+
+      .mat-diff dt {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 650;
+        line-height: 1.4;
+      }
+
+      .mat-diff dd {
+        margin: 0;
+        color: var(--ink);
+        font-family: var(--font-display);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      .mat-flag {
+        display: flex;
+        gap: 8px;
+        margin: 0;
+        align-items: baseline;
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 650;
+        line-height: 1.4;
+      }
+
+      .mat-flag::before {
+        width: 8px;
+        height: 8px;
+        flex: 0 0 auto;
+        border-radius: 50%;
+        background: var(--orange);
+        content: "";
+        transform: translateY(-1px);
+      }
+
+      .mat-change-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 21px;
+        align-items: center;
+      }
+
+      .mat-check {
+        display: inline-flex;
+        min-height: 44px;
+        gap: 8px;
+        align-items: center;
+        cursor: pointer;
+        color: var(--ink);
+        font-size: 14px;
+        font-weight: 650;
+      }
+
+      .mat-check input {
+        width: 18px;
+        height: 18px;
+        margin: 0;
+        cursor: inherit;
+        accent-color: var(--green);
+      }
+
+      .mat-check input:focus-visible {
+        outline: 2px solid var(--green);
+        outline-offset: 3px;
+      }
+
+      .mat-find-note {
+        margin: 0;
+        color: var(--ink);
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1.4;
+      }
+
+      /* Approval: what it means and the decision, beside the role's trail so far. */
+      .mat-approval {
+        display: grid;
+        grid-template-columns: minmax(0, 1.618fr) minmax(0, 1fr);
+        gap: 34px 55px;
+        align-items: start;
+      }
+
+      .mat-approval-main {
+        display: grid;
+        min-width: 0;
+        gap: 21px;
+        justify-items: start;
+      }
+
+      .mat-approval-head h2 {
+        margin-bottom: 8px;
+      }
+
+      .mat-confirm {
+        display: grid;
+        width: 100%;
+        gap: 13px;
+        padding: 21px;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: var(--paper);
+      }
+
+      .mat-confirm h3:focus {
+        outline: none;
+      }
+
+      .mat-confirm h3:focus-visible {
+        border-radius: 4px;
+        outline: 2px solid var(--green);
+        outline-offset: 3px;
+      }
+
+      .mat-confirm-list {
+        display: grid;
+        gap: 4px;
+        margin: 0;
+        padding-left: 21px;
+        color: var(--ink);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      .mat-button-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .mat-approved {
+        display: grid;
+        width: 100%;
+        gap: 13px;
+      }
+
+      /* After approval: the autofill preview, offered as one row with a form icon. It wraps on
+         phones rather than overflowing, unlike a one-line button. */
+      .mat-fill {
+        display: grid;
+        min-height: 52px;
+        grid-template-columns: 34px minmax(0, 1fr) auto;
+        gap: 4px 13px;
+        padding: 13px;
+        border: 1px solid var(--line);
+        border-radius: 15px;
+        align-items: center;
+        color: var(--ink);
+        background: var(--surface);
+        text-decoration: none;
+        transition:
+          background 180ms ease,
+          border-color 180ms ease;
+      }
+
+      .mat-fill:hover {
+        border-color: var(--line-strong);
+        background: white;
+      }
+
+      .mat-fill:focus-visible {
+        outline: 2px solid var(--green);
+        outline-offset: 2px;
+      }
+
+      .mat-fill-icon {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        border-radius: 11px;
+        place-items: center;
+        color: var(--ink-soft);
+        background: var(--paper-deep);
+      }
+
+      .mat-fill-icon svg {
+        width: 20px;
+        height: 20px;
+      }
+
+      .mat-fill-copy {
+        display: grid;
+        min-width: 0;
+        gap: 2px;
+      }
+
+      .mat-fill-title {
+        font-size: 15px;
+        font-weight: 680;
+        line-height: 1.35;
+      }
+
+      .mat-fill-meta {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .mat-fill-arrow {
+        color: var(--ink-soft);
+        font-size: 15px;
+        font-weight: 650;
+      }
+
+      .mat-trail {
+        display: grid;
+        min-width: 0;
+        gap: 13px;
+      }
+
+      .mat-trail-title {
+        margin: 0;
+      }
+
+      @container mat-panel (max-width: 759px) {
+        .mat-desk,
+        .mat-match {
+          grid-template-columns: minmax(0, 1fr);
+        }
+
+        .mat-match {
+          gap: 34px;
+        }
+      }
+
+      @container mat-panel (max-width: 599px) {
+        .mat-diff {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+
+      @container mat-page (max-width: 899px) {
+        .mat-approval {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 34px;
+        }
+      }
+
+      @container mat-page (max-width: 559px) {
+        .mat-context-row {
+          padding-inline-start: 0;
+        }
+
+        .mat-context-link {
+          margin-inline-start: 0;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .mat-surface + .mat-surface {
+          margin-top: 21px;
+        }
+
+        .document-editor {
+          min-height: 460px;
+        }
+      }
+
+      /* Phones stack the two editing actions; the compact export actions still wrap inline. */
+      @media (max-width: 520px) {
+        .mat-draft-column .mat-actions {
+          display: grid;
+        }
+      }
+
+      @media (forced-colors: active) {
+        .mat-flag::before {
+          forced-color-adjust: none;
+          background: Highlight;
+        }
+
+        .mat-review-score,
+        .mat-review-mark {
+          outline: 1px solid CanvasText;
+        }
+      }
+
+      /* The shared reset in ./app-chrome.css shortens every transition; this removes the fill
+         row's outright. */
+      @media (prefers-reduced-motion: reduce) {
+        .mat-fill {
+          transition: none;
+        }
+      }
+
+      /* Print: the shared paper prints only the pages of the draft you print (paper.print, or the
+         browser's own Print, which this page points at the draft in view). */
+
+      /* The reduced-motion reset is shared in ./app-chrome.css and ./app-components.css. */
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#material-editor">Skip to material editor</a>
+
+    <header class="app-header">
+      <a class="brand" href="./home-preview.html?skipLoader" aria-label="JobDeputy dashboard">
+        <img
+          class="brand-logo"
+          src="./jobdeputy-mark.svg"
+          alt=""
+          width="400"
+          height="290"
+        />
+        <span class="brand-copy">
+          <span class="brand-name"><span>Job</span><span>Deputy</span></span>
+          <span class="brand-note">Your search partner</span>
+        </span>
+      </a>
+      <div class="header-actions">
+        <!-- HeaderActions: start -->
+        <button class="header-action header-feedback" type="button" data-feedback-open aria-haspopup="dialog" data-tip="Send feedback">
+          <svg class="header-action-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5.75 4.75h12.5c1.1 0 2 .9 2 2v8c0 1.1-.9 2-2 2h-6.5l-4.25 3.5v-3.5H5.75c-1.1 0-2-.9-2-2v-8c0-1.1.9-2 2-2Z" /><path d="M8.25 9.25h7.5M8.25 12.5h4.5" /></svg>
+          <span class="header-action-label">Feedback</span>
+        </button>
+        <a class="header-action header-invite" href="./invite-preview.html" data-tip="Invite friends">
+          <svg class="header-action-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.75" y="8.25" width="16.5" height="4" rx="1" /><path d="M5.25 12.25v6.5c0 .55.45 1 1 1h11.5c.55 0 1-.45 1-1v-6.5" /><path d="M12 8.25v11.5" /><path d="M12 8.25c-2.25 0-4.25-.75-4.25-2.25 0-1 .75-1.75 1.75-1.75 1.75 0 2.5 2 2.5 4Zm0 0c2.25 0 4.25-.75 4.25-2.25 0-1-.75-1.75-1.75-1.75-1.75 0-2.5 2-2.5 4Z" /></svg>
+          <span class="header-action-label">Invite friends</span>
+        </a>
+        <!-- HeaderActions: end -->
+        <a class="header-action" id="materials-back" href="./documents-preview.html">← Résumés</a>
+        <details class="account-menu">
+          <summary class="account-link" aria-label="Alex Morgan, Free access, account menu">
+            <span class="account-avatar">
+              <img src="./profile-avatar.svg" alt="" width="160" height="160" />
+            </span>
+            <span class="account-copy">
+              <strong>Alex Morgan</strong>
+              <span>Free access</span>
+            </span>
+          </summary>
+          <nav class="account-popover" aria-label="Account">
+            <span class="account-popover-status">
+              <span data-account-credits>339,100 tokens of AI credits left</span>
+            </span>
+            <a href="./profile-preview.html">Profile</a>
+            <a href="./account-preview.html">Settings</a>
+            <a href="./ai-preview.html">AI &amp; credits</a>
+            <a href="./shop-preview.html">Purchases</a>
+            <a href="./invite-preview.html">Invite friends</a>
+            <a href="./trust-preview.html#help">Help &amp; support</a>
+            <button class="account-popover-action" type="button" data-tour-open hidden>Show me around</button>
+            <button class="account-popover-action" type="button" data-feedback-open aria-haspopup="dialog">Send feedback</button>
+            <a class="account-signout" href="./login-preview.html?skipLoader">Sign out</a>
+          </nav>
+        </details>
+      </div>
+    </header>
+
+    <div class="app-frame">
+      <div class="app-sidebar" id="app-sidebar">
+        <div class="app-menu">
+          <button
+            class="compact-action app-menu-toggle"
+            id="app-menu-toggle"
+            type="button"
+            aria-expanded="true"
+            aria-controls="app-nav"
+            hidden
+          >
+            <svg class="app-menu-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+            <span class="app-menu-text">Menu<span class="app-menu-current"> · Résumés</span></span>
+          </button>
+        </div>
+        <!-- AppNav: start -->
+        <nav class="app-nav" id="app-nav" aria-label="Primary">
+          <ul class="app-nav-list">
+            <li>
+              <a class="app-nav-link" href="./home-preview.html?skipLoader">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.75 10.5 12 3.75l8.25 6.75" /><path d="M5.75 9v10.5h12.5V9" /><path d="M10 19.5v-5h4v5" /></svg>
+                <span class="app-nav-label">Dashboard</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./searches-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.25" /><path d="m15.25 15.25 4.75 4.75" /></svg>
+                <span class="app-nav-label">Searches</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./jobs-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="7.25" width="17" height="12.5" rx="2" /><path d="M8.75 7.25V5.5c0-.83.67-1.5 1.5-1.5h3.5c.83 0 1.5.67 1.5 1.5v1.75" /><path d="M3.5 12.5h17" /></svg>
+                <span class="app-nav-label">Job matches</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./applications-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.75" y="4.25" width="4.5" height="11.5" rx="1.25" /><rect x="9.75" y="4.25" width="4.5" height="15.5" rx="1.25" /><rect x="15.75" y="4.25" width="4.5" height="8" rx="1.25" /></svg>
+                <span class="app-nav-label">Applications</span>
+                <span class="app-nav-count is-attention">3<span class="sr-only"> need you</span></span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./documents-preview.html" aria-current="true">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.75 3.75h-6.5c-.97 0-1.75.78-1.75 1.75v13c0 .97.78 1.75 1.75 1.75h9.5c.97 0 1.75-.78 1.75-1.75V8.25Z" /><path d="M13.75 3.75v4.5h4.5" /><path d="M8.75 12.25h6.5M8.75 15.75h6.5" /></svg>
+                <span class="app-nav-label">Résumés</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./profile-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="8.25" r="3.75" /><path d="M4.75 20c.6-3.75 3.4-6 7.25-6s6.65 2.25 7.25 6" /></svg>
+                <span class="app-nav-label">Profile</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./account-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9.88 5.85L10.48 3.38L13.52 3.38L14.12 5.85L16.26 7.09L18.7 6.38L20.22 9.01L18.38 10.76L18.38 13.24L20.22 14.99L18.7 17.62L16.26 16.91L14.12 18.15L13.52 20.62L10.48 20.62L9.88 18.15L7.74 16.91L5.3 17.62L3.78 14.99L5.62 13.24L5.62 10.76L3.78 9.01L5.3 6.38L7.74 7.09Z" /><circle cx="12" cy="12" r="3" /></svg>
+                <span class="app-nav-label">Settings</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./trust-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.75" /><path d="M9.6 9.6a2.5 2.5 0 1 1 3.3 2.36c-.53.2-.9.7-.9 1.27v.52" /><path d="M12 16.75h.01" /></svg>
+                <span class="app-nav-label">Help</span>
+              </a>
+            </li>
+          </ul>
+        </nav>
+        <!-- AppNav: end -->
+        <div class="app-sidebar-deputy">
+          <!-- DeputyDock: start -->
+          <aside
+            class="deputy-dock"
+            id="deputy-dock"
+            aria-labelledby="deputy-dock-title"
+            data-deputy
+            data-deputy-page="materials"
+            data-deputy-state="tailor"
+          >
+            <h2 class="sr-only" id="deputy-dock-title">Your deputy</h2>
+            <div class="deputy-art" data-deputy-art aria-hidden="true"></div>
+            <p class="deputy-speech" data-deputy-speech>Drafting for this role.</p>
+            <p class="deputy-duty"><span class="deputy-duty-dot" aria-hidden="true"></span><span data-deputy-duty>Tailoring</span></p>
+            <div class="deputy-actions">
+              <details class="deputy-activity">
+                <summary class="deputy-activity-toggle">Activity</summary>
+                <!-- biome-ignore lint/a11y/useSemanticElements: the panel groups links and lists, not form controls, so a fieldset would be wrong -->
+                <div class="deputy-activity-panel" role="group" aria-labelledby="deputy-activity-title">
+                  <p class="deputy-activity-title" id="deputy-activity-title">What your deputy is doing</p>
+                  <h3 class="deputy-activity-label">Now</h3>
+                  <ul class="deputy-activity-list">
+                    <li>Searching Amazon Jobs</li>
+                  </ul>
+                  <h3 class="deputy-activity-label">Needs you</h3>
+                  <ul class="deputy-activity-list">
+                    <li>
+                      <a href="./materials-preview.html?app=search-infra&amp;from=applications"
+                        >Approve materials for Search Infrastructure (Google)</a
+                      >
+                    </li>
+                    <li><a href="./applications-preview.html?open=amazon-sde2">Follow up with Amazon</a></li>
+                    <li><a href="./searches-preview.html?source=acme">Fix the Acme source</a></li>
+                  </ul>
+                  <h3 class="deputy-activity-label">Done recently</h3>
+                  <ul class="deputy-activity-list">
+                    <li>Tailored a résumé and cover letter for Cloud Reliability · Oct 2</li>
+                    <li>Checked Google Careers: no new roles · Oct 2</li>
+                    <li>Saved 7 new roles from Google Careers · Oct 1</li>
+                  </ul>
+                  <p class="sample-note">Sample data · not connected</p>
+                </div>
+              </details>
+              <button class="deputy-motion" type="button" data-deputy-motion>Pause motion</button>
+            </div>
+            <p class="sr-only" data-deputy-announce role="status"></p>
+          </aside>
+          <!-- DeputyDock: end -->
+        </div>
+      </div>
+    <main class="app-main" id="main">
+      <div class="page-shell mat-shell">
+        <section class="page-intro mat-intro" aria-labelledby="page-title">
+          <div class="page-intro-copy">
+            <p class="eyebrow">Application materials</p>
+            <h1 id="page-title">Review the work before it leaves your desk.</h1>
+            <p class="intro-copy">
+              Edit each draft in Markdown beside its pages, and approve only what’s true. Nothing is
+              sent from here.
+            </p>
+            <p class="sample-note mat-intro-note">
+              Local prototype · Drafts are sample content. Edits stay in this browser; no generation
+              or document API is called.
+            </p>
+          </div>
+          <div class="page-intro-actions">
+            <button type="button" class="secondary-action page-tour" data-tour-open hidden>Take the tour</button>
+          </div>
+        </section>
+        <div class="feedback-panel mat-notice" id="context-notice" data-kind="notice" hidden>
+          <span class="feedback-panel-icon" aria-hidden="true">i</span>
+          <span class="feedback-panel-copy">
+            <strong class="feedback-panel-title" id="context-notice-title"></strong>
+            <span class="feedback-panel-message" id="context-notice-message"></span>
+          </span>
+        </div>
+
+        <div class="mat-page">
+          <section class="task-surface mat-surface mat-workspace" id="material-editor" aria-labelledby="job-title">
+            <div class="mat-context">
+              <p class="section-label">Materials for</p>
+              <div class="mat-role">
+                <span class="company-mark" id="job-mark" aria-hidden="true"></span>
+                <h2 id="job-title">Your role</h2>
+              </div>
+              <div class="mat-context-row">
+                <p class="mat-role-meta" id="job-company"></p>
+                <a class="compact-action mat-context-link" id="job-link" href="./applications-preview.html" data-return-link data-focus-key="job-link">Open in Applications</a>
+              </div>
+              <!-- Round 6 (A2): Approve and apply at the top, beside your deputy's review (the score
+                   and its checks), so a role goes from here to applied in one step. The approval
+                   section below keeps Approve only and the role's record. Shown once the store
+                   can approve and apply. -->
+              <div class="mat-apply" id="mat-apply" hidden>
+                <div class="mat-apply-review" id="mat-apply-review"></div>
+                <div class="mat-apply-actions" id="approval-actions">
+                  <button
+                    class="primary-action"
+                    id="mat-approve-apply"
+                    type="button"
+                    aria-describedby="mat-apply-note"
+                    data-tour-step="4"
+                    data-tour-title="Approve here, and I apply."
+                    data-tour-text="When every line is true, Approve and apply. I save your edits, mark both drafts final, and apply in the background within your rules. Nothing is sent in this prototype."
+                  >
+                    Approve and apply
+                  </button>
+                  <button class="secondary-action" id="approve-open" type="button" aria-describedby="mat-apply-note">Approve only</button>
+                  <p class="mat-meta" id="mat-apply-note">Approve and apply saves your edits and marks both drafts final, then your deputy applies in the background. Approve only marks them final and leaves the applying to you. You can undo either until the role is applied. Nothing is sent in this prototype.</p>
+                </div>
+                <div class="mat-confirm" id="approve-confirm" hidden>
+                  <h3 id="approve-confirm-title" tabindex="-1">Approve both drafts for this role?</h3>
+                  <ul class="mat-confirm-list" id="approve-confirm-details">
+                    <li>Your tailored résumé and cover letter are saved as they are now and marked final.</li>
+                    <li>Applications shows the role as Approved · ready to submit.</li>
+                    <li>
+                      Nothing is sent. Next, you apply on the employer site, or let your deputy fill the
+                      application (planned for launch; a preview here).
+                    </li>
+                  </ul>
+                  <p class="mat-meta" id="approve-confirm-checks"></p>
+                  <div class="mat-button-row">
+                    <button class="primary-action" id="approve-yes" type="button" aria-describedby="approve-confirm-details approve-confirm-checks">
+                      Approve materials
+                    </button>
+                    <button class="secondary-action" id="approve-no" type="button">Not yet</button>
+                  </div>
+                </div>
+                <div class="mat-approved" id="approved" hidden>
+                  <div class="feedback-panel" id="approved-panel" data-kind="success">
+                    <span class="feedback-panel-icon" aria-hidden="true">✓</span>
+                    <span class="feedback-panel-copy">
+                      <strong class="feedback-panel-title" id="approved-title">Materials approved</strong>
+                      <span class="feedback-panel-message" id="approved-message"></span>
+                    </span>
+                  </div>
+                  <a class="mat-fill" id="approved-fill" href="./autofill-preview.html?app=search-infra">
+                    <span class="mat-fill-icon" aria-hidden="true"
+                      ><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="4.5" y="3.5" width="15" height="17" rx="2.5" /><path d="M8 8.5h8M8 12.5h8M8 16.5h4.5" /></svg
+                    ></span>
+                    <span class="mat-fill-copy">
+                      <span class="mat-fill-title">Let your deputy fill the application (preview)</span>
+                      <span class="mat-fill-meta">The employer’s form, filled from your profile. Nothing is sent.</span>
+                    </span>
+                    <span class="mat-fill-arrow" aria-hidden="true">→</span>
+                  </a>
+                  <div class="mat-button-row" id="approved-actions">
+                    <a class="secondary-action" id="approved-open" href="./applications-preview.html?open=search-infra" data-return-link>Open in Applications</a>
+                    <button class="secondary-action" id="approve-undo" type="button">Undo approval</button>
+                  </div>
+                </div>
+                <section class="feedback-panel mat-apply-done" id="mat-apply-done" data-kind="success" tabindex="-1" aria-labelledby="mat-apply-done-title" aria-describedby="mat-apply-done-message" hidden>
+                  <span class="feedback-panel-icon" aria-hidden="true">✓</span>
+                  <span class="feedback-panel-copy">
+                    <strong class="feedback-panel-title" id="mat-apply-done-title">Approved. Your deputy is applying.</strong>
+                    <span class="feedback-panel-message" id="mat-apply-done-message">It applies in the background; you can leave this page.</span>
+                    <span class="mat-button-row mat-apply-links">
+                      <a class="secondary-action" id="mat-apply-sign" href="./agreement-preview.html?mode=update" hidden>Review and sign</a>
+                      <a class="compact-action" id="mat-apply-watch" href="./autofill-preview.html?app=search-infra&amp;live=1">Watch it</a>
+                      <a class="compact-action" id="mat-apply-open" href="./applications-preview.html?open=search-infra" data-return-link>Open in Applications</a>
+                    </span>
+                  </span>
+                </section>
+              </div>
+            </div>
+
+            <div class="tabs" id="material-tabs" role="tablist" aria-label="Materials for this role" data-tabs>
+              <button id="tab-resume" type="button" role="tab" aria-selected="true" aria-controls="panel-resume">
+                Tailored résumé
+              </button>
+              <button id="tab-cover" type="button" role="tab" aria-selected="false" aria-controls="panel-cover" tabindex="-1">
+                Cover letter
+              </button>
+              <button id="tab-match" type="button" role="tab" aria-selected="false" aria-controls="panel-match" tabindex="-1">
+                Job match <span class="board-count" id="match-badge" hidden></span>
+              </button>
+              <button id="tab-changes" type="button" role="tab" aria-selected="false" aria-controls="panel-changes" tabindex="-1">
+                Changes
+                <span class="board-count is-attention" id="changes-badge" hidden><span id="changes-count"></span><span class="sr-only"> to check</span></span>
+              </button>
+            </div>
+
+            <div
+              class="mat-controls"
+              id="draft-controls"
+              data-tour-step="3"
+              data-tour-title="Pick a template for both."
+              data-tour-text="Switch the template and I lay both drafts out again, keeping your edits. Your page setting, changed in Résumés, says how many pages they may run to."
+            >
+              <div class="mat-control mat-template-control">
+                <label class="field-label" for="draft-template">Template</label>
+                <select class="field-control" id="draft-template" aria-describedby="draft-template-note"></select>
+              </div>
+              <!-- R10-3: the page setting's home is Résumés' Templates; here it is read only, with
+                   one link there that keeps your place (and your unsaved edits) for Back. -->
+              <p class="mat-page-setting" id="draft-pages">
+                <span class="mat-page-words" id="draft-pages-words">Your page setting: <strong><span id="draft-pages-value" data-metric="docs.pageLimit"></span> <span id="draft-pages-unit">page</span></strong></span>
+                <a class="compact-action" id="draft-pages-change" href="./documents-preview.html#page-setting" data-return-link data-focus-key="draft-pages-change" aria-describedby="draft-pages-words">Change in Résumés</a>
+              </p>
+              <p class="field-help mat-control-note" id="draft-template-note">
+                One page with only what this role needs is recommended.
+              </p>
+            </div>
+
+            <div class="tab-panel mat-panel" id="panel-resume" role="tabpanel" aria-labelledby="tab-resume" data-material="resume">
+              <div class="mat-file">
+                <p class="mat-file-copy">
+                  <span class="item-title" id="resume-file"></span>
+                  <span class="mat-meta" id="resume-source"></span>
+                </p>
+                <span class="status-pill is-neutral editor-status" id="resume-status">Generated draft</span>
+              </div>
+              <!-- R1 (R10-5): the prompt that wrote this draft, as the shared prompt summary row (its
+                   version, score trend, Kept by you, tokens, models, and Open in Prompts with
+                   return=). Drawn and kept in step by app-panels.js; read only. -->
+              <div class="mat-prompt" id="resume-prompt" data-prompt-summary="tailor" data-prompt-size="row" data-prompt-heading="3"></div>
+              <div class="mat-desk" id="resume-desk">
+                <div class="mat-column mat-draft-column">
+                  <p class="mat-column-head">
+                    <label class="field-label" for="resume-text">Tailored résumé, in Markdown</label>
+                  </p>
+                  <textarea
+                    class="document-editor"
+                    id="resume-text"
+                    spellcheck="true"
+                    aria-describedby="resume-help"
+                    data-tour-step="1"
+                    data-tour-title="I drafted this. You edit it."
+                    data-tour-text="Edit the text here: # is your name, ## a section, ### a role, and - a bullet. Check every claim against your experience, and I keep your edits."
+                  ></textarea>
+                  <p class="field-help" id="resume-help">
+                    Check every claim against your experience. # is your name, ## a section, ### a
+                    role, and - a bullet. Save with Ctrl+S or ⌘S.
+                  </p>
+                  <div class="mat-actions">
+                    <button class="secondary-action" type="button" data-action="save">Save changes</button>
+                    <button class="secondary-action" type="button" data-action="restore">Restore generated draft</button>
+                  </div>
+                  <div class="feedback-panel mat-feedback" id="resume-feedback" data-kind="success" hidden>
+                    <span class="feedback-panel-icon" aria-hidden="true">✓</span>
+                    <span class="feedback-panel-copy">
+                      <strong class="feedback-panel-title"></strong>
+                      <span class="feedback-panel-message"></span>
+                    </span>
+                  </div>
+                </div>
+                <div class="mat-column mat-preview">
+                  <div
+                    class="paper-stack"
+                    id="resume-paper"
+                    data-page-limit="1"
+                    data-template="classic"
+                    data-tour-step="2"
+                    data-tour-title="These pages print as shown."
+                    data-tour-text="I lay out the pages as you type, and the count says how the draft fits your page setting. Print prints only these pages."
+                  >
+                    <div class="paper-stack-head">
+                      <p class="paper-stack-title">Page preview</p>
+                      <span class="paper-count" data-paper-count></span>
+                    </div>
+                    <div class="paper-pages"></div>
+                  </div>
+                  <p class="mat-fit" id="resume-fit"></p>
+                  <div class="mat-actions">
+                    <button class="compact-action" type="button" data-action="print">Print these pages</button>
+                    <button class="compact-action" type="button" data-action="enlarge" aria-haspopup="dialog">Larger preview</button>
+                    <button class="compact-action" type="button" data-action="copy">Copy text</button>
+                    <button class="compact-action" type="button" data-action="download">Download .md</button>
+                  </div>
+                  <div class="feedback-panel mat-feedback" id="resume-export-feedback" data-kind="success" hidden>
+                    <span class="feedback-panel-icon" aria-hidden="true">✓</span>
+                    <span class="feedback-panel-copy">
+                      <strong class="feedback-panel-title"></strong>
+                      <span class="feedback-panel-message"></span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div class="mat-blank" id="resume-blank" hidden></div>
+            </div>
+
+            <div class="tab-panel mat-panel" id="panel-cover" role="tabpanel" aria-labelledby="tab-cover" data-material="cover" hidden>
+              <div class="mat-file">
+                <p class="mat-file-copy">
+                  <span class="item-title" id="cover-file"></span>
+                  <span class="mat-meta" id="cover-source"></span>
+                </p>
+                <span class="status-pill is-neutral editor-status" id="cover-status">Generated draft</span>
+              </div>
+              <div class="mat-prompt" id="cover-prompt" data-prompt-summary="letter" data-prompt-size="row" data-prompt-heading="3"></div>
+              <div class="mat-desk" id="cover-desk">
+                <div class="mat-column mat-draft-column">
+                  <p class="mat-column-head">
+                    <label class="field-label" for="cover-text">Cover letter, in Markdown</label>
+                  </p>
+                  <textarea class="document-editor" id="cover-text" spellcheck="true" aria-describedby="cover-help"></textarea>
+                  <p class="field-help" id="cover-help">
+                    Make the opening yours and keep every example true. Save with Ctrl+S or ⌘S.
+                  </p>
+                  <div class="mat-actions">
+                    <button class="secondary-action" type="button" data-action="save">Save changes</button>
+                    <button class="secondary-action" type="button" data-action="restore">Restore generated draft</button>
+                  </div>
+                  <div class="feedback-panel mat-feedback" id="cover-feedback" data-kind="success" hidden>
+                    <span class="feedback-panel-icon" aria-hidden="true">✓</span>
+                    <span class="feedback-panel-copy">
+                      <strong class="feedback-panel-title"></strong>
+                      <span class="feedback-panel-message"></span>
+                    </span>
+                  </div>
+                </div>
+                <div class="mat-column mat-preview">
+                  <div class="paper-stack" id="cover-paper" data-page-limit="1" data-template="classic">
+                    <div class="paper-stack-head">
+                      <p class="paper-stack-title">Page preview</p>
+                      <span class="paper-count" data-paper-count></span>
+                    </div>
+                    <div class="paper-pages"></div>
+                  </div>
+                  <p class="mat-fit" id="cover-fit"></p>
+                  <div class="mat-actions">
+                    <button class="compact-action" type="button" data-action="print">Print these pages</button>
+                    <button class="compact-action" type="button" data-action="enlarge" aria-haspopup="dialog">Larger preview</button>
+                    <button class="compact-action" type="button" data-action="copy">Copy text</button>
+                    <button class="compact-action" type="button" data-action="download">Download .md</button>
+                  </div>
+                  <div class="feedback-panel mat-feedback" id="cover-export-feedback" data-kind="success" hidden>
+                    <span class="feedback-panel-icon" aria-hidden="true">✓</span>
+                    <span class="feedback-panel-copy">
+                      <strong class="feedback-panel-title"></strong>
+                      <span class="feedback-panel-message"></span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div class="mat-blank" id="cover-blank" hidden></div>
+            </div>
+
+            <div class="tab-panel mat-panel" id="panel-match" role="tabpanel" aria-labelledby="tab-match" hidden>
+              <div class="mat-match" id="match-view">
+                <div class="mat-match-summary">
+                  <div class="mat-panel-head">
+                    <p class="section-label">Job match</p>
+                    <h3>How your draft matches the posting</h3>
+                    <p class="mat-copy">
+                      Your deputy looks for the posting’s keywords in the current text of your draft.
+                      It counts here, in your browser, as you type.
+                    </p>
+                  </div>
+                  <fieldset class="segmented" id="match-source">
+                    <legend class="sr-only">Draft to compare with the posting</legend>
+                    <label class="segmented-option">
+                      <input type="radio" name="match-source" value="resume" checked />
+                      <span class="segmented-label">Tailored résumé</span>
+                    </label>
+                    <label class="segmented-option">
+                      <input type="radio" name="match-source" value="cover" />
+                      <span class="segmented-label">Cover letter</span>
+                    </label>
+                  </fieldset>
+                  <!-- biome-ignore-start lint/a11y/useSemanticElements: the brief's meter is a role="meter" element; a native <meter> cannot draw it -->
+                  <div class="meter-group">
+                    <p class="meter-label" id="match-label">Posting keywords in your draft</p>
+                    <p class="meter-value" id="match-count"></p>
+                    <div
+                      class="meter"
+                      id="match-meter"
+                      role="meter"
+                      aria-labelledby="match-label"
+                      aria-valuemin="0"
+                      aria-valuemax="1"
+                      aria-valuenow="0"
+                      aria-valuetext="Not counted yet"
+                      style="--value: 0"
+                    ></div>
+                  </div>
+                  <!-- biome-ignore-end lint/a11y/useSemanticElements: end of the job match meter -->
+                  <p class="mat-meta" id="match-source-note"></p>
+                </div>
+                <div class="mat-match-groups">
+                  <div class="mat-chip-group">
+                    <h4 class="mat-chip-title" id="match-found-title">In your draft</h4>
+                    <ul class="mat-chips" id="match-found" aria-labelledby="match-found-title"></ul>
+                  </div>
+                  <div class="mat-chip-group">
+                    <h4 class="mat-chip-title" id="match-missing-title">Missing</h4>
+                    <ul class="mat-chips" id="match-missing" aria-labelledby="match-missing-title"></ul>
+                    <p class="mat-chip-hint">
+                      Add a missing keyword only where your experience supports it. Your deputy
+                      never adds one for you.
+                    </p>
+                  </div>
+                  <p class="sample-note">Sample data · not connected</p>
+                </div>
+              </div>
+              <div class="mat-blank" id="match-blank" hidden></div>
+            </div>
+
+            <div class="tab-panel mat-panel" id="panel-changes" role="tabpanel" aria-labelledby="tab-changes" hidden>
+              <div class="mat-changes" id="changes-view">
+                <div class="mat-panel-head">
+                  <p class="section-label">Changes</p>
+                  <h3>What your deputy changed</h3>
+                  <p class="mat-copy" id="changes-copy">
+                    Compared with the document your deputy tailored from. Your original never
+                    changes.
+                  </p>
+                </div>
+                <div class="feedback-panel" data-kind="warning" role="note">
+                  <span class="feedback-panel-icon" aria-hidden="true">!</span>
+                  <span class="feedback-panel-copy">
+                    <strong class="feedback-panel-title">Check every claim</strong>
+                    <span class="feedback-panel-message"
+                      >Your deputy reworded and reordered your experience. Make sure every line is
+                      true before you approve.</span
+                    >
+                  </span>
+                </div>
+                <ol class="mat-change-list" id="change-list" aria-label="Changes against your base document"></ol>
+                <p class="sample-note">Sample data · not connected</p>
+              </div>
+              <div class="mat-blank" id="changes-blank" hidden></div>
+            </div>
+          </section>
+
+          <!-- Round 6 (P-13): the top bar is the only place to approve. This section keeps the
+               role's record, and says why there is nothing to approve when there isn't. -->
+          <section class="task-surface mat-surface mat-approval" id="approval" aria-labelledby="trail-title">
+            <div class="mat-approval-main" id="approval-main" hidden>
+              <div class="mat-approval-head">
+                <p class="section-label">Approval</p>
+                <h2 id="approval-title">Nothing to approve yet.</h2>
+                <p class="mat-copy" id="approval-copy">Approval comes after your deputy drafts the materials and you review them.</p>
+              </div>
+
+              <div class="feedback-panel" id="approval-info" data-kind="notice" hidden>
+                <span class="feedback-panel-icon" aria-hidden="true">i</span>
+                <span class="feedback-panel-copy">
+                  <strong class="feedback-panel-title" id="approval-info-title"></strong>
+                  <span class="feedback-panel-message" id="approval-info-message"></span>
+                </span>
+              </div>
+            </div>
+
+            <div class="mat-trail">
+              <h3 class="mat-trail-title" id="trail-title">This role so far</h3>
+              <ol class="timeline" id="role-timeline" aria-labelledby="trail-title"></ol>
+              <p class="sample-note">Sample data · not connected</p>
+            </div>
+          </section>
+        </div>
+
+        <p class="sr-only" id="material-announcement" role="status" aria-live="polite"></p>
+      </div>
+    </main>
+    </div>
+
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <div class="footer-primary">
+          <span class="footer-brand">
+            <strong>JobDeputy</strong>
+            <span>Your private workspace for finding relevant roles.</span>
+          </span>
+          <nav class="footer-nav" aria-label="Footer">
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./home-preview.html?skipLoader">Dashboard</a>
+              <a class="footer-link" href="./searches-preview.html">Searches</a>
+              <a class="footer-link" href="./jobs-preview.html">Job matches</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./applications-preview.html">Applications</a>
+              <a class="footer-link" href="./documents-preview.html">Résumés</a>
+              <a class="footer-link" href="./profile-preview.html">Profile</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./account-preview.html">Settings</a>
+              <a class="footer-link" href="./ai-preview.html">AI &amp; credits</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./shop-preview.html">Purchases</a>
+              <a class="footer-link" href="./invite-preview.html">Invite friends</a>
+            </span>
+          </nav>
+        </div>
+        <div class="footer-secondary">
+          <span
+            ><strong>United States home Region</strong> · Drafts and saved edits stay in your
+            account Region.</span
+          >
+          <nav class="footer-nav" aria-label="Trust and support">
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./trust-preview.html#privacy">Privacy</a>
+              <a class="footer-link" href="./trust-preview.html#security">Security</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./trust-preview.html#accessibility">Accessibility</a>
+              <a class="footer-link" href="./trust-preview.html#help">Help</a>
+            </span>
+          </nav>
+        </div>
+      </div>
+    </footer>
+
+    <script src="./app-shell.js"></script>
+    <script src="./app-components.js"></script>
+    <script src="./prompt-guard.js"></script>
+    <script src="./agreement-text.js"></script>
+    <script src="./sample-store.js"></script>
+    <script src="./deputy.js"></script>
+    <script src="./feedback.js"></script>
+    <script src="./app-panels.js"></script>
+    <script>
+      const parameters = new URLSearchParams(window.location.search);
+      const materialsBack = document.querySelector('#materials-back');
+
+      // A child of Résumés: Back names the page that opened the editor (?from=), and an unknown or
+      // missing value returns to Résumés.
+      const backOrigins = new Map([
+        ['applications', ['./applications-preview.html', '← Applications']],
+        ['jobs', ['./jobs-preview.html', '← Job matches']],
+        ['resumes', ['./documents-preview.html', '← Résumés']],
+      ]);
+      const [backHref, backLabel] =
+        backOrigins.get(parameters.get('from')) ?? backOrigins.get('resumes');
+      materialsBack.href = backHref;
+      materialsBack.textContent = backLabel;
+
+      // The materials editor: one role's tailored résumé and cover letter, each in Markdown beside
+      // its pages, laid out live in the role's template; a job match counted from the draft; the
+      // changes against the base document; and the approval. Everything is local sample behaviour:
+      // drafts are sample text, edits and the approval live in the shared sample store
+      // (window.JobDeputyStore), and nothing is sent.
+      const store = window.JobDeputyStore;
+      const components = () => window.JobDeputyComponents;
+      const deputy = () => window.JobDeputyDeputy;
+      const react = (name, options) => deputy()?.react?.(name, options);
+      const DEFAULT_APP = 'search-infra';
+      const PAST_APPROVAL = ['applied', 'interviewing', 'offer', 'closed'];
+
+      // SampleDocs: start
+      // The sample documents Résumés and Materials both show, byte for byte the same on the two
+      // pages (a test compares the copies): Alex's base résumé and leadership CV, each role's
+      // tailored résumé and cover letter, and the Markdown templates fill. Text is Markdown: # the
+      // name, ## sections, ### a role, - bullets. Nothing here touches the page, so tests run it;
+      // each page takes the parts it uses from SampleDocs.
+      const SampleDocs = (() => {
+        const SAMPLE_PERSON = {
+          name: 'Alex Morgan',
+          contact:
+            'Seattle, WA · alex.morgan@example.com · +1 206 555 0148 · portfolio.example.com/alex-morgan',
+          headline: 'Senior software engineer',
+          education: 'B.S. Computer Science, Lakeside University, 2017',
+          certifications: 'Cloud Architecture Professional, Proseware Academy, 2024',
+        };
+        const SAMPLE_JOBS_HELD = {
+          fabrikam: '### Senior Software Engineer · Fabrikam · 2021 to present',
+          litware: '### Software Engineer · Litware · 2017 to 2021',
+        };
+        const SAMPLE_LINES = {
+          streaming:
+            'Led the move of search indexing to a streaming pipeline, cutting refresh time from 6 hours to 40 minutes.',
+          latency: 'Cut p99 query latency by 38% with Go services on Kubernetes.',
+          mentoring: 'Mentored four engineers and led code review for the search team.',
+          monitoring: 'Added monitoring and alerts to the search services.',
+          monitoringEarly:
+            'Added monitoring and alerts to the search services, so the team sees latency problems before customers do.',
+          billing:
+            'Built the event store behind the billing systems on PostgreSQL, with gRPC APIs for other teams.',
+          workflows:
+            'Improved developer workflows and release reliability with shared build tooling and automation.',
+          lead: 'Lead six engineers across indexing, ranking, and storage as the search team’s tech lead.',
+          strategy: 'Set the search platform’s technical strategy and roadmaps with product and design.',
+          incidents: 'Run incident response for search, with a blameless review after every page.',
+          mentor:
+            'Mentor four engineers through code review and weekly one-on-ones; two have been promoted.',
+          handbook: 'Started the team’s on-call handbook, now used by four teams.',
+        };
+        const bulletOf = (key) => `- ${SAMPLE_LINES[key]}`;
+        const experienceOf = (fabrikam, litware) =>
+          [
+            SAMPLE_JOBS_HELD.fabrikam,
+            ...fabrikam.map(bulletOf),
+            '',
+            SAMPLE_JOBS_HELD.litware,
+            ...litware.map(bulletOf),
+          ].join('\n');
+
+        // Alex_Morgan_Resume.pdf as your deputy read it, in fields a template fills.
+        const BASE_RESUME = {
+          ...SAMPLE_PERSON,
+          summary:
+            'Backend engineer with nine years in search relevance, billing systems, and developer platforms. Builds distributed systems and backend services that teams can rely on.',
+          experience: experienceOf(['streaming', 'latency', 'mentoring', 'monitoring'], ['billing', 'workflows']),
+          skills:
+            'Go · Distributed systems · Kubernetes · PostgreSQL · Search relevance · gRPC · API design · Backend services · Developer platforms',
+        };
+
+        // Engineering_Leadership_CV.docx as your deputy read it: two pages, its own layout.
+        const CV_PROFILE =
+          'Engineering lead for search and platform teams. Grows engineers through mentoring and code review, sets technical strategy with product partners, and keeps services reliable through calm incident response.';
+        const SAMPLE_CV = [
+          `# ${SAMPLE_PERSON.name}`,
+          SAMPLE_PERSON.contact,
+          '',
+          '## Profile',
+          CV_PROFILE,
+          '',
+          '## Leadership and experience',
+          SAMPLE_JOBS_HELD.fabrikam,
+          ...['lead', 'strategy', 'incidents', 'mentor', 'streaming', 'latency'].map(bulletOf),
+          '',
+          SAMPLE_JOBS_HELD.litware,
+          ...['billing', 'workflows', 'handbook'].map(bulletOf),
+          '',
+          '## Leadership practices',
+          '- A weekly one-on-one and a written growth plan for every engineer on the team.',
+          '- Roadmaps reviewed each quarter with product and design, and shared with the teams that depend on them.',
+          '- Error budgets and a monthly reliability review, so the team decides together when to slow down.',
+          '- Code review as teaching: every review explains the why, and new engineers review from their first week.',
+          '',
+          '## Selected projects',
+          '### Streaming index',
+          'Replaced nightly batch indexing with a streaming pipeline, so new listings reach search in minutes instead of a day. Planned the migration in stages, with a fallback at each step.',
+          '### On-call handbook',
+          'Runbooks and drills for every service team, with a short guide for a first page. Each incident review now ends with one change to the handbook.',
+          '### Mentoring circle',
+          'Paired early-career engineers with senior mentors for six months, each with a written growth plan and a check-in at the halfway point.',
+          '',
+          '## Talks',
+          '- Calm on call: error budgets for small teams · Seattle Engineering Meetup · 2025',
+          '- Streaming search without the drama · Platform Summit · 2024',
+          '',
+          '## Skills',
+          'Technical strategy · Roadmaps · Incident response · Mentoring · Code review · Distributed systems · Reliability · Go · Kubernetes',
+          '',
+          '## Education',
+          SAMPLE_PERSON.education,
+          '',
+          '## Certifications',
+          SAMPLE_PERSON.certifications,
+          '',
+          '## Languages',
+          'English, native · Spanish, conversational',
+        ].join('\n');
+
+        // How your deputy tailored each role: the summary, the order of the bullets, and the skills
+        // (the posting's first). Tailoring rewords and reorders what is already there; it never adds
+        // a result you did not have.
+        const TAILORED = {
+          'search-infra': {
+            headline: 'Software engineer, search infrastructure',
+            summary:
+              'Backend engineer who builds fast, reliable search systems. Nine years of distributed systems in Go, from search relevance and indexing to query latency.',
+            fabrikam: ['streaming', 'latency', 'monitoringEarly', 'mentoring'],
+            litware: ['billing', 'workflows'],
+            skills:
+              'Distributed systems · Go · Search relevance · Latency · Kubernetes · PostgreSQL · gRPC · API design · Backend services',
+            letter: () => [
+              'I’d like to be considered for the Senior Software Engineer, Search Infrastructure role in Seattle. Search systems are the work I enjoy most: fresh indexes, steady latency, and services that stay healthy under load.',
+              'At Fabrikam I led the move of our search indexing to a streaming pipeline, which cut refresh time from 6 hours to 40 minutes, and I cut p99 query latency by 38% with Go services on Kubernetes.',
+              'Google’s search infrastructure meets the same problems at a far larger scale. I would welcome the chance to learn from the team and contribute from the first week.',
+            ],
+          },
+          devex: {
+            headline: 'Product engineer, developer tools',
+            summary:
+              'Product-minded engineer who builds developer platforms people enjoy. Nine years of backend services, automation, and the developer workflows around them.',
+            fabrikam: ['latency', 'streaming', 'mentoring', 'monitoring'],
+            litware: ['workflows', 'billing'],
+            skills:
+              'Developer workflows · Developer platforms · Go · Automation · API design · Backend services · Kubernetes · PostgreSQL',
+            letter: () => [
+              'I’d like to be considered for the Product Engineer, Developer Experience role in Mountain View. The tools engineers use every day are the product I most want to build.',
+              'At Litware I improved developer workflows with shared build tooling and automation, and at Fabrikam I mentor engineers and lead code review for the search team.',
+              'I would welcome the chance to bring that care for developers to Google.',
+            ],
+          },
+          'cloud-reliability': {
+            headline: 'Engineering lead, reliability',
+            summary:
+              'Engineering lead who keeps services reliable and teams growing. Runs incident response, mentors engineers, and sets technical strategy for Kubernetes services.',
+            fabrikam: ['lead', 'incidents', 'mentor', 'strategy', 'latency'],
+            litware: ['handbook', 'billing'],
+            skills:
+              'Reliability · Incident response · Kubernetes · Mentoring · Code review · Technical strategy · Roadmaps · Distributed systems · Go',
+            letter: () => [
+              'I’d like to be considered for the Engineering Manager, Cloud Reliability role in Seattle. I care most about two things a reliability team depends on: dependable systems and people who grow.',
+              'At Fabrikam I lead six engineers as the search team’s tech lead, run incident response with a blameless review after every page, and mentor four engineers through code review.',
+              'I would welcome a conversation about how that experience could help the Cloud Reliability team.',
+            ],
+          },
+          'amazon-sde2': {
+            headline: 'Software engineer, distributed systems',
+            summary:
+              'Backend engineer who builds distributed systems and backend services that stay fast as they grow. Nine years of API design, monitoring, and low latency in Go.',
+            fabrikam: ['latency', 'streaming', 'monitoring', 'mentoring'],
+            litware: ['billing', 'workflows'],
+            skills:
+              'Distributed systems · Backend services · API design · Monitoring · Latency · Go · Kubernetes · PostgreSQL · gRPC',
+            letter: () => [
+              'I’d like to be considered for the Software Development Engineer II role in Seattle. I build distributed systems and backend services that stay fast as they grow.',
+              'At Fabrikam I cut p99 query latency by 38% with Go services on Kubernetes, and at Litware I built the event store behind the billing systems, with gRPC APIs for other teams.',
+              'I would welcome the chance to bring that work to Amazon.',
+            ],
+          },
+        };
+        // Roles without a sample of their own are tailored from the base résumé like this.
+        const TAILORED_DEFAULT = {
+          headline: SAMPLE_PERSON.headline,
+          summary:
+            'Backend engineer who builds dependable backend services and the tools around them. Nine years of distributed systems, API design, and monitoring.',
+          fabrikam: ['streaming', 'latency', 'mentoring', 'monitoring'],
+          litware: ['billing', 'workflows'],
+          skills: BASE_RESUME.skills,
+          letter: (app) => {
+            const city = String(app.location || '').split(',')[0].trim();
+            const place = city && !/^remote/i.test(city) ? ` in ${city}` : '';
+            return [
+              `I’d like to be considered for the ${app.role} role${place}. I build dependable backend services and the tools around them, and I care about the people who rely on them.`,
+              'At Fabrikam I led the move of our search indexing to a streaming pipeline, which cut refresh time from 6 hours to 40 minutes, and I mentor engineers through code review.',
+              `I would welcome the chance to bring that experience to ${app.company}.`,
+            ];
+          },
+        };
+        const tailoringOf = (appId) => TAILORED[appId] ?? TAILORED_DEFAULT;
+
+        function tailoredFields(appId) {
+          const tailoring = tailoringOf(appId);
+          return {
+            ...SAMPLE_PERSON,
+            headline: tailoring.headline,
+            summary: tailoring.summary,
+            experience: experienceOf(tailoring.fabrikam, tailoring.litware),
+            skills: tailoring.skills,
+          };
+        }
+
+        const MONTHS = [
+          'January',
+          'February',
+          'March',
+          'April',
+          'May',
+          'June',
+          'July',
+          'August',
+          'September',
+          'October',
+          'November',
+          'December',
+        ];
+        // "2026-10-02" reads "October 2, 2026", the way a letter is dated.
+        const letterDate = (day) => {
+          const [year, month, date] = String(day).slice(0, 10).split('-').map(Number);
+          return MONTHS[month - 1] ? `${MONTHS[month - 1]} ${date}, ${year}` : '';
+        };
+
+        // A cover letter for a role ({ id, role, company, location }), dated the day it was drafted.
+        function letterMarkdown(app, day) {
+          const paragraphs = tailoringOf(app.id).letter(app);
+          return [
+            `# ${SAMPLE_PERSON.name}`,
+            SAMPLE_PERSON.contact,
+            '',
+            letterDate(day),
+            '',
+            `Dear ${app.company} hiring team,`,
+            ...paragraphs.flatMap((paragraph) => ['', paragraph]),
+            '',
+            'Thank you for your consideration,',
+            '',
+            SAMPLE_PERSON.name,
+          ].join('\n');
+        }
+
+        // A template is Markdown with {{placeholders}}. One alone on its line fills a block (the
+        // experience, a paragraph) set apart from its neighbours; one inside a line fills inline, its
+        // lines joined with "; ".
+        const ALONE = /^\{\{(\w+)\}\}$/;
+        const isHeadingLine = (line) => /^#{1,3}\s/.test(String(line).trim());
+        const tidy = (lines) => {
+          const out = [];
+          for (const line of lines) {
+            if (!line.trim() && (!out.length || !out[out.length - 1].trim())) continue;
+            out.push(line);
+          }
+          while (out.length && !out[out.length - 1].trim()) out.pop();
+          return out.join('\n');
+        };
+        function fillTemplate(skeleton, fields) {
+          const out = [];
+          for (const raw of String(skeleton ?? '').replace(/\r\n?/g, '\n').split('\n')) {
+            const alone = raw.trim().match(ALONE);
+            if (alone) {
+              const value = String(fields[alone[1]] ?? '').trim();
+              if (!value) continue;
+              const before = out[out.length - 1];
+              if (before?.trim() && !isHeadingLine(before)) out.push('');
+              out.push(...value.split('\n'), '');
+              continue;
+            }
+            out.push(
+              raw.replace(/\{\{(\w+)\}\}/g, (_, key) =>
+                String(fields[key] ?? '')
+                  .split('\n')
+                  .map((line) => line.trim())
+                  .filter(Boolean)
+                  .join('; '),
+              ),
+            );
+          }
+          return tidy(out);
+        }
+
+        const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // One template line as a pattern: its words exactly, each placeholder a capture.
+        function linePattern(line) {
+          const keys = [];
+          const parts = line.split(/(\{\{\w+\}\})/);
+          const last = parts.reduce((index, part, at) => (/^\{\{\w+\}\}$/.test(part) ? at : index), -1);
+          const source = parts
+            .map((part, at) => {
+              const key = part.match(/^\{\{(\w+)\}\}$/)?.[1];
+              if (!key) return escapeRegExp(part);
+              keys.push(key);
+              return at === last ? '(.+)' : '(.+?)';
+            })
+            .join('');
+          return { pattern: new RegExp(`^${source}$`), keys };
+        }
+
+        // The fields a draft holds, read back through the template it was laid out in, so a switch
+        // of template keeps your edits. null when the draft no longer follows that template.
+        function unfillTemplate(text, skeleton) {
+          const template = String(skeleton ?? '').replace(/\r\n?/g, '\n').split('\n').map((line) => line.trim());
+          const lines = String(text ?? '').replace(/\r\n?/g, '\n').split('\n');
+          const nextFilled = (index) => {
+            let at = index;
+            while (at < lines.length && !lines[at].trim()) at += 1;
+            return at;
+          };
+          const fields = {};
+          let at = 0;
+          for (let index = 0; index < template.length; index += 1) {
+            const line = template[index];
+            if (!line) continue;
+            const alone = line.match(ALONE);
+            if (alone) {
+              let next = index + 1;
+              while (next < template.length && !template[next]) next += 1;
+              const start = nextFilled(at);
+              let end = start;
+              if (next >= template.length) {
+                end = lines.length;
+              } else if (ALONE.test(template[next])) {
+                while (end < lines.length && lines[end].trim()) end += 1;
+              } else {
+                const { pattern } = linePattern(template[next]);
+                while (end < lines.length && !pattern.test(lines[end].trim())) end += 1;
+                if (end >= lines.length) return null;
+              }
+              fields[alone[1]] = tidy(lines.slice(start, end));
+              at = end;
+              continue;
+            }
+            const { pattern, keys } = linePattern(line);
+            const found = nextFilled(at);
+            const match = found < lines.length ? lines[found].trim().match(pattern) : null;
+            if (!match) return null;
+            keys.forEach((key, place) => {
+              fields[key] = match[place + 1].trim();
+            });
+            at = found + 1;
+          }
+          return nextFilled(at) < lines.length ? null : fields;
+        }
+
+        // A draft laid out again in another template, keeping what you wrote. Fields the first
+        // template does not show (Classic has no headline) come from the deputy's draft.
+        function relayTemplate(text, from, to, fallback = {}) {
+          const fields = unfillTemplate(text, from);
+          return fields ? fillTemplate(to, { ...fallback, ...fields }) : null;
+        }
+
+        // A library document's text, as your deputy read it (null for a file this prototype can't
+        // read): the résumé in the Classic template's layout, the CV in its own.
+        function documentMarkdown(id, classic) {
+          if (id === 'resume-main') return fillTemplate(classic, BASE_RESUME);
+          if (id === 'cv-leadership') return SAMPLE_CV;
+          return null;
+        }
+
+        return Object.freeze({
+          SAMPLE_PERSON,
+          SAMPLE_JOBS_HELD,
+          SAMPLE_LINES,
+          BASE_RESUME,
+          CV_PROFILE,
+          SAMPLE_CV,
+          TAILORED,
+          TAILORED_DEFAULT,
+          tailoredFields,
+          letterMarkdown,
+          fillTemplate,
+          unfillTemplate,
+          relayTemplate,
+          documentMarkdown,
+        });
+      })();
+      // SampleDocs: end
+
+      // MaterialsLogic: start
+      // From here to "MaterialsLogic: end" nothing touches the page, so tests can run it alone
+      // (after the SampleDocs block above): what your deputy changed in each draft, how the
+      // posting's keywords are found in a draft, and the download names.
+      const {
+        BASE_RESUME,
+        CV_PROFILE,
+        SAMPLE_JOBS_HELD,
+        SAMPLE_LINES,
+        TAILORED,
+        TAILORED_DEFAULT,
+        fillTemplate,
+        letterMarkdown,
+        relayTemplate,
+        tailoredFields,
+      } = SampleDocs;
+
+      // Each change names text to find in the draft, so Find in draft can select it. The base is
+      // the document the draft was tailored from: the résumé, or the CV for the leadership role.
+      const CHANGES = {
+        'search-infra': [
+          {
+            id: 'summary',
+            kind: 'Rewrote',
+            title: 'Summary, around search systems',
+            before: BASE_RESUME.summary,
+            after: TAILORED['search-infra'].summary,
+            find: 'Backend engineer who builds fast, reliable search systems.',
+          },
+          {
+            id: 'monitoring',
+            kind: 'Expanded',
+            title: 'The monitoring bullet, moved up',
+            before: `${SAMPLE_LINES.monitoring} The fourth bullet under Fabrikam.`,
+            after: `${SAMPLE_LINES.monitoringEarly} The third bullet under Fabrikam.`,
+            find: SAMPLE_LINES.monitoringEarly,
+            flag: 'Check this one closely: it says more than your base résumé does.',
+          },
+          {
+            id: 'skills',
+            kind: 'Reordered',
+            title: 'Skills, the posting’s first',
+            before: BASE_RESUME.skills,
+            after: TAILORED['search-infra'].skills,
+            find: 'Distributed systems · Go · Search relevance · Latency',
+          },
+        ],
+        devex: [
+          {
+            id: 'summary',
+            kind: 'Rewrote',
+            title: 'Summary, around developer tools',
+            before: BASE_RESUME.summary,
+            after: TAILORED.devex.summary,
+            find: 'Product-minded engineer who builds developer platforms people enjoy.',
+          },
+          {
+            id: 'workflows',
+            kind: 'Moved',
+            title: 'Developer workflows, to the top of Litware',
+            before: 'The second bullet under Litware.',
+            after: 'The first bullet under Litware.',
+            find: SAMPLE_LINES.workflows,
+          },
+          {
+            id: 'skills',
+            kind: 'Reordered',
+            title: 'Skills, the posting’s first',
+            before: BASE_RESUME.skills,
+            after: TAILORED.devex.skills,
+            find: 'Developer workflows · Developer platforms · Go · Automation',
+          },
+        ],
+        'cloud-reliability': [
+          {
+            id: 'summary',
+            kind: 'Rewrote',
+            title: 'Your profile, as a summary for this role',
+            before: CV_PROFILE,
+            after: TAILORED['cloud-reliability'].summary,
+            find: 'Engineering lead who keeps services reliable and teams growing.',
+          },
+          {
+            id: 'incidents',
+            kind: 'Moved',
+            title: 'Incident response, to the second bullet',
+            before: 'The third bullet under Fabrikam.',
+            after: 'The second bullet under Fabrikam.',
+            find: SAMPLE_LINES.incidents,
+          },
+          {
+            id: 'shortened',
+            kind: 'Shortened',
+            title: 'To one page: practices, projects, and talks left out',
+            before: 'Two pages, with leadership practices, selected projects, and talks.',
+            after: 'One page: experience, skills, education, and certifications.',
+            find: SAMPLE_JOBS_HELD.litware,
+          },
+        ],
+        'amazon-sde2': [
+          {
+            id: 'summary',
+            kind: 'Rewrote',
+            title: 'Summary, around distributed systems',
+            before: BASE_RESUME.summary,
+            after: TAILORED['amazon-sde2'].summary,
+            find: 'Backend engineer who builds distributed systems and backend services that stay fast as they grow.',
+          },
+          {
+            id: 'latency',
+            kind: 'Moved',
+            title: 'Query latency, to the top of Experience',
+            before: 'The second bullet under Fabrikam.',
+            after: 'The first bullet under Fabrikam.',
+            find: SAMPLE_LINES.latency,
+          },
+          {
+            id: 'skills',
+            kind: 'Reordered',
+            title: 'Skills, the posting’s first',
+            before: BASE_RESUME.skills,
+            after: TAILORED['amazon-sde2'].skills,
+            find: 'Distributed systems · Backend services · API design · Monitoring',
+          },
+        ],
+      };
+      const CHANGES_DEFAULT = [
+        {
+          id: 'summary',
+          kind: 'Rewrote',
+          title: 'Summary, for this role',
+          before: BASE_RESUME.summary,
+          after: TAILORED_DEFAULT.summary,
+          find: 'Backend engineer who builds dependable backend services and the tools around them.',
+        },
+      ];
+      const changesFor = (appId) => CHANGES[appId] ?? CHANGES_DEFAULT;
+
+      // Lower case, dashes and punctuation as spaces, padded, so a keyword matches whole words.
+      const normalizeText = (text) =>
+        ` ${String(text)
+          .toLowerCase()
+          .replace(/[^\p{L}\p{N}+#]+/gu, ' ')
+          .trim()} `;
+
+      // Other words a posting keyword may appear as in a draft.
+      const KEYWORD_TERMS = {
+        APIs: ['api'],
+        'Backend services': ['backend service'],
+        'Developer platforms': ['developer platform'],
+        'Developer workflows': ['developer workflow'],
+        Hiring: ['hiring', 'hired'],
+        Mentoring: ['mentoring', 'mentored', 'mentor'],
+        Reliability: ['reliability', 'reliable'],
+      };
+      const termsOf = (entry) =>
+        typeof entry === 'string' ? (KEYWORD_TERMS[entry] ?? [entry]) : entry.terms;
+      const labelOf = (entry) => (typeof entry === 'string' ? entry : entry.label);
+
+      // A keyword (a posting's label, or { label, terms }) is found when any of its terms appears
+      // as whole words, with an optional plural.
+      const matchKeywords = (text, keywords) => {
+        const haystack = normalizeText(text);
+        return keywords.map((entry) => ({
+          label: labelOf(entry),
+          found: termsOf(entry).some((term) => {
+            const needle = normalizeText(term).trim();
+            return [` ${needle} `, ` ${needle}s `, ` ${needle}es `].some((form) =>
+              haystack.includes(form),
+            );
+          }),
+        }));
+      };
+
+      const fileSafe = (value) =>
+        String(value)
+          .replace(/[^a-z0-9]+/gi, '_')
+          .replace(/^_|_$/g, '');
+
+      // Download names keep the established pattern, now Markdown: for example
+      // Alex_Morgan_Google_Tailored_Resume.md and Alex_Morgan_Google_Cover_Letter.md.
+      const fileNameFor = (company, type) =>
+        `Alex_Morgan_${fileSafe(company)}_${type === 'cover' ? 'Cover_Letter' : 'Tailored_Resume'}.md`;
+
+      // How a draft fits your page setting, in words, from paper.render's result.
+      function fitText(result) {
+        if (!result) return '';
+        const lines = `${result.overflowLines} ${result.overflowLines === 1 ? 'line' : 'lines'}`;
+        if (result.over) {
+          return result.limit === 1 && result.pages === 2
+            ? `Trim ${lines} to fit one page, or allow two pages.`
+            : `Trim ${lines} to fit your page setting.`;
+        }
+        if (result.limit === 1) return 'Fits one page, the length that’s recommended.';
+        return result.pages === 1
+          ? 'Fits one page. Your setting allows two.'
+          : 'Fits your setting. One page is recommended.';
+      }
+      // MaterialsLogic: end
+
+      // ------------------------------------------------------------------ the role
+
+      const markFor = (company) =>
+        String(company)
+          .split(/\s+/)
+          .map((word) => word[0] ?? '')
+          .join('')
+          .slice(0, 2)
+          .toUpperCase();
+      const when = (day) => (String(day).slice(0, 10) === store.today() ? 'today' : store.format.shortDate(day));
+
+      const findApplication = (state) => {
+        const apps = state?.applications ?? [];
+        const requested = parameters.get('app');
+        if (requested) {
+          const found = apps.find((item) => item.id === requested);
+          if (found) return { app: found, missing: null };
+        }
+        // Job matches can still open the editor with ?job=, &company=, and &location=.
+        const title = parameters.get('job');
+        if (title) {
+          const company = parameters.get('company') || '';
+          const found = apps.find(
+            (item) =>
+              item.role.toLowerCase() === title.toLowerCase() &&
+              (!company || item.company.toLowerCase() === company.toLowerCase()),
+          );
+          if (found) return { app: found, missing: null };
+          return {
+            app: {
+              id: null,
+              role: title,
+              company: company || 'the employer',
+              location: parameters.get('location') || '',
+              stage: null,
+              materials: 'ready',
+              timeline: [],
+            },
+            missing: null,
+          };
+        }
+        const fallback = apps.find((item) => item.id === DEFAULT_APP) ?? apps[0];
+        return { app: fallback, missing: requested };
+      };
+
+      const initialState = store.get();
+      const resolved = findApplication(initialState);
+      let app = resolved.app;
+      const appId = app?.id ?? null;
+      const editsKey = appId ?? `adhoc:${fileSafe(app.role)}:${fileSafe(app.company)}`;
+      // The deputy's sample tailoring for this role; a role you opened by name gets the default.
+      const fieldsKey = appId ?? 'adhoc';
+
+      // Back returns to the place that opened the editor. R10-3: a page that kept your place sends
+      // ?return=, and Back names that page and goes back to just where you were (the shared
+      // place.back: the drafts page and filters in Résumés, the open card in Applications). Older
+      // links say ?from=: the role's details in Applications, the job in Job matches, or the
+      // drafts library in Résumés.
+      const placeBack = components()?.place?.back ?? null;
+      if (placeBack?.href) {
+        // From Résumés (its drafts list), Back lands on the drafts, then your exact place there.
+        materialsBack.href = /^\.\/documents-preview\.html(?:\?[^#]*)?$/.test(placeBack.href)
+          ? `${placeBack.href}#drafts`
+          : placeBack.href;
+        materialsBack.textContent = `← ${placeBack.name}`;
+        // The shared Back marker: following it restores your place on that page.
+        materialsBack.dataset.pageBackLink = '';
+      } else if (appId && parameters.get('from') === 'applications') {
+        materialsBack.href = `./applications-preview.html?open=${encodeURIComponent(appId)}`;
+      } else if (app?.jobId && parameters.get('from') === 'jobs') {
+        materialsBack.href = `./jobs-preview.html?job=${encodeURIComponent(app.jobId)}`;
+      } else if (parameters.get('from') === 'resumes') {
+        materialsBack.href = './documents-preview.html#drafts';
+      }
+
+      // The world as the store last told this page: store.get() copies all of it, and reading it
+      // on every key was most of a keystroke on the large demo (T3-22). Read only.
+      let latestState = initialState;
+      const docsState = (state = latestState) => state?.documents ?? {};
+      const readEdits = (state) => docsState(state).edits?.[editsKey] ?? {};
+      // This role's drafts in the store (drafts() rows), or none yet.
+      const draftOf = (kind = 'resume') =>
+        appId ? (store.drafts().find((draft) => draft.appId === appId && draft.kind === kind) ?? null) : null;
+      const hasDrafts = (item) => !item.id || Boolean(draftOf());
+      const isApproved = (item) => item.approval === 'approved' || item.materials === 'approved';
+
+      // waiting: drafts to review and approve · approved: approved, still undoable · used: approved
+      // and applied · none: no drafts yet, can draft · own: applied with your own materials ·
+      // closed: closed without approval · untracked: not in Applications.
+      const modeFor = (item) => {
+        if (!item.id) return 'untracked';
+        if (!hasDrafts(item)) return PAST_APPROVAL.includes(item.stage) ? 'own' : 'none';
+        if (isApproved(item)) return PAST_APPROVAL.includes(item.stage) ? 'used' : 'approved';
+        if (item.stage === 'closed') return 'closed';
+        return 'waiting';
+      };
+
+      const deputyCopy = (mode, item) => {
+        if (mode === 'approved') return ['approve', 'Approved', 'Approved. I sent nothing.'];
+        if (mode === 'used') {
+          return item.appliedBy === 'deputy'
+            ? ['approve', 'Approved', 'I used these. Nothing sent.']
+            : ['approve', 'Approved', 'You applied with these.'];
+        }
+        if (mode === 'none') {
+          // Your key at its limit with AI work paused: the dock says so instead of "ready".
+          return store.aiChoice().limited === 'paused'
+            ? ['idle', 'Waiting', 'Drafting waits on your limit.']
+            : ['tailor', 'Tailoring', 'Ready to draft when you are.'];
+        }
+        if (mode === 'own' || mode === 'closed') return ['idle', 'Ready', 'Here when you need me.'];
+        if (item.materials === 'draft') return ['tailor', 'Tailoring', 'Drafting for this role.'];
+        return ['tailor', 'Tailoring', 'Drafts ready for your review.'];
+      };
+
+      const showDeputy = (mode, item) => {
+        const [state, duty, speech] = deputyCopy(mode, item);
+        deputy()?.set(state, { duty, speech });
+      };
+
+      // The dock's first pose and words for this role; deputy.js reads them when it starts.
+      let mode = modeFor(app);
+      const primeDock = () => {
+        const dock = document.querySelector('#deputy-dock');
+        if (!dock) return;
+        const [state, duty, speech] = deputyCopy(mode, app);
+        dock.dataset.deputyState = state;
+        dock.querySelector('[data-deputy-duty]').textContent = duty;
+        dock.querySelector('[data-deputy-speech]').textContent = speech;
+      };
+      primeDock();
+
+      // ------------------------------------------------------------------ page parts
+
+      const $ = (selector) => document.querySelector(selector);
+      const announcer = $('#material-announcement');
+      const contextNotice = $('#context-notice');
+      const jobMark = $('#job-mark');
+      const jobTitle = $('#job-title');
+      const jobCompany = $('#job-company');
+      const jobLink = $('#job-link');
+      const tablist = $('#material-tabs');
+      const matchBadge = $('#match-badge');
+      const changesBadge = $('#changes-badge');
+      const changesCount = $('#changes-count');
+      const draftControls = $('#draft-controls');
+      const templateSelect = $('#draft-template');
+      const templateNote = $('#draft-template-note');
+      const pageUnit = $('#draft-pages-unit');
+      const timeline = $('#role-timeline');
+      const approvalTitle = $('#approval-title');
+      const approvalCopy = $('#approval-copy');
+      const approvalActions = $('#approval-actions');
+      const approvalMain = $('#approval-main');
+      const approvalSection = $('#approval');
+      const approveOpen = $('#approve-open');
+      const approveConfirm = $('#approve-confirm');
+      const approveConfirmTitle = $('#approve-confirm-title');
+      const approveConfirmChecks = $('#approve-confirm-checks');
+      const approveYes = $('#approve-yes');
+      const approveNo = $('#approve-no');
+      const approved = $('#approved');
+      const approvedMessage = $('#approved-message');
+      const approvedOpen = $('#approved-open');
+      const approvedFill = $('#approved-fill');
+      const approveUndo = $('#approve-undo');
+      const approvalInfo = $('#approval-info');
+      const NOTE_COPY = templateNote.textContent.trim().replace(/\s+/g, ' ');
+
+      const TYPES = ['resume', 'cover'];
+      const parts = Object.fromEntries(
+        TYPES.map((type) => [
+          type,
+          {
+            panel: $(`#panel-${type}`),
+            file: $(`#${type}-file`),
+            source: $(`#${type}-source`),
+            status: $(`#${type}-status`),
+            desk: $(`#${type}-desk`),
+            editor: $(`#${type}-text`),
+            paper: $(`#${type}-paper`),
+            fit: $(`#${type}-fit`),
+            feedback: $(`#${type}-feedback`),
+            exportFeedback: $(`#${type}-export-feedback`),
+            blank: $(`#${type}-blank`),
+            fileBox: $(`#panel-${type} .mat-file`),
+            prompt: $(`#${type}-prompt`),
+          },
+        ]),
+      );
+
+      const announce = (message) => {
+        announcer.textContent = '';
+        window.setTimeout(() => {
+          announcer.textContent = message;
+        }, 30);
+      };
+
+      const el = (tag, className, text) => {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined) node.textContent = text;
+        return node;
+      };
+
+      // File names wrap after _ . or - instead of mid-word: each joint gets a <wbr>.
+      const setFileName = (node, name) => {
+        node.replaceChildren();
+        for (const [index, piece] of String(name).split(/(?<=[_.-])/).entries()) {
+          if (index) node.append(document.createElement('wbr'));
+          node.append(piece);
+        }
+        return node;
+      };
+
+      const showFeedback = (panel, title, message, kind = 'success') => {
+        panel.dataset.kind = kind;
+        panel.querySelector('.feedback-panel-icon').textContent = kind === 'success' ? '✓' : 'i';
+        panel.querySelector('.feedback-panel-title').textContent = title;
+        panel.querySelector('.feedback-panel-message').textContent = message;
+        panel.hidden = false;
+        announce(`${title}. ${message}`);
+      };
+
+      const hideFeedback = (type) => {
+        parts[type].feedback.hidden = true;
+        parts[type].exportFeedback.hidden = true;
+      };
+
+      // ------------------------------------------------------------------ context and trail
+
+
+      // Round 6 (UAT RM-2): while your deputy applies with these drafts (the store's apply job), the
+      // record's next step is its work, or what it waits for, never yours.
+      const JOB_WAITS = {
+        agreement: 'Your deputy waits for your signature, then applies',
+        gmail: 'Your deputy waits for Gmail, then applies',
+        questions: 'Your deputy needs your answers, then applies',
+        check: 'Your deputy filled the form: check it, then it sends',
+      };
+      const nextStep = (item, current) => {
+        if (current === 'waiting') return ['is-attention', 'Review and approve materials', 'Needs you', 'now'];
+        const job = item.id && typeof store.applyJob === 'function' ? store.applyJob(item.id) : null;
+        if (job?.status === 'running') return ['is-current', 'Your deputy is applying', 'Now', 'your deputy, in the background'];
+        if (job?.status === 'waiting') {
+          return ['is-attention', JOB_WAITS[job.waitingFor?.kind] ?? 'Your deputy waits for you, then applies', 'Needs you', 'now'];
+        }
+        // The autofill preview fills the employer's form; or you apply yourself and mark it applied.
+        if (current === 'approved') return ['', 'Fill the application, or apply yourself', 'Next', 'you'];
+        if (current === 'none') return ['', 'Draft materials', 'Next', 'when you ask'];
+        if (item.stage === 'closed' || !item.next) return null;
+        const date = item.followUp ? when(item.followUp) : 'next';
+        return ['', item.next, 'Next', date];
+      };
+
+      const timelineItem = (tone, title, state, detail) => {
+        const node = el('li', `timeline-item${tone ? ` ${tone}` : ''}`);
+        const time = el('p', 'timeline-time');
+        time.append(el('span', 'timeline-state', state), ` · ${detail}`);
+        node.append(el('p', 'timeline-title', title), time);
+        return node;
+      };
+
+      const byWhom = (by) => (by === 'you' ? 'you' : by === 'gmail' ? 'from Gmail' : 'your deputy');
+
+      function renderContext() {
+        jobMark.textContent = markFor(app.company);
+        jobTitle.textContent = app.role;
+        // "Remote, US · Remote" says it twice; the work style is left out when the place names it.
+        const place = app.location || '';
+        const style =
+          app.workStyle && !place.toLowerCase().includes(app.workStyle.toLowerCase()) ? app.workStyle : '';
+        jobCompany.textContent = [app.company, place, style].filter(Boolean).join(' · ');
+        // Round 6 (P-13): no Stage chip; the top bar and the record below say where the role stands.
+        const target = appId
+          ? [`./applications-preview.html?open=${encodeURIComponent(appId)}`, 'Open in Applications']
+          : ['./jobs-preview.html', 'Open Job matches'];
+        [jobLink.href, jobLink.textContent] = target;
+        approvedOpen.href = target[0];
+        if (appId) approvedFill.href = `./autofill-preview.html?app=${encodeURIComponent(appId)}`;
+        tablist.setAttribute('aria-label', `Materials for ${app.role}`);
+        const steps = (app.timeline ?? []).map((step) =>
+          timelineItem('is-done', step.label, 'Done', `${when(step.date)} · ${byWhom(step.by)}`),
+        );
+        const next = nextStep(app, mode);
+        if (next) steps.push(timelineItem(next[0], next[1], next[2], next[3]));
+        if (!steps.length) steps.push(timelineItem('', 'Add this role from Job matches', 'Next', 'you'));
+        // Written again only when a step changed (T3-19).
+        const drawn = steps.map((step) => `${step.className}|${step.textContent}`).join('\n');
+        if (timeline.dataset.drawn !== drawn) {
+          timeline.dataset.drawn = drawn;
+          timeline.replaceChildren(...steps);
+        }
+      }
+
+      // ------------------------------------------------------------------ drafts and pages
+
+      const templatesNow = () => store.templates();
+      const templateOf = (id) => templatesNow().find((template) => template.id === id) ?? templatesNow()[0];
+      // The template this role's drafts are laid out in: the one chosen here, else your default.
+      const templateNow = (state = latestState) => {
+        const chosen = appId ? draftOf()?.template : readEdits(state).template;
+        return templateOf(chosen ?? docsState(state).templateId ?? 'classic');
+      };
+      const pageLimit = () => Number(store.metric('docs.pageLimit')) || 1;
+
+      const generatedText = (type, template = templateNow()) =>
+        type === 'cover'
+          ? letterMarkdown(app, draftOf('letter')?.updated ?? store.today())
+          : fillTemplate(template.markdown, tailoredFields(fieldsKey));
+
+      const savedText = (type, state) => readEdits(state)[type];
+      const dirty = { resume: false, cover: false };
+      const locked = () => mode === 'approved' || mode === 'used';
+
+      // Where the drafts came from: the document they were tailored from, the model, and the day.
+      const AI_WORDS = Object.fromEntries(
+        Object.entries(store.AI_LABELS ?? {}).map(([key, label]) => [key, label.replace(/^Your /, 'your ')]),
+      );
+      function sourcesNow(state = latestState) {
+        const draft = draftOf();
+        const library = docsState(state).library ?? [];
+        const local = appId ? docsState(state).drafted?.[appId] : null;
+        const baseId = draft?.base ?? docsState(state).defaults?.resume;
+        const base = library.find((doc) => doc.id === baseId);
+        const usage = appId
+          ? store.aiUsage().entries.find((entry) => entry.appId === appId && entry.task === 'tailor')
+          : null;
+        const model =
+          local?.model ?? (usage ? `${usage.model} on ${AI_WORDS[usage.provider] ?? usage.provider}` : null);
+        return {
+          base: base?.name ?? local?.base ?? 'your default résumé',
+          baseKind: base?.variant === 'cv' ? 'CV' : 'résumé',
+          model,
+          day: draft?.updated ?? store.today(),
+        };
+      }
+
+      // The pages each draft runs to now, as the paper laid them out.
+      const pagesNow = { resume: 1, cover: 1 };
+      // Laid out again only when the text, the template, the page setting, or whether the tab
+      // shows changed (T3-19, T3-22), so a store tick never re-paginates an unchanged draft.
+      const paperDrawn = { resume: '', cover: '' };
+      function renderPaper(type) {
+        const part = parts[type];
+        const template = templateNow().id;
+        const limit = pageLimit();
+        const key = `${template}|${limit}|${part.panel.hidden ? 'hidden' : 'shown'}|${part.editor.value}`;
+        if (key === paperDrawn[type]) return;
+        paperDrawn[type] = key;
+        const result = components().paper.render(part.paper, part.editor.value, { template, limit });
+        if (result) pagesNow[type] = result.pages;
+        const fit = fitText(result);
+        if (part.fit.textContent !== fit) part.fit.textContent = fit;
+      }
+      // Saved with the text, so the drafts library can show the pages a saved draft runs to (the
+      // pages of what you typed last, laid out first if they were still waiting).
+      const savedPages = () => {
+        flushPaper();
+        return { resume: pagesNow.resume, letter: pagesNow.cover };
+      };
+
+      function setStatus(type) {
+        const { status } = parts[type];
+        const saved = savedText(type);
+        let label = 'Generated draft';
+        let success = false;
+        if (locked()) {
+          label = 'Approved · read-only';
+          success = true;
+        } else if (dirty[type]) {
+          label = 'Unsaved changes';
+        } else if (saved !== undefined) {
+          label = 'Saved in this browser';
+          success = true;
+        }
+        status.textContent = label;
+        status.classList.toggle('is-neutral', !success);
+      }
+
+      function renderControls() {
+        const template = templateNow();
+        const options = templatesNow().map((entry) => {
+          const option = el('option', '', entry.builtIn ? entry.name : `${entry.name} (yours)`);
+          option.value = entry.id;
+          return option;
+        });
+        const same =
+          [...templateSelect.options].map((option) => `${option.value}:${option.textContent}`).join() ===
+          options.map((option) => `${option.value}:${option.textContent}`).join();
+        if (!same) templateSelect.replaceChildren(...options);
+        templateSelect.value = template.id;
+        templateSelect.disabled = locked();
+        // The page setting, read only (its home is Résumés): the store's figure and its unit.
+        const value = $('#draft-pages-value');
+        const text = store.metricText('docs.pageLimit');
+        if (value.textContent !== text) value.textContent = text;
+        const unit = pageLimit() === 1 ? 'page' : 'pages';
+        if (pageUnit.textContent !== unit) pageUnit.textContent = unit;
+        if (locked()) templateNote.textContent = 'Approved drafts keep their template.';
+        else if (templateNote.dataset.relaid !== 'look') templateNote.textContent = NOTE_COPY;
+      }
+
+      function renderDrafts(state, { keepText = false } = {}) {
+        const has = hasDrafts(app);
+        const { base, baseKind, model, day } = sourcesNow(state);
+        draftControls.hidden = !has || !['resume', 'cover'].includes(currentTab());
+        for (const type of TYPES) {
+          const part = parts[type];
+          part.desk.hidden = !has;
+          part.fileBox.hidden = !has;
+          part.prompt.hidden = !has;
+          part.blank.hidden = has;
+          if (!has) continue;
+          const fileName = fileNameFor(app.company, type);
+          if (part.file.textContent !== fileName) setFileName(part.file, fileName);
+          const madeWith = model ? ` · ${model}` : '';
+          part.source.textContent =
+            type === 'resume'
+              ? `Tailored from ${base}, your base ${baseKind}${madeWith} · drafted ${when(day)}`
+              : `From the role and your tailored résumé${madeWith} · drafted ${when(day)}`;
+          if (!keepText || !dirty[type]) {
+            const next = savedText(type, state) ?? generatedText(type);
+            if (part.editor.value !== next) {
+              part.editor.value = next;
+              // Review starts at the top of the draft, not after its last line.
+              if (document.activeElement !== part.editor) part.editor.setSelectionRange(0, 0);
+            }
+            dirty[type] = false;
+          }
+          part.editor.readOnly = locked();
+          for (const control of part.panel.querySelectorAll('[data-action="save"], [data-action="restore"]')) {
+            control.disabled = locked();
+          }
+          renderPaper(type);
+          setStatus(type);
+        }
+        renderControls();
+        if (!has) renderBlank(mode);
+      }
+
+      // ------------------------------------------------------------------ empty desks
+
+      function blankState(current) {
+        const box = el('div', 'empty-state');
+        const art = el('div', 'empty-state-art');
+        art.setAttribute('aria-hidden', 'true');
+        deputy()?.renderProp(art, current === 'own' ? 'clipboard' : 'page');
+        const actions = el('div', 'empty-state-actions');
+        let title;
+        let copy;
+        const choice = store.aiChoice();
+        if (current === 'own') {
+          title = 'No tailored drafts for this role';
+          copy = `You applied${app.applied ? ` on ${when(app.applied)}` : ''} with materials you prepared yourself. Applications keeps the record.`;
+          const link = el('a', 'secondary-action', 'Open in Applications');
+          link.href = `./applications-preview.html?open=${encodeURIComponent(appId)}`;
+          actions.append(link);
+        } else if (!choice.runsModel) {
+          title = 'Drafting needs an AI source';
+          copy =
+            'Keyword filtering finds roles but doesn’t write drafts. Choose your own key or platform credits in AI & credits, then come back.';
+          const link = el('a', 'secondary-action', 'Open AI & credits');
+          link.href = './ai-preview.html';
+          actions.append(link);
+        } else {
+          title = 'No drafts for this role yet';
+          // At your key's limit the copy names no model: the note beside the action says what runs.
+          copy = choice.limited
+            ? `Your deputy drafts a tailored résumé and cover letter from your default résumé, in your ${templateNow().name} template. In this prototype the drafts are sample text and no API is called.`
+            : `Your deputy drafts a tailored résumé and cover letter from your default résumé with ${choice.text}, in your ${templateNow().name} template. In this prototype the drafts are sample text and no API is called.`;
+          const control = el('button', 'primary-action', 'Draft materials');
+          control.type = 'button';
+          control.dataset.action = 'draft';
+          actions.append(control);
+          if (choice.limited) {
+            const limit = el('a', 'secondary-action', 'Change limit');
+            limit.href = './ai-preview.html#limit';
+            actions.append(limit);
+            // Paused with the platform fallback means no platform credits are left: buying helps too.
+            if (choice.limited === 'paused' && store.aiLimit().onReach === 'platform') {
+              const more = el('button', 'secondary-action', 'Buy credits');
+              more.type = 'button';
+              more.dataset.topupOpen = 'credits';
+              actions.append(more);
+            }
+            const note = draftNote(choice);
+            control.setAttribute('aria-describedby', note.id);
+            box.append(art, el('h3', 'empty-state-title', title), el('p', 'empty-state-copy', copy), actions, note);
+            return box;
+          }
+        }
+        box.append(art, el('h3', 'empty-state-title', title), el('p', 'empty-state-copy', copy), actions);
+        // While the agreement is overdue, drafting waits for your signature (R5-4: said in text).
+        if (actions.querySelector('[data-action="draft"]') && store.agreements?.().paused) {
+          const note = pauseNote();
+          actions.querySelector('[data-action="draft"]').setAttribute('aria-describedby', note.id);
+          box.append(note);
+        }
+        return box;
+      }
+
+      // Drafting while the agreement is overdue: what waits, and where to sign and come back.
+      function pauseNote(refused = false) {
+        const note = el('div', 'feedback-panel mat-draft-note');
+        draftNotes += 1;
+        note.id = `draft-note-${draftNotes}`;
+        note.dataset.kind = refused ? 'error' : 'warning';
+        note.dataset.pauseNote = '';
+        const icon = el('span', 'feedback-panel-icon', '!');
+        icon.setAttribute('aria-hidden', 'true');
+        const words = el('span', 'feedback-panel-copy');
+        const back = `materials-preview.html${window.location.search}${window.location.hash}`;
+        const sign = el('a', '', 'Review and sign');
+        sign.href = `./agreement-preview.html?mode=update&return=${encodeURIComponent(back)}`;
+        const message = el(
+          'span',
+          'feedback-panel-message',
+          'Your deputy is paused until you sign the updated agreement. Your drafts and everything else stay readable. ',
+        );
+        message.append(sign);
+        words.append(el('strong', 'feedback-panel-title', refused ? 'Drafting didn’t start' : 'Drafting is paused'), message);
+        note.append(icon, words);
+        return note;
+      }
+
+      // No platform credits left: when they refresh, and Buy credits beside it.
+      function creditsNote() {
+        const note = el('div', 'feedback-panel mat-draft-note');
+        draftNotes += 1;
+        note.id = `draft-note-${draftNotes}`;
+        note.dataset.kind = 'error';
+        note.dataset.creditsNote = '';
+        const icon = el('span', 'feedback-panel-icon', '!');
+        icon.setAttribute('aria-hidden', 'true');
+        const words = el('span', 'feedback-panel-copy');
+        const refresh = store.credits?.().free?.refreshesOn;
+        const message = el(
+          'span',
+          'feedback-panel-message',
+          `No AI credits are left${refresh ? `; free credits refresh ${store.format.date(refresh)}` : ''}. `,
+        );
+        const buy = el('button', 'compact-action', 'Buy credits');
+        buy.type = 'button';
+        buy.dataset.topupOpen = 'credits';
+        message.append(buy);
+        words.append(el('strong', 'feedback-panel-title', 'Drafting didn’t start'), message);
+        note.append(icon, words);
+        return note;
+      }
+
+      // The note beside Draft materials while your key is at its limit, in the store's words
+      // (aiChoice().summary): drafting is paused until a date, or drafts use platform credits.
+      // After a refused Draft materials it says the draft didn't start. The date carries its metric.
+      let draftNotes = 0;
+      function draftNote(choice, refused = false) {
+        const paused = choice.limited === 'paused';
+        const note = el('div', 'feedback-panel mat-draft-note');
+        draftNotes += 1;
+        note.id = `draft-note-${draftNotes}`;
+        note.dataset.kind = paused ? (refused ? 'error' : 'warning') : 'notice';
+        note.dataset.draftNote = '';
+        const icon = el('span', 'feedback-panel-icon', paused ? '!' : 'i');
+        icon.setAttribute('aria-hidden', 'true');
+        const words = el('span', 'feedback-panel-copy');
+        let heading = 'Drafts use platform credits';
+        if (paused) heading = refused ? 'Drafting didn’t start' : 'Drafting is paused';
+        const message = el('span', 'feedback-panel-message');
+        const summary = `${choice.summary}.`;
+        const date = choice.until ? store.format.date(choice.until) : '';
+        const at = date ? summary.indexOf(date) : -1;
+        if (at < 0) {
+          message.textContent = summary;
+        } else {
+          const figure = el('span', '', date);
+          figure.dataset.metric = paused ? 'ai.limit.pausedUntil' : 'ai.limit.resetsAt';
+          message.append(summary.slice(0, at), figure, summary.slice(at + date.length));
+        }
+        words.append(el('strong', 'feedback-panel-title', heading), message);
+        note.append(icon, words);
+        return note;
+      }
+
+      // Rebuilt only when what it says changes, so a store update elsewhere keeps its focus.
+      let refocusDraft = false;
+      function renderBlank(current) {
+        const choice = store.aiChoice();
+        const key = `${current}:${choice.source}:${templateNow().id}:${choice.limited}:${choice.until}:${store.aiLimit().onReach}:${Boolean(store.agreements?.().paused)}`;
+        for (const type of TYPES) {
+          const { blank } = parts[type];
+          if (blank.dataset.shows === key) continue;
+          blank.dataset.shows = key;
+          // A change of the limit (here or in another tab) rebuilds the note and its actions:
+          // focus inside moves to the same action, or to Draft materials when that one is gone.
+          const had = blank.contains(document.activeElement) ? document.activeElement : null;
+          if (blank.querySelector('[data-topup-open]') && document.querySelector('dialog[open]')) refocusDraft = true;
+          blank.replaceChildren(blankState(current));
+          if (had) {
+            const same = had.dataset.action
+              ? `[data-action="${had.dataset.action}"]`
+              : had.dataset.topupOpen
+                ? '[data-topup-open]'
+                : had.getAttribute('href')
+                  ? `[href="${had.getAttribute('href')}"]`
+                  : null;
+            ((same && blank.querySelector(same)) || blank.querySelector('[data-action="draft"], a'))?.focus();
+          }
+        }
+      }
+
+      // The buy dialog returns focus to Buy credits, which goes once credits are added (drafts then
+      // run on platform credits): Draft materials takes the focus instead of the page.
+      document.addEventListener(
+        'close',
+        (event) => {
+          const dialog = event.target;
+          if (!refocusDraft || !(dialog instanceof HTMLDialogElement)) return;
+          refocusDraft = false;
+          window.setTimeout(() => {
+            // Still in the closed dialog, or on the page itself: nothing took the focus back.
+            const now = document.activeElement;
+            if (now && now !== document.body && now.isConnected && !dialog.contains(now)) return;
+            [...document.querySelectorAll('[data-action="draft"]')].find((node) => node.offsetParent)?.focus();
+          }, 0);
+        },
+        true,
+      );
+
+      // ------------------------------------------------------------------ job match
+
+      let matchSource = 'resume';
+      const matchView = $('#match-view');
+      const matchBlank = $('#match-blank');
+      const matchCount = $('#match-count');
+      const matchMeter = $('#match-meter');
+      const matchFound = $('#match-found');
+      const matchMissing = $('#match-missing');
+      const matchFoundTitle = $('#match-found-title');
+      const matchMissingTitle = $('#match-missing-title');
+      const matchSourceNote = $('#match-source-note');
+
+      // The posting's keywords, as the store keeps them for the found role this application came
+      // from. Roles you added yourself have no posting in the prototype.
+      const postingOf = () => {
+        const job = app.jobId ? store.job(app.jobId) : null;
+        return job?.keywords?.length
+          ? { keywords: job.keywords, note: `Keywords from the ${job.sourceName} posting, ${store.format.shortDate(job.posted)}.` }
+          : null;
+      };
+
+      function renderMatch() {
+        const posting = postingOf();
+        const has = hasDrafts(app);
+        matchView.hidden = !posting || !has;
+        matchBlank.hidden = !matchView.hidden;
+        matchBadge.hidden = matchView.hidden;
+        if (matchView.hidden) {
+          const box = el('div', 'empty-state');
+          const art = el('div', 'empty-state-art');
+          art.setAttribute('aria-hidden', 'true');
+          deputy()?.renderProp(art, 'magnifier');
+          let copy = 'This prototype has no posting text for this role, so there’s nothing to compare.';
+          if (!has) {
+            copy = 'Job match compares a draft with the posting. It appears once your deputy has drafted materials.';
+          } else if (app.source === 'Added by you') {
+            copy = 'Roles you add yourself don’t include a posting in this prototype, so there’s nothing to compare.';
+          }
+          box.append(art, el('h3', 'empty-state-title', 'No posting to compare'), el('p', 'empty-state-copy', copy));
+          matchBlank.replaceChildren(box);
+          return;
+        }
+        const results = matchKeywords(parts[matchSource].editor.value, posting.keywords);
+        const found = results.filter((entry) => entry.found);
+        const missing = results.filter((entry) => !entry.found);
+        const total = results.length;
+        matchCount.textContent = `${found.length} of ${total}`;
+        matchMeter.setAttribute('aria-valuemax', String(total));
+        matchMeter.setAttribute('aria-valuenow', String(found.length));
+        matchMeter.setAttribute('aria-valuetext', `${found.length} of ${total} keywords`);
+        matchMeter.style.setProperty('--value', String(Math.round((found.length / total) * 100)));
+        matchBadge.textContent = `${found.length} of ${total}`;
+        matchFoundTitle.textContent = `In your draft · ${found.length}`;
+        matchMissingTitle.textContent = `Missing · ${missing.length}`;
+        matchSourceNote.textContent = posting.note;
+        const chip = (entry, className) => {
+          const item = el('li');
+          item.append(el('span', className, entry.label));
+          return item;
+        };
+        // The chips are written again only when what was found changed (T3-19).
+        const drawn = JSON.stringify([found.map((entry) => entry.label), missing.map((entry) => entry.label)]);
+        if (matchFound.dataset.drawn === drawn) return;
+        matchFound.dataset.drawn = drawn;
+        matchFound.replaceChildren(
+          ...(found.length
+            ? found.map((entry) => chip(entry, 'status-pill mat-chip-found'))
+            : [el('li', 'mat-meta', 'None yet.')]),
+        );
+        matchMissing.replaceChildren(
+          ...(missing.length
+            ? missing.map((entry) => chip(entry, 'tag'))
+            : [el('li', 'mat-meta', 'Every keyword is in your draft.')]),
+        );
+      }
+
+      // ------------------------------------------------------------------ changes
+
+      const changesView = $('#changes-view');
+      const changesBlank = $('#changes-blank');
+      const changeList = $('#change-list');
+      const changes = changesFor(fieldsKey);
+
+      const confirmedSet = (state) => new Set(readEdits(state).confirmed ?? []);
+
+      function renderChangesBadge(state) {
+        const has = hasDrafts(app);
+        const open = has ? changes.filter((change) => !confirmedSet(state).has(change.id)).length : 0;
+        // Approved drafts are final, so there is nothing left to check.
+        changesBadge.hidden = open === 0 || locked();
+        changesCount.textContent = String(open);
+        approveConfirmChecks.textContent = `You confirmed ${changes.length - open} of ${changes.length} changes.`;
+      }
+
+      function renderChanges(state) {
+        const has = hasDrafts(app);
+        changesView.hidden = !has;
+        changesBlank.hidden = has;
+        renderChangesBadge(state);
+        if (!has) {
+          const box = el('div', 'empty-state');
+          const art = el('div', 'empty-state-art');
+          art.setAttribute('aria-hidden', 'true');
+          deputy()?.renderProp(art, 'page');
+          box.append(
+            art,
+            el('h3', 'empty-state-title', 'No changes yet'),
+            el('p', 'empty-state-copy', 'Changes appear here once your deputy drafts materials for this role.'),
+          );
+          changesBlank.replaceChildren(box);
+          return;
+        }
+        const { base, baseKind } = sourcesNow(state);
+        const copy = `Compared with ${base}, your base ${baseKind}. Your original never changes.`;
+        if ($('#changes-copy').textContent !== copy) $('#changes-copy').textContent = copy;
+        const confirmed = confirmedSet(state);
+        // Drawn again only when the changes, what you confirmed, or the approval changed (T3-19),
+        // so a store tick never replaces a box you are about to tick.
+        const drawn = JSON.stringify([base, baseKind, [...confirmed].sort(), locked(), changes.map((change) => change.id)]);
+        if (changeList.dataset.drawn === drawn) return;
+        changeList.dataset.drawn = drawn;
+        const focused = document.activeElement?.closest?.('#change-list [data-change]');
+        const memo = focused
+          ? [focused.dataset.change, document.activeElement.matches('input') ? 'input' : 'button']
+          : null;
+        changeList.replaceChildren(
+          ...changes.map((change) => {
+            const titleId = `change-title-${change.id}`;
+            const item = el('li', 'mat-change');
+            item.dataset.change = change.id;
+            const head = el('div', 'mat-change-head');
+            const title = el('p', 'item-title', change.title);
+            title.id = titleId;
+            head.append(el('span', 'tag', change.kind), title);
+            const diff = el('dl', 'mat-diff');
+            for (const [label, text, now] of [
+              [`Before, in your base ${baseKind}`, change.before, false],
+              ['Now, in this draft', change.after, true],
+            ]) {
+              const side = el('div', `mat-diff-side${now ? ' is-now' : ''}`);
+              side.append(el('dt', '', label), el('dd', '', text));
+              diff.append(side);
+            }
+            item.append(head, diff);
+            if (change.flag) item.append(el('p', 'mat-flag', change.flag));
+            const actions = el('div', 'mat-change-actions');
+            const find = el('button', 'compact-action', 'Find in draft');
+            find.type = 'button';
+            find.dataset.find = change.id;
+            find.setAttribute('aria-describedby', titleId);
+            const check = el('label', 'mat-check');
+            const box = el('input');
+            box.type = 'checkbox';
+            box.dataset.confirm = change.id;
+            box.checked = confirmed.has(change.id);
+            box.setAttribute('aria-describedby', titleId);
+            check.append(box, el('span', '', 'Confirmed true'));
+            // Approved drafts are final, so there is nothing left to confirm.
+            check.hidden = locked();
+            const note = el('p', 'mat-find-note');
+            note.hidden = true;
+            actions.append(find, check, note);
+            item.append(actions);
+            return item;
+          }),
+        );
+        if (memo) {
+          changeList.querySelector(`[data-change="${memo[0]}"] ${memo[1] === 'input' ? 'input' : 'button'}`)?.focus();
+        }
+      }
+
+      // Scrolls a textarea so a character offset is in view, measured on a hidden copy of its text
+      // so the draft's value, selection, and undo history stay untouched.
+      const MIRRORED = [
+        'fontFamily',
+        'fontSize',
+        'fontWeight',
+        'lineHeight',
+        'letterSpacing',
+        'wordSpacing',
+        'paddingTop',
+        'paddingRight',
+        'paddingBottom',
+        'paddingLeft',
+        'tabSize',
+      ];
+      const revealOffset = (area, index) => {
+        const style = getComputedStyle(area);
+        const mirror = document.createElement('div');
+        for (const property of MIRRORED) mirror.style[property] = style[property];
+        Object.assign(mirror.style, {
+          position: 'absolute',
+          top: '0',
+          left: '-10000px',
+          width: `${area.clientWidth}px`,
+          boxSizing: 'border-box',
+          visibility: 'hidden',
+          whiteSpace: 'pre-wrap',
+          overflowWrap: 'break-word',
+        });
+        mirror.textContent = area.value.slice(0, index);
+        const marker = document.createElement('span');
+        marker.textContent = '\u200b';
+        mirror.append(marker);
+        document.body.append(mirror);
+        const offset = marker.offsetTop;
+        mirror.remove();
+        area.scrollTop = Math.max(0, offset - area.clientHeight / 3);
+      };
+
+      changeList.addEventListener('click', (event) => {
+        const control = event.target.closest('[data-find]');
+        if (!control) return;
+        const change = changes.find((entry) => entry.id === control.dataset.find);
+        const note = control.closest('.mat-change').querySelector('.mat-find-note');
+        const { editor } = parts.resume;
+        const start = editor.value.indexOf(change.find);
+        if (start < 0) {
+          note.hidden = false;
+          note.textContent = 'This passage isn’t in your draft any more. You may have edited it.';
+          announce('That passage isn’t in your tailored résumé any more.');
+          return;
+        }
+        note.hidden = true;
+        components().selectTab($('#tab-resume'));
+        editor.scrollIntoView({ block: 'nearest' });
+        editor.focus({ preventScroll: true });
+        editor.setSelectionRange(start, start + change.find.length);
+        revealOffset(editor, start);
+        announce('Found in your tailored résumé. The passage is selected.');
+      });
+
+      // Edits, the pages they run to, confirmations, and the template of a role you opened by
+      // name live with the editor's own record.
+      const writeEdits = (fields) => {
+        store.update({ type: 'documents' }, (state) => {
+          state.documents = state.documents || {};
+          state.documents.edits = state.documents.edits || {};
+          state.documents.edits[editsKey] = { ...(state.documents.edits[editsKey] || {}), ...fields };
+        });
+      };
+
+      changeList.addEventListener('change', (event) => {
+        const box = event.target.closest('[data-confirm]');
+        if (!box) return;
+        const confirmed = confirmedSet();
+        if (box.checked) confirmed.add(box.dataset.confirm);
+        else confirmed.delete(box.dataset.confirm);
+        writeEdits({ confirmed: [...confirmed] });
+        const open = changes.length - confirmed.size;
+        announce(
+          box.checked
+            ? `Confirmed. ${open === 0 ? 'Every change is confirmed.' : `${open} left to check.`}`
+            : `Unconfirmed. ${open} left to check.`,
+        );
+      });
+
+      // ------------------------------------------------------------------ approval
+
+      let confirming = false;
+      let working = false;
+
+      function renderApproval() {
+        const company = app.company;
+        // Round 6 (P-13, UAT M-3): the top bar is the one approval place. While the drafts wait it
+        // offers Approve and apply and Approve only; after Approve only it shows the approved panel;
+        // after Approve and apply, your deputy's progress only (no panel saying you apply). The
+        // section below keeps the role's record, and a notice where there is nothing to approve.
+        const applyingHere = typeof store.approveAndApply === 'function' && typeof store.review === 'function' && Boolean(appId);
+        const bgJob = applyingHere && typeof store.applyJob === 'function' ? store.applyJob(appId) : null;
+        const bgShown = Boolean(bgJob) && bgJob.status !== 'stopped';
+        approvalActions.hidden = mode !== 'waiting' || confirming;
+        approveConfirm.hidden = mode !== 'waiting' || !confirming;
+        approved.hidden = mode !== 'approved' || bgShown;
+        approvalMain.hidden = mode === 'waiting' || mode === 'approved';
+        approvalSection.setAttribute('aria-labelledby', approvalMain.hidden ? 'trail-title' : 'approval-title');
+        approvalInfo.hidden = mode === 'waiting' || mode === 'approved';
+        const info = (title, message) => {
+          $('#approval-info-title').textContent = title;
+          $('#approval-info-message').textContent = message;
+        };
+        if (mode === 'waiting') {
+          approvalTitle.textContent = 'Approve when every line is true.';
+          approvalCopy.textContent = `In this prototype nothing is sent to ${company}.`;
+        } else if (mode === 'approved') {
+          approvalTitle.textContent = 'These drafts are final for this role.';
+          approvalCopy.textContent = `You approved them ${when(app.timeline?.at(-1)?.date ?? store.today())}. Nothing was sent to ${company}.`;
+          approvedMessage.textContent =
+            bgJob?.status === 'stopped'
+              ? 'Your deputy stopped, and nothing was sent. The drafts stay approved: apply on the employer site and mark it applied, or let your deputy fill the application below (a preview; nothing is sent).'
+              : 'Applications shows this role as Approved · ready to submit. Next, apply on the employer site and mark it applied, or let your deputy fill the application below (a preview; nothing is sent).';
+        } else if (mode === 'used') {
+          const deputyFilled = app.appliedBy === 'deputy';
+          approvalTitle.textContent = deputyFilled ? 'Your deputy used these drafts.' : 'You applied with these drafts.';
+          approvalCopy.textContent = deputyFilled
+            ? 'Submitted from the autofill preview, so nothing was sent. Approved drafts stay as they were, so the record stays true.'
+            : 'Approved drafts stay as they were sent, so the record stays true.';
+          info(
+            `Approved and used${app.applied ? ` for your ${when(app.applied)} application` : ''}`,
+            'Editing is off for these drafts. You can still copy, download, or print them.',
+          );
+        } else if (mode === 'none') {
+          approvalTitle.textContent = 'Nothing to approve yet.';
+          approvalCopy.textContent = 'Approval comes after your deputy drafts the materials and you review them.';
+          info('No drafts yet', 'Draft the materials above first. Nothing is sent either way.');
+        } else if (mode === 'own') {
+          approvalTitle.textContent = 'No tailored drafts for this role.';
+          approvalCopy.textContent = 'You applied with materials you prepared yourself.';
+          info('Nothing to approve', 'Applications keeps this role’s record and next steps.');
+        } else if (mode === 'closed') {
+          approvalTitle.textContent = 'This role is closed.';
+          approvalCopy.textContent = 'Closed roles keep their drafts for your records.';
+          info('Nothing to approve', 'Reopen the role in Applications if it comes back.');
+        } else {
+          approvalTitle.textContent = 'Approval needs a tracked role.';
+          approvalCopy.textContent = 'You can edit, copy, download, and print these drafts here.';
+          info(
+            'Add this role to Applications first',
+            'Approval belongs to roles you track in Applications. Add it from Job matches, then approve it here.',
+          );
+        }
+      }
+
+      const closeConfirm = ({ focus = true } = {}) => {
+        confirming = false;
+        renderApproval();
+        if (focus) approveOpen.focus();
+      };
+
+      approveOpen.addEventListener('click', () => {
+        confirming = true;
+        renderChangesBadge();
+        renderApproval();
+        approveConfirmTitle.focus();
+      });
+
+      approveNo.addEventListener('click', () => closeConfirm());
+
+      approveConfirm.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && !working) {
+          event.preventDefault();
+          closeConfirm();
+        }
+      });
+
+      approveYes.addEventListener('click', () => {
+        if (working || !appId) return;
+        working = true;
+        approveYes.setAttribute('aria-busy', 'true');
+        approveYes.textContent = 'Approving…';
+        approveNo.disabled = true;
+        deputy()?.set('pending', { working: true, duty: 'Working', speech: 'Marking these final.' });
+        window.setTimeout(() => {
+          const current = store.application(appId);
+          const previous = {
+            stage: current.stage,
+            approval: current.approval ?? null,
+            materials: current.materials,
+            next: current.next ?? null,
+          };
+          // Approval covers the text on screen, so both drafts are saved first.
+          store.update({ type: 'documents' }, (state) => {
+            state.documents = state.documents || {};
+            state.documents.edits = state.documents.edits || {};
+            state.documents.edits[editsKey] = {
+              ...(state.documents.edits[editsKey] || {}),
+              resume: parts.resume.editor.value,
+              cover: parts.cover.editor.value,
+              pages: savedPages(),
+            };
+            state.documents.approvals = { ...(state.documents.approvals || {}), [appId]: { previous } };
+          });
+          dirty.resume = false;
+          dirty.cover = false;
+          confirming = false;
+          store.moveApplication(appId, PAST_APPROVAL.includes(current.stage) ? current.stage : 'approval', {
+            label: 'Materials approved',
+            by: 'you',
+            approval: 'approved',
+            materials: 'approved',
+            next: 'Apply on the employer site, or let your deputy fill it',
+          });
+          approveYes.removeAttribute('aria-busy');
+          approveYes.textContent = 'Approve materials';
+          approveNo.disabled = false;
+          working = false;
+          showDeputy(mode, app);
+          react('approved', { speech: 'Approved. Nothing was sent.' });
+          if (mode === 'approved') approveUndo.focus();
+          else {
+            approvalTitle.tabIndex = -1;
+            approvalTitle.focus();
+          }
+          announce(
+            `Materials approved. Applications shows ${app.role} as Approved, ready to submit. Nothing was sent to ${app.company}.`,
+          );
+        }, 618);
+      });
+
+      // ------------------------------------------------------------------ Approve and apply (round 6)
+
+      // Approve and apply at the top (A2): your deputy's review of these drafts, then one action that
+      // saves the text on screen, approves both drafts, and starts the background apply job (the
+      // store's approveAndApply). Shown while the drafts wait for you, where the store has it.
+      const canApply = typeof store.approveAndApply === 'function' && typeof store.review === 'function';
+      const applyBar = $('#mat-apply');
+      const applyReview = $('#mat-apply-review');
+      const applyButton = $('#mat-approve-apply');
+      const applyDone = $('#mat-apply-done');
+      const CHECK_WORDS = { pass: 'Passed', warn: 'Check this', fail: 'Failed' };
+      const CHECK_MARKS = { pass: '✓', warn: '!', fail: '×' };
+      const escapeText = (value) =>
+        String(value ?? '').replace(
+          /[&<>"']/g,
+          (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character],
+        );
+      const checkLine = (check) =>
+        `<li class="mat-review-check" data-status="${escapeText(check.status)}"><span class="mat-review-mark" aria-hidden="true">${CHECK_MARKS[check.status] ?? '·'}</span><span><span class="sr-only">${CHECK_WORDS[check.status] ?? ''}: </span><span class="mat-review-check-label">${escapeText(check.label)}.</span> ${escapeText(check.detail)}</span></li>`;
+      function reviewMarkup(review) {
+        const checks = review.checks ?? [];
+        const passed = checks.filter((check) => check.status === 'pass').length;
+        const warned = checks.filter((check) => check.status === 'warn').length;
+        const failed = checks.filter((check) => check.status === 'fail').length;
+        const verdict = failed
+          ? `${failed} ${failed === 1 ? 'check' : 'checks'} failed · ${passed} of ${checks.length} passed`
+          : warned
+            ? `${warned} to check · ${passed} of ${checks.length} passed`
+            : `Passed every check · ${passed} of ${checks.length}`;
+        const flags = checks.filter((check) => check.status !== 'pass');
+        // The score once on the page, with its key (R3-4).
+        const key = `review.${review.appId}.score`;
+        const value = store.metric(key) === null ? escapeText(review.score) : `<span data-metric="${escapeText(key)}">${escapeText(store.metricText(key))}</span>`;
+        return `<p class="mat-review-head"><span class="mat-review-score">${value}<span class="sr-only"> out of 100</span></span><span class="mat-review-words"><span class="mat-review-label">Your deputy’s review of these drafts</span><span class="mat-review-verdict">${escapeText(verdict)}</span></span></p>${flags.length ? `<ul class="mat-review-checks">${flags.map(checkLine).join('')}</ul>` : ''}<details class="mat-review-all"><summary>Every check (${checks.length})</summary><ul class="mat-review-checks">${checks.map(checkLine).join('')}</ul></details>`;
+      }
+
+      function renderApply() {
+        const job = canApply && appId && typeof store.applyJob === 'function' ? store.applyJob(appId) : null;
+        const live = job && (job.status === 'running' || job.status === 'waiting');
+        const waiting = mode === 'waiting';
+        const shownJob = Boolean(job) && job.status !== 'stopped';
+        // The one approval place (P-13): the review and both actions while the drafts wait, the
+        // approved panel after Approve only, and your deputy's progress after Approve and apply.
+        applyBar.hidden = !appId || !(waiting || mode === 'approved' || shownJob);
+        applyButton.hidden = !canApply;
+        // Approve only is the quieter action beside Approve and apply (the only one without it).
+        approveOpen.className = canApply ? 'secondary-action' : 'primary-action';
+        const approveWords = canApply ? 'Approve only' : 'Approve materials';
+        if (approveOpen.textContent.trim() !== approveWords) approveOpen.textContent = approveWords;
+        const note = canApply
+          ? `Approve and apply saves your edits and marks both drafts final, then your deputy applies in the background. Approve only marks them final and leaves the applying to you. You can undo either until the role is applied. In this prototype nothing is sent to ${app.company}.`
+          : `Approving marks your tailored résumé and cover letter final for this role. Then you apply on the employer site, or let your deputy fill the application (planned for launch). You can undo this until the role is applied. In this prototype nothing is sent to ${app.company}.`;
+        const noteLine = $('#mat-apply-note');
+        if (noteLine.textContent !== note) noteLine.textContent = note;
+        if (applyBar.hidden) return;
+        applyReview.hidden = !waiting || !canApply;
+        applyDone.hidden = waiting || !shownJob;
+        if (waiting && canApply) {
+          const review = store.review(appId);
+          applyReview.dataset.status = review?.status ?? 'none';
+          const html = review ? reviewMarkup(review) : '';
+          if (applyReview.dataset.drawn !== html) {
+            const open = applyReview.querySelector('details')?.open;
+            applyReview.innerHTML = html;
+            applyReview.dataset.drawn = html;
+            if (open) applyReview.querySelector('details').open = true;
+          }
+          return;
+        }
+        if (!shownJob) return;
+        const head = job?.status === 'applied' ? 'Applied by your deputy.' : job?.status === 'stopped' ? 'Approved. Your deputy stopped.' : 'Approved. Your deputy is applying.';
+        let message = 'It applies in the background, so you can leave this page. Applications shows each step.';
+        if (job?.status === 'waiting' && job.waitingFor?.kind === 'agreement') message = 'It signs in first, so it waits for your signature on the updated agreement, then carries on by itself.';
+        else if (job?.status === 'waiting' && job.waitingFor?.kind === 'questions') message = 'It needs an answer from you: open it in Applications to answer, and it carries on.';
+        else if (job?.status === 'applied') message = job.result?.text ?? 'Applied · sample: nothing was sent';
+        else if (job?.status === 'stopped') message = 'Nothing was sent, and your drafts stay approved.';
+        else if (!job) message = 'Applying is off, so apply on the employer site and mark it applied in Applications.';
+        $('#mat-apply-done-title').textContent = head;
+        $('#mat-apply-done-message').textContent = message;
+        const watch = $('#mat-apply-watch');
+        watch.hidden = !live;
+        // The agreement first: its Review and sign comes back to these drafts.
+        const sign = $('#mat-apply-sign');
+        sign.hidden = !(job?.status === 'waiting' && job.waitingFor?.kind === 'agreement');
+        sign.href = `./agreement-preview.html?mode=update&return=${encodeURIComponent(`materials-preview.html?app=${appId}&from=applications`)}`;
+        if (job?.watchHref) watch.href = `${job.watchHref}${job.watchHref.includes('live=1') ? '' : '&live=1'}`;
+        $('#mat-apply-open').href = `./applications-preview.html?open=${encodeURIComponent(appId)}`;
+      }
+
+      applyButton.addEventListener('click', () => {
+        if (working || !appId || !canApply || mode !== 'waiting') return;
+        // Approval covers the text on screen, so both drafts are saved first, as Approve only does.
+        store.update({ type: 'documents' }, (state) => {
+          state.documents = state.documents || {};
+          state.documents.edits = state.documents.edits || {};
+          state.documents.edits[editsKey] = {
+            ...(state.documents.edits[editsKey] || {}),
+            resume: parts.resume.editor.value,
+            cover: parts.cover.editor.value,
+            pages: savedPages(),
+          };
+        });
+        dirty.resume = false;
+        dirty.cover = false;
+        const result = store.approveAndApply(appId);
+        if (!result?.ok) {
+          announce(result?.reason === 'not-waiting' ? 'These drafts are already approved.' : 'That didn’t work. Try again.');
+          react('error');
+          return;
+        }
+        confirming = false;
+        renderApply();
+        applyDone.focus();
+        // The line matches what the job does next (UAT D-12): six words at most.
+        const job = result.job ?? null;
+        const speech =
+          result.reason === 'applying-off'
+            ? 'Approved. You apply this one.'
+            : job?.status === 'waiting' && job.waitingFor?.kind === 'agreement'
+              ? 'Approved. I’ll wait for your signature.'
+              : job?.status === 'waiting'
+                ? 'Approved. I need you first.'
+                : 'Approved. I’ll apply now.';
+        react('approved', { speech });
+        announce(`${$('#mat-apply-done-title').textContent} ${$('#mat-apply-done-message').textContent} Nothing is sent.`);
+      });
+
+      approveUndo.addEventListener('click', () => {
+        if (!appId) return;
+        const record = docsState().approvals?.[appId];
+        const previous = record?.previous ?? {
+          stage: 'approval',
+          approval: 'waiting',
+          materials: 'ready',
+          next: 'Review and approve materials',
+        };
+        store.update({ type: 'move', id: appId, stage: previous.stage }, (state) => {
+          const item = state.applications.find((entry) => entry.id === appId);
+          if (!item) return;
+          item.stage = previous.stage;
+          if (previous.approval) item.approval = previous.approval;
+          else delete item.approval;
+          item.materials = previous.materials;
+          item.next = previous.next;
+          const last = item.timeline.at(-1);
+          if (last?.label === 'Materials approved' && last.by === 'you') item.timeline.pop();
+          else item.timeline.push({ date: store.today(), label: 'Approval withdrawn', by: 'you' });
+          if (state.documents?.approvals) delete state.documents.approvals[appId];
+        });
+        approveOpen.focus();
+        announce('Approval undone. The drafts are waiting for your approval again, and you can edit them.');
+        react('saved', { speech: 'Approval undone. Edit away.' });
+      });
+
+      // ------------------------------------------------------------------ drafting
+
+      document.addEventListener('click', (event) => {
+        const control = event.target.closest('[data-action="draft"]');
+        if (!control || working || !appId) return;
+        working = true;
+        const panel = control.closest('[data-material]');
+        control.setAttribute('aria-busy', 'true');
+        control.textContent = 'Drafting…';
+        deputy()?.set('tailor', { working: true, duty: 'Tailoring', speech: 'Drafting for this role.' });
+        announce('Drafting a tailored résumé and cover letter. In this prototype no API is called.');
+        window.setTimeout(() => {
+          const fallback = store.aiChoice().limited === 'platform';
+          const result = store.draftMaterials(appId);
+          working = false;
+          if (!result?.ok) {
+            control.removeAttribute('aria-busy');
+            control.textContent = 'Draft materials';
+            showDeputy(mode, app);
+            react('error');
+            // Your key at its limit: the note beside the action says it didn't start and until
+            // when (the store's reason, with resetsAt), and focus stays on Draft materials.
+            const choice = store.aiChoice();
+            if (result?.reason === 'own-key-limit-reached' && choice.limited === 'paused') {
+              for (const old of document.querySelectorAll('[data-draft-note]')) {
+                const note = draftNote(choice, true);
+                old.closest('.empty-state')?.querySelector('[data-action="draft"]')?.setAttribute('aria-describedby', note.id);
+                old.replaceWith(note);
+              }
+              announce(`Drafting didn’t start. ${choice.summary}.`);
+              return;
+            }
+            // Paused for the agreement, or out of credits: the reason goes beside Draft materials.
+            const why =
+              result?.reason === 'agreement-required'
+                ? pauseNote(true)
+                : result?.reason === 'credits-out'
+                  ? creditsNote()
+                  : null;
+            if (why) {
+              const box = control.closest('.empty-state');
+              box?.querySelector('[data-pause-note], [data-credits-note]')?.remove();
+              control.setAttribute('aria-describedby', why.id);
+              box?.append(why);
+              announce(
+                result.reason === 'agreement-required'
+                  ? 'Drafting didn’t start. Your deputy is paused until you sign the updated agreement.'
+                  : 'Drafting didn’t start. No AI credits are left.',
+              );
+              return;
+            }
+            announce('We couldn’t draft materials for this role. Check AI & credits, then try again.');
+            return;
+          }
+          showDeputy(mode, app);
+          react('saved', { speech: 'Your drafts are ready.' });
+          const type = panel?.dataset.material ?? 'resume';
+          parts[type].editor.focus();
+          parts[type].editor.setSelectionRange(0, 0);
+          // On the platform fallback the drafts name what wrote them (the store records it).
+          const wrote = fallback ? docsState().drafted?.[appId]?.model : null;
+          announce(
+            wrote
+              ? `Drafts ready, written with ${wrote} because your key reached your limit. Review them, then approve when every line is true.`
+              : 'Drafts ready. Review them, check the changes, then approve when every line is true.',
+          );
+        }, 1618);
+      });
+
+      // ------------------------------------------------------------------ editing
+
+      const saveDraft = (type) => {
+        const part = parts[type];
+        if (part.editor.readOnly) return;
+        writeEdits({ [type]: part.editor.value, pages: savedPages() });
+        dirty[type] = false;
+        setStatus(type);
+        part.exportFeedback.hidden = true;
+        showFeedback(part.feedback, 'Draft saved', 'Your edits stay in this browser.');
+        react('saved', { speech: 'Saved in this browser.' });
+      };
+
+      const restoreDraft = (type) => {
+        const part = parts[type];
+        if (part.editor.readOnly) return;
+        part.editor.value = generatedText(type);
+        part.editor.setSelectionRange(0, 0);
+        store.update({ type: 'documents' }, (state) => {
+          const entry = state.documents?.edits?.[editsKey];
+          if (entry) delete entry[type];
+        });
+        dirty[type] = false;
+        renderPaper(type);
+        renderMatch();
+        setStatus(type);
+        part.exportFeedback.hidden = true;
+        showFeedback(part.feedback, 'Generated draft restored', 'Your saved edits for this draft were cleared.');
+        react('saved', { speech: 'Back to my draft.' });
+      };
+
+      const copyDraft = async (type) => {
+        const part = parts[type];
+        part.feedback.hidden = true;
+        try {
+          await navigator.clipboard.writeText(part.editor.value);
+          showFeedback(part.exportFeedback, 'Text copied', 'Paste the Markdown into the editor you trust.');
+          react('copied');
+        } catch {
+          part.editor.focus();
+          part.editor.select();
+          showFeedback(part.exportFeedback, 'Text selected', 'Use your browser’s copy command to copy it.', 'notice');
+        }
+      };
+
+      const downloadDraft = (type) => {
+        const part = parts[type];
+        const name = fileNameFor(app.company, type);
+        const blob = new Blob([part.editor.value], { type: 'text/markdown;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = name;
+        link.click();
+        URL.revokeObjectURL(link.href);
+        part.feedback.hidden = true;
+        showFeedback(part.exportFeedback, 'Download prepared', `The current text was saved as ${name}. No application was sent.`);
+        react('saved', { speech: 'Downloaded. Nothing was sent.' });
+      };
+
+      // Prints only this draft's pages: the shared paper marks its stack for the print stylesheet.
+      const printDraft = (type) => {
+        renderPaper(type);
+        components().paper.print(parts[type].paper);
+      };
+
+      // The pages at reading size: the shared preview dialog, with the draft as it is now.
+      const enlargeDraft = (type, opener) => {
+        const template = templateNow();
+        components().preview.open(
+          {
+            title: `${type === 'cover' ? 'Cover letter' : 'Tailored résumé'}: ${app.role}`,
+            meta: `${app.company} · ${template.name} template · as it prints`,
+            source: parts[type].editor.value,
+            template: template.id,
+          },
+          opener,
+        );
+      };
+
+      // The pages follow your typing once you pause (T3-22): laying out pages measures every
+      // line, so they wait 300ms after your last key, and at most a second while you keep typing;
+      // the Job match count waits with them. The keys themselves never wait.
+      const PAPER_WAIT_MS = 300;
+      const PAPER_MAX_WAIT_MS = 1000;
+      let paperTimer = 0;
+      let paperSince = 0;
+      let matchWaiting = false;
+      const queued = new Set();
+      function flushPaper() {
+        if (paperTimer) window.clearTimeout(paperTimer);
+        paperTimer = 0;
+        paperSince = 0;
+        for (const each of queued) renderPaper(each);
+        queued.clear();
+        if (matchWaiting) {
+          matchWaiting = false;
+          renderMatch();
+        }
+      }
+      const queuePaper = (type, { match = false } = {}) => {
+        queued.add(type);
+        if (match) matchWaiting = true;
+        const now = Date.now();
+        if (!paperSince) paperSince = now;
+        if (paperTimer) window.clearTimeout(paperTimer);
+        paperTimer = window.setTimeout(flushPaper, Math.max(0, Math.min(PAPER_WAIT_MS, paperSince + PAPER_MAX_WAIT_MS - now)));
+      };
+
+      for (const type of TYPES) {
+        const part = parts[type];
+        part.panel.addEventListener('click', (event) => {
+          const control = event.target.closest('[data-action]');
+          if (!control) return;
+          const action = control.dataset.action;
+          if (action === 'save') saveDraft(type);
+          else if (action === 'restore') restoreDraft(type);
+          else if (action === 'copy') copyDraft(type);
+          else if (action === 'download') downloadDraft(type);
+          else if (action === 'print') printDraft(type);
+          else if (action === 'enlarge') enlargeDraft(type, control);
+        });
+        part.editor.addEventListener('input', () => {
+          dirty[type] = true;
+          hideFeedback(type);
+          setStatus(type);
+          queuePaper(type, { match: matchSource === type });
+        });
+        part.editor.addEventListener('keydown', (event) => {
+          if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+            event.preventDefault();
+            saveDraft(type);
+          }
+        });
+        // Keyboard focus scrolls only the caret into view, which can leave the top of this tall
+        // editor under the sticky header. When the whole editor fits below the header, show all
+        // of it. Pointer focus keeps the page still, because the person chose that spot.
+        let fromPointer = false;
+        part.editor.addEventListener('pointerdown', () => {
+          fromPointer = true;
+        });
+        part.editor.addEventListener('blur', () => {
+          fromPointer = false;
+        });
+        part.editor.addEventListener('focus', () => {
+          if (fromPointer) return;
+          window.requestAnimationFrame(() => {
+            const box = part.editor.getBoundingClientRect();
+            const clearance = Number.parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+            if (box.top < clearance && box.height <= window.innerHeight - clearance) {
+              part.editor.scrollIntoView({ block: 'nearest' });
+            }
+          });
+        });
+      }
+
+      $('#match-source').addEventListener('change', (event) => {
+        matchSource = event.target.value === 'cover' ? 'cover' : 'resume';
+        renderMatch();
+        announce(
+          `Comparing your ${matchSource === 'cover' ? 'cover letter' : 'tailored résumé'}: ${matchCount.textContent} keywords found.`,
+        );
+      });
+
+      // ------------------------------------------------------------------ template and pages
+
+      // A new template lays the résumé out again: your edits are read back through the template
+      // they follow and filled into the new one. A draft whose sections no longer match keeps its
+      // text, and only the look changes. The letter keeps its words; only its look changes.
+      templateSelect.addEventListener('change', () => {
+        const from = templateNow();
+        const to = templateOf(templateSelect.value);
+        if (!to || to.id === from.id || locked()) return;
+        const part = parts.resume;
+        const edited = dirty.resume || savedText('resume') !== undefined;
+        const relaid = edited
+          ? relayTemplate(part.editor.value, from.markdown, to.markdown, tailoredFields(fieldsKey))
+          : null;
+        // A tracked role keeps its template with its drafts, so Résumés shows the same one; a role
+        // opened by name keeps it with the editor's own record.
+        if (appId) store.setDraftTemplate(appId, to.id);
+        else writeEdits({ template: to.id });
+        let message;
+        if (!edited) {
+          message = `Your deputy laid the résumé out in ${to.name}.`;
+        } else if (relaid !== null) {
+          part.editor.value = relaid;
+          renderPaper('resume');
+          writeEdits({ resume: relaid, pages: savedPages() });
+          dirty.resume = false;
+          message = `Laid out in ${to.name}, with your edits kept and saved.`;
+        } else {
+          message = `Your edits don’t follow ${from.name}’s sections any more, so the text stays as you wrote it and only the look changed.`;
+        }
+        templateNote.dataset.relaid = relaid === null && edited ? 'look' : '';
+        templateNote.textContent = relaid === null && edited ? message : NOTE_COPY;
+        renderAll(latestState, { keepText: true });
+        announce(message);
+        react('saved', { speech: `I laid it out in ${to.name}.` });
+      });
+
+      // ------------------------------------------------------------------ tabs and print
+
+      const TABS = ['resume', 'cover', 'match', 'changes'];
+      const currentTab = () =>
+        tablist.querySelector('[role="tab"][aria-selected="true"]')?.id.replace('tab-', '') ?? 'resume';
+      const requested = parameters.get('type');
+      if (TABS.includes(requested) && requested !== 'resume') {
+        components().selectTab($(`#tab-${requested}`), { silent: true });
+      }
+
+      tablist.addEventListener('jobdeputy:tabchange', (event) => {
+        const type = event.detail.tab.id.replace('tab-', '');
+        draftControls.hidden = !hasDrafts(app) || !['resume', 'cover'].includes(type);
+        // Pages laid out while their tab was hidden are laid out again now they show.
+        if (type === 'resume' || type === 'cover') renderPaper(type);
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.set('type', type);
+        history.replaceState({}, '', nextUrl);
+      });
+
+      // The browser's own Print prints the draft in view (the résumé from Job match or Changes),
+      // only its pages, as Print these pages does.
+      let printMark = null;
+      window.addEventListener('beforeprint', () => {
+        if (document.querySelector('[data-paper-print]')) return;
+        const type = currentTab() === 'cover' ? 'cover' : 'resume';
+        printMark = parts[type].paper;
+        printMark.setAttribute('data-paper-print', '');
+      });
+      window.addEventListener('afterprint', () => {
+        printMark?.removeAttribute('data-paper-print');
+        printMark = null;
+      });
+
+      // ------------------------------------------------------------------ start
+
+      function renderAll(state, options) {
+        renderContext();
+        renderDrafts(state, options);
+        renderMatch();
+        renderChanges(state);
+        renderApproval();
+        renderApply();
+      }
+
+      if (resolved.missing) {
+        $('#context-notice-title').textContent = 'We couldn’t find that role in Applications';
+        $('#context-notice-message').textContent = `Showing the drafts for ${app.role} instead.`;
+        contextNotice.hidden = false;
+      }
+
+      renderAll(initialState);
+      // R1: the prompt summaries are part of the first view, so they are drawn now, in this task.
+      window.JobDeputyPanels?.drawPromptSummaries?.(document);
+
+      // R10-1: the first view is drawn before the first paint (the render-blocking marker in the
+      // head); reveal it at once with the shared boot, where it exists.
+      components()?.boot?.ready?.();
+
+      // R10-3: your place here, kept when you leave for a home (Open in Applications, Open in
+      // Prompts) and put back when you come Back. The address keeps the role and the tab, and the
+      // scroll is kept for you; this adds the edits you had not saved yet, so nothing typed is lost.
+      // The way Back you came in by is kept too: a return from a home drops its own return=, so
+      // Back still leads to the page that opened the editor (Résumés, on your page of drafts).
+      const place = components()?.place;
+      place?.remember?.(() => ({
+        unsaved: Object.fromEntries(
+          TYPES.filter((type) => dirty[type]).map((type) => [type, parts[type].editor.value]),
+        ),
+        back: materialsBack.hasAttribute('data-page-back-link')
+          ? { href: materialsBack.getAttribute('href'), words: materialsBack.textContent }
+          : null,
+      }));
+      place?.restore?.((saved) => {
+        const back = saved?.back;
+        if (/^\.\/[a-z0-9-]+-preview\.html(?:[?#]|$)/i.test(String(back?.href ?? '')) && /^← \S/.test(String(back?.words ?? ''))) {
+          materialsBack.href = back.href;
+          materialsBack.textContent = back.words;
+          materialsBack.dataset.pageBackLink = '';
+        }
+        if (locked() || !hasDrafts(app)) return;
+        let restored = false;
+        for (const type of TYPES) {
+          const text = saved?.unsaved?.[type];
+          if (typeof text !== 'string' || text === parts[type].editor.value) continue;
+          parts[type].editor.value = text;
+          parts[type].editor.setSelectionRange(0, 0);
+          dirty[type] = true;
+          setStatus(type);
+          renderPaper(type);
+          restored = true;
+        }
+        if (!restored) return;
+        renderMatch();
+        announce('Your edits are back as you left them. They aren’t saved yet.');
+      });
+
+      let pausedDraft = store.aiChoice().limited === 'paused';
+      store.subscribe((state) => {
+        latestState = state;
+        if (appId) {
+          const fresh = state.applications.find((item) => item.id === appId);
+          if (fresh) app = fresh;
+        }
+        const nextMode = modeFor(app);
+        const changed = nextMode !== mode;
+        mode = nextMode;
+        if (changed) confirming = false;
+        renderAll(state, { keepText: true });
+        // Waiting on your limit, or ready again once it changes: the dock follows the setting.
+        const paused = store.aiChoice().limited === 'paused';
+        const pauseChanged = paused !== pausedDraft;
+        pausedDraft = paused;
+        if ((changed || (pauseChanged && mode === 'none')) && !working) showDeputy(mode, app);
+      });
+    </script>
+    <span id="first-view" hidden></span>
+  </body>
+</html>

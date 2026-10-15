@@ -25,6 +25,10 @@ The first phase needs to:
 
 The second phase will reduce the remaining repetitive work by automating job applications using the jobs and application materials prepared in Phase 1. Application automation must remain traceable and under the user's control.
 
+## Launch
+
+JobDeputy goes live only after both phases ship. Automatic role lookup, which re-runs a user's searches to find new roles, is planned as an optional premium feature that each user turns on.
+
 ## Cross-phase requirement
 
 JobDeputy will use a Bring Your Own Token (BYOT) model, allowing each user to supply and control the credentials required for supported AI models and external services.

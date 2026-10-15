@@ -1,0 +1,1948 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="The JobDeputy User Agreement: read the key points and the full text, then sign it."
+    />
+    <title>JobDeputy · User Agreement</title>
+    <link rel="icon" href="./jobdeputy-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./app-chrome.css" />
+    <link rel="stylesheet" href="./app-components.css" />
+    <link rel="stylesheet" href="./deputy.css" />
+    <link rel="expect" href="#first-view" blocking="render" />
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #1b1a18;
+        --ink-soft: #2d2b27;
+        --muted: #706d66;
+        --quiet: #98948b;
+        --paper: #faf8f3;
+        --paper-deep: #f0ece3;
+        --surface: rgba(255, 255, 255, 0.82);
+        --surface-strong: rgba(255, 255, 255, 0.92);
+        --header-surface: rgba(250, 248, 243, 0.82);
+        --line: rgba(27, 26, 24, 0.12);
+        --line-soft: rgba(27, 26, 24, 0.08);
+        --line-strong: rgba(27, 26, 24, 0.24);
+        --green: #2f9e77;
+        --green-soft: #ccebdc;
+        --green-wash: rgba(204, 235, 220, 0.55);
+        --green-line: rgba(47, 158, 119, 0.36);
+        --green-ink: #23795b;
+        --orange: #f36b3f;
+        --orange-soft: #ffd5c6;
+        --danger-ink: #9c4028;
+        --blue: #526fe5;
+        --blue-soft: #d9def8;
+        --on-ink-muted: rgba(255, 255, 255, 0.68);
+        --shadow: 0 21px 55px rgba(55, 48, 36, 0.07);
+        --shadow-control: 0 10px 21px rgba(27, 26, 24, 0.15);
+        --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+        --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+        --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+        --font-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+        font-family: var(--font-text);
+        font-synthesis: none;
+      }
+
+      /*
+       * Setup chrome, as on onboarding: the entry header, no app sidebar, no footer. The shared
+       * chrome (header, page shell, intro, surfaces, actions, fields) lives in ./app-chrome.css,
+       * the shared components (choice cards, sample note) in ./app-components.css, and
+       * ./deputy.css comes with them. The rules below are this page's layout only (.ag-*).
+       */
+
+      html {
+        min-height: 100%;
+        background: var(--paper);
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        overflow-x: clip;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 9% 4%, var(--surface-strong), transparent 27rem),
+          radial-gradient(
+            circle at 92% 18%,
+            color-mix(in srgb, var(--green-soft) 25%, transparent),
+            transparent 23rem
+          ),
+          var(--paper);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      button,
+      a {
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      p {
+        margin-top: 0;
+      }
+
+      /* The golden split: the intro and the agreement to read (1.618) beside the signature (1).
+         One column (959px and narrower) stacks the intro, the signature, then the agreement, in
+         the order of the markup (round 7, T4-5). */
+      .ag-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.618fr) minmax(min(100%, 420px), 1fr);
+        grid-template-areas:
+          "intro side"
+          "region side";
+        grid-template-rows: auto auto;
+        gap: 21px 34px;
+        align-items: start;
+      }
+
+      .ag-intro {
+        min-width: 0;
+        margin: 0;
+        grid-area: intro;
+      }
+
+      .ag-region {
+        grid-area: region;
+      }
+
+      .ag-side {
+        grid-area: side;
+      }
+
+      .ag-title:focus {
+        outline: none;
+      }
+
+      .ag-intro-notes {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 13px;
+        margin-top: 13px;
+        align-items: center;
+      }
+
+      /* The one scroll region: what changed, the key points, then the full text with its index. It
+         is labelled and focusable, so a keyboard can scroll it; nothing forces you to reach its
+         end before you sign. */
+      .ag-region {
+        height: clamp(320px, calc(100svh - 330px), 820px);
+        overflow-y: auto;
+        padding: 21px 34px 34px;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: var(--surface);
+        box-shadow: inset 0 1px 0 var(--surface-strong);
+        scroll-padding-top: 13px;
+      }
+
+      .ag-region:focus-visible {
+        outline: 2px solid var(--green);
+        outline-offset: 3px;
+      }
+
+      .ag-part:not([hidden]) ~ .ag-part {
+        margin-top: 34px;
+        padding-top: 34px;
+        border-top: 1px solid var(--line);
+      }
+
+      .ag-part-lead {
+        margin: 0 0 13px;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      /* Key points and what changed: a numbered list, one plain sentence each. */
+      .ag-list {
+        display: grid;
+        gap: 13px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .ag-item {
+        display: grid;
+        min-width: 0;
+        grid-template-columns: 28px minmax(0, 1fr);
+        gap: 13px;
+        align-items: start;
+      }
+
+      .ag-item-mark {
+        display: grid;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        place-items: center;
+        color: var(--ink-soft);
+        background: var(--paper-deep);
+        font-size: 12px;
+        font-weight: 750;
+        line-height: 1;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .ag-item-mark.is-new {
+        color: var(--green-ink);
+        background: var(--green-soft);
+      }
+
+      .ag-item-copy {
+        display: grid;
+        min-width: 0;
+        gap: 2px;
+      }
+
+      .ag-item-title {
+        color: var(--ink);
+        font-size: 15px;
+        font-weight: 700;
+        line-height: 1.35;
+      }
+
+      .ag-item-text {
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      /* A link that stands on its own row keeps a 44px target; links inside sentences do not. */
+      .ag-link {
+        display: inline-flex;
+        min-height: 44px;
+        align-items: center;
+        justify-self: start;
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 680;
+        text-decoration: underline;
+        text-decoration-color: var(--green-line);
+        text-underline-offset: 3px;
+        transition: text-decoration-color 180ms ease;
+      }
+
+      .ag-link:hover {
+        text-decoration-color: var(--green);
+      }
+
+      .ag-link:focus-visible {
+        border-radius: 4px;
+        outline: 2px solid var(--green);
+        outline-offset: 2px;
+      }
+
+      /* Go to a section: one disclosure, so the index is one tab stop until it is opened. */
+      .ag-index {
+        margin: 0 0 21px;
+      }
+
+      .ag-index > summary {
+        list-style: none;
+      }
+
+      .ag-index > summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .ag-index > summary::after {
+        content: "›" / "";
+        font-size: 18px;
+        font-weight: 400;
+        line-height: 1;
+        transform: rotate(90deg);
+        transition: transform 180ms ease;
+      }
+
+      .ag-index[open] > summary::after {
+        transform: rotate(-90deg);
+      }
+
+      .ag-index-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 233px), 1fr));
+        gap: 0 21px;
+        margin: 13px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .ag-index-list .ag-link {
+        width: 100%;
+        gap: 8px;
+        text-decoration: none;
+      }
+
+      .ag-index-list .ag-link:hover {
+        text-decoration: underline;
+        text-decoration-color: var(--green);
+      }
+
+      .ag-index-number {
+        min-width: 21px;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* The full text, exactly as signed: the document's own title, its version line, the draft
+         note, then each section. */
+      .ag-doc {
+        max-width: 68ch;
+        color: var(--ink-soft);
+        font-size: 15px;
+        line-height: 1.6;
+      }
+
+      .ag-doc-title {
+        margin: 0 0 4px;
+        color: var(--ink);
+        font-family: var(--font-display);
+        font-size: 21px;
+        font-weight: 500;
+        letter-spacing: -0.02em;
+        line-height: 1.2;
+      }
+
+      .ag-doc p {
+        margin: 0 0 13px;
+      }
+
+      .ag-doc h3 {
+        margin: 34px 0 8px;
+        scroll-margin-top: 13px;
+      }
+
+      .ag-doc h3:focus {
+        outline: none;
+      }
+
+      .ag-doc h3:focus-visible {
+        border-radius: 4px;
+        outline: 2px solid var(--green);
+        outline-offset: 3px;
+      }
+
+      .ag-doc ul {
+        display: grid;
+        gap: 6px;
+        margin: 0 0 13px;
+        padding-inline-start: 21px;
+      }
+
+      /* A placeholder for counsel or the owner stands out as unfinished text, also in forced
+         colours (the dashed edge stays). */
+      .ag-placeholder {
+        padding: 0 4px;
+        border: 1px dashed var(--line-strong);
+        border-radius: 4px;
+        color: var(--ink-soft);
+        background: var(--paper-deep);
+        -webkit-box-decoration-break: clone;
+        box-decoration-break: clone;
+      }
+
+      /* The signature: sticky beside the text on wide screens. */
+      .ag-side {
+        position: sticky;
+        top: 106px;
+        display: grid;
+        min-width: 0;
+        gap: 21px;
+      }
+
+      .ag-sign,
+      .ag-record {
+        display: grid;
+        min-width: 0;
+        gap: 21px;
+      }
+
+      .ag-sign h2,
+      .ag-record h2 {
+        margin: 0;
+      }
+
+      .ag-sign h2:focus,
+      .ag-record h2:focus {
+        outline: none;
+      }
+
+      .ag-lead {
+        margin: -13px 0 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      /* Signing is one step (round 7, R10-8): the one sentence that says what a signature means,
+         right above the one button that signs. */
+      .ag-consent {
+        margin: -8px 0 0;
+        color: var(--ink-soft);
+        font-size: 15px;
+        line-height: 1.5;
+        text-wrap: pretty;
+      }
+
+      .ag-facts {
+        display: grid;
+        margin: 0;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 4px 13px;
+        align-items: baseline;
+      }
+
+      .ag-facts dt {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .ag-facts dd {
+        min-width: 0;
+        margin: 0;
+        color: var(--ink);
+        font-size: 15px;
+        line-height: 1.4;
+        overflow-wrap: anywhere;
+      }
+
+      .ag-actions {
+        display: flex;
+        min-width: 0;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      /* Not now (a secondary button, T5-16) sits beside Sign and continue, which takes the rest of
+         the row, so the two read as the choice they are. */
+      .ag-actions > .primary-action {
+        flex: 1 1 auto;
+      }
+
+      .ag-notes {
+        display: grid;
+        gap: 8px;
+        justify-items: start;
+      }
+
+      /* The signed record: what was kept, one fact a row. */
+      .ag-record-facts {
+        display: grid;
+        margin: 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .ag-record-row {
+        display: grid;
+        min-width: 0;
+        grid-template-columns: minmax(96px, auto) minmax(0, 1fr);
+        gap: 4px 13px;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--line);
+        align-items: baseline;
+      }
+
+      .ag-record-row dt {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .ag-record-row dd {
+        min-width: 0;
+        margin: 0;
+        color: var(--ink);
+        font-size: 15px;
+        line-height: 1.4;
+        overflow-wrap: anywhere;
+      }
+
+      .ag-record-row .ag-fingerprint {
+        font-size: 13px;
+        letter-spacing: 0.02em;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .ag-record-actions {
+        display: flex;
+        min-width: 0;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      /*
+       * The signing moment (round 7, G3), in the card where Sign and continue was: the deputy
+       * (the pen in his right paw) cheers, the signature line writes the account's name, the seal
+       * stamps with a check, then "Signed. Taking you to ..." and the page goes on. About 1.2s:
+       * the name writes over 618ms, the seal lands at 560ms in 380ms, the line shows at 700ms.
+       * Under reduced motion or Pause motion everything is there at once and nothing moves.
+       */
+      /* It is brought into view under the sticky header as it starts (T4-5), and nothing in it,
+         the stamp's first frame included, can widen the page. */
+      .ag-moment {
+        display: grid;
+        min-width: 0;
+        gap: 13px;
+        align-content: start;
+        justify-items: stretch;
+        overflow: clip;
+        overflow-clip-margin: 13px;
+        scroll-margin-block: 89px 13px;
+      }
+
+      /* deputy.js's moment host draws a 150px art box. */
+      .ag-moment-scene {
+        width: 150px;
+        justify-self: center;
+      }
+
+      .ag-signature {
+        position: relative;
+        display: grid;
+        min-width: 0;
+        gap: 4px;
+        padding: 8px 76px 0 4px;
+      }
+
+      .ag-signature-name {
+        margin: 0;
+        color: var(--ink);
+        font-family: var(--font-display);
+        font-size: 34px;
+        font-style: italic;
+        font-weight: 500;
+        letter-spacing: -0.02em;
+        line-height: 1.15;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: clip;
+      }
+
+      .ag-signature-line {
+        display: block;
+        height: 2px;
+        border-radius: 999px;
+        background: var(--line-strong);
+      }
+
+      .ag-signature-caption {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .ag-seal {
+        position: absolute;
+        top: 0;
+        right: 8px;
+        display: grid;
+        width: 62px;
+        height: 62px;
+        border: 3px solid var(--green-ink);
+        border-radius: 50%;
+        place-items: center;
+        color: var(--green-ink);
+        background: var(--green-soft);
+        box-shadow: 0 0 0 4px var(--surface-strong), 0 0 0 5px var(--green-line);
+        transform: rotate(-8deg);
+      }
+
+      .ag-seal svg {
+        width: 30px;
+        height: 30px;
+      }
+
+      .ag-moment-title {
+        margin: 0;
+        font-size: 21px;
+      }
+
+      .ag-moment-title:focus {
+        outline: none;
+      }
+
+      @keyframes ag-write {
+        from {
+          clip-path: inset(0 100% 0 0);
+        }
+
+        to {
+          clip-path: inset(0 0 0 0);
+        }
+      }
+
+      @keyframes ag-stamp {
+        0% {
+          opacity: 0;
+          transform: rotate(-8deg) scale(1.25);
+        }
+
+        60% {
+          opacity: 1;
+          transform: rotate(-8deg) scale(0.94);
+        }
+
+        100% {
+          opacity: 1;
+          transform: rotate(-8deg) scale(1);
+        }
+      }
+
+      @keyframes ag-arrive {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+
+      html[data-motion="on"] .ag-moment.is-playing .ag-signature-name {
+        animation: ag-write 618ms var(--ease-settle) 120ms both;
+      }
+
+      html[data-motion="on"] .ag-moment.is-playing .ag-seal {
+        animation: ag-stamp 380ms var(--ease-spring) 560ms both;
+      }
+
+      /* The line arrives with the seal; the way on is there (and focused) from the first frame. */
+      html[data-motion="on"] .ag-moment.is-playing .ag-moment-title {
+        animation: ag-arrive 380ms var(--ease-settle) 700ms both;
+      }
+
+      /* Tablets stack the text above the signature, with the signature in the first view. */
+      @media (max-width: 959px) {
+        .ag-layout {
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-areas:
+            "intro"
+            "side"
+            "region";
+        }
+
+        .ag-side {
+          position: static;
+        }
+
+        .ag-region {
+          height: clamp(320px, 60svh, 640px);
+        }
+      }
+
+      /* Short desktop windows keep the region shorter, so the signature stays beside it. */
+      @media (min-width: 960px) and (max-height: 800px) {
+        .ag-region {
+          height: clamp(300px, calc(100svh - 300px), 560px);
+        }
+
+        .ag-sign,
+        .ag-record {
+          gap: 13px;
+        }
+      }
+
+      /*
+       * Phones (720px and narrower), phone first, as onboarding: the heading, then the one
+       * sentence with Sign and continue right under it, in the first view down to 320x568 (round 7,
+       * G3 and T4-5: the sentence is never off screen while its button shows, so there is no
+       * sticky bar), then the agreement in its scroll region. The surface's box steps aside so the
+       * form goes edge to edge.
+       */
+      @media (max-width: 720px) {
+        .ag-shell {
+          padding-block: 13px 21px;
+        }
+
+        .ag-layout {
+          gap: 21px;
+        }
+
+        .ag-region {
+          height: clamp(240px, 62svh, 560px);
+          padding: 13px 15px 21px;
+          border-radius: 14px;
+        }
+
+        .ag-sign,
+        .ag-record,
+        .ag-moment {
+          gap: 13px;
+          padding: 0;
+          border: 0;
+          border-radius: 0;
+          background: none;
+          box-shadow: none;
+        }
+
+        .ag-lead {
+          margin-top: -4px;
+        }
+
+        .ag-consent {
+          margin-top: -4px;
+          font-size: 14px;
+        }
+
+        /* The page has no footer, so during a tour it gets room below the last step, enough for
+           the tour to bring it above its bottom sheet. */
+        main.is-touring .ag-shell {
+          padding-bottom: 75svh;
+        }
+
+        .ag-record-row {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 2px;
+        }
+
+        .ag-signature-name {
+          font-size: 28px;
+        }
+      }
+
+      /* Short phones keep the gaps tight, so Sign and continue still shows under its sentence at
+         320x568. (The eyebrow stays: Take the tour shares its line on phones.) */
+      @media (max-width: 720px) and (max-height: 700px) {
+        .ag-layout {
+          gap: 13px;
+        }
+
+        .ag-sign {
+          gap: 8px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .ag-link,
+        .ag-index > summary::after {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#page-title">Skip to the agreement</a>
+
+    <header class="app-header">
+      <a class="brand" href="./home-preview.html?skipLoader" aria-label="JobDeputy dashboard">
+        <img
+          class="brand-logo"
+          src="./jobdeputy-mark.svg"
+          alt=""
+          width="400"
+          height="290"
+        />
+        <span class="brand-copy">
+          <span class="brand-name"><span>Job</span><span>Deputy</span></span>
+          <span class="brand-note">Your search partner</span>
+        </span>
+      </a>
+    </header>
+
+    <main class="agreement-main" id="main" data-tour-page="agreement" data-mode="new">
+      <div class="page-shell ag-shell">
+        <!-- Round 7 (T4-5): the intro, then the signature, then the agreement, so on phones and
+             tablets the one sentence and Sign and continue come right under the intro, in the first
+             view, and the signing moment plays where you pressed. Wide screens keep the text
+             beside the signature. -->
+        <div class="ag-layout">
+          <!-- The shared page intro (round 6, R6-3): Take the tour at the end of the title row. -->
+          <section
+            class="page-intro ag-intro"
+            id="ag-intro"
+            aria-labelledby="page-title"
+            data-tour-step="1"
+            data-tour-title="This is our agreement."
+            data-tour-text="I work for you under it: what I do for you, and what I never do. It is a draft for counsel review, not legal advice."
+          >
+            <div class="page-intro-copy">
+              <p class="eyebrow" id="ag-eyebrow">Before your account</p>
+              <h1 class="ag-title" id="page-title" tabindex="-1">The User Agreement.</h1>
+              <p class="intro-copy" id="ag-intro-copy" data-skeleton="lines">
+                Version 2026.10 · about 16 minutes to read in full. Your account is created when
+                you sign.
+              </p>
+              <div class="ag-intro-notes" data-skeleton="lines">
+                <p class="sample-note" id="ag-draft-note">Draft for counsel review · not legal advice</p>
+              </div>
+            </div>
+            <div class="page-intro-actions">
+              <button type="button" class="secondary-action page-tour" data-tour-open hidden>Take the tour</button>
+            </div>
+          </section>
+
+          <div class="ag-side" data-skeleton>
+            <!-- Signing is one step (round 7, G3 and R10-8): one sentence, one button, and what the
+                 record keeps, read only. Pressing it plays the signing moment below, then goes on. -->
+            <form
+              class="task-surface ag-sign"
+              id="ag-form"
+              aria-labelledby="ag-sign-title"
+              novalidate
+            >
+              <h2 id="ag-sign-title" tabindex="-1">Sign</h2>
+
+              <p
+                class="ag-consent"
+                id="ag-consent"
+                data-tour-step="4"
+                data-tour-title="One sentence says it all."
+                data-tour-text="I wrote what your signature means in one sentence. Read it, and the agreement above if you like."
+              >
+                By signing, you agree to User Agreement version 2026.10, allow your deputy to act for you as it describes, and understand JobDeputy keeps a permanent copy of what you sign, even after you delete your account.
+              </p>
+
+              <section
+                class="feedback-panel"
+                id="ag-error"
+                data-kind="error"
+                hidden
+                tabindex="-1"
+                aria-labelledby="ag-error-title"
+                aria-describedby="ag-error-message"
+              >
+                <span class="feedback-panel-icon" aria-hidden="true">!</span>
+                <span class="feedback-panel-copy">
+                  <strong class="feedback-panel-title" id="ag-error-title">We couldn’t sign the agreement</strong>
+                  <span class="feedback-panel-message" id="ag-error-message">Nothing was signed. Reload the page, then sign again.</span>
+                </span>
+              </section>
+
+              <div
+                class="ag-actions"
+                id="ag-actions"
+                data-tour-step="5"
+                data-tour-title="One button signs."
+                data-tour-text="Press Sign and continue, and I take you on. Not now leaves it for later."
+              >
+                <!-- Not now is the quiet alternative to signing, a secondary button beside it (round 6
+                     part 3, T5-16). -->
+                <a class="secondary-action ag-later" id="ag-later" href="./access-preview.html?mode=create&amp;skipLoader">Not now</a>
+                <button class="primary-action" id="ag-submit" type="submit" aria-describedby="ag-consent">Sign and continue</button>
+              </div>
+
+              <dl
+                class="ag-facts"
+                id="ag-facts"
+                data-tour-step="6"
+                data-tour-title="This is what I keep."
+                data-tour-text="I keep a permanent record: your name, your email, the date, and your home Region. You can download your copy any time."
+              >
+                <dt id="ag-email-label">Signing up as</dt>
+                <dd id="ag-signer">Alex Morgan</dd>
+                <dt>Email</dt>
+                <dd id="ag-email">alex.morgan@example.com</dd>
+                <dt>Date</dt>
+                <dd id="ag-date">Fri, Oct 2, 2026</dd>
+                <dt>Home Region</dt>
+                <dd id="ag-home-region">United States (US)</dd>
+              </dl>
+
+              <div class="ag-notes">
+                <p class="sample-note" id="ag-sign-note">Prototype · your signature stays in this browser</p>
+              </div>
+            </form>
+
+            <!-- The signing moment (round 7, G3): about 1.2s, then the page goes on. The way on is a
+                 link from the first frame, so a keyboard or a screen reader never waits for it. -->
+            <section class="task-surface ag-moment" id="ag-moment" aria-labelledby="ag-moment-title" hidden>
+              <div class="ag-moment-host" id="ag-moment-host"></div>
+              <div class="ag-signature" aria-hidden="true">
+                <p class="ag-signature-name" id="ag-signature-name">Alex Morgan</p>
+                <span class="ag-signature-line"></span>
+                <p class="ag-signature-caption" id="ag-signature-caption">Signed Fri, Oct 2, 2026</p>
+                <span class="ag-seal">
+                  <svg viewBox="0 0 30 30" aria-hidden="true" focusable="false">
+                    <path d="M7 15.5L12.5 21L23.5 9.5" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                </span>
+              </div>
+              <h2 class="ag-moment-title" id="ag-moment-title" tabindex="-1">Signed. Taking you to setup.</h2>
+              <a class="primary-action ag-moment-next" id="ag-moment-next" href="./onboarding-preview.html">Continue to setup</a>
+            </section>
+
+            <section class="task-surface ag-record" id="ag-record" aria-labelledby="ag-record-title" hidden>
+              <h2 id="ag-record-title" tabindex="-1">Signed</h2>
+              <p class="ag-lead" id="ag-record-lead">Your account is ready.</p>
+              <!-- The way on (Continue to setup, or Back to the page that sent you here) is the
+                   card's primary button, right under its title, so it is in view as soon as you
+                   sign; nothing redirects by itself (round 6 part 3, T5-14). -->
+              <a class="primary-action ag-continue" id="ag-continue" href="./onboarding-preview.html">Continue to setup</a>
+              <section
+                class="feedback-panel"
+                id="ag-record-mismatch"
+                data-kind="warning"
+                hidden
+                aria-labelledby="ag-record-mismatch-title"
+                aria-describedby="ag-record-mismatch-message"
+              >
+                <span class="feedback-panel-icon" aria-hidden="true">!</span>
+                <span class="feedback-panel-copy">
+                  <strong class="feedback-panel-title" id="ag-record-mismatch-title">This text doesn’t match your signed copy</strong>
+                  <span class="feedback-panel-message" id="ag-record-mismatch-message">The fingerprint you signed differs from this text. Contact us through Help.</span>
+                </span>
+              </section>
+              <dl class="ag-record-facts" id="ag-record-facts"></dl>
+              <!-- Your copy, under the record it is a copy of; the two downloads share their row
+                   (round 6 part 3, T1-19). -->
+              <div class="ag-record-actions" id="ag-record-actions">
+                <button class="secondary-action" id="ag-download-pdf" type="button">Download PDF</button>
+                <button class="secondary-action" id="ag-download-md" type="button">Download Markdown</button>
+              </div>
+              <p class="field-help" id="ag-download-note" hidden></p>
+              <div class="ag-notes">
+                <p class="sample-note" id="ag-record-note">
+                  Prototype · kept in this browser only; at launch it is kept permanently on our servers
+                </p>
+              </div>
+            </section>
+
+            <section class="task-surface ag-record" id="ag-unsigned" aria-labelledby="ag-unsigned-title" hidden>
+              <h2 id="ag-unsigned-title">Not signed</h2>
+              <p class="ag-lead" id="ag-unsigned-lead">You haven’t signed this version.</p>
+              <div class="ag-record-actions">
+                <a class="primary-action" id="ag-unsigned-action" href="./agreement-preview.html?mode=update">Review and sign</a>
+              </div>
+            </section>
+
+            <p class="sr-only" id="ag-announcer" role="status" aria-live="polite" aria-atomic="true"></p>
+          </div>
+
+          <!-- biome-ignore-start lint/a11y/noNoninteractiveTabindex: the agreement is a deliberate inner scroll region, labelled and focusable so keyboard users can scroll it -->
+          <section
+            class="ag-region"
+            id="ag-region"
+            aria-label="The User Agreement, version 2026.10"
+            tabindex="0"
+            data-skeleton
+            data-tour-step="3"
+            data-tour-title="Read it here."
+            data-tour-text="I put the key points first, then the full text. Scroll inside this box, or use Go to a section. You don’t have to reach the end to sign."
+          >
+            <!-- biome-ignore-end lint/a11y/noNoninteractiveTabindex: end of the region's opening tag -->
+            <div
+              class="ag-part"
+              id="ag-changes"
+              hidden
+              data-tour-step="2"
+              data-tour-title="Here is what changed."
+              data-tour-text="I list what is new in this version, each with a link to the section that says it."
+            >
+              <h2 id="ag-changes-title">What changed</h2>
+              <p class="ag-part-lead" id="ag-changes-lead">New in version 2026.10.</p>
+              <ol class="ag-list" id="ag-changes-list" aria-labelledby="ag-changes-title"></ol>
+            </div>
+
+            <div class="ag-part" id="ag-points-part">
+              <h2 id="ag-points-title">Key points</h2>
+              <p class="ag-part-lead">Each section of the agreement in one sentence.</p>
+              <ol class="ag-list" id="ag-points" aria-labelledby="ag-points-title"></ol>
+            </div>
+
+            <div class="ag-part" id="ag-full-part">
+              <h2 id="ag-full-title">Full text</h2>
+              <details class="ag-index" id="ag-index">
+                <summary class="compact-action">Go to a section</summary>
+                <ol class="ag-index-list" id="ag-index-list" aria-label="Sections of the agreement"></ol>
+              </details>
+              <article class="ag-doc" id="ag-doc" aria-labelledby="ag-full-title"></article>
+            </div>
+
+            <section
+              class="feedback-panel"
+              id="ag-text-missing"
+              data-kind="error"
+              hidden
+              aria-labelledby="ag-text-missing-title"
+              aria-describedby="ag-text-missing-message"
+            >
+              <span class="feedback-panel-icon" aria-hidden="true">!</span>
+              <span class="feedback-panel-copy">
+                <strong class="feedback-panel-title" id="ag-text-missing-title">We couldn’t load the agreement</strong>
+                <span class="feedback-panel-message" id="ag-text-missing-message">Reload the page to read it. Nothing was signed.</span>
+              </span>
+            </section>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <script src="./app-components.js"></script>
+    <script src="./agreement-text.js"></script>
+    <script src="./sample-store.js"></script>
+    <script src="./deputy.js"></script>
+    <script>
+      // The User Agreement (round 5 brief, section 3.4; decision G1). Three modes:
+      //   ?mode=new                after Create account by email, Google, or LinkedIn: sign, then
+      //                            setup (onboarding-preview.html, keeping ?via= and &new=1)
+      //   ?mode=update[&return=]   sign the current version, what changed first; then back to
+      //                            ?return= (a prototype page in this folder) or the Dashboard
+      //   ?mode=view&version=<v>   a signed copy, read only, with Download
+      // Signing is one step (round 7, G3 and R10-8): one sentence, Sign and continue, a short
+      // signing moment (the name writes, the seal stamps, the deputy cheers with the pen), then the
+      // page goes on by itself. The text and its fingerprint come from
+      // window.JobDeputyAgreementText (agreement-text.js), and the signature goes to
+      // JobDeputyStore.sign, which keeps the record (the account's name is the signature). Nothing
+      // leaves this browser. Every string is rendered as text, never as HTML.
+
+      // AgreementModel: start (pure helpers; tests/prototype/agreement.test.ts runs this block)
+      const AgreementModel = (() => {
+        const MODES = ['new', 'update', 'view'];
+        const DOORS = ['email', 'google', 'linkedin'];
+        // The home Regions (round 6, G3): Create account sends the one chosen above its sign-in
+        // methods as ?region=us, in, or uk. The sample account's is the United States.
+        const REGIONS = { US: 'United States (US)', IN: 'India (IN)', UK: 'United Kingdom (UK)' };
+        const ZONE = 'America/Los_Angeles';
+        // Each Region's own time zone, for the time a signature shows (round 6 part 3, T1-19).
+        const ZONES = {
+          US: { timeZone: ZONE, label: 'Pacific' },
+          IN: { timeZone: 'Asia/Kolkata', label: 'Kolkata' },
+          UK: { timeZone: 'Europe/London', label: 'London' },
+        };
+        const RETURN_NAMES = {
+          home: 'your dashboard',
+          searches: 'Searches',
+          jobs: 'Job matches',
+          applications: 'Applications',
+          autofill: 'your application',
+          documents: 'Résumés',
+          materials: 'your materials',
+          profile: 'Profile',
+          ai: 'AI & credits',
+          trust: 'Help',
+          invite: 'Invite friends',
+          shop: 'Purchases',
+          account: 'Account',
+          connections: 'Connections',
+          prompts: 'Prompts',
+          onboarding: 'setup',
+        };
+
+        // A bare or unknown mode signs the current version, the safe choice for a signed-in link.
+        const modeOf = (value) => (MODES.includes(value) ? value : 'update');
+        const doorOf = (value) => (DOORS.includes(value) ? value : null);
+        const regionOf = (value) => {
+          const code = String(value ?? '').toUpperCase();
+          return Object.hasOwn(REGIONS, code) ? code : null;
+        };
+        const regionName = (code) => REGIONS[regionOf(code) ?? 'US'];
+
+        // Where to go back to after signing: only a prototype page in this folder, never another
+        // site, folder, or this page itself.
+        const safeReturn = (value) => {
+          const text = String(value ?? '').trim();
+          const match = /^(?:\.\/)?([a-z][a-z0-9-]*)-preview\.html(?:[?#][^\s"'<>\\]*)?$/i.exec(text);
+          if (!match || match[1].toLowerCase() === 'agreement') return null;
+          return { href: text.startsWith('./') ? text : `./${text}`, page: match[1].toLowerCase() };
+        };
+        const returnName = (page) => RETURN_NAMES[page] ?? 'where you were';
+
+        // Continue after signing: setup for a new account (with the door it came through and the
+        // home Region chosen), else back where the person was, else the Dashboard. going is how the
+        // signing moment says it ("Signed. Taking you to setup.").
+        const nextStep = ({ mode, door, isNew, returnTo, region = null }) => {
+          if (mode === 'new') {
+            const query = door ? `?via=${door}${isNew ? '&new=1' : ''}` : '';
+            const code = regionOf(region);
+            const where = code ? `${query ? '&' : '?'}region=${code.toLowerCase()}` : '';
+            return {
+              href: `./onboarding-preview.html${query}${where}`,
+              label: 'Continue to setup',
+              going: 'to setup',
+            };
+          }
+          if (returnTo) {
+            const name = returnName(returnTo.page);
+            return { href: returnTo.href, label: `Back to ${name}`, going: `back to ${name}` };
+          }
+          return {
+            href: './home-preview.html?skipLoader',
+            label: 'Go to your dashboard',
+            going: 'to your dashboard',
+          };
+        };
+        const signedLine = (next) => `Signed. Taking you ${next.going}.`;
+        // Signed with the keyboard, the page waits for Continue (round 7, T4-14).
+        const readyLine = () => 'Signed. Continue when you’re ready.';
+
+        // How a record was signed, in words: one step (round 7), or the typed name of every record
+        // signed before it (which says typed-name, or nothing).
+        const methodName = (method) =>
+          method === 'one-step' ? 'Sign and continue (one step)' : 'Typed name';
+
+        // The Markdown subset agreement-text.js writes: "# title", "## n. section", "- item", and
+        // paragraphs, one per line.
+        const parse = (markdown) => {
+          const blocks = [];
+          let list = null;
+          for (const line of String(markdown ?? '').split('\n')) {
+            if (line.startsWith('- ')) {
+              if (!list) {
+                list = { type: 'list', items: [] };
+                blocks.push(list);
+              }
+              list.items.push(line.slice(2));
+              continue;
+            }
+            list = null;
+            if (!line.trim()) continue;
+            const heading = /^## (\d+)\. (.+)$/.exec(line);
+            if (heading) blocks.push({ type: 'section', number: Number(heading[1]), text: heading[2] });
+            else if (line.startsWith('# ')) blocks.push({ type: 'title', text: line.slice(2) });
+            else blocks.push({ type: 'paragraph', text: line });
+          }
+          return blocks;
+        };
+
+        // Text and the placeholders in it ([Owner: ...] and [Counsel: ...]), in order.
+        const pieces = (text) => {
+          const value = String(text ?? '');
+          const out = [];
+          let last = 0;
+          for (const match of value.matchAll(/\[(?:Owner|Counsel): [^\]]+\]/g)) {
+            if (match.index > last) out.push({ text: value.slice(last, match.index), placeholder: false });
+            out.push({ text: match[0], placeholder: true });
+            last = match.index + match[0].length;
+          }
+          if (last < value.length) out.push({ text: value.slice(last), placeholder: false });
+          return out;
+        };
+
+        // A fingerprint in groups of eight, so it reads and wraps.
+        const groups = (hex) => (String(hex ?? '').match(/.{1,8}/g) ?? []).join(' ');
+
+        // Dates as a signature shows them, in Pacific time like the rest of the sample world (the
+        // same words as JobDeputyAgreementText.dateText and dateTimeText, which the signed copy
+        // uses; tests/prototype/agreement.test.ts keeps them equal).
+        const dateText = (value) =>
+          new Intl.DateTimeFormat('en-US', {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            timeZone: ZONE,
+          }).format(new Date(value));
+        const timeText = (value) =>
+          new Intl.DateTimeFormat('en-GB', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hourCycle: 'h23',
+            timeZone: ZONE,
+          }).format(new Date(value));
+        const dateTimeText = (value) => `${dateText(value)}, ${timeText(value)} Pacific`;
+
+        // The signing time in the home Region's own time zone (round 6 part 3, T1-19), with the
+        // Pacific time the signed copy and Account show beside it when the two differ, so every
+        // place still reads the same moment.
+        const inZone = (value, timeZone, options) =>
+          new Intl.DateTimeFormat(options.locale, { ...options.parts, timeZone }).format(
+            new Date(value),
+          );
+        const zoneDate = (value, timeZone) =>
+          inZone(value, timeZone, {
+            locale: 'en-US',
+            parts: { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' },
+          });
+        const zoneTime = (value, timeZone) =>
+          inZone(value, timeZone, {
+            locale: 'en-GB',
+            parts: { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' },
+          });
+        const signedTimeText = (value, region) => {
+          const zone = ZONES[regionOf(region) ?? 'US'];
+          if (zone.timeZone === ZONE) return dateTimeText(value);
+          const day = zoneDate(value, zone.timeZone);
+          const here = `${day}, ${zoneTime(value, zone.timeZone)} ${zone.label}`;
+          const there =
+            day === dateText(value)
+              ? `${timeText(value)} Pacific`
+              : `${dateText(value)}, ${timeText(value)} Pacific`;
+          return `${here} (${there})`;
+        };
+
+        return Object.freeze({
+          MODES,
+          DOORS,
+          REGIONS,
+          modeOf,
+          doorOf,
+          regionOf,
+          regionName,
+          safeReturn,
+          returnName,
+          nextStep,
+          signedLine,
+          readyLine,
+          methodName,
+          parse,
+          pieces,
+          groups,
+          dateText,
+          dateTimeText,
+          signedTimeText,
+        });
+      })();
+      // AgreementModel: end
+
+      (() => {
+        const model = AgreementModel;
+        const parameters = new URLSearchParams(window.location.search);
+        const mode = model.modeOf(parameters.get('mode'));
+        const door = model.doorOf(parameters.get('via'));
+        const isNew = parameters.get('new') === '1';
+        // The home Region a new account chose above Create account's sign-in methods (G3).
+        const homeRegion = mode === 'new' ? model.regionOf(parameters.get('region')) : null;
+        const returnTo = model.safeReturn(parameters.get('return'));
+        const store = window.JobDeputyStore ?? null;
+        const texts = window.JobDeputyAgreementText ?? null;
+        const components = window.JobDeputyComponents ?? null;
+        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+        const $ = (selector) => document.querySelector(selector);
+
+        const main = $('#main');
+        const brand = $('.app-header .brand');
+        const eyebrow = $('#ag-eyebrow');
+        const title = $('#page-title');
+        const introCopy = $('#ag-intro-copy');
+        const region = $('#ag-region');
+        const changesPart = $('#ag-changes');
+        const changesLead = $('#ag-changes-lead');
+        const changesList = $('#ag-changes-list');
+        const pointsList = $('#ag-points');
+        const indexList = $('#ag-index-list');
+        const indexDetails = $('#ag-index');
+        const doc = $('#ag-doc');
+        const textMissing = $('#ag-text-missing');
+        const form = $('#ag-form');
+        const consent = $('#ag-consent');
+        const dateOut = $('#ag-date');
+        const emailLabel = $('#ag-email-label');
+        const signNote = $('#ag-sign-note');
+        const signerOut = $('#ag-signer');
+        const emailOut = $('#ag-email');
+        const homeRegionOut = $('#ag-home-region');
+        const operationError = $('#ag-error');
+        const operationErrorMessage = $('#ag-error-message');
+        const later = $('#ag-later');
+        const submit = $('#ag-submit');
+        const record = $('#ag-record');
+        const recordTitle = $('#ag-record-title');
+        const recordLead = $('#ag-record-lead');
+        const recordMismatch = $('#ag-record-mismatch');
+        const recordFacts = $('#ag-record-facts');
+        const continueLink = $('#ag-continue');
+        const downloadPdf = $('#ag-download-pdf');
+        const downloadMd = $('#ag-download-md');
+        const downloadNote = $('#ag-download-note');
+        const unsigned = $('#ag-unsigned');
+        const unsignedTitle = $('#ag-unsigned-title');
+        const unsignedLead = $('#ag-unsigned-lead');
+        const unsignedAction = $('#ag-unsigned-action');
+        const moment = $('#ag-moment');
+        const momentHost = $('#ag-moment-host');
+        const momentTitle = $('#ag-moment-title');
+        const momentNext = $('#ag-moment-next');
+        const signatureName = $('#ag-signature-name');
+        const signatureCaption = $('#ag-signature-caption');
+        const announcer = $('#ag-announcer');
+
+        // The three things a signature confirms (agreement-text.js); the one sentence says them.
+        const consentIds = (texts?.consents ?? [{ id: 'read' }, { id: 'act' }, { id: 'keep' }]).map(
+          (consent) => consent.id,
+        );
+        const current = texts?.current ?? null;
+        const requested = parameters.get('version');
+        const version =
+          mode === 'view'
+            ? texts && Object.hasOwn(texts.versions, requested ?? '')
+              ? requested
+              : null
+            : current;
+        const text = version ? texts.versions[version] : null;
+
+        const announce = (words) => {
+          announcer.textContent = '';
+          window.setTimeout(() => {
+            announcer.textContent = words;
+          }, 60);
+        };
+
+        const account = () => {
+          const profile = store?.get?.()?.profile ?? {};
+          const name = [profile.firstName, profile.lastName].filter(Boolean).join(' ').trim();
+          return {
+            name: name || 'Alex Morgan',
+            email: profile.email || 'alex.morgan@example.com',
+          };
+        };
+        const agreementsNow = () => {
+          try {
+            return typeof store?.agreements === 'function' ? store.agreements() : null;
+          } catch {
+            return null;
+          }
+        };
+        // The newest record of a version (a new account signs again, so there can be more).
+        const recordOf = (wanted) => agreementsNow()?.signed?.find((entry) => entry.version === wanted) ?? null;
+        const nowIso = () => (typeof store?.now === 'function' ? store.now() : new Date()).toISOString();
+        // Going back to the page in ?return= is a return through Back (round 7, T4-24): the
+        // components' place helper marks it, so that page restores your scroll, what was open, and
+        // the control you left from. A link back carries data-page-back-link (the components mark
+        // it on press); the moment's own move marks it before it goes. Any other way on is a plain
+        // link.
+        const isReturn = (href) => Boolean(returnTo) && href === returnTo.href;
+        const asWayBack = (link, href) => {
+          link.href = href;
+          link.toggleAttribute('data-page-back-link', isReturn(href));
+        };
+        const markReturn = (href) => {
+          if (isReturn(href)) components?.place?.markReturn?.(href);
+        };
+
+        // The account's home Region (R9-6, JobDeputyStore.homeRegion()): what a signed-in person
+        // signs under. A new account has none yet, so its page reads the one chosen (?region=).
+        const accountRegion = () => {
+          if (mode === 'new') return null;
+          try {
+            return store?.homeRegion?.()?.code ?? null;
+          } catch {
+            return null;
+          }
+        };
+
+        // ------------------------------------------------------------------ the text
+
+        const appendPieces = (element, value) => {
+          for (const piece of model.pieces(value)) {
+            if (piece.placeholder) {
+              const mark = document.createElement('span');
+              mark.className = 'ag-placeholder';
+              mark.textContent = piece.text;
+              element.append(mark);
+            } else {
+              element.append(document.createTextNode(piece.text));
+            }
+          }
+        };
+
+        const item = ({ mark, isNew: fresh, heading, body, link }) => {
+          const li = document.createElement('li');
+          li.className = 'ag-item';
+          const badge = document.createElement('span');
+          badge.className = `ag-item-mark${fresh ? ' is-new' : ''}`;
+          badge.setAttribute('aria-hidden', 'true');
+          badge.textContent = mark;
+          const copy = document.createElement('div');
+          copy.className = 'ag-item-copy';
+          const strong = document.createElement('strong');
+          strong.className = 'ag-item-title';
+          strong.textContent = heading;
+          const p = document.createElement('p');
+          p.className = 'ag-item-text';
+          appendPieces(p, body);
+          copy.append(strong, p);
+          if (link) copy.append(link);
+          li.append(badge, copy);
+          return li;
+        };
+
+        const sectionLink = (section, words) => {
+          const a = document.createElement('a');
+          a.className = 'ag-link';
+          a.href = `#${section.anchor}`;
+          a.dataset.section = section.anchor;
+          a.textContent = words;
+          return a;
+        };
+
+        const renderText = () => {
+          if (!text) return;
+          region.setAttribute('aria-label', `The User Agreement, version ${text.version}`);
+          const sections = new Map(text.sections.map((section) => [section.id, section]));
+
+          // What changed (update mode first, and on a signed copy of a version that has changes).
+          const showChanges = mode !== 'new' && text.changes.length > 0;
+          changesPart.hidden = !showChanges;
+          changesLead.textContent = `New in version ${text.version}.`;
+          changesList.replaceChildren(
+            ...text.changes.map((change, index) => {
+              const target = sections.get(change.sections[0]);
+              return item({
+                mark: String(index + 1),
+                isNew: true,
+                heading: change.title,
+                body: change.text,
+                link: target ? sectionLink(target, `Read section ${target.number}, ${target.title}`) : null,
+              });
+            }),
+          );
+
+          pointsList.replaceChildren(
+            ...text.summary.map((point) =>
+              item({ mark: String(point.number), heading: point.title, body: point.point }),
+            ),
+          );
+
+          indexList.replaceChildren(
+            ...text.sections.map((section) => {
+              const li = document.createElement('li');
+              const a = sectionLink(section, '');
+              const number = document.createElement('span');
+              number.className = 'ag-index-number';
+              number.textContent = `${section.number}.`;
+              a.append(number, document.createTextNode(` ${section.title}`));
+              li.append(a);
+              return li;
+            }),
+          );
+
+          // The full text, line by line from the signed Markdown, so what shows is what is signed.
+          const nodes = [];
+          let sectionIndex = 0;
+          for (const block of model.parse(text.markdown)) {
+            if (block.type === 'title') {
+              const p = document.createElement('p');
+              p.className = 'ag-doc-title';
+              p.textContent = block.text;
+              nodes.push(p);
+            } else if (block.type === 'section') {
+              const section = text.sections[sectionIndex];
+              sectionIndex += 1;
+              const h3 = document.createElement('h3');
+              h3.id = section?.anchor ?? `ag-section-${block.number}`;
+              h3.tabIndex = -1;
+              h3.textContent = `${block.number}. ${block.text}`;
+              nodes.push(h3);
+            } else if (block.type === 'list') {
+              const ul = document.createElement('ul');
+              for (const entry of block.items) {
+                const li = document.createElement('li');
+                appendPieces(li, entry);
+                ul.append(li);
+              }
+              nodes.push(ul);
+            } else {
+              const p = document.createElement('p');
+              appendPieces(p, block.text);
+              nodes.push(p);
+            }
+          }
+          doc.replaceChildren(...nodes);
+        };
+
+        // A section link scrolls the region to the section and moves focus there.
+        region.addEventListener('click', (event) => {
+          const link = event.target.closest('a[data-section]');
+          if (!link) return;
+          const target = document.getElementById(link.dataset.section);
+          if (!target) return;
+          event.preventDefault();
+          target.scrollIntoView({ block: 'start', behavior: reducedMotion.matches ? 'auto' : 'smooth' });
+          target.focus({ preventScroll: true });
+          if (link.closest('#ag-index')) indexDetails.open = false;
+        });
+
+        // ------------------------------------------------------------------ the record
+
+        const factRow = (label, value, className = '') => {
+          const row = document.createElement('div');
+          row.className = 'ag-record-row';
+          const dt = document.createElement('dt');
+          dt.textContent = label;
+          const dd = document.createElement('dd');
+          if (className) dd.className = className;
+          dd.textContent = value;
+          row.append(dt, dd);
+          return row;
+        };
+
+        // The page above the signature says you signed, so nothing still asks for a signature
+        // (round 6 part 3, T1-19; round 7, T7-12: an updated version too, during the moment and on
+        // a later visit).
+        const markSigned = (entry) => {
+          if (mode === 'view' || !text || entry.version !== text.version) return;
+          eyebrow.textContent = mode === 'new' ? 'Your account' : 'Your agreement';
+          title.textContent = 'The User Agreement.';
+          introCopy.textContent = `Version ${text.version} · you signed it ${model.dateText(entry.signedAt)}. We keep your copy permanently.`;
+        };
+
+        let shownRecord = null;
+        const showRecord = (entry, { justSigned = false } = {}) => {
+          shownRecord = entry;
+          const recordText = texts?.versions?.[entry.version] ?? text;
+          const fingerprint = entry.fingerprint || recordText?.sha256 || '';
+          stopMoment();
+          form.hidden = true;
+          unsigned.hidden = true;
+          record.hidden = false;
+          recordTitle.textContent = justSigned
+            ? `You signed version ${entry.version}`
+            : `Signed version ${entry.version}`;
+          recordLead.textContent =
+            mode === 'new'
+              ? 'Your account is ready. Next, a few questions set up your deputy.'
+              : mode === 'view'
+                ? 'Your signed copy, read only.'
+                : 'Your deputy keeps working.';
+          recordMismatch.hidden = !(entry.fingerprint && recordText && entry.fingerprint !== recordText.sha256);
+          const region = entry.homeRegion ?? homeRegion ?? accountRegion();
+          recordFacts.replaceChildren(
+            factRow('Version', entry.version),
+            // In the home Region's time zone (T1-19), with Pacific beside it where they differ.
+            factRow('Signed', model.signedTimeText(entry.signedAt, region)),
+            factRow('Name', entry.name),
+            factRow('Email', entry.email),
+            // The home Region the record keeps (a new account's choice); a record without one is
+            // the sample account's, the United States.
+            factRow('Home Region', model.regionName(region)),
+            factRow('Method', model.methodName(entry.method)),
+            factRow('Fingerprint (SHA-256)', model.groups(fingerprint), 'ag-fingerprint'),
+            factRow('Kept', 'Permanently, apart from your account'),
+          );
+          const next =
+            mode === 'view'
+              ? returnTo
+                ? { href: returnTo.href, label: `Back to ${model.returnName(returnTo.page)}` }
+                : { href: './trust-preview.html#agreements', label: 'Back to Help' }
+              : model.nextStep({ mode, door, isNew, returnTo, region });
+          asWayBack(continueLink, next.href);
+          continueLink.textContent = next.label;
+          markSigned(entry);
+          if (justSigned) recordTitle.focus();
+        };
+
+        // The signed copy comes from agreement-text.js's one builder, so Help's Your agreements
+        // saves the same file.
+        const download = (kind) => {
+          if (!shownRecord) return;
+          const copy = texts?.signedCopy?.(shownRecord);
+          if (!copy) return;
+          if (typeof components?.download === 'function') {
+            const result = components.download(copy, kind);
+            announce(
+              result?.ok === false
+                ? 'We couldn’t make the file. Your signed copy is still kept in Help.'
+                : kind === 'pdf'
+                  ? 'Your signed copy is downloading as a PDF.'
+                  : 'Your signed copy is downloading as Markdown.',
+            );
+            return;
+          }
+          if (kind === 'md') {
+            const blob = new Blob([copy.markdown], { type: 'text/markdown;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${copy.title}.md`;
+            document.body.append(a);
+            a.click();
+            a.remove();
+            window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+            announce('Your signed copy is downloading as Markdown.');
+          }
+        };
+
+        // Without the shared download (it makes the PDF), PDF waits and says why in words.
+        const syncDownloads = () => {
+          const shared = typeof components?.download === 'function';
+          downloadPdf.disabled = !shared;
+          downloadNote.hidden = shared;
+          downloadNote.textContent = shared
+            ? ''
+            : 'PDF needs the shared download, which isn’t loaded on this page. Markdown works now.';
+        };
+        downloadPdf.addEventListener('click', () => download('pdf'));
+        downloadMd.addEventListener('click', () => download('md'));
+
+        // ------------------------------------------------------------------ signing
+
+        // One step (round 7, G3 and R10-8): the one sentence says what a signature confirms, the
+        // account's name is the signature, and Sign and continue signs. JobDeputyStore.sign keeps
+        // the record (method one-step, once per version, R9-7); a store without it signs through
+        // signAgreement with the account's name and the three confirmations the sentence states.
+        // Then the signing moment plays and the page goes on by itself.
+        // The moment's hold before the page goes on: the 1.2s moment, then time to hear "Signed"
+        // (round 7, T4-14). Signed with the keyboard (Enter or Space), the page waits for Continue
+        // instead, so nobody using a screen reader or a switch is moved on before they are ready
+        // (WCAG 2.2.1).
+        const MOMENT_MS = 2000;
+        let busy = false;
+        let goTimer = 0;
+        let byKeyboard = false;
+        // A keyboard press reaches the button as a click with no pointer detail.
+        submit.addEventListener('click', (event) => {
+          byKeyboard = event.detail === 0;
+        });
+
+        // During a tour on a phone the page gets room under its last step (app-components.js says
+        // when a tour starts and ends).
+        document.addEventListener('jobdeputy:tour', (event) => {
+          main.classList.toggle('is-touring', event.detail?.type === 'start');
+        });
+
+        const showOperationError = (message) => {
+          operationErrorMessage.textContent = message;
+          operationError.hidden = false;
+          operationError.focus();
+        };
+
+        // A new account signs in this browser, so Sign in can offer one tap next time (the entry
+        // routes' localStorage['jobdeputy.lastAccount']), with the home Region it was created in
+        // (round 6, G3). Another account (&new=1) is not Alex.
+        const rememberAccount = () => {
+          if (mode !== 'new' || isNew) return;
+          try {
+            const { name, email } = account();
+            window.localStorage.setItem(
+              'jobdeputy.lastAccount',
+              JSON.stringify({ name, email, method: door ?? 'email', region: homeRegion ?? 'US' }),
+            );
+          } catch {
+            // Without storage, Sign in simply doesn't offer one tap.
+          }
+        };
+
+        const signWithStore = () => {
+          const details = {
+            version,
+            context: mode === 'new' ? 'new' : 'update',
+            // Kept on the record (round 6, G3): the home Region chosen at Create account.
+            ...(mode === 'new' ? { homeRegion: homeRegion ?? 'US' } : {}),
+          };
+          if (typeof store.sign === 'function') return store.sign(details);
+          return store.signAgreement({ ...details, name: account().name, consents: consentIds });
+        };
+
+        // The deputy of the moment, added as it starts: the pen in his right paw, cheering
+        // (deputy.js's signed reaction, or submitted, the pen, where the script has no signed yet).
+        // It is a moment host, so it never takes the greeting Setup's deputy gives next.
+        const cheer = () => {
+          const deputy = window.JobDeputyDeputy;
+          if (typeof deputy?.init !== 'function' || typeof deputy.get !== 'function') return;
+          const reaction = (deputy.reactions ?? []).includes('signed') ? 'signed' : 'submitted';
+          let host = momentHost.querySelector('[data-deputy]');
+          if (!host) {
+            host = document.createElement('div');
+            host.className = 'ag-moment-scene';
+            host.setAttribute('data-deputy', '');
+            host.setAttribute('data-deputy-moment', '');
+            host.dataset.deputyPage = 'agreement';
+            host.dataset.deputyState = reaction;
+            const art = document.createElement('div');
+            art.className = 'deputy-art';
+            art.setAttribute('data-deputy-art', '');
+            art.setAttribute('aria-hidden', 'true');
+            host.append(art);
+            momentHost.append(host);
+            deputy.init(momentHost);
+          }
+          deputy.get(host)?.react(reaction, { ms: MOMENT_MS * 2 });
+        };
+
+        const stopMoment = () => {
+          window.clearTimeout(goTimer);
+          goTimer = 0;
+          moment.hidden = true;
+          moment.classList.remove('is-playing');
+          moment.style.removeProperty('min-height');
+        };
+
+        // About 1.2s: the name writes on the signature line, the seal stamps with a check, the
+        // deputy cheers, "Signed. Taking you to setup.", then the page goes on. The way on is
+        // focused from the first frame (a keyboard or a screen reader never waits), and screen
+        // readers hear the line once. Reduced motion and Pause motion show the signed state at once
+        // (html[data-motion] is paused, so nothing moves) and keep the same short hold.
+        const playMoment = (entry) => {
+          const next = model.nextStep({
+            mode,
+            door,
+            isNew,
+            returnTo,
+            region: entry.homeRegion ?? homeRegion,
+          });
+          const waits = byKeyboard;
+          const line = waits ? model.readyLine(next) : model.signedLine(next);
+          signatureName.textContent = entry.name;
+          signatureCaption.textContent = `Signed ${model.dateText(entry.signedAt)}`;
+          momentTitle.textContent = line;
+          asWayBack(momentNext, next.href);
+          momentNext.textContent = next.label;
+          // The moment takes the card's place at the card's height, so nothing under it moves.
+          moment.style.minHeight = `${Math.round(form.getBoundingClientRect().height)}px`;
+          form.hidden = true;
+          moment.hidden = false;
+          moment.classList.add('is-playing');
+          markSigned(entry);
+          cheer();
+          // Into view first (T4-5): the whole moment, its panda drawn, under the sticky header.
+          moment.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+          // Heard first (T4-14): focus goes to the line, so a screen reader says "Signed" at once;
+          // the way on is the next stop. With the keyboard, focus goes to the way on, which the
+          // line describes, and the page waits for it.
+          if (waits) {
+            momentNext.setAttribute('aria-describedby', 'ag-moment-title');
+            momentNext.focus({ preventScroll: true });
+          } else {
+            momentNext.removeAttribute('aria-describedby');
+            momentTitle.focus({ preventScroll: true });
+            goTimer = window.setTimeout(() => {
+              goTimer = 0;
+              markReturn(next.href);
+              window.location.assign(next.href);
+            }, MOMENT_MS);
+          }
+        };
+
+        // Going on by hand during the moment goes once.
+        momentNext.addEventListener('click', () => {
+          window.clearTimeout(goTimer);
+          goTimer = 0;
+        });
+
+        form.addEventListener('submit', (event) => {
+          event.preventDefault();
+          if (busy) return;
+          operationError.hidden = true;
+          if (!text) {
+            showOperationError('The agreement didn’t load, so it can’t be signed. Reload the page.');
+            return;
+          }
+          if (typeof store?.sign !== 'function' && typeof store?.signAgreement !== 'function') {
+            showOperationError(
+              'Signing needs the updated sample store, which isn’t loaded. Nothing was signed.',
+            );
+            return;
+          }
+          busy = true;
+          let result = null;
+          try {
+            result = signWithStore();
+          } catch {
+            result = { ok: false, reason: 'error' };
+          }
+          // Signed already (another tab, or Back): its record shows, and nothing is kept twice.
+          if (result?.ok === false && result.reason === 'already-signed') {
+            busy = false;
+            const existing = result.record ?? recordOf(version);
+            if (existing) showRecord(existing);
+            return;
+          }
+          const entry = result?.ok === false ? null : (result?.record ?? recordOf(version));
+          if (!entry) {
+            busy = false;
+            showOperationError('Nothing was signed. Reload the page, then sign again.');
+            return;
+          }
+          rememberAccount();
+          playMoment(entry);
+        });
+
+        // ------------------------------------------------------------------ the page by mode
+
+        const pending = () => agreementsNow()?.pending ?? null;
+        const paused = () => Boolean(agreementsNow()?.paused);
+
+        // The pause date and the days left are the store's figures (data-metric, R3-4), set as its
+        // text; the words around them are this page's.
+        const metricSpan = (key, fallback) => {
+          const span = document.createElement('span');
+          span.dataset.metric = key;
+          span.textContent =
+            typeof store?.metricText === 'function' ? store.metricText(key) : fallback;
+          return span;
+        };
+        // In update mode the intro line says what the pending version asks of you (the date to
+        // sign by and the days left, or the pause), and What changed says what pauses and what never
+        // does, in the agreement's own words, so a phone still shows the first consent.
+        const describeStatus = () => {
+          // A signed version's record says so above it (showRecord), and nothing asks again.
+          if (mode !== 'update' || !text || (shownRecord && !record.hidden)) return;
+          const waiting = pending();
+          if (!waiting) {
+            introCopy.textContent = `User Agreement ${text.version}, published ${model.dateText(text.publishedAt)}.`;
+            changesLead.textContent = `New in version ${text.version}.`;
+            return;
+          }
+          if (paused()) {
+            introCopy.textContent = `Version ${text.version} · your deputy’s work is paused until you sign.`;
+            changesLead.textContent = `New in version ${text.version}. Until you sign, searches, Keep watch checks, filling in applications, and drafting stay paused. You can still sign in, see everything, export your data, delete your account, and use Help.`;
+            return;
+          }
+          introCopy.replaceChildren(
+            `Version ${text.version} · sign by `,
+            metricSpan('agreement.pauseAt', model.dateText(waiting.pauseAt)),
+            ' to keep your deputy working: ',
+            metricSpan('agreement.daysLeft', String(waiting.daysLeft)),
+            ' days left.',
+          );
+          changesLead.textContent = `New in version ${text.version}. If it isn’t signed by then, searches, Keep watch checks, filling in applications, and drafting pause until you sign. You can always sign in, see everything, export your data, delete your account, and use Help.`;
+        };
+
+        const setIntro = () => {
+          const minutes = text ? `about ${text.readMinutes} minutes to read in full` : '';
+          if (mode === 'new') {
+            eyebrow.textContent = 'Before your account';
+            title.textContent = 'The User Agreement.';
+            introCopy.textContent = text
+              ? `Version ${text.version} · ${minutes}. Your account is created when you sign.`
+              : 'Your account is created when you sign.';
+          } else if (mode === 'update') {
+            eyebrow.textContent = 'Updated agreement';
+            title.textContent = 'Sign the new version.';
+            introCopy.textContent = 'What changed comes first.';
+          } else {
+            eyebrow.textContent = 'Your agreements';
+            title.textContent = text ? 'Your signed copy.' : 'The User Agreement.';
+            introCopy.textContent = text
+              ? `User Agreement ${text.version}, published ${model.dateText(text.publishedAt)} · read only.`
+              : 'There is no such version to show.';
+          }
+        };
+
+        const showUnsigned = () => {
+          form.hidden = true;
+          record.hidden = true;
+          unsigned.hidden = false;
+          if (!text) {
+            unsignedTitle.textContent = 'Not found';
+            unsignedLead.textContent = 'This version doesn’t exist. Your signed copies are in Help.';
+            unsignedAction.href = './trust-preview.html#agreements';
+            unsignedAction.textContent = 'Go to Your agreements';
+            return;
+          }
+          unsignedTitle.textContent = 'Not signed';
+          if (version === current) {
+            unsignedLead.textContent = `You haven’t signed version ${version} yet.`;
+            unsignedAction.href = './agreement-preview.html?mode=update';
+            unsignedAction.textContent = 'Review and sign';
+          } else {
+            unsignedLead.textContent = `This account didn’t sign version ${version}. Version ${current} replaced it.`;
+            unsignedAction.href = './trust-preview.html#agreements';
+            unsignedAction.textContent = 'Go to Your agreements';
+          }
+        };
+
+        const setSide = () => {
+          if (mode === 'view') {
+            const entry = text ? recordOf(version) : null;
+            if (entry) showRecord(entry);
+            else showUnsigned();
+            return;
+          }
+          // Signing is once per version (round 6 part 3, R9-7): a version this account signed
+          // already shows its record, on Back and on a fresh visit, so it is never signed twice.
+          // Update mode with something still pending has nothing signed to show.
+          const signedCurrent = recordOf(version);
+          if (signedCurrent && (mode === 'new' || !pending())) {
+            showRecord(signedCurrent);
+            return;
+          }
+          stopMoment();
+          form.hidden = false;
+          record.hidden = true;
+          unsigned.hidden = true;
+        };
+
+        const setForm = () => {
+          const { name, email } = account();
+          // The one sentence, from agreement-text.js, so a signed copy repeats it word for word.
+          if (text && typeof texts?.sentence === 'function') consent.textContent = texts.sentence(text.version);
+          dateOut.textContent = model.dateText(nowIso());
+          signerOut.textContent = name;
+          emailOut.textContent = email;
+          homeRegionOut.textContent = model.regionName(homeRegion ?? accountRegion());
+          if (mode === 'new') {
+            emailLabel.textContent = 'Signing up as';
+            later.textContent = 'Not now';
+            // The Region chosen above Create account's ways in comes back with you (round 6 part
+            // 3, T1-8); without one, Create account suggests as it always does.
+            later.href = `./access-preview.html?mode=create&skipLoader${
+              homeRegion ? `&region=${homeRegion.toLowerCase()}` : ''
+            }`;
+            // Create account by email comes straight here, as Google and LinkedIn do (round 5
+            // acceptance, D-8), so the note its form used to show after the pending beat is here:
+            // the sample account signs, and the details typed there were not kept.
+            if (door === 'email') {
+              signNote.textContent =
+                'Prototype · the details you typed weren’t kept; your signature stays in this browser';
+            }
+          } else {
+            emailLabel.textContent = 'Signing as';
+            later.textContent = 'Not now';
+            asWayBack(later, returnTo?.href ?? './home-preview.html?skipLoader');
+          }
+        };
+
+        // A new person has no account yet, so the logo leads to Sign in rather than the Dashboard.
+        if (mode === 'new' && brand) {
+          brand.href = './login-preview.html?skipLoader';
+          brand.setAttribute('aria-label', 'JobDeputy, Sign in');
+        }
+        main.dataset.mode = mode;
+
+        // Without the text (the script didn't load) nothing can be read or signed; a signed-copy
+        // link to a version that doesn't exist says so. Either way the parts stay out of the way.
+        if (!text) {
+          for (const part of [changesPart, $('#ag-points-part'), $('#ag-full-part')]) part.hidden = true;
+          textMissing.hidden = false;
+          if (texts) {
+            $('#ag-text-missing-title').textContent = 'There is no such version';
+            $('#ag-text-missing-message').textContent =
+              'Your signed copies are listed in Help, under Your agreements.';
+            textMissing.dataset.kind = 'notice';
+          }
+          submit.setAttribute('aria-disabled', 'true');
+        } else {
+          renderText();
+        }
+        setIntro();
+        describeStatus();
+        setForm();
+        setSide();
+        syncDownloads();
+        // Boot without flicker (round 7, R10-1): the regions this script fills (the intro line, the
+        // agreement, the signature) are held as skeletons of their size and show in this frame.
+        components?.boot?.ready?.();
+
+        // Another tab may sign or reset; keep the side and the status honest, and leave a signing
+        // moment that is playing alone.
+        store?.subscribe?.(() => {
+          if (busy) return;
+          describeStatus();
+          if (!form.hidden && recordOf(version) && (mode === 'new' || !pending())) setSide();
+        });
+
+        // Back after the moment went on (the page cache keeps it as it was): the signed record
+        // shows, as on a fresh visit (R9-7), and nothing goes on by itself.
+        window.addEventListener('pageshow', (event) => {
+          if (!event.persisted) return;
+          busy = false;
+          describeStatus();
+          setSide();
+        });
+
+        // A deep link to a section (#ag-email) opens on it inside the region.
+        const hashTarget = window.location.hash ? document.getElementById(window.location.hash.slice(1)) : null;
+        if (hashTarget && region.contains(hashTarget)) {
+          window.requestAnimationFrame(() => hashTarget.scrollIntoView({ block: 'start' }));
+        }
+
+        // The tour (app-components.js) starts from ?tour=1 or Take the tour, never on a plain load.
+      })();
+    </script>
+    <span id="first-view" hidden></span>
+  </body>
+</html>

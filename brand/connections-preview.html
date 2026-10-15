@@ -1,0 +1,2865 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="JobDeputy Settings, Connections: Gmail, LinkedIn, your site accounts, and your AI keys."
+    />
+    <title>JobDeputy · Settings · Connections</title>
+    <link rel="icon" href="./jobdeputy-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./app-chrome.css" />
+    <link rel="stylesheet" href="./app-components.css" />
+    <link rel="stylesheet" href="./deputy.css" />
+    <link rel="expect" href="#first-view" blocking="render" />
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #1b1a18;
+        --ink-soft: #2d2b27;
+        --muted: #706d66;
+        --quiet: #98948b;
+        --paper: #faf8f3;
+        --paper-deep: #f0ece3;
+        --surface: rgba(255, 255, 255, 0.82);
+        --surface-strong: rgba(255, 255, 255, 0.92);
+        --header-surface: rgba(250, 248, 243, 0.82);
+        --line: rgba(27, 26, 24, 0.12);
+        --line-soft: rgba(27, 26, 24, 0.08);
+        --line-strong: rgba(27, 26, 24, 0.24);
+        --green: #2f9e77;
+        --green-soft: #ccebdc;
+        --green-wash: rgba(204, 235, 220, 0.55);
+        --green-line: rgba(47, 158, 119, 0.36);
+        --green-ink: #23795b;
+        --orange: #f36b3f;
+        --orange-soft: #ffd5c6;
+        --danger-ink: #9c4028;
+        --blue: #526fe5;
+        --blue-soft: #d9def8;
+        --on-ink-muted: rgba(255, 255, 255, 0.68);
+        --shadow: 0 21px 55px rgba(55, 48, 36, 0.07);
+        --shadow-control: 0 10px 21px rgba(27, 26, 24, 0.15);
+        --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+        --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+        --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+        --font-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+        font-family: var(--font-text);
+        font-synthesis: none;
+      }
+
+      /*
+       * Shared chrome lives in ./app-chrome.css and the shared components in ./app-components.css.
+       * Connections (round 6, T1) holds what Profile's Gmail, LinkedIn, and Site accounts were
+       * (moved here with their behaviour and tests) and a summary of your AI keys. Its own rules
+       * are prefixed .conn- (the moved rules kept their shape, renamed from .profile-).
+       */
+
+      html {
+        min-height: 100%;
+        scroll-behavior: smooth;
+        background: var(--paper);
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        overflow-x: clip;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 9% 4%, var(--surface-strong), transparent 27rem),
+          radial-gradient(
+            circle at 92% 18%,
+            color-mix(in srgb, var(--blue-soft) 30%, transparent),
+            transparent 23rem
+          ),
+          var(--paper);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      button,
+      a {
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      p {
+        margin-top: 0;
+      }
+
+      .conn-sprite {
+        position: absolute;
+        width: 0;
+        height: 0;
+        overflow: hidden;
+      }
+
+      .conn-action-icon,
+      .conn-pill-icon {
+        width: 18px;
+        height: 18px;
+        flex: 0 0 auto;
+      }
+
+      .conn-pill-icon {
+        width: 14px;
+        height: 14px;
+      }
+
+      .conn-how-toggle {
+        display: inline-flex;
+        min-height: 44px;
+        gap: 8px;
+        align-items: center;
+        cursor: pointer;
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 680;
+        list-style: none;
+      }
+
+      .conn-how-toggle::-webkit-details-marker {
+        display: none;
+      }
+
+      .conn-how-toggle::after {
+        color: var(--ink-soft);
+        content: "+" / "";
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .conn-how-toggle:focus-visible {
+        border-radius: 11px;
+        outline: 2px solid var(--green);
+        outline-offset: 3px;
+      }
+
+      .conn-import-same[open] > .conn-how-toggle::after {
+        content: "−" / "";
+      }
+
+      /* ---------------------------------------------------------------- section cards */
+
+      .conn-section {
+        min-width: 0;
+        container: conn-section / inline-size;
+      }
+
+      .conn-section-head {
+        display: grid;
+        grid-template-columns: 44px minmax(0, 1fr);
+        gap: 21px;
+        align-items: start;
+      }
+
+      .conn-section-icon,
+      .conn-source-icon {
+        display: grid;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        place-items: center;
+        color: var(--ink-soft);
+        background: var(--paper-deep);
+        outline: 1px solid transparent;
+        outline-offset: -1px;
+      }
+
+      .conn-section-icon svg,
+      .conn-source-icon svg {
+        width: 20px;
+        height: 20px;
+      }
+
+      .conn-section-copy {
+        display: grid;
+        min-width: 0;
+        gap: 8px;
+      }
+
+      .conn-section-title {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 13px;
+        align-items: center;
+      }
+
+      .conn-section-title h2 {
+        margin: 0;
+      }
+
+      .conn-section-line {
+        max-width: 610px;
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+        text-wrap: pretty;
+      }
+
+      /* Words that say what needs you, after an attention beacon; never orange text. The mark
+         takes the shared --mark-attention (the data orange), which keeps 3:1 on the card. */
+      .conn-attention {
+        display: inline-flex;
+        gap: 6px;
+        margin: 0;
+        align-items: center;
+        color: var(--ink);
+        font-size: 12px;
+        font-weight: 650;
+        line-height: 1.4;
+      }
+
+      .conn-attention::before {
+        width: 8px;
+        height: 8px;
+        flex: 0 0 auto;
+        border-radius: 50%;
+        background: var(--mark-attention);
+        content: "";
+      }
+
+      .conn-attention[hidden] {
+        display: none;
+      }
+
+      .conn-section > .sample-note {
+        margin-top: 21px;
+      }
+
+      /* Groups inside a section, divided by quiet rules. */
+      .conn-group {
+        display: grid;
+        min-width: 0;
+        gap: 13px;
+        margin-top: 34px;
+        padding-top: 34px;
+        border-top: 1px solid var(--line);
+      }
+
+      .conn-group-head {
+        display: flex;
+        min-height: 44px;
+        flex-wrap: wrap;
+        gap: 8px 13px;
+        align-items: center;
+      }
+
+      .conn-group-head > h3 {
+        display: inline-flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-inline-end: auto;
+        align-items: center;
+      }
+
+      .conn-saved {
+        display: inline-flex;
+        gap: 6px;
+        margin: 0;
+        align-items: center;
+        color: var(--green-ink);
+        font-size: 12px;
+        font-weight: 650;
+        line-height: 1.4;
+      }
+
+      .conn-saved::before {
+        content: "✓" / "";
+        font-weight: 800;
+      }
+
+      .conn-saved[hidden] {
+        display: none;
+      }
+
+      /* ---------------------------------------------------------------- view mode: fact rows */
+
+      .conn-facts {
+        display: grid;
+        margin: 0;
+      }
+
+      .conn-fact {
+        display: grid;
+        gap: 4px 21px;
+        padding: 13px 0;
+        border-bottom: 1px solid var(--line-soft);
+      }
+
+      .conn-fact:last-child {
+        border-bottom: 0;
+      }
+
+      .conn-fact > dt {
+        display: inline-flex;
+        flex-wrap: wrap;
+        gap: 4px 8px;
+        align-items: center;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 650;
+        line-height: 1.5;
+      }
+
+      .conn-fact > dd {
+        display: grid;
+        min-width: 0;
+        gap: 4px;
+        margin: 0;
+        justify-items: start;
+        overflow-wrap: anywhere;
+      }
+
+      .conn-fact-value {
+        color: var(--ink);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      .conn-fact-value.is-long {
+        white-space: pre-line;
+      }
+
+      .conn-fact-value.is-quiet {
+        color: var(--muted);
+      }
+
+      .conn-fact-note {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .conn-fact-action {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 21px;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      @container conn-section (min-width: 560px) {
+        .conn-fact {
+          grid-template-columns: 178px minmax(0, 1fr);
+          align-items: baseline;
+        }
+
+        .conn-fact.has-action {
+          align-items: center;
+        }
+      }
+
+      .conn-tags,
+      .conn-lines,
+      /* ---------------------------------------------------------------- lists of items */
+
+      .conn-items {
+        display: grid;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .conn-item {
+        display: grid;
+        gap: 13px 21px;
+        padding: 13px 0;
+        border-bottom: 1px solid var(--line-soft);
+        align-items: start;
+      }
+
+      .conn-item:last-child {
+        border-bottom: 0;
+      }
+
+      @container conn-section (min-width: 560px) {
+        .conn-item {
+          grid-template-columns: minmax(0, 1fr) auto;
+        }
+      }
+
+      .conn-item-copy {
+        display: grid;
+        min-width: 0;
+        gap: 4px;
+        justify-items: start;
+      }
+
+      .conn-item-head {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .conn-item-title {
+        margin: 0;
+        color: var(--ink);
+        font-size: 15px;
+        font-weight: 700;
+        line-height: 1.35;
+        overflow-wrap: anywhere;
+      }
+
+      .conn-item-meta {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .conn-item-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .conn-items-empty {
+        padding: 13px 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+        list-style: none;
+      }
+
+      /* A connection, an import, or a key: icon, words, and its actions in one bordered row. */
+      .conn-source {
+        display: grid;
+        grid-template-columns: 44px minmax(0, 1fr);
+        gap: 13px 21px;
+        margin-top: 34px;
+        padding: 21px;
+        border: 1px solid var(--line);
+        border-radius: 13px;
+        align-items: center;
+        background: var(--paper);
+      }
+
+      .conn-source-copy {
+        display: grid;
+        min-width: 0;
+        gap: 2px;
+        margin: 0;
+        border-radius: 11px;
+      }
+
+      .conn-source-copy:focus-visible {
+        outline: 2px solid var(--green);
+        outline-offset: 3px;
+      }
+
+      .conn-source-title {
+        color: var(--ink);
+        font-size: 15px;
+        font-weight: 700;
+        line-height: 1.35;
+        overflow-wrap: anywhere;
+      }
+
+      .conn-source-meta {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .conn-source-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        grid-column: 2;
+        align-items: center;
+      }
+
+      @container conn-section (min-width: 640px) {
+        .conn-source {
+          grid-template-columns: 44px minmax(0, 1fr) auto;
+        }
+
+        .conn-source-actions {
+          grid-column: auto;
+          justify-content: end;
+        }
+      }
+
+      .conn-link-action::after {
+        content: "→" / "";
+      }
+
+      /* Empty, and planned: a prop-only illustration and one line. */
+      .conn-empty {
+        display: grid;
+        grid-template-columns: 55px minmax(0, 1fr);
+        gap: 21px;
+        align-items: center;
+      }
+
+      .conn-empty-art {
+        width: 55px;
+        height: 55px;
+      }
+
+      .conn-empty-art > svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .conn-empty-copy {
+        display: grid;
+        gap: 2px;
+        margin: 0;
+      }
+
+      .conn-empty-title {
+        color: var(--ink);
+        font-size: 15px;
+        font-weight: 700;
+        line-height: 1.35;
+      }
+
+      .conn-empty-meta {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      /* ---------------------------------------------------------------- round 3 groups */
+
+      /* A group's one supporting line, and a short note under its facts. */
+      .conn-group-line {
+        max-width: 640px;
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+        text-wrap: pretty;
+      }
+
+      .conn-group-note {
+        max-width: 640px;
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .conn-group-note[hidden] {
+        display: none;
+      }
+
+      /* A group's heading and its line as one part (one tour target). Voluntary
+         self-identification uses it and stays neutral on purpose: no need markers, no counts. */
+      .conn-group-intro {
+        display: grid;
+        min-width: 0;
+        gap: 8px;
+      }
+
+      /* Round 5 (R2, A2): the figures that lead a part (found details, site accounts): a bold
+         count and its words each, in one wrapping row. */
+      .conn-stats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 21px;
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      .conn-stat > strong {
+        color: var(--ink);
+        font-family: var(--font-display);
+        font-size: 24px;
+        font-weight: 600;
+        line-height: 1.2;
+      }
+
+      /* A section's rows (LinkedIn's import and sign-in, Gmail's connection) sit close together
+         under its heading. */
+      .conn-group > .conn-source {
+        margin-top: 0;
+      }
+
+      /* Import from LinkedIn: the file choice, then the review list in groups. */
+      .conn-import-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 13px;
+      }
+
+      .conn-import-review {
+        display: grid;
+        gap: 21px;
+      }
+
+      .conn-import-review[hidden] {
+        display: none;
+      }
+
+      .conn-import-file {
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 15px;
+        font-weight: 650;
+        line-height: 1.4;
+        overflow-wrap: anywhere;
+      }
+
+      .conn-import-groups {
+        display: grid;
+        gap: 21px;
+      }
+
+      .conn-import-group {
+        min-width: 0;
+        margin: 0;
+      }
+
+      .conn-import-group .choice-card-label,
+      .conn-import-group .choice-card-meta {
+        overflow-wrap: anywhere;
+      }
+
+      /* The value LinkedIn has reads as text, under its kind; the line after it says where it
+         goes or what you have now. */
+      .conn-import-group .conn-import-value {
+        color: var(--ink-soft);
+        font-size: 14px;
+      }
+
+      .conn-import-same > summary {
+        margin-bottom: 13px;
+      }
+
+      /* Site accounts: each password in the shared secret field, under its account. */
+      .conn-item.is-site-account .conn-secret-field {
+        margin-top: 8px;
+      }
+
+      .conn-item.is-site-account .feedback-panel {
+        margin-top: 13px;
+      }
+
+      .conn-vault {
+        display: grid;
+        gap: 8px;
+      }
+
+      .conn-vault-title {
+        margin: 0;
+        font-size: 15px;
+      }
+
+      .conn-vault-log {
+        display: grid;
+        gap: 0;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .conn-vault-log[hidden],
+      .conn-list-more[hidden],
+      .conn-vault-all[hidden] {
+        display: none;
+      }
+
+      .conn-list-more,
+      .conn-vault-all {
+        justify-self: start;
+      }
+
+      .conn-vault-entry {
+        display: grid;
+        gap: 2px 13px;
+        padding: 8px 0;
+        border-top: 1px solid var(--line-soft);
+        font-size: 14px;
+        line-height: 1.4;
+      }
+
+      .conn-vault-entry:first-child {
+        border-top: 0;
+      }
+
+      .conn-vault-when {
+        color: var(--muted);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .conn-vault-what {
+        min-width: 0;
+        color: var(--ink-soft);
+        overflow-wrap: anywhere;
+      }
+
+      @container conn-section (min-width: 560px) {
+        .conn-vault-entry {
+          grid-template-columns: 144px minmax(0, 1fr);
+          align-items: baseline;
+        }
+      }
+
+      /* The daily scan (round 7, D3): when it runs and what it costs, Scan now with its cost
+         beside it, then the last scans. */
+      .conn-scan {
+        display: grid;
+        min-width: 0;
+        gap: 13px;
+        padding: 21px;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: var(--paper);
+        --skeleton-min: 280px;
+      }
+
+      .conn-scan-head {
+        display: grid;
+        gap: 4px;
+      }
+
+      .conn-scan-title {
+        margin: 0;
+        color: var(--ink);
+        font-size: 15px;
+        font-weight: 700;
+        line-height: 1.35;
+      }
+
+      .conn-scan-line {
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      .conn-scan-now {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 13px;
+        align-items: center;
+      }
+
+      .conn-scan-now[hidden],
+      .conn-scans-all[hidden],
+      .conn-scan-refused[hidden] {
+        display: none;
+      }
+
+      .conn-scan-cost {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      .conn-scan-subtitle {
+        margin: 8px 0 0;
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1.35;
+      }
+
+      .conn-scans {
+        display: grid;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .conn-scans:empty {
+        display: none;
+      }
+
+      .conn-scan-row {
+        display: grid;
+        gap: 2px 13px;
+        padding: 8px 0;
+        border-top: 1px solid var(--line-soft);
+        font-size: 14px;
+        line-height: 1.4;
+      }
+
+      .conn-scan-row:first-child {
+        border-top: 0;
+      }
+
+      .conn-scan-when {
+        color: var(--muted);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .conn-scan-what {
+        min-width: 0;
+        color: var(--ink-soft);
+        overflow-wrap: anywhere;
+      }
+
+      .conn-scans-all {
+        justify-self: start;
+      }
+
+      @container conn-section (min-width: 560px) {
+        .conn-scan-row {
+          grid-template-columns: 210px minmax(0, 1fr);
+          align-items: baseline;
+        }
+      }
+
+      /* Gmail and LinkedIn: each connection as a bordered row. */
+      .conn-source.is-connection {
+        margin-top: 0;
+      }
+
+      /* FieldFeedback for one control: ink text after an attention mark, never orange text. */
+      .conn-field-error {
+        display: flex;
+        gap: 8px;
+        margin: 0;
+        align-items: baseline;
+        color: var(--ink);
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1.4;
+      }
+
+      .conn-field-error::before {
+        width: 8px;
+        height: 8px;
+        flex: 0 0 auto;
+        border-radius: 50%;
+        background: var(--mark-attention);
+        content: "";
+        transform: translateY(-1px);
+      }
+
+      .conn-field-error[hidden] {
+        display: none;
+      }
+
+      /* A destructive text action: the compact action with danger-ink words. */
+      .conn-danger {
+        color: var(--danger-ink);
+      }
+
+      /* Drawer copy: the consent steps and the import */
+
+      .conn-drawer-copy {
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      .conn-drawer-list {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .conn-drawer-list li {
+        display: grid;
+        grid-template-columns: 13px minmax(0, 1fr);
+        gap: 13px;
+        color: var(--ink);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      .conn-drawer-list li::before {
+        width: 6px;
+        height: 6px;
+        margin-top: 9px;
+        border-radius: 50%;
+        background: var(--ink-soft);
+        content: "";
+        justify-self: center;
+      }
+
+      /* ---------------------------------------------------------------- Connections (round 6, T1) */
+
+      /* The sections stack under the Settings tabs, one card each. */
+      .conn-sections {
+        display: grid;
+        min-width: 0;
+        gap: 34px;
+        margin-top: 34px;
+      }
+
+      /* Your AI keys: one line, then the link to AI & credits (round 6 part 2, P-22). */
+      /* A question beside its button: the words, then the danger answer and the safe one. */
+      .conn-confirm-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      .conn-keys-line {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 21px;
+        margin: 13px 0 0;
+        align-items: center;
+        color: var(--ink-soft);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      /* One notice for 2026.10 under the tabs, and one Sample data note under the lede. */
+      .conn-agreement {
+        margin: 0;
+      }
+
+      .conn-agreement[hidden] {
+        display: none;
+      }
+
+      .conn-page-note {
+        margin: 8px 0 0;
+      }
+
+      @media (max-width: 720px) {
+        .conn-sections {
+          gap: 21px;
+          margin-top: 21px;
+        }
+
+        .conn-group {
+          margin-top: 21px;
+          padding-top: 21px;
+        }
+
+        .conn-section-head {
+          gap: 13px;
+        }
+
+        .conn-source {
+          margin-top: 21px;
+          padding: 13px;
+        }
+
+      }
+
+      @media (forced-colors: active) {
+        .conn-field-error::before,
+        .conn-attention::before {
+          forced-color-adjust: none;
+          background: Highlight;
+        }
+
+        .conn-drawer-list li::before {
+          forced-color-adjust: none;
+          background: CanvasText;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#page-title">Skip to Connections</a>
+
+    <header class="app-header">
+      <a class="brand" href="./home-preview.html?skipLoader" aria-label="JobDeputy dashboard">
+        <img
+          class="brand-logo"
+          src="./jobdeputy-mark.svg"
+          alt=""
+          width="400"
+          height="290"
+        />
+        <span class="brand-copy">
+          <span class="brand-name"><span>Job</span><span>Deputy</span></span>
+          <span class="brand-note">Your search partner</span>
+        </span>
+      </a>
+      <div class="header-actions">
+        <!-- HeaderActions: start -->
+        <button class="header-action header-feedback" type="button" data-feedback-open aria-haspopup="dialog" data-tip="Send feedback">
+          <svg class="header-action-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5.75 4.75h12.5c1.1 0 2 .9 2 2v8c0 1.1-.9 2-2 2h-6.5l-4.25 3.5v-3.5H5.75c-1.1 0-2-.9-2-2v-8c0-1.1.9-2 2-2Z" /><path d="M8.25 9.25h7.5M8.25 12.5h4.5" /></svg>
+          <span class="header-action-label">Feedback</span>
+        </button>
+        <a class="header-action header-invite" href="./invite-preview.html" data-tip="Invite friends">
+          <svg class="header-action-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.75" y="8.25" width="16.5" height="4" rx="1" /><path d="M5.25 12.25v6.5c0 .55.45 1 1 1h11.5c.55 0 1-.45 1-1v-6.5" /><path d="M12 8.25v11.5" /><path d="M12 8.25c-2.25 0-4.25-.75-4.25-2.25 0-1 .75-1.75 1.75-1.75 1.75 0 2.5 2 2.5 4Zm0 0c2.25 0 4.25-.75 4.25-2.25 0-1-.75-1.75-1.75-1.75-1.75 0-2.5 2-2.5 4Z" /></svg>
+          <span class="header-action-label">Invite friends</span>
+        </a>
+        <!-- HeaderActions: end -->
+        <details class="account-menu">
+          <summary class="account-link" aria-label="Alex Morgan, Free access, account menu">
+            <span class="account-avatar">
+              <img src="./profile-avatar.svg" alt="" width="160" height="160" />
+            </span>
+            <span class="account-copy">
+              <strong>Alex Morgan</strong>
+              <span>Free access</span>
+            </span>
+          </summary>
+          <nav class="account-popover" aria-label="Account">
+            <span class="account-popover-status">
+              <span data-account-credits>339,100 tokens of AI credits left</span>
+            </span>
+            <a href="./profile-preview.html">Profile</a>
+            <a href="./account-preview.html">Settings</a>
+            <a href="./ai-preview.html">AI &amp; credits</a>
+            <a href="./shop-preview.html">Purchases</a>
+            <a href="./invite-preview.html">Invite friends</a>
+            <a href="./trust-preview.html#help">Help &amp; support</a>
+            <button class="account-popover-action" type="button" data-tour-open hidden>Show me around</button>
+            <button class="account-popover-action" type="button" data-feedback-open aria-haspopup="dialog">Send feedback</button>
+            <a class="account-signout" href="./login-preview.html?skipLoader">Sign out</a>
+          </nav>
+        </details>
+      </div>
+    </header>
+
+    <div class="app-frame">
+      <div class="app-sidebar" id="app-sidebar">
+        <div class="app-menu">
+          <button
+            class="compact-action app-menu-toggle"
+            id="app-menu-toggle"
+            type="button"
+            aria-expanded="true"
+            aria-controls="app-nav"
+            hidden
+          >
+            <svg class="app-menu-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+            <span class="app-menu-text">Menu<span class="app-menu-current"> · Settings</span></span>
+          </button>
+        </div>
+        <!-- AppNav: start -->
+        <nav class="app-nav" id="app-nav" aria-label="Primary">
+          <ul class="app-nav-list">
+            <li>
+              <a class="app-nav-link" href="./home-preview.html?skipLoader">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.75 10.5 12 3.75l8.25 6.75" /><path d="M5.75 9v10.5h12.5V9" /><path d="M10 19.5v-5h4v5" /></svg>
+                <span class="app-nav-label">Dashboard</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./searches-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.25" /><path d="m15.25 15.25 4.75 4.75" /></svg>
+                <span class="app-nav-label">Searches</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./jobs-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="7.25" width="17" height="12.5" rx="2" /><path d="M8.75 7.25V5.5c0-.83.67-1.5 1.5-1.5h3.5c.83 0 1.5.67 1.5 1.5v1.75" /><path d="M3.5 12.5h17" /></svg>
+                <span class="app-nav-label">Job matches</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./applications-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.75" y="4.25" width="4.5" height="11.5" rx="1.25" /><rect x="9.75" y="4.25" width="4.5" height="15.5" rx="1.25" /><rect x="15.75" y="4.25" width="4.5" height="8" rx="1.25" /></svg>
+                <span class="app-nav-label">Applications</span>
+                <span class="app-nav-count is-attention">3<span class="sr-only"> need you</span></span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./documents-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.75 3.75h-6.5c-.97 0-1.75.78-1.75 1.75v13c0 .97.78 1.75 1.75 1.75h9.5c.97 0 1.75-.78 1.75-1.75V8.25Z" /><path d="M13.75 3.75v4.5h4.5" /><path d="M8.75 12.25h6.5M8.75 15.75h6.5" /></svg>
+                <span class="app-nav-label">Résumés</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./profile-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="8.25" r="3.75" /><path d="M4.75 20c.6-3.75 3.4-6 7.25-6s6.65 2.25 7.25 6" /></svg>
+                <span class="app-nav-label">Profile</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./account-preview.html" aria-current="true">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9.88 5.85L10.48 3.38L13.52 3.38L14.12 5.85L16.26 7.09L18.7 6.38L20.22 9.01L18.38 10.76L18.38 13.24L20.22 14.99L18.7 17.62L16.26 16.91L14.12 18.15L13.52 20.62L10.48 20.62L9.88 18.15L7.74 16.91L5.3 17.62L3.78 14.99L5.62 13.24L5.62 10.76L3.78 9.01L5.3 6.38L7.74 7.09Z" /><circle cx="12" cy="12" r="3" /></svg>
+                <span class="app-nav-label">Settings</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./trust-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.75" /><path d="M9.6 9.6a2.5 2.5 0 1 1 3.3 2.36c-.53.2-.9.7-.9 1.27v.52" /><path d="M12 16.75h.01" /></svg>
+                <span class="app-nav-label">Help</span>
+              </a>
+            </li>
+          </ul>
+        </nav>
+        <!-- AppNav: end -->
+        <div class="app-sidebar-deputy">
+          <!-- DeputyDock: start -->
+          <aside
+            class="deputy-dock"
+            id="deputy-dock"
+            aria-labelledby="deputy-dock-title"
+            data-deputy
+            data-deputy-page="connections"
+            data-deputy-state="hold-key"
+          >
+            <h2 class="sr-only" id="deputy-dock-title">Your deputy</h2>
+            <div class="deputy-art" data-deputy-art aria-hidden="true"></div>
+            <p class="deputy-speech" data-deputy-speech>Your key stays yours.</p>
+            <p class="deputy-duty"><span class="deputy-duty-dot" aria-hidden="true"></span><span data-deputy-duty>Holding your key</span></p>
+            <div class="deputy-actions">
+              <details class="deputy-activity">
+                <summary class="deputy-activity-toggle">Activity</summary>
+                <!-- biome-ignore lint/a11y/useSemanticElements: the panel groups links and lists, not form controls, so a fieldset would be wrong -->
+                <div class="deputy-activity-panel" role="group" aria-labelledby="deputy-activity-title">
+                  <p class="deputy-activity-title" id="deputy-activity-title">What your deputy is doing</p>
+                  <h3 class="deputy-activity-label">Now</h3>
+                  <ul class="deputy-activity-list">
+                    <li>Searching Amazon Jobs</li>
+                  </ul>
+                  <h3 class="deputy-activity-label">Needs you</h3>
+                  <ul class="deputy-activity-list">
+                    <li>
+                      <a href="./materials-preview.html?app=search-infra&amp;from=applications"
+                        >Approve materials for Search Infrastructure (Google)</a
+                      >
+                    </li>
+                    <li><a href="./applications-preview.html?open=amazon-sde2">Follow up with Amazon</a></li>
+                    <li><a href="./searches-preview.html?source=acme">Fix the Acme source</a></li>
+                  </ul>
+                  <h3 class="deputy-activity-label">Done recently</h3>
+                  <ul class="deputy-activity-list">
+                    <li>Tailored a résumé and cover letter for Cloud Reliability · Oct 2</li>
+                    <li>Checked Google Careers: no new roles · Oct 2</li>
+                    <li>Saved 7 new roles from Google Careers · Oct 1</li>
+                  </ul>
+                  <p class="sample-note">Sample data · not connected</p>
+                </div>
+              </details>
+              <button class="deputy-motion" type="button" data-deputy-motion>Pause motion</button>
+            </div>
+            <p class="sr-only" data-deputy-announce role="status"></p>
+          </aside>
+          <!-- DeputyDock: end -->
+        </div>
+      </div>
+      <main class="app-main" id="main">
+        <div class="page-shell">
+          <section class="page-intro connections-intro" aria-labelledby="page-title" data-page-back>
+            <div
+              class="page-intro-copy"
+              data-tour-step="1"
+              data-tour-title="I connect to these for you."
+              data-tour-text="Gmail, LinkedIn, the accounts I make on employers’ sites, and your AI keys. Each one says what I may do with it, and what I never do."
+            >
+              <p class="eyebrow">Settings</p>
+              <h1 id="page-title">What your deputy connects to.</h1>
+              <p class="intro-copy">Gmail, LinkedIn, your site accounts, and your AI keys, each with what it may do.</p>
+              <p class="sample-note conn-page-note">Sample data · not connected</p>
+            </div>
+            <div class="page-intro-actions">
+              <button type="button" class="secondary-action page-tour" data-tour-open hidden>Take the tour</button>
+            </div>
+          </section>
+
+          <!-- SettingsTabs: start -->
+          <nav class="settings-tabs" aria-label="Settings">
+            <ul class="settings-tabs-list">
+              <li><a class="settings-tab" href="./account-preview.html">Account</a></li>
+              <li><a class="settings-tab" href="./connections-preview.html" aria-current="page">Connections</a></li>
+              <li><a class="settings-tab" href="./prompts-preview.html">Prompts</a></li>
+              <li><a class="settings-tab" href="./ai-preview.html">AI &amp; credits</a></li>
+              <li><a class="settings-tab" href="./usage-preview.html">Usage</a></li>
+              <li><a class="settings-tab" href="./shop-preview.html">Purchases</a></li>
+              <li><a class="settings-tab" href="./activity-preview.html">Activity</a></li>
+            </ul>
+          </nav>
+          <!-- SettingsTabs: end -->
+
+
+
+          <!-- Line icons for this page: 24 viewBox, currentColor, 1.75 stroke (moved from Profile). -->
+          <svg class="conn-sprite" aria-hidden="true" focusable="false">
+            <defs>
+              <symbol id="conn-icon-person" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="8.25" r="3.75" />
+                <path d="M4.75 20c.6-3.75 3.4-6 7.25-6s6.65 2.25 7.25 6" />
+              </symbol>
+              <symbol id="conn-icon-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3.5" y="5.5" width="17" height="13" rx="2" />
+                <path d="m4 7 8 6 8-6" />
+              </symbol>
+              <symbol id="conn-icon-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="5.5" y="10.5" width="13" height="9.5" rx="2" />
+                <path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" />
+              </symbol>
+              <symbol id="conn-icon-key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="8" cy="12" r="3.75" />
+                <path d="M11.75 12h8.75M17.5 12v3M20.5 12v2.25" />
+              </symbol>
+              <!-- LinkedIn's "in" mark, in LinkedIn's blue (as on Sign in and Create account). -->
+              <symbol id="conn-icon-linkedin" viewBox="0 0 24 24">
+                <rect width="24" height="24" rx="3" fill="#0a66c2" />
+                <circle cx="6.25" cy="5.6" r="2.05" fill="#fff" />
+                <rect x="4.5" y="9" width="3.5" height="10.5" fill="#fff" />
+                <path fill="#fff" d="M10 9h3.3v1.5c.5-.9 1.7-1.8 3.5-1.8 3.5 0 4.2 2.3 4.2 5.3v5.5h-3.5v-4.9c0-1.2-.1-2.7-1.6-2.7-1.6 0-2.6 1.3-2.6 2.6v5H10z" />
+              </symbol>
+            </defs>
+          </svg>
+
+          <div class="conn-sections">
+            <!-- Gmail (moved from Profile, round 6 T1): read-only, job mail only (connections.gmail;
+                 connectGmail and disconnectGmail), and its mail watch (mailWatch(), round 6 A4):
+                 when it last checked, the emails it read this week, and the cards it moved. Job
+                 sites send one-time codes when your deputy creates an account or signs in, and
+                 employers send status emails. Prototype: no Google request is made and nothing
+                 reads email. -->
+            <section
+              class="task-surface conn-section"
+              id="gmail"
+              aria-labelledby="gmail-title"
+              data-tour-step="2"
+              data-tour-title="I read only job email."
+              data-tour-text="One-time codes and employers’ status emails, read-only. I update your applications and draft replies you send. I never send, delete, or keep your mail."
+            >
+              <div class="conn-section-head">
+                <span class="conn-section-icon" aria-hidden="true"
+                  ><svg aria-hidden="true" focusable="false"><use href="#conn-icon-mail" /></svg
+                ></span>
+                <div class="conn-section-copy">
+                  <div class="conn-section-title">
+                    <h2 id="gmail-title">Gmail</h2>
+                    <span class="tag">Planned</span>
+                    <p class="conn-saved" data-saved hidden>Saved</p>
+                  </div>
+                  <p class="conn-section-line">Read-only access to your job email, and what it is used for.</p>
+                </div>
+              </div>
+              <div class="conn-group">
+                <p class="conn-group-line">
+                  One-time codes from job sites, and status emails: your deputy updates your
+                  applications and drafts replies you send yourself.
+                </p>
+                <div
+                  class="conn-source is-connection"
+                  id="conn-gmail-card"
+                  data-gmail-status="connected"
+                >
+                  <span class="conn-source-icon" aria-hidden="true"
+                    ><svg aria-hidden="true" focusable="false"><use href="#conn-icon-mail" /></svg
+                  ></span>
+                  <p class="conn-source-copy">
+                    <span class="conn-source-title" id="conn-gmail-title">alex.morgan@example.com</span>
+                    <span class="conn-source-meta" id="conn-gmail-meta">Read-only · connected <span data-metric="gmail.connectedAt">Mon, Sep 28</span> · last scan <time data-gmail-ago datetime="2026-10-02T07:00:00-07:00">7 hours ago</time></span>
+                  </p>
+                  <div class="conn-source-actions">
+                    <span class="status-pill" id="conn-gmail-pill">Connected</span>
+                    <button
+                      class="compact-action"
+                      id="conn-gmail-disconnect"
+                      type="button"
+                      aria-expanded="false"
+                      aria-controls="conn-gmail-confirm"
+                    >
+                      Disconnect
+                    </button>
+                    <button
+                      class="secondary-action"
+                      id="conn-gmail-connect"
+                      type="button"
+                      data-drawer-open="conn-gmail-drawer"
+                      hidden
+                    >
+                      Connect Gmail
+                    </button>
+                  </div>
+                </div>
+                <section
+                  class="feedback-panel conn-confirm"
+                  id="conn-gmail-confirm"
+                  data-kind="warning"
+                  hidden
+                  aria-labelledby="conn-gmail-confirm-title"
+                  aria-describedby="conn-gmail-confirm-message"
+                >
+                  <span class="feedback-panel-icon" aria-hidden="true">!</span>
+                  <span class="feedback-panel-copy">
+                    <strong class="feedback-panel-title" id="conn-gmail-confirm-title">Disconnect Gmail?</strong>
+                    <span class="feedback-panel-message" id="conn-gmail-confirm-message"
+                      >Your deputy stops reading one-time codes and status emails. Forms that send a code
+                      wait for you.</span
+                    >
+                    <span class="conn-confirm-actions">
+                      <button class="compact-action conn-danger" id="conn-gmail-confirm-action" type="button">Disconnect Gmail</button>
+                      <button class="compact-action" id="conn-gmail-keep" type="button" data-confirm-cancel>Keep connected</button>
+                    </span>
+                  </span>
+                </section>
+                <!-- The daily scan (round 7, D3, R10-9): once a day at 07:00 your home Region's time,
+                     over the last 48 hours of mail, and Scan now on demand; each scan uses one run,
+                     said before you press it. The last scans say what each read and did; what each
+                     email did to your applications is Applications' (Updates from your email). From
+                     JobDeputyStore.gmailScans() and gmailScan(). -->
+                <section
+                  class="conn-scan"
+                  id="conn-gmail-scan"
+                  aria-labelledby="conn-gmail-scan-title"
+                  data-skeleton="lines"
+                  data-tour-step="3"
+                  data-tour-title="I scan once a day."
+                  data-tour-text="Every morning at 07:00 I read the last 48 hours of job email. Scan now reads what came since; each scan uses one run."
+                >
+                  <div class="conn-scan-head">
+                    <h3 class="conn-scan-title" id="conn-gmail-scan-title">Daily scan</h3>
+                    <p class="conn-scan-line" id="conn-gmail-scan-when">Every day at <span data-gmail-scan-time>07:00</span> your time, over the last <span data-gmail-scan-window>48</span> hours of mail. Next scan <span data-metric="gmail.scan.nextAt">Sat, Oct 3, 07:00</span>.</p>
+                    <p class="conn-scan-line" id="conn-gmail-scan-runs">Each scan uses one run; Gmail used <span data-metric="gmail.runs.month">2</span> <span data-gmail-runs-unit>runs</span> this month.</p>
+                  </div>
+                  <div class="conn-scan-now" id="conn-gmail-scan-now-row">
+                    <button class="secondary-action" id="conn-gmail-scan-now" type="button" aria-describedby="conn-gmail-scan-cost">Scan now</button>
+                    <p class="conn-scan-cost" id="conn-gmail-scan-cost"><span data-gmail-scan-cost>Uses 1 run</span><span id="conn-gmail-unread">. <span data-metric="gmail.scan.unread">2</span> <span data-gmail-unread-unit>job emails</span> came after the last scan.</span></p>
+                  </div>
+                  <section class="feedback-panel has-action conn-scan-refused" id="conn-gmail-scan-refused" data-kind="notice" hidden aria-labelledby="conn-gmail-scan-refused-title">
+                    <span class="feedback-panel-icon" aria-hidden="true">i</span>
+                    <span class="feedback-panel-copy">
+                      <strong class="feedback-panel-title" id="conn-gmail-scan-refused-title"></strong>
+                    </span>
+                    <a class="feedback-panel-action" id="conn-gmail-scan-refused-action" href="./shop-preview.html#nightly">Get more runs</a>
+                  </section>
+                  <h4 class="conn-scan-subtitle" id="conn-gmail-scans-title">Last scans</h4>
+                  <ol class="conn-scans" id="conn-gmail-scans" aria-labelledby="conn-gmail-scans-title"></ol>
+                  <button type="button" class="chart-action see-all-open conn-scans-all" id="conn-gmail-scans-all" hidden>See all<span class="sr-only"> scans</span></button>
+                </section>
+                <dl class="conn-facts" id="conn-gmail-facts">
+                  <div class="conn-fact">
+                    <dt id="conn-gmail-access-label">Access</dt>
+                    <dd>
+                      <ul class="conn-lines" id="conn-gmail-access">
+                        <li>Read your email, read-only</li>
+                        <li>See your email address</li>
+                      </ul>
+                    </dd>
+                  </div>
+                  <div class="conn-fact">
+                    <dt>Reads only</dt>
+                    <dd>
+                      <ul class="conn-lines" id="conn-gmail-reads">
+                        <li>One-time codes from job sites</li>
+                        <li>Status emails from employers</li>
+                      </ul>
+                    </dd>
+                  </div>
+                  <div class="conn-fact">
+                    <dt>Uses them to</dt>
+                    <dd>
+                      <ul class="conn-lines" id="conn-gmail-uses">
+                        <li>Sign in to sites that send a code</li>
+                        <li>Update your applications, with Undo</li>
+                        <li>Draft replies you edit and send yourself</li>
+                      </ul>
+                      <a class="chart-action" id="conn-gmail-updates" href="./applications-preview.html#email">Updates from your email<span class="sr-only"> in Applications</span></a>
+                    </dd>
+                  </div>
+                  <div class="conn-fact">
+                    <dt>Never</dt>
+                    <dd>
+                      <ul class="conn-lines" id="conn-gmail-never">
+                        <li>Send, delete, or change email</li>
+                        <li>Read mail that isn’t about your applications</li>
+                        <li>Keep a one-time code: each is shown once, then deleted</li>
+                        <li>Keep the email itself; only the facts your deputy needs are saved</li>
+                      </ul>
+                    </dd>
+                  </div>
+                </dl>
+                <p class="conn-group-note">Prototype: no Google request is made, and no email is read.</p>
+              </div>
+            </section>
+
+            <!-- Round 6 part 2 (P-6): one notice for the agreement version that adds what this page
+                 connects (moving cards from email, reply drafts, site accounts, the LinkedIn import),
+                 with Review and sign back here; the agreement's home is Settings, Account. It sits
+                 after the first card, so a phone's first screen starts with Gmail (R3 first view). -->
+            <section
+              class="feedback-panel has-action conn-agreement"
+              id="conn-agreement"
+              data-kind="warning"
+              aria-labelledby="conn-agreement-title"
+              aria-describedby="conn-agreement-message"
+            >
+              <span class="feedback-panel-icon" aria-hidden="true">!</span>
+              <span class="feedback-panel-copy">
+                <strong class="feedback-panel-title" id="conn-agreement-title">Version 2026.10 waits for your signature</strong>
+                <span class="feedback-panel-message" id="conn-agreement-message">It covers moving cards from your email, reply drafts, site accounts, and importing from LinkedIn.</span>
+              </span>
+              <a class="feedback-panel-action" id="conn-agreement-sign" href="./agreement-preview.html?mode=update&amp;return=connections-preview.html">Review and sign</a>
+            </section>
+
+            <!-- LinkedIn (moved from Profile's Found while applying, round 6 T1): Import from
+                 LinkedIn (a data export ZIP or a profile PDF; the prototype reads the store's
+                 sample export) and Sign in with LinkedIn. What you import joins Profile, tagged
+                 "from LinkedIn", and Profile's Found while applying lists it. -->
+            <section
+              class="task-surface conn-section"
+              id="linkedin"
+              aria-labelledby="linkedin-title"
+              data-tour-step="4"
+              data-tour-title="I import what you choose."
+              data-tour-text="Give me your LinkedIn export and tick what joins your profile. Signing in with LinkedIn shares only your name, email, and photo."
+            >
+              <div class="conn-section-head">
+                <span class="conn-section-icon" aria-hidden="true"
+                  ><svg aria-hidden="true" focusable="false"><use href="#conn-icon-linkedin" /></svg
+                ></span>
+                <div class="conn-section-copy">
+                  <div class="conn-section-title">
+                    <h2 id="linkedin-title">LinkedIn</h2>
+                    <span class="tag">Planned</span>
+                    <p class="conn-saved" data-saved hidden>Saved</p>
+                  </div>
+                  <p class="conn-section-line">Import your profile, and sign in with LinkedIn if you like.</p>
+                </div>
+              </div>
+              <div class="conn-group">
+                <div class="conn-source" id="conn-linkedin-import">
+                  <span class="conn-source-icon" aria-hidden="true"
+                    ><svg aria-hidden="true" focusable="false"><use href="#conn-icon-linkedin" /></svg
+                  ></span>
+                  <p class="conn-source-copy">
+                    <span class="conn-source-title">Import from LinkedIn</span>
+                    <span class="conn-source-meta" id="conn-linkedin-import-meta">Your data export (ZIP) or profile PDF · you choose what joins</span>
+                  </p>
+                  <div class="conn-source-actions">
+                    <!-- The row's title says what it imports, so the button reads Import; its
+                         accessible name keeps the whole phrase, and the short label fits a 320px
+                         phone with WCAG 1.4.12 text spacing (a secondary action never wraps). -->
+                    <button class="secondary-action" id="conn-linkedin-import-open" type="button">Import<span class="sr-only"> from LinkedIn</span></button>
+                  </div>
+                </div>
+                <ul class="conn-items" id="conn-linkedin-list" aria-label="Saved from LinkedIn" hidden></ul>
+                <div class="conn-source is-connection" id="conn-linkedin-card" data-linkedin-status="disconnected">
+                  <span class="conn-source-icon" aria-hidden="true"
+                    ><svg aria-hidden="true" focusable="false"><use href="#conn-icon-person" /></svg
+                  ></span>
+                  <p class="conn-source-copy">
+                    <span class="conn-source-title" id="conn-linkedin-title">Sign in with LinkedIn</span>
+                    <span class="conn-source-meta" id="conn-linkedin-meta">LinkedIn shares only your name, email, and photo</span>
+                  </p>
+                  <div class="conn-source-actions">
+                    <span class="status-pill is-neutral" id="conn-linkedin-pill">Not connected</span>
+                    <button
+                      class="compact-action"
+                      id="conn-linkedin-disconnect"
+                      type="button"
+                      aria-expanded="false"
+                      aria-controls="conn-linkedin-confirm"
+                      hidden
+                    >
+                      Disconnect
+                    </button>
+                    <button
+                      class="secondary-action"
+                      id="conn-linkedin-connect"
+                      type="button"
+                      data-drawer-open="conn-linkedin-drawer"
+                    >
+                      Connect LinkedIn
+                    </button>
+                  </div>
+                </div>
+                <section
+                  class="feedback-panel conn-confirm"
+                  id="conn-linkedin-confirm"
+                  data-kind="warning"
+                  hidden
+                  aria-labelledby="conn-linkedin-confirm-title"
+                  aria-describedby="conn-linkedin-confirm-message"
+                >
+                  <span class="feedback-panel-icon" aria-hidden="true">!</span>
+                  <span class="feedback-panel-copy">
+                    <strong class="feedback-panel-title" id="conn-linkedin-confirm-title">Disconnect LinkedIn?</strong>
+                    <span class="feedback-panel-message" id="conn-linkedin-confirm-message"
+                      >You sign in with your email or Google instead. What you imported stays in your
+                      profile.</span
+                    >
+                    <span class="conn-confirm-actions">
+                      <button class="compact-action conn-danger" id="conn-linkedin-confirm-action" type="button">Disconnect LinkedIn</button>
+                      <button class="compact-action" id="conn-linkedin-keep" type="button" data-confirm-cancel>Keep connected</button>
+                    </span>
+                  </span>
+                </section>
+                <p class="conn-group-note">Prototype: nothing is uploaded, and no LinkedIn request is made.</p>
+              </div>
+            </section>
+
+            <!-- Site accounts (moved from Profile, round 6 T1; vault SITE_LOGIN#, planned; round 5,
+                 A2 and R5-6): the accounts your deputy created on employers' sites while it filled
+                 an application (JobDeputyStore.siteAccounts(), never the password). Each password
+                 stays masked in the shared secret field until you choose Show; Show and Copy read
+                 it through revealSitePassword, which logs every reveal in the vault log you read
+                 here (vaultLog()). Remove takes it out of JobDeputy; the account on the site stays. -->
+            <section
+              class="task-surface conn-section"
+              id="site-accounts"
+              aria-labelledby="site-accounts-title"
+              data-tour-step="5"
+              data-tour-title="I keep site passwords safe."
+              data-tour-text="When an employer’s site needs an account, I make one. Each password stays hidden until you choose Show, and every Show or Copy is in the vault log."
+            >
+              <div class="conn-section-head">
+                <span class="conn-section-icon" aria-hidden="true"
+                  ><svg aria-hidden="true" focusable="false"><use href="#conn-icon-lock" /></svg
+                ></span>
+                <div class="conn-section-copy">
+                  <div class="conn-section-title">
+                    <h2 id="site-accounts-title">Site accounts</h2>
+                    <span class="tag">Planned</span>
+                  </div>
+                  <p class="conn-section-line">Accounts your deputy made on employers’ sites, and their passwords.</p>
+                </div>
+              </div>
+              <div class="conn-group">
+                <p class="conn-stats" id="conn-sites-line">
+                  <span class="conn-stat"><strong data-metric="sites.accounts">0</strong> on employers’ sites</span>
+                  <span class="conn-stat"><span id="conn-reveals-lead">Shown or copied</span> <strong data-metric="vault.reveals">0</strong> <span id="conn-reveals-unit">times</span></span>
+                </p>
+                <ul class="conn-items" id="conn-sites-list" aria-labelledby="site-accounts-title" hidden></ul>
+                <button class="compact-action conn-list-more" id="conn-sites-more" type="button" aria-expanded="false" aria-controls="conn-sites-list" hidden>Show all site accounts</button>
+                <div class="conn-empty" id="conn-sites-empty">
+                  <div class="conn-empty-art" data-deputy-prop="key" aria-hidden="true"></div>
+                  <p class="conn-empty-copy">
+                    <span class="conn-empty-title">No site accounts yet</span>
+                    <span class="conn-empty-meta"
+                      >When an employer’s site needs an account, your deputy creates one in Autofill
+                      with your email. Passwords stay in your vault.</span
+                    >
+                  </p>
+                </div>
+                <div class="conn-vault" id="conn-vault">
+                  <h3 class="conn-vault-title" id="conn-vault-title">Vault log</h3>
+                  <ol class="conn-vault-log" id="conn-vault-log" aria-labelledby="conn-vault-title" hidden></ol>
+                  <p class="conn-group-note" id="conn-vault-empty">Nothing yet. Every Show and Copy of a password is listed here, with when.</p>
+                  <button type="button" class="chart-action see-all-open conn-vault-all" id="conn-vault-all" hidden>See all<span class="sr-only"> vault log entries</span></button>
+                </div>
+                <p class="conn-group-note">Sample only: passwords are kept in this browser, never sent anywhere.</p>
+              </div>
+            </section>
+
+            <!-- Your AI keys (round 6, T1; one line since part 2, P-22): which keys you saved in AI
+                 & credits (JobDeputyStore.get().ai.keys, never the key itself), and a link there.
+                 Adding, replacing, and choosing a model stay in AI & credits. -->
+            <section
+              class="task-surface conn-section"
+              id="keys"
+              aria-labelledby="keys-title"
+              data-tour-step="6"
+              data-tour-title="Your keys stay yours."
+              data-tour-text="I keep each key encrypted and never show it. Add, replace, or change a key’s model in AI and credits."
+            >
+              <div class="conn-section-head">
+                <span class="conn-section-icon" aria-hidden="true"
+                  ><svg aria-hidden="true" focusable="false"><use href="#conn-icon-key" /></svg
+                ></span>
+                <div class="conn-section-copy">
+                  <div class="conn-section-title">
+                    <h2 id="keys-title">Your AI keys</h2>
+                  </div>
+                  <p class="conn-section-line">Keys you own, stored encrypted and never shown.</p>
+                </div>
+              </div>
+              <p class="conn-keys-line" id="conn-keys">
+                <span id="conn-keys-words">OpenAI ready · Anthropic not added</span>
+                <a class="chart-action" id="conn-keys-manage" href="./ai-preview.html#keys">Manage in AI &amp; credits<span class="sr-only">: your AI keys</span></a>
+              </p>
+            </section>
+          </div>
+
+          <p class="sr-only" id="conn-status" role="status" aria-live="polite"></p>
+        </div>
+
+      <!-- Connect Gmail: JobDeputy's own consent step (never a copy of Google's screen), listing
+           the scopes it asks for, what it reads, and what it never does. Prototype only. -->
+      <dialog
+        class="drawer"
+        id="conn-gmail-drawer"
+        aria-labelledby="conn-gmail-drawer-title"
+        aria-describedby="conn-gmail-drawer-meta"
+      >
+        <div class="drawer-header">
+          <p class="eyebrow">Connections</p>
+          <h2 class="drawer-title" id="conn-gmail-drawer-title">Connect Gmail, read-only?</h2>
+          <p class="drawer-meta" id="conn-gmail-drawer-meta">
+            Prototype: no Google request is made, and no email is read.
+          </p>
+          <button class="compact-action drawer-close" type="button" data-drawer-close>Close</button>
+        </div>
+        <div class="drawer-body">
+          <div class="drawer-section">
+            <h3 class="drawer-section-title">Your deputy asks Google for</h3>
+            <ul class="conn-drawer-list" id="conn-gmail-scopes">
+              <li>Read your email, read-only</li>
+              <li>See your email address</li>
+            </ul>
+          </div>
+          <div class="drawer-section">
+            <h3 class="drawer-section-title">It reads only</h3>
+            <ul class="conn-drawer-list" id="conn-gmail-drawer-reads">
+              <li>One-time codes from job sites</li>
+              <li>Status emails from employers</li>
+            </ul>
+            <p class="conn-drawer-copy">
+              Job sites send a code when your deputy creates an account or signs in for an
+              application. Status emails keep Applications up to date, and your deputy drafts
+              replies you edit and send yourself.
+            </p>
+          </div>
+          <div class="drawer-section">
+            <h3 class="drawer-section-title">It never</h3>
+            <ul class="conn-drawer-list" id="conn-gmail-drawer-never">
+              <li>Send, delete, or change email</li>
+              <li>Read mail that isn’t about your applications</li>
+              <li>Keep a one-time code: each is shown once, then deleted</li>
+              <li>Keep the email itself; only the facts your deputy needs are saved</li>
+            </ul>
+            <p class="conn-drawer-copy">You can disconnect any time in Settings, Connections.</p>
+          </div>
+        </div>
+        <div class="drawer-footer">
+          <button class="primary-action" id="conn-gmail-allow" type="button">Allow read-only access</button>
+          <button class="secondary-action" type="button" data-drawer-close>Cancel</button>
+        </div>
+        <p class="sr-only" id="conn-gmail-status" role="status" aria-live="polite"></p>
+      </dialog>
+
+      <!-- Import from LinkedIn (round 5, G2 and R2): LinkedIn sign-in shares only a name, email,
+           and photo, so your deputy reads the file you choose: the data export ZIP (LinkedIn
+           Settings, Data privacy, Get a copy of your data) or the profile PDF. The prototype
+           reads the store's sample export (linkedinImport()) whatever file is chosen, and says so.
+           Every item is listed as new, different (with your current value), or already in your
+           profile, each with a checkbox; only the ticked ones are saved (applyLinkedinImport),
+           after the October agreement (requiresAgreement('linkedin-import')). -->
+      <dialog
+        class="drawer"
+        id="conn-import-drawer"
+        aria-labelledby="conn-import-title"
+        aria-describedby="conn-import-meta"
+      >
+        <div class="drawer-header">
+          <p class="eyebrow">LinkedIn</p>
+          <h2 class="drawer-title" id="conn-import-title">Import from LinkedIn</h2>
+          <p class="drawer-meta" id="conn-import-meta">You choose what joins your profile. Nothing is saved until you import.</p>
+          <button class="compact-action drawer-close" type="button" data-drawer-close>Close</button>
+        </div>
+        <div class="drawer-body">
+          <div class="drawer-section" id="conn-import-choose">
+            <h3 class="drawer-section-title">Your LinkedIn data</h3>
+            <p class="conn-drawer-copy">
+              On LinkedIn, open Settings, Data privacy, Get a copy of your data, and download the ZIP.
+              Or save your profile as a PDF.
+            </p>
+            <div class="conn-import-actions">
+              <button class="secondary-action" id="conn-import-choose-file" type="button" aria-describedby="conn-import-file-help">
+                Choose the ZIP or PDF
+              </button>
+              <button class="secondary-action" id="conn-import-sample" type="button">Use the sample export</button>
+            </div>
+            <input id="conn-import-file" type="file" accept=".zip,.pdf,application/zip,application/pdf" hidden />
+            <p class="field-help" id="conn-import-file-help">
+              A ZIP or PDF file. In this prototype nothing is uploaded: your deputy reads a sample
+              export instead.
+            </p>
+            <p class="conn-field-error" id="conn-import-file-error" hidden></p>
+            <p class="conn-drawer-copy">
+              LinkedIn sign-in shares only your name, email, and photo, so your deputy reads the
+              file you choose instead. It never posts, messages, or changes anything on LinkedIn.
+            </p>
+          </div>
+          <div class="conn-import-review" id="conn-import-review" hidden>
+            <p class="conn-import-file" id="conn-import-file-name"></p>
+            <p class="sample-note" id="conn-import-note">Sample export: nothing was uploaded, and nothing was read from LinkedIn.</p>
+            <section
+              class="feedback-panel"
+              id="conn-import-gate"
+              data-kind="warning"
+              hidden
+              aria-labelledby="conn-import-gate-title"
+              aria-describedby="conn-import-gate-message"
+            >
+              <span class="feedback-panel-icon" aria-hidden="true">!</span>
+              <span class="feedback-panel-copy">
+                <strong class="feedback-panel-title" id="conn-import-gate-title">Sign the updated agreement first</strong>
+                <span class="feedback-panel-message" id="conn-import-gate-message"></span>
+              </span>
+            </section>
+            <section
+              class="feedback-panel"
+              id="conn-import-summary"
+              data-kind="validation"
+              tabindex="-1"
+              hidden
+              aria-labelledby="conn-import-summary-title"
+              aria-describedby="conn-import-summary-message"
+            >
+              <span class="feedback-panel-icon" aria-hidden="true">!</span>
+              <span class="feedback-panel-copy">
+                <strong class="feedback-panel-title" id="conn-import-summary-title"></strong>
+                <span class="feedback-panel-message" id="conn-import-summary-message"></span>
+              </span>
+            </section>
+            <div class="conn-import-groups" id="conn-import-groups"></div>
+          </div>
+        </div>
+        <div class="drawer-footer">
+          <button class="primary-action" id="conn-import-save" type="button" hidden>Import</button>
+          <a class="primary-action" id="conn-import-sign" href="./agreement-preview.html?mode=update" hidden>Review and sign</a>
+          <button class="secondary-action" type="button" data-drawer-close>Cancel</button>
+        </div>
+        <p class="sr-only" id="conn-import-status" role="status" aria-live="polite"></p>
+      </dialog>
+
+      <!-- Sign in with LinkedIn: JobDeputy's own consent step (never a copy of LinkedIn's
+           screen), with what LinkedIn shares and what your deputy never does there. Prototype:
+           connectLinkedin() changes this sample only. -->
+      <dialog
+        class="drawer"
+        id="conn-linkedin-drawer"
+        aria-labelledby="conn-linkedin-drawer-title"
+        aria-describedby="conn-linkedin-drawer-meta"
+      >
+        <div class="drawer-header">
+          <p class="eyebrow">LinkedIn</p>
+          <h2 class="drawer-title" id="conn-linkedin-drawer-title">Sign in with LinkedIn too?</h2>
+          <p class="drawer-meta" id="conn-linkedin-drawer-meta">
+            Prototype: no LinkedIn request is made.
+          </p>
+          <button class="compact-action drawer-close" type="button" data-drawer-close>Close</button>
+        </div>
+        <div class="drawer-body">
+          <div class="drawer-section">
+            <h3 class="drawer-section-title">LinkedIn shares with JobDeputy</h3>
+            <ul class="conn-drawer-list" id="conn-linkedin-shares">
+              <li>Your name</li>
+              <li>Your email address</li>
+              <li>Your photo</li>
+            </ul>
+            <p class="conn-drawer-copy">Nothing else. Importing your data is separate: it reads a file you choose.</p>
+          </div>
+          <div class="drawer-section">
+            <h3 class="drawer-section-title">Your deputy never</h3>
+            <ul class="conn-drawer-list" id="conn-linkedin-never">
+              <li>Post, message, or connect for you</li>
+              <li>Read your connections or messages</li>
+              <li>Change anything on LinkedIn</li>
+            </ul>
+            <p class="conn-drawer-copy">You can disconnect any time in Settings, Connections.</p>
+          </div>
+        </div>
+        <div class="drawer-footer">
+          <button class="primary-action" id="conn-linkedin-allow" type="button">Connect LinkedIn</button>
+          <button class="secondary-action" type="button" data-drawer-close>Cancel</button>
+        </div>
+        <p class="sr-only" id="conn-linkedin-status" role="status" aria-live="polite"></p>
+      </dialog>
+      </main>
+    </div>
+
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <div class="footer-primary">
+          <span class="footer-brand">
+            <strong>JobDeputy</strong>
+            <span>Your private workspace for finding relevant roles.</span>
+          </span>
+          <nav class="footer-nav" aria-label="Footer">
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./home-preview.html?skipLoader">Dashboard</a>
+              <a class="footer-link" href="./searches-preview.html">Searches</a>
+              <a class="footer-link" href="./jobs-preview.html">Job matches</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./applications-preview.html">Applications</a>
+              <a class="footer-link" href="./documents-preview.html">Résumés</a>
+              <a class="footer-link" href="./profile-preview.html">Profile</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./account-preview.html">Settings</a>
+              <a class="footer-link" href="./ai-preview.html">AI &amp; credits</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./shop-preview.html">Purchases</a>
+              <a class="footer-link" href="./invite-preview.html">Invite friends</a>
+            </span>
+          </nav>
+        </div>
+        <div class="footer-secondary">
+          <span
+            ><strong>United States home Region</strong> · Your profile, searches, and stored keys
+            stay encrypted here.</span
+          >
+          <nav class="footer-nav" aria-label="Trust and support">
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./trust-preview.html#privacy">Privacy</a>
+              <a class="footer-link" href="./trust-preview.html#security">Security</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./trust-preview.html#accessibility">Accessibility</a>
+              <a class="footer-link" href="./trust-preview.html#help">Help</a>
+            </span>
+          </nav>
+        </div>
+      </div>
+    </footer>
+
+    <script src="./app-shell.js"></script>
+    <script src="./app-components.js"></script>
+    <script src="./prompt-guard.js"></script>
+    <script src="./agreement-text.js"></script>
+    <script src="./sample-store.js"></script>
+    <script src="./deputy.js"></script>
+    <script src="./feedback.js"></script>
+    <script src="./app-panels.js"></script>
+    <script>
+      /* connections-rules: start */
+      // The Connections page's rules, with no DOM or storage access, so
+      // tests/prototype/connections.test.ts runs them on their own: the LinkedIn import's review
+      // list (moved from Profile in round 6, T1) and where each imported detail joins Profile.
+      const connectionsRules = (() => {
+        const isObject = (value) =>
+          typeof value === 'object' && value !== null && !Array.isArray(value);
+        const list = (value) => (Array.isArray(value) ? value : []);
+
+        // Profile's sections and groups, by id, as Profile names them: an imported detail says
+        // where it joins ("Joins Career, Work history in your profile").
+        const PROFILE_SECTIONS = {
+          about: 'About you',
+          career: 'Career',
+          preferences: 'Job preferences',
+          answers: 'Application answers',
+          found: 'Found while applying',
+        };
+        const PROFILE_GROUPS = {
+          'about-name': 'Name and headline',
+          'about-contact': 'Contact and location',
+          'about-links': 'Links',
+          'about-skills': 'Skills and languages',
+          'career-experience': 'Work history',
+          'career-education': 'Education',
+          'career-certifications': 'Certifications',
+          'pref-roles': 'Target roles',
+          'pref-where': 'Where you’d work',
+          'pref-filters': 'Kind of role',
+          'ans-eligibility': 'Work eligibility',
+          'ans-availability': 'Availability',
+          'ans-pay': 'Pay',
+          'ans-moves': 'Relocation and travel',
+          'ans-employers': 'Former employers',
+          'ans-saved': 'Saved answers',
+        };
+        const whereIn = (entry) =>
+          [PROFILE_SECTIONS[entry?.section], PROFILE_GROUPS[entry?.group]].filter(Boolean).join(', ');
+
+        // The LinkedIn review list: new first, then different (with your current value), then
+        // what your profile already has. New and different are ticked to start; the same ones
+        // change nothing when ticked.
+        const IMPORT_ORDER = ['new', 'differs', 'same'];
+        const IMPORT_WORDS = {
+          new: 'New to your profile',
+          differs: 'Different from yours',
+          same: 'Already in your profile',
+        };
+        function importGroups(items) {
+          const all = list(items).filter((item) => isObject(item) && item.key);
+          return IMPORT_ORDER.map((compare) => ({
+            compare,
+            title: IMPORT_WORDS[compare],
+            items: all.filter((item) => item.compare === compare),
+          })).filter((group) => group.items.length);
+        }
+        const importDefaults = (items) =>
+          list(items)
+            .filter((item) => isObject(item) && item.compare !== 'same')
+            .map((item) => item.key);
+        // What the Import button says for the ticks you have.
+        const importLabel = (count) =>
+          count ? `Import ${count === 1 ? '1 detail' : `${count} details`}` : 'Choose what to import';
+
+        // Your AI keys in one line (round 6 part 2, P-22): each provider's state, never the key.
+        const PROVIDERS = [
+          ['openai', 'OpenAI'],
+          ['anthropic', 'Anthropic'],
+        ];
+        const KEY_WORDS = { ready: 'ready', limit: 'at its limit' };
+        function keysLine(keys) {
+          const saved = isObject(keys) ? keys : {};
+          return PROVIDERS.map(([id, name]) => {
+            const key = isObject(saved[id]) ? saved[id] : null;
+            return `${name} ${key ? (KEY_WORDS[key.status] ?? 'needs a check') : 'not added'}`;
+          }).join(' · ');
+        }
+
+        // The agreement version that adds what this page connects, in one notice (P-6): the
+        // features of the gates that are open, in words, or null when nothing waits.
+        const GATE_WORDS = {
+          'mail-updates': 'moving cards from your email, reply drafts',
+          'site-accounts': 'site accounts',
+          'linkedin-import': 'importing from LinkedIn',
+        };
+        function agreementNotice(gates) {
+          const open = list(gates).filter((gate) => isObject(gate) && gate.version && GATE_WORDS[gate.feature]);
+          if (!open.length) return null;
+          const parts = open.map((gate) => GATE_WORDS[gate.feature]);
+          const words = parts.length < 3 ? parts.join(' and ') : `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
+          return {
+            version: open[0].version,
+            title: `Version ${open[0].version} waits for your signature`,
+            message: `It covers ${words}.`,
+          };
+        }
+
+        return {
+          PROFILE_SECTIONS,
+          PROFILE_GROUPS,
+          whereIn,
+          IMPORT_WORDS,
+          importGroups,
+          importDefaults,
+          importLabel,
+          PROVIDERS,
+          keysLine,
+          GATE_WORDS,
+          agreementNotice,
+        };
+      })();
+      /* connections-rules: end */
+
+      (() => {
+        const store = window.JobDeputyStore;
+        const deputy = window.JobDeputyDeputy;
+        const components = window.JobDeputyComponents;
+        const rules = connectionsRules;
+        const $ = (selector, root = document) => root.querySelector(selector);
+        const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+
+        // ---------------------------------------------------------------- small DOM helpers
+
+        // A question beside the button that asked it (Disconnect, Remove): the button says it is
+        // open (aria-expanded), focus moves to the safe answer (Keep connected, Keep it), and
+        // Escape or that answer closes it and puts focus back on the button (round 6, UAT-RM-13).
+        function askBeside(trigger, panel, open) {
+          panel.hidden = !open;
+          trigger.setAttribute('aria-expanded', String(open));
+          if (open) panel.querySelector('[data-confirm-cancel]')?.focus();
+        }
+        function wireAsk(trigger, panel, { onKeep } = {}) {
+          if (!trigger || !panel) return;
+          const keep = () => {
+            askBeside(trigger, panel, false);
+            trigger.focus();
+            onKeep?.();
+          };
+          trigger.addEventListener('click', () => askBeside(trigger, panel, panel.hidden));
+          panel.querySelector('[data-confirm-cancel]')?.addEventListener('click', keep);
+          for (const node of [trigger, panel]) {
+            node.addEventListener('keydown', (event) => {
+              if (event.key !== 'Escape' || panel.hidden) return;
+              event.preventDefault();
+              event.stopPropagation();
+              keep();
+            });
+          }
+        }
+
+        function el(tag, props = {}, children = []) {
+          const node = document.createElement(tag);
+          for (const [key, value] of Object.entries(props)) {
+            if (value === null || value === undefined || value === false) continue;
+            if (key === 'class') node.className = value;
+            else if (key === 'text') node.textContent = value;
+            else if (key === 'hidden') node.hidden = true;
+            else if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
+            else node.setAttribute(key, value === true ? '' : String(value));
+          }
+          for (const child of [children].flat(Number.POSITIVE_INFINITY)) {
+            if (child === null || child === undefined || child === false || child === '') continue;
+            node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+          }
+          return node;
+        }
+        const srOnly = (text) => el('span', { class: 'sr-only', text });
+
+        // StatusAnnouncement: visually hidden polite channels. Clearing first lets a repeated
+        // message be read again. Each drawer has its own, because the page behind it is inert.
+        const pageStatus = $('#conn-status');
+        const announce = (message, channel = pageStatus) => {
+          channel.textContent = '';
+          window.setTimeout(() => {
+            channel.textContent = message;
+          }, 40);
+        };
+
+        // FieldFeedback: the message sits under its control and is named in its aria-describedby,
+        // so a hidden message is always emptied as well.
+        const setFieldError = (element, controls, message = '') => {
+          element.textContent = message;
+          element.hidden = !message;
+          for (const control of controls) {
+            if (message) control.setAttribute('aria-invalid', 'true');
+            else control.removeAttribute('aria-invalid');
+          }
+        };
+
+        const metricText = (key) => (typeof store?.metricText === 'function' ? store.metricText(key) : '');
+        // A figure is the store's own text, on the smallest element that holds it (R3-4).
+        const metricSpan = (key) => el('span', { 'data-metric': key, text: metricText(key) });
+        const react = (name, options) => deputy?.react?.(name, options);
+
+        // Redraws a list only when its markup changed, so focus, the tour's target, and a reader's
+        // place survive a store change that does not touch it.
+        function replaceIfChanged(node, children) {
+          const next = document.createElement(node.tagName);
+          next.append(...children);
+          if (next.innerHTML === node.innerHTML) return false;
+          node.replaceChildren(...next.childNodes);
+          return true;
+        }
+
+        // ---------------------------------------------------------------- Gmail
+
+        // connections.gmail: read-only, job mail only. Disconnect asks first; Connect opens the
+        // consent step. Prototype: no Google request is made and nothing reads email.
+        const gmailCard = $('#conn-gmail-card');
+        const gmailDisconnect = $('#conn-gmail-disconnect');
+        const gmailConnect = $('#conn-gmail-connect');
+        const gmailConfirm = $('#conn-gmail-confirm');
+        const gmailDrawer = $('#conn-gmail-drawer');
+        const lines = (node, items) => {
+          if (node && items.length) replaceIfChanged(node, items.map((text) => el('li', { text })));
+        };
+        const gmailOf = () => store?.get?.()?.connections?.gmail ?? null;
+
+        function renderGmail() {
+          const gmail = gmailOf();
+          if (!gmail || !gmailCard) return;
+          const connected = gmail.status === 'connected';
+          gmailCard.setAttribute('data-gmail-status', connected ? 'connected' : 'disconnected');
+          $('#conn-gmail-title').textContent = connected ? gmail.email : 'Gmail isn’t connected';
+          // Connected: read-only, and the two dates as the store's figures, each left out while
+          // its value is null. Disconnected: what waits for you instead.
+          const dated = (words, key) => (metricText(key) ? [words, metricSpan(key)] : null);
+          // Round 6 part 2 (P-12): when it last scanned counts up ("last scan 7 hours ago", the
+          // style Applications uses); round 7 (D3): the next scan is the daily scan's own line.
+          const lastAt = lastCheckedAt();
+          const groups = connected
+            ? [
+                gmail.access === 'read-only' ? ['Read-only'] : null,
+                dated('connected ', 'gmail.connectedAt'),
+                lastAt
+                  ? ['last scan ', el('time', { 'data-gmail-ago': '', datetime: lastAt, text: store.format.ago(lastAt) })]
+                  : null,
+              ].filter(Boolean)
+            : [['One-time codes and status emails wait for you.']];
+          replaceIfChanged(
+            $('#conn-gmail-meta'),
+            groups.flatMap((group, index) => (index ? [' · ', ...group] : group)),
+          );
+          const pill = $('#conn-gmail-pill');
+          pill.textContent = connected ? 'Connected' : 'Not connected';
+          pill.className = connected ? 'status-pill' : 'status-pill is-neutral';
+          gmailDisconnect.hidden = !connected;
+          gmailConnect.hidden = connected;
+          if (!connected) {
+            gmailConfirm.hidden = true;
+            gmailDisconnect.setAttribute('aria-expanded', 'false');
+          }
+          const reads = (gmail.reads ?? []).map(String);
+          const never = (gmail.never ?? []).map(String);
+          lines($('#conn-gmail-reads'), reads);
+          lines($('#conn-gmail-never'), never);
+          lines($('#conn-gmail-drawer-reads'), reads);
+          lines($('#conn-gmail-drawer-never'), never);
+          // Connected, these are the access it has; disconnected, what Connect would ask for.
+          $('#conn-gmail-access-label').textContent = connected ? 'Access' : 'Asks for';
+          const scopes = (gmail.scopes ?? []).map((scope) => String(scope.label ?? scope.id));
+          lines($('#conn-gmail-access'), scopes);
+          lines($('#conn-gmail-scopes'), scopes);
+        }
+
+
+        // ---------------------------------------------------------------- the last check
+
+        // When Gmail last scanned: the last scan (gmailScans()), else the last sync (gmailSync()),
+        // else the mail watch, else the connection's saved time. The words count up on their own,
+        // quietly (never a live region): every 30 seconds the page redraws only the words.
+        function lastCheckedAt() {
+          const scans = typeof store?.gmailScans === 'function' ? store.gmailScans() : null;
+          if (scans?.connected && scans.last?.at) return scans.last.at;
+          const sync = typeof store?.gmailSync === 'function' ? store.gmailSync() : null;
+          if (sync?.connected && sync.last?.at) return sync.last.at;
+          const watch = typeof store?.mailWatch === 'function' ? store.mailWatch() : null;
+          return watch?.lastCheckedAt ?? gmailOf()?.lastCheckedAt ?? null;
+        }
+        window.setInterval(() => {
+          const node = $('[data-gmail-ago]');
+          const at = node?.getAttribute('datetime');
+          if (!at) return;
+          const words = store.format.ago(at);
+          if (node.textContent !== words) node.textContent = words;
+        }, 30000);
+
+        // ---------------------------------------------------------------- the daily scan
+
+        // Round 7 (D3, R10-9): the daily scan at its time over its window, the next scan, the runs
+        // Gmail used this month, Scan now with its cost said beside it (off with the store's reason
+        // when it can't run), and the last scans, newest first (the first three; See all for the
+        // rest). From gmailScans(); Scan now is gmailScan().
+        const scanBlock = $('#conn-gmail-scan');
+        const scanNow = $('#conn-gmail-scan-now');
+        const scanList = $('#conn-gmail-scans');
+        const scanAll = $('#conn-gmail-scans-all');
+        const scanRefused = $('#conn-gmail-scan-refused');
+        const SCANS_FIRST = 3;
+        const scansOf = () => (typeof store?.gmailScans === 'function' ? store.gmailScans() : null);
+        const scanWords = (scan) => (Array.isArray(scan?.lines) ? scan.lines.join(' ') : '');
+        const setWords = (node, words) => {
+          if (node && node.textContent !== words) node.textContent = words;
+        };
+
+        function scanRow(scan) {
+          return el('li', { class: 'conn-scan-row', 'data-scan': scan.id }, [
+            el('span', { class: 'conn-scan-when', text: `${store.format.dateTime(scan.at)} · ${scan.kindLabel}` }),
+            el('span', { class: 'conn-scan-what', text: scanWords(scan) }),
+          ]);
+        }
+
+        // A refusal, said where you asked: the store's words and its one way out.
+        function showRefusal(result) {
+          scanRefused.hidden = !result;
+          if (!result) return;
+          setWords($('#conn-gmail-scan-refused-title'), result.text ?? 'We couldn’t scan Gmail. Try again.');
+          const action = $('#conn-gmail-scan-refused-action');
+          action.hidden = !result.href;
+          if (result.href) {
+            if (action.getAttribute('href') !== result.href) action.setAttribute('href', result.href);
+            setWords(action, result.action ?? 'Open');
+          }
+        }
+
+        function renderScan() {
+          const scans = scansOf();
+          if (!scanBlock || !scans) {
+            if (scanBlock) scanBlock.hidden = true;
+            return;
+          }
+          scanBlock.hidden = false;
+          const connected = Boolean(scans.connected);
+          setWords($('[data-gmail-scan-time]', scanBlock), String(scans.time ?? '07:00'));
+          setWords($('[data-gmail-scan-window]', scanBlock), store.format.number(scans.windowHours ?? 48));
+          $('#conn-gmail-scan-when').hidden = !connected;
+          const runsMonth = Number(String(metricText('gmail.runs.month')).replace(/[^0-9]/g, '')) || 0;
+          setWords($('[data-gmail-runs-unit]', scanBlock), runsMonth === 1 ? 'run' : 'runs');
+          // Scan now: only while connected; its cost before you press it, and the emails waiting.
+          $('#conn-gmail-scan-now-row').hidden = !connected;
+          const offer = scans.scanNow ?? {};
+          const blocked = connected && offer.available === false;
+          if (blocked) scanNow.setAttribute('aria-disabled', 'true');
+          else scanNow.removeAttribute('aria-disabled');
+          setWords(scanNow, String(offer.label ?? 'Scan now'));
+          const cost = String(offer.cost ?? 'uses 1 run');
+          setWords($('[data-gmail-scan-cost]', scanBlock), `${cost.charAt(0).toUpperCase()}${cost.slice(1)}`);
+          const unread = Number(scans.unread) || 0;
+          $('#conn-gmail-unread').hidden = !unread;
+          setWords($('[data-gmail-unread-unit]', scanBlock), unread === 1 ? 'job email' : 'job emails');
+          if (blocked && offer.reason === 'no-runs') {
+            // The shared words for no runs left, with the day the free runs return (the store's).
+            const back = store?.allowance?.()?.runs?.refreshesOn;
+            showRefusal({
+              text: offer.text ?? `No runs are left this month. Get more runs, or wait for ${back ? store.format.date(back) : 'the 1st'}.`,
+              action: 'Get more runs',
+              href: './shop-preview.html#nightly',
+            });
+          } else if (!blocked && scanRefused.dataset.kept !== 'true') {
+            showRefusal(null);
+          }
+          // The last scans, newest first.
+          const history = Array.isArray(scans.history) ? scans.history : [];
+          replaceIfChanged(scanList, history.slice(0, SCANS_FIRST).map(scanRow));
+          $('#conn-gmail-scans-title').hidden = history.length === 0;
+          scanAll.hidden = history.length <= SCANS_FIRST || typeof components?.seeAll?.open !== 'function';
+          const allWords = `See all ${history.length}`;
+          if (scanAll.firstChild?.textContent !== allWords) scanAll.replaceChildren(allWords, srOnly(' scans'));
+        }
+
+        scanNow?.addEventListener('click', () => {
+          if (scanNow.getAttribute('aria-disabled') === 'true') {
+            announce($('#conn-gmail-scan-refused-title')?.textContent || 'Scan now isn’t available now.');
+            return;
+          }
+          const result = typeof store?.gmailScan === 'function' ? store.gmailScan() : null;
+          if (!result?.ok) {
+            scanRefused.dataset.kept = 'true';
+            showRefusal(result ?? { text: 'We couldn’t scan Gmail. Try again.' });
+            renderScan();
+            announce(result?.text ?? 'We couldn’t scan Gmail. Try again.');
+            react('error');
+            return;
+          }
+          scanRefused.dataset.kept = 'false';
+          showRefusal(null);
+          renderAll();
+          announce(`Scanned Gmail: ${scanWords(result.scan)} It used 1 run.`);
+          react('saved', { speech: 'Scanned. Updates are in Applications.' });
+        });
+
+        // Every scan, newest first, in the shared See all drawer (searchable; no counts).
+        scanAll?.addEventListener('click', (event) => {
+          const history = scansOf()?.history ?? [];
+          components?.seeAll?.open(
+            {
+              eyebrow: 'Gmail',
+              title: 'Every scan',
+              noun: ['scan', 'scans'],
+              searchLabel: 'Find a scan',
+              sorts: [{ id: 'given', label: 'Newest first' }],
+              items: history.map((scan) => ({
+                id: scan.id,
+                label: `${store.format.dateTime(scan.at)} · ${scan.kindLabel}`,
+                meta: scanWords(scan),
+                count: null,
+              })),
+              note: 'Sample data · not connected',
+            },
+            event.currentTarget,
+          );
+        });
+
+        // ---------------------------------------------------------------- the agreement notice
+
+        // One notice for the version that adds what this page connects (round 6 part 2, P-6):
+        // the gates still open (requiresAgreement for mail-updates, site-accounts, and
+        // linkedin-import), Review and sign back here; hidden once signed.
+        function renderAgreementNotice() {
+          const notice = $('#conn-agreement');
+          if (!notice) return;
+          const gates =
+            typeof store?.requiresAgreement === 'function'
+              ? Object.keys(rules.GATE_WORDS).map((feature) => ({ feature, ...(store.requiresAgreement(feature) ?? {}) }))
+              : [];
+          const words = rules.agreementNotice(gates.filter((gate) => gate.version));
+          notice.hidden = !words;
+          if (!words) return;
+          if ($('#conn-agreement-title').textContent !== words.title) $('#conn-agreement-title').textContent = words.title;
+          if ($('#conn-agreement-message').textContent !== words.message) $('#conn-agreement-message').textContent = words.message;
+        }
+
+        // ---------------------------------------------------------------- LinkedIn
+
+        // connections().linkedin: sign-in shares only your name, email, and photo (no agreement
+        // needed); Import from LinkedIn reads a data export or profile PDF, connected or not.
+        const linkedinCard = $('#conn-linkedin-card');
+        const linkedinConnect = $('#conn-linkedin-connect');
+        const linkedinDisconnect = $('#conn-linkedin-disconnect');
+        const linkedinConfirm = $('#conn-linkedin-confirm');
+        const linkedinDrawer = $('#conn-linkedin-drawer');
+        const linkedinOf = () => (typeof store?.connections === 'function' ? store.connections().linkedin : null);
+
+        function renderLinkedin() {
+          const linkedin = linkedinOf();
+          if (!linkedin || !linkedinCard) return;
+          const connected = linkedin.status === 'connected';
+          linkedinCard.setAttribute('data-linkedin-status', connected ? 'connected' : 'disconnected');
+          replaceIfChanged(
+            $('#conn-linkedin-meta'),
+            connected
+              ? [
+                  linkedin.email ? `${linkedin.email} · ` : '',
+                  ...(metricText('linkedin.connectedAt') ? ['connected ', metricSpan('linkedin.connectedAt'), ' · '] : []),
+                  'shares only your name, email, and photo',
+                ]
+              : ['LinkedIn shares only your name, email, and photo'],
+          );
+          const pill = $('#conn-linkedin-pill');
+          pill.textContent = connected ? 'Connected' : 'Not connected';
+          pill.className = connected ? 'status-pill' : 'status-pill is-neutral';
+          linkedinDisconnect.hidden = !connected;
+          linkedinConnect.hidden = connected;
+          if (!connected) {
+            linkedinConfirm.hidden = true;
+            linkedinDisconnect.setAttribute('aria-expanded', 'false');
+          }
+          lines($('#conn-linkedin-shares'), (linkedin.shares ?? []).map(String));
+          lines($('#conn-linkedin-never'), (linkedin.never ?? []).map(String));
+          // The import: what it reads, and what the last one saved.
+          const done = Number(linkedin.import?.imported) || 0;
+          // Round 6 (T1): what you imported joins Profile, so the row links there.
+          replaceIfChanged(
+            $('#conn-linkedin-import-meta'),
+            done && metricText('linkedin.importedAt')
+              ? [
+                  metricSpan('linkedin.imported'),
+                  done === 1 ? ' detail saved' : ' details saved',
+                  ' · last import ',
+                  metricSpan('linkedin.importedAt'),
+                  ' · ',
+                  el('a', { class: 'chart-action', id: 'conn-linkedin-imported', href: './profile-preview.html#found' }, [
+                    'See them in Profile',
+                  ]),
+                ]
+              : ['Your data export (ZIP) or profile PDF · you choose what joins'],
+          );
+        }
+
+        let linkedinJustConnected = false;
+        const setLinkedinConfirm = (open) => askBeside(linkedinDisconnect, linkedinConfirm, open);
+        wireAsk(linkedinDisconnect, linkedinConfirm, {
+          onKeep: () => announce('LinkedIn stays connected.'),
+        });
+        $('#conn-linkedin-confirm-action')?.addEventListener('click', () => {
+          store?.disconnectLinkedin?.();
+          setLinkedinConfirm(false);
+          renderLinkedin();
+          linkedinConnect.focus();
+          announce('LinkedIn disconnected. You sign in with your email or Google. What you imported stays.');
+          react('saved', { speech: 'Disconnected. Imports stay.' });
+        });
+        $('#conn-linkedin-allow')?.addEventListener('click', () => {
+          store?.connectLinkedin?.();
+          linkedinJustConnected = true;
+          components?.closeDrawer(linkedinDrawer);
+        });
+        // The shared drawer returns focus to Connect, which hides once connected: focus moves to
+        // Disconnect instead. This runs after the shared close handler.
+        linkedinDrawer?.addEventListener('close', () => {
+          if (!linkedinJustConnected) return;
+          linkedinJustConnected = false;
+          renderLinkedin();
+          linkedinDisconnect.focus();
+          announce('LinkedIn connected for sign-in in this prototype. It shares only your name, email, and photo.');
+          react('saved', { speech: 'Connected. Name, email, photo.' });
+        });
+
+        // Import from LinkedIn: choose the file (the prototype reads the sample export), then the
+        // review list, each item ticked or not, then Import. Until the October agreement is
+        // signed, the review says so in place and Review and sign comes back here (?import=linkedin)
+        // with your ticks kept.
+        const importDrawer = $('#conn-import-drawer');
+        const importChoose = $('#conn-import-choose');
+        const importReview = $('#conn-import-review');
+        const importGroupsNode = $('#conn-import-groups');
+        const importSave = $('#conn-import-save');
+        const importSign = $('#conn-import-sign');
+        const importGate = $('#conn-import-gate');
+        const importSummary = $('#conn-import-summary');
+        const importStatus = $('#conn-import-status');
+        const importFile = $('#conn-import-file');
+        const importFileError = $('#conn-import-file-error');
+        const IMPORT_KEY = 'jobdeputy.profile.import';
+        let importState = null;
+        let importJustSaved = null;
+
+        const readImportSession = () => {
+          try {
+            const saved = JSON.parse(window.sessionStorage.getItem(IMPORT_KEY) || 'null');
+            return saved && Array.isArray(saved.keys) ? saved : null;
+          } catch {
+            return null;
+          }
+        };
+        const writeImportSession = () => {
+          try {
+            if (importState) {
+              window.sessionStorage.setItem(IMPORT_KEY, JSON.stringify({ file: importState.file, keys: [...importState.keys] }));
+            } else {
+              window.sessionStorage.removeItem(IMPORT_KEY);
+            }
+          } catch {
+            // Storage is unavailable; the ticks still hold for this page view.
+          }
+        };
+        // Where Review and sign returns: this page, reopening the review.
+        const importReturn = () =>
+          `./agreement-preview.html?mode=update&return=${encodeURIComponent('connections-preview.html?import=linkedin#linkedin')}`;
+
+        function importCard(item, checked) {
+          const id = `conn-import-item-${item.key.replace(/[^a-z0-9]+/gi, '-')}`;
+          return el('label', { class: 'choice-card', 'data-import-key': item.key }, [
+            el('input', { type: 'checkbox', name: 'conn-import', value: item.key, id, checked }),
+            el('span', { class: 'choice-card-control', 'aria-hidden': 'true' }),
+            el('span', { class: 'choice-card-copy' }, [
+              el('span', { class: 'choice-card-label', text: item.label }),
+              el('span', { class: 'choice-card-meta conn-import-value', text: item.value }),
+              el('span', {
+                class: 'choice-card-meta',
+                text:
+                  item.compare === 'differs'
+                    ? `Yours now: ${item.current}`
+                    : item.compare === 'same'
+                      ? 'Already the same in your profile'
+                      : `Joins ${rules.whereIn(item)} in your profile`,
+              }),
+            ]),
+          ]);
+        }
+
+        function renderImportReview() {
+          const parsed = store?.linkedinImport?.();
+          if (!parsed || !importState) return;
+          $('#conn-import-file-name').textContent = importState.file;
+          $('#conn-import-note').textContent = parsed.note;
+          const groups = rules.importGroups(parsed.items);
+          const nodes = groups.map((group) => {
+            const legend = el('legend', { class: 'field-label' }, [
+              group.title,
+              ` (${store.format.number(group.items.length)})`,
+            ]);
+            const fieldset = el('fieldset', { class: 'choice-cards conn-import-group', 'data-compare': group.compare }, [
+              legend,
+              ...group.items.map((item) => importCard(item, importState.keys.has(item.key))),
+            ]);
+            // What your profile already has stays folded: ticking it changes nothing.
+            return group.compare === 'same'
+              ? el('details', { class: 'conn-import-same' }, [
+                  el('summary', { class: 'conn-how-toggle', text: `${group.title}: ${store.format.number(group.items.length)}` }),
+                  fieldset,
+                ])
+              : fieldset;
+          });
+          importGroupsNode.replaceChildren(...nodes);
+          syncImport();
+        }
+
+        // The gate and the footer follow the agreement and the ticks.
+        function syncImport() {
+          const gate = typeof store?.requiresAgreement === 'function' ? store.requiresAgreement('linkedin-import') : null;
+          const reviewing = Boolean(importState) && !importReview.hidden;
+          importGate.hidden = !gate || !reviewing;
+          if (gate) {
+            $('#conn-import-gate-message').textContent = `Version ${gate.version} covers ${String(gate.label ?? 'importing from LinkedIn').replace(/^./, (c) => c.toLowerCase())}. Sign it, and you come back here with your choices kept.`;
+            importSign.setAttribute('href', importReturn());
+          }
+          importSign.hidden = !gate || !reviewing;
+          importSave.hidden = Boolean(gate) || !reviewing;
+          importSave.textContent = rules.importLabel(importState?.keys.size ?? 0);
+        }
+
+        function startReview(file) {
+          const saved = readImportSession();
+          const parsed = store?.linkedinImport?.();
+          const keys = saved?.file === file ? saved.keys : rules.importDefaults(parsed?.items ?? []);
+          importState = { file, keys: new Set(keys) };
+          writeImportSession();
+          importChoose.hidden = true;
+          importReview.hidden = false;
+          importSummary.hidden = true;
+          renderImportReview();
+          const counts = parsed?.counts ?? {};
+          announce(
+            `${file}: ${counts.total ?? 0} details found, ${counts.new ?? 0} new, ${counts.differs ?? 0} different from yours. Sample export, nothing was uploaded.`,
+            importStatus,
+          );
+          ($('input[name="conn-import"]', importGroupsNode) ?? importSave)?.focus();
+        }
+
+        function openImport({ review = false } = {}) {
+          importFileError.hidden = true;
+          importFileError.textContent = '';
+          importReview.hidden = true;
+          importChoose.hidden = false;
+          importState = null;
+          syncImport();
+          components?.openDrawer(importDrawer, $('#conn-linkedin-import-open'));
+          if (review) {
+            startReview(readImportSession()?.file ?? store.linkedinImport().file);
+          } else {
+            $('#conn-import-choose-file').focus();
+          }
+        }
+        $('#conn-linkedin-import-open')?.addEventListener('click', () => openImport());
+        $('#conn-import-choose-file')?.addEventListener('click', () => importFile.click());
+        $('#conn-import-sample')?.addEventListener('click', () => startReview(store.linkedinImport().file));
+        // Any ZIP or PDF goes on to the review, which reads the sample export (the prototype
+        // reads no file); anything else is named at the field.
+        importFile?.addEventListener('change', () => {
+          const [file] = importFile.files;
+          importFile.value = '';
+          if (!file) return;
+          if (!/\.(zip|pdf)$/i.test(file.name)) {
+            setFieldError(importFileError, [], 'Choose the ZIP from Get a copy of your data, or your profile PDF.');
+            announce('Choose the ZIP from Get a copy of your data, or your profile PDF.', importStatus);
+            $('#conn-import-choose-file').focus();
+            return;
+          }
+          startReview(`${file.name} · read as the sample export`);
+        });
+        importGroupsNode?.addEventListener('change', (event) => {
+          const input = event.target;
+          if (!(input instanceof HTMLInputElement) || input.name !== 'conn-import' || !importState) return;
+          if (input.checked) importState.keys.add(input.value);
+          else importState.keys.delete(input.value);
+          importSummary.hidden = true;
+          writeImportSession();
+          syncImport();
+        });
+        importSave?.addEventListener('click', () => {
+          if (!importState) return;
+          const keys = [...importState.keys];
+          const result = store?.applyLinkedinImport?.(keys);
+          if (!result?.ok) {
+            const words = {
+              'nothing-chosen': ['Choose what to import', 'Tick at least one detail, or close without importing.'],
+              'agreement-required': ['Sign the updated agreement first', 'Importing from LinkedIn is new in version 2026.10.'],
+            }[result?.reason] ?? ['We couldn’t import that', 'Nothing was saved. Try again.'];
+            $('#conn-import-summary-title').textContent = words[0];
+            $('#conn-import-summary-message').textContent = words[1];
+            importSummary.hidden = false;
+            importSummary.focus();
+            syncImport();
+            react('error');
+            return;
+          }
+          importJustSaved = result;
+          importState = null;
+          writeImportSession();
+          components?.closeDrawer(importDrawer);
+        });
+        // After an import, focus lands on what was saved (the LinkedIn list), and it is said once.
+        importDrawer?.addEventListener('close', () => {
+          const result = importJustSaved;
+          importJustSaved = null;
+          if (!result) return;
+          renderAll();
+          const saved = result.applied.length;
+          const same = result.unchanged.length;
+          const words = saved
+            ? `Saved ${saved === 1 ? '1 detail' : `${saved} details`} from LinkedIn to your profile, each tagged in its section.${same ? ` ${same} already matched your profile.` : ''}`
+            : 'Nothing new to save: what you chose already matches your profile.';
+          const note = $('[data-saved]', $('#linkedin'));
+          note.textContent = saved ? 'Saved' : 'No changes';
+          note.hidden = false;
+          // What was saved is in Profile now: focus lands on the link there, or on Import.
+          ($('#conn-linkedin-imported') ?? $('#conn-linkedin-import-open')).focus();
+          announce(words);
+          react('saved', { speech: saved ? 'Saved from LinkedIn.' : 'Already up to date.' });
+        });
+
+        // ---------------------------------------------------------------- site accounts
+
+        // siteAccounts() (never a password) and vaultLog(). Each account keeps its own secret
+        // field: a reveal changes the store (the vault log), and the cards are updated in place,
+        // never drawn again, so a password you just showed stays shown until you choose Hide.
+        const sitesList = $('#conn-sites-list');
+        const sitesEmpty = $('#conn-sites-empty');
+        const vaultLogNode = $('#conn-vault-log');
+        const siteCards = new Map();
+        const deputyOrYou = (by) => (by === 'you' ? 'you' : 'your deputy');
+
+        function buildSiteCard(account) {
+          const slugId = `conn-site-${account.id.replace(/[^a-z0-9]+/gi, '-')}`;
+          const label = `Password for ${account.site}`;
+          // A2's component builds the field itself (the mask, the word a screen reader hears
+          // instead of the dots, Show, and Copy), so this page always matches its markup.
+          const secret = el('div', { class: 'conn-secret-field', id: `${slugId}-secret` });
+          const title = el('p', { class: 'conn-item-title' });
+          const pill = el('span', { class: 'status-pill' });
+          const meta = el('p', { class: 'conn-item-meta' });
+          const confirm = el('section', {
+            class: 'feedback-panel conn-confirm',
+            'data-kind': 'warning',
+            hidden: true,
+            id: `${slugId}-confirm`,
+            'aria-labelledby': `${slugId}-confirm-title`,
+            'aria-describedby': `${slugId}-confirm-message`,
+          }, [
+            el('span', { class: 'feedback-panel-icon', 'aria-hidden': 'true', text: '!' }),
+            el('span', { class: 'feedback-panel-copy' }, [
+              el('strong', { class: 'feedback-panel-title', id: `${slugId}-confirm-title`, text: 'Remove this account from JobDeputy?' }),
+              el('span', {
+                class: 'feedback-panel-message',
+                id: `${slugId}-confirm-message`,
+                text: `Its password leaves your vault. The account on ${account.site} stays: close it on the site.`,
+              }),
+              el('span', { class: 'conn-confirm-actions' }, [
+                el('button', { class: 'compact-action conn-danger', type: 'button', 'data-site-remove-confirm': account.id }, [
+                  'Remove account',
+                  srOnly(` on ${account.site}`),
+                ]),
+                el('button', { class: 'compact-action', type: 'button', 'data-confirm-cancel': '', 'data-site-remove-keep': account.id, text: 'Keep it' }),
+              ]),
+            ]),
+          ]);
+          const remove = el('button', {
+            class: 'compact-action conn-danger',
+            type: 'button',
+            'data-site-remove': account.id,
+            'aria-expanded': 'false',
+            'aria-controls': `${slugId}-confirm`,
+          }, ['Remove', srOnly(` your ${account.site} account`)]);
+          const node = el('li', { class: 'conn-item is-site-account', 'data-site-account': account.id }, [
+            el('div', { class: 'conn-item-copy' }, [el('div', { class: 'conn-item-head' }, [title, pill]), meta, secret, confirm]),
+            el('div', { class: 'conn-item-actions' }, remove),
+          ]);
+          components?.secretField?.(secret, {
+            label,
+            // Every Show and Copy reads the password from the vault, so the store logs each one.
+            reveal: ({ action } = {}) => store?.revealSitePassword?.(account.id, { action })?.password ?? null,
+            // Copy gets the copied reaction; Show is a toggle, like a password field's.
+            onCopy: () => react('copied', { speech: 'Copied. It stays hidden.' }),
+          });
+          return { node, title, pill, meta, confirm, remove };
+        }
+
+        function updateSiteCard(card, account) {
+          const title = `${account.company} · ${account.site}`;
+          if (card.title.textContent !== title) card.title.textContent = title;
+          const signedIn = account.status === 'signed-in';
+          card.pill.textContent = signedIn ? 'Signed in' : 'Code sent';
+          card.pill.className = signedIn ? 'status-pill' : 'status-pill is-neutral';
+          const words = [
+            account.username,
+            account.passwordMode === 'chosen' ? 'Password you chose' : 'Password your deputy generated',
+            `Created ${store.format.dateTime(account.createdAt)} by ${deputyOrYou(account.createdBy)}`,
+            account.lastSignInAt ? `Last signed in ${store.format.dateTime(account.lastSignInAt)}` : 'Not signed in yet',
+            account.codeVia === 'gmail' ? 'Codes from Gmail' : '',
+          ].filter(Boolean).join(' · ');
+          if (card.meta.textContent !== words) card.meta.textContent = words;
+        }
+
+        function renderSites() {
+          if (!sitesList || typeof store?.siteAccounts !== 'function') return;
+          const accounts = store.siteAccounts();
+          for (const [id, card] of siteCards) {
+            if (!accounts.some((account) => account.id === id)) {
+              card.node.remove();
+              siteCards.delete(id);
+            }
+          }
+          const wanted = accounts.map((account) => {
+            let card = siteCards.get(account.id);
+            if (!card) {
+              card = buildSiteCard(account);
+              siteCards.set(account.id, card);
+            }
+            updateSiteCard(card, account);
+            return card.node;
+          });
+          const order = [...sitesList.children];
+          if (wanted.some((node, index) => order[index] !== node)) sitesList.append(...wanted);
+          // Round 6 (R6-4): one account per employer site grows with your applications; the first
+          // few show, and Show all N opens the rest in place. A card keeps its shown password.
+          wanted.forEach((node, index) => {
+            node.hidden = !sitesOpen && index >= SITES_FIRST;
+          });
+          const more = $('#conn-sites-more');
+          more.hidden = accounts.length <= SITES_FIRST;
+          more.setAttribute('aria-expanded', String(sitesOpen));
+          const moreWords = sitesOpen ? 'Show fewer' : `Show all ${accounts.length} site accounts`;
+          if (more.textContent !== moreWords) more.textContent = moreWords;
+          sitesList.hidden = accounts.length === 0;
+          sitesEmpty.hidden = accounts.length > 0;
+          // The vault log: every account made, code read, password shown or copied, and removal.
+          // Round 6 (R6-4): it grows with every Show and Copy, so the newest few show here and
+          // See all N opens every entry in the shared See all drawer, searchable.
+          const log = typeof store.vaultLog === 'function' ? store.vaultLog() : [];
+          replaceIfChanged(
+            vaultLogNode,
+            log.slice(0, VAULT_FIRST).map((entry) =>
+              el('li', { class: 'conn-vault-entry' }, [
+                el('span', { class: 'conn-vault-when', text: store.format.dateTime(entry.at) }),
+                el('span', { class: 'conn-vault-what', text: `${entry.label} · ${entry.site}` }),
+              ]),
+            ),
+          );
+          const seeAll = $('#conn-vault-all');
+          seeAll.hidden = log.length <= VAULT_FIRST || typeof components?.seeAll?.open !== 'function';
+          const allWords = `See all ${log.length}`;
+          if (seeAll.firstChild?.textContent !== allWords) {
+            seeAll.replaceChildren(allWords, srOnly(' vault log entries'));
+          }
+          vaultLogNode.hidden = log.length === 0;
+          $('#conn-vault-empty').hidden = log.length > 0;
+          // The figure counts every Show and Copy, not passwords ("Shown or copied 3 times" with
+          // one account), and the word follows it: "1 time", "2 times".
+          const reveals = Number(metricText('vault.reveals').replace(/[^0-9]/g, ''));
+          const unit = $('#conn-reveals-unit');
+          const word = reveals === 1 ? 'time' : 'times';
+          if (unit && unit.textContent !== word) unit.textContent = word;
+        }
+
+        const SITES_FIRST = 5;
+        const VAULT_FIRST = 5;
+        let sitesOpen = false;
+        $('#conn-sites-more')?.addEventListener('click', () => {
+          sitesOpen = !sitesOpen;
+          renderSites();
+          if (sitesOpen) $(`:scope > li:nth-child(${SITES_FIRST + 1}) button`, sitesList)?.focus();
+          announce(sitesOpen ? 'Showing every site account.' : 'Showing the first site accounts.');
+        });
+        // Every entry, newest first, in the shared See all drawer (searchable; no counts).
+        $('#conn-vault-all')?.addEventListener('click', (event) => {
+          const log = typeof store?.vaultLog === 'function' ? store.vaultLog() : [];
+          components?.seeAll?.open(
+            {
+              eyebrow: 'Site accounts',
+              title: 'Vault log',
+              noun: ['entry', 'entries'],
+              searchLabel: 'Find an entry',
+              sorts: [{ id: 'given', label: 'Newest first' }],
+              items: log.map((entry, index) => ({
+                id: `vault-${index}`,
+                label: `${entry.label} · ${entry.site}`,
+                meta: store.format.dateTime(entry.at),
+                count: null,
+              })),
+              note: 'Sample only: passwords are kept in this browser, never sent anywhere.',
+            },
+            event.currentTarget,
+          );
+        });
+
+        // Escape in a Remove question keeps the account and returns focus to its Remove.
+        sitesList?.addEventListener('keydown', (event) => {
+          if (event.key !== 'Escape') return;
+          const item = event.target.closest?.('[data-site-account]');
+          const card = item && siteCards.get(item.getAttribute('data-site-account'));
+          if (!card || card.confirm.hidden) return;
+          event.preventDefault();
+          event.stopPropagation();
+          askBeside(card.remove, card.confirm, false);
+          card.remove.focus();
+        });
+
+        sitesList?.addEventListener('click', (event) => {
+          const ask = event.target.closest('[data-site-remove]');
+          if (ask) {
+            const card = siteCards.get(ask.getAttribute('data-site-remove'));
+            if (!card) return;
+            askBeside(card.remove, card.confirm, card.confirm.hidden);
+            return;
+          }
+          const keep = event.target.closest('[data-site-remove-keep]');
+          if (keep) {
+            const card = siteCards.get(keep.getAttribute('data-site-remove-keep'));
+            if (!card) return;
+            askBeside(card.remove, card.confirm, false);
+            card.remove.focus();
+            announce('The account stays in JobDeputy.');
+            return;
+          }
+          const sure = event.target.closest('[data-site-remove-confirm]');
+          if (!sure) return;
+          const id = sure.getAttribute('data-site-remove-confirm');
+          const site = store.siteAccounts().find((account) => account.id === id)?.site ?? 'the site';
+          const result = store?.removeSiteAccount?.(id);
+          if (!result?.ok) {
+            announce('We couldn’t remove that account. Try again.');
+            react('error');
+            return;
+          }
+          const next = $('[data-site-remove]', sitesList) ?? $('#site-accounts-title');
+          if (next.id === 'site-accounts-title') next.setAttribute('tabindex', '-1');
+          next.focus();
+          announce(`Removed your ${site} account from JobDeputy. Its password left your vault; close the account on the site.`);
+          react('deleted', { speech: 'Removed. Close it there too.' });
+        });
+
+        // ---------------------------------------------------------------- your AI keys
+
+        // Which keys you saved in AI & credits (state.ai.keys; never the key), in one line.
+        function renderKeys() {
+          const words = $('#conn-keys-words');
+          if (!words) return;
+          const line = rules.keysLine(store?.get?.()?.ai?.keys ?? {});
+          if (words.textContent !== line) words.textContent = line;
+        }
+
+        // ---------------------------------------------------------------- figures
+
+        // Every [data-metric] figure is the store's own text (R3-3, R3-4).
+        function renderMetrics() {
+          for (const node of $$('main [data-metric]')) {
+            const text = metricText(node.getAttribute('data-metric'));
+            if (node.textContent !== text) node.textContent = text;
+          }
+        }
+
+        function renderAll() {
+          renderGmail();
+          renderScan();
+          renderAgreementNotice();
+          renderLinkedin();
+          renderSites();
+          renderKeys();
+          renderMetrics();
+        }
+
+        // Gmail: Disconnect asks first, beside the button; Connect opens the consent step.
+        let gmailJustConnected = false;
+        const setGmailConfirm = (open) => askBeside(gmailDisconnect, gmailConfirm, open);
+        wireAsk(gmailDisconnect, gmailConfirm, {
+          onKeep: () => announce('Gmail stays connected.'),
+        });
+        $('#conn-gmail-confirm-action')?.addEventListener('click', () => {
+          store?.disconnectGmail?.();
+          setGmailConfirm(false);
+          renderGmail();
+          gmailConnect.focus();
+          announce('Gmail disconnected. One-time codes and status emails now wait for you.');
+          react('saved', { speech: 'Disconnected. Codes wait for you.' });
+        });
+        $('#conn-gmail-allow')?.addEventListener('click', () => {
+          store?.connectGmail?.();
+          gmailJustConnected = true;
+          components?.closeDrawer(gmailDrawer);
+        });
+        // The shared drawer returns focus to Connect, which hides once connected: focus moves to
+        // Disconnect instead. This runs after the shared close handler.
+        gmailDrawer?.addEventListener('close', () => {
+          if (!gmailJustConnected) return;
+          gmailJustConnected = false;
+          renderGmail();
+          gmailDisconnect.focus();
+          announce('Gmail connected in this prototype, read-only. No email is read.');
+          react('saved', { speech: 'Connected here. Nothing is read.' });
+        });
+
+        // ---------------------------------------------------------------- start
+
+        renderAll();
+        components?.boot?.ready?.();
+        // A deep link (#gmail, #linkedin, #site-accounts, #keys, and Profile's old anchors, which
+        // forward here) lands after the sections are drawn.
+        function placeHash() {
+          const id = decodeURIComponent(window.location.hash.slice(1));
+          const target = id ? document.getElementById(id) : null;
+          if (target) target.scrollIntoView({ block: 'start' });
+        }
+        // Back from signing the agreement (?import=linkedin, W6): the LinkedIn review opens again
+        // where you were, with your ticks, and the address drops the parameter so a reload doesn't.
+        function resumeImport() {
+          const parameters = new URLSearchParams(window.location.search);
+          if (parameters.get('import') !== 'linkedin') return;
+          try {
+            parameters.delete('import');
+            const query = parameters.toString();
+            window.history.replaceState(window.history.state, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
+          } catch {
+            // The address keeps the parameter; a reload opens the review again.
+          }
+          openImport({ review: true });
+        }
+        window.addEventListener(
+          'load',
+          () => {
+            placeHash();
+            resumeImport();
+          },
+          { once: true },
+        );
+
+        // Another page or tab changed the sample data: redraw what is saved.
+        // A live progress tick (a tailoring step, a test's count) changes nothing here (T3-19).
+        store?.subscribe((_state, change) => {
+          if (change?.progress) return;
+          renderAll();
+        });
+        components?.tour?.sync?.();
+      })();
+    </script>
+    <span id="first-view" hidden></span>
+  </body>
+</html>

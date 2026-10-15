@@ -38,7 +38,7 @@ Cognito's sign-in attributes and required attributes **cannot be changed after t
 
 | Setting | Recommendation | Why |
 |---|---|---|
-| Sign-in | **Email only**, case-insensitive | One identifier; `Alice@x.com` and `alice@x.com` are the same account. |
+| Sign-in | **Email only**, case-insensitive | One identifier; `Alice@example.com` and `alice@example.com` are the same account. |
 | Required attributes | **Email only**. Name and everything else live in our `users` table. | Our table can change and is in the data model. Cognito's schema cannot. |
 | Self sign-up | On, with an email verification code | The account exists only after the email is proven. |
 | Password | At least 12 characters, no forced symbol rules (current NIST guidance) | Length matters most. |

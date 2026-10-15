@@ -1,0 +1,3407 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="JobDeputy help: answers, tour demos, contact, privacy, security, and accessibility."
+    />
+    <title>JobDeputy · Help</title>
+    <link rel="icon" href="./jobdeputy-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./app-chrome.css" />
+    <link rel="stylesheet" href="./app-components.css" />
+    <link rel="stylesheet" href="./deputy.css" />
+    <link rel="expect" href="#first-view" blocking="render" />
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #1b1a18;
+        --ink-soft: #2d2b27;
+        --muted: #706d66;
+        --quiet: #98948b;
+        --paper: #faf8f3;
+        --paper-deep: #f0ece3;
+        --surface: rgba(255, 255, 255, 0.82);
+        --surface-strong: rgba(255, 255, 255, 0.92);
+        --header-surface: rgba(250, 248, 243, 0.82);
+        --line: rgba(27, 26, 24, 0.12);
+        --line-soft: rgba(27, 26, 24, 0.08);
+        --line-strong: rgba(27, 26, 24, 0.24);
+        --green: #2f9e77;
+        --green-soft: #ccebdc;
+        --green-wash: rgba(204, 235, 220, 0.55);
+        --green-line: rgba(47, 158, 119, 0.36);
+        --green-ink: #23795b;
+        --orange: #f36b3f;
+        --orange-soft: #ffd5c6;
+        --danger-ink: #9c4028;
+        --blue: #526fe5;
+        --blue-soft: #d9def8;
+        --on-ink-muted: rgba(255, 255, 255, 0.68);
+        --shadow: 0 21px 55px rgba(55, 48, 36, 0.07);
+        --shadow-control: 0 10px 21px rgba(27, 26, 24, 0.15);
+        --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+        --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+        --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+        --font-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+        font-family: var(--font-text);
+        font-synthesis: none;
+      }
+
+      /*
+       * Shared chrome (header, account menu, shell, intro, surfaces, actions, fields, feedback,
+       * and footer) lives in ./app-chrome.css and the shared components in ./app-components.css.
+       * The rules below are Help's layout and content only.
+       */
+
+      html {
+        min-height: 100%;
+        background: var(--paper);
+        scroll-behavior: smooth;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        color: var(--ink);
+        background:
+          radial-gradient(
+            circle at 88% 12%,
+            color-mix(in srgb, var(--green-soft) 28%, transparent),
+            transparent 24%
+          ),
+          var(--paper);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      button,
+      a {
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      p {
+        margin-top: 0;
+      }
+
+      /* Two variants from the first paint: the public Help (?public, from the entry pages) and the
+         signed-in Help. The head script names the variant on the html element before the body is
+         parsed, so neither shows the other's content even for a moment. */
+      /* The public Help belongs to no account, so the shell's pause banner (an account's state,
+         mounted by app-shell.js once the page has loaded) never shows on it either. */
+      html[data-help-view="public"] [data-signed-in],
+      html[data-help-view="public"] .agreement-banner,
+      html:not([data-help-view="public"]) [data-public-only] {
+        /* biome-ignore lint/complexity/noImportantStyles: a variant's hidden parts must beat every component display value, like [hidden] */
+        display: none !important;
+      }
+
+      .trust-layout {
+        display: grid;
+        min-width: 0;
+        gap: 21px;
+      }
+
+      .trust-layout > .section-links {
+        margin: 0;
+      }
+
+      .section-copy {
+        max-width: 610px;
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      /* A 44px line icon in a soft circle: topic paths, demos, and the contact paths. */
+      .help-icon {
+        display: grid;
+        width: 44px;
+        height: 44px;
+        flex: 0 0 auto;
+        border-radius: 50%;
+        place-items: center;
+        color: var(--ink-soft);
+        background: var(--paper-deep);
+      }
+
+      .help-icon svg {
+        width: 22px;
+        height: 22px;
+      }
+
+      /* Help topics: the search and the topic cards filter the answers below them. */
+      .help-toolbar {
+        margin-top: 21px;
+      }
+
+      /* Round 6 part 3 (T4-7): a card wide enough for each topic's name on one line, so no word
+         sits alone on a line; the longest name breaks only before its "& support". */
+      .help-topics {
+        flex: 1 1 100%;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+      }
+
+      .help-topic-keep {
+        white-space: nowrap;
+      }
+
+      .help-faq {
+        display: grid;
+        min-width: 0;
+        margin-top: 21px;
+      }
+
+      .help-faq-list {
+        display: grid;
+        min-width: 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .help-faq-group {
+        padding: 21px 0 8px;
+        border-bottom: 1px solid var(--line);
+        color: var(--green-ink);
+        font-size: 12px;
+        font-weight: 750;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .help-faq > .sample-note {
+        margin-top: 13px;
+      }
+
+      .help-empty {
+        margin-top: 21px;
+      }
+
+      /* One question per native disclosure. */
+      .trust-question {
+        border-bottom: 1px solid var(--line);
+      }
+
+      .trust-question > summary {
+        display: flex;
+        min-height: 52px;
+        gap: 13px;
+        padding: 13px 0;
+        align-items: center;
+        justify-content: space-between;
+        cursor: pointer;
+        color: var(--ink);
+        font-size: 15px;
+        font-weight: 680;
+        line-height: 1.35;
+        list-style: none;
+      }
+
+      .trust-question > summary::-webkit-details-marker {
+        display: none;
+      }
+
+      /* The sign says open or closed; the disclosure state itself is native. */
+      .trust-question > summary::after {
+        display: inline-grid;
+        width: 28px;
+        height: 28px;
+        flex: 0 0 auto;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        place-items: center;
+        color: var(--ink-soft);
+        background: var(--surface);
+        content: "+" / "";
+        font-size: 16px;
+        font-weight: 500;
+        line-height: 1;
+      }
+
+      .trust-question[open] > summary::after {
+        content: "−" / "";
+      }
+
+      .trust-question > summary:hover::after {
+        border-color: var(--line-strong);
+      }
+
+      .trust-question > summary:focus-visible {
+        border-radius: 4px;
+        outline: 2px solid var(--green);
+        outline-offset: 3px;
+      }
+
+      .trust-answer {
+        display: grid;
+        max-width: 610px;
+        gap: 13px;
+        margin: 0 0 21px;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      .trust-answer > p {
+        margin: 0;
+      }
+
+      .trust-answer a:not([class]) {
+        color: var(--ink);
+        font-weight: 680;
+        text-underline-offset: 3px;
+      }
+
+      .trust-answer > .chart-key {
+        max-width: 470px;
+      }
+
+      .help-runs-line {
+        color: var(--ink);
+        font-weight: 650;
+      }
+
+      .help-answer-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      /* The one AI setting (R4-2), stated once with Change beside it. */
+      .help-answer-setting {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0 13px;
+        align-items: center;
+        color: var(--ink);
+      }
+
+      /* Roles found = New + In Applications + Not for me, each term a link to its view. */
+      .help-sum {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 0;
+        align-items: stretch;
+      }
+
+      .help-sum-term {
+        display: grid;
+        min-width: 89px;
+        min-height: 44px;
+        gap: 2px;
+        padding: 8px 13px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        align-content: center;
+        color: var(--ink);
+        background: var(--surface);
+        text-decoration: none;
+        transition:
+          border-color 180ms ease,
+          background 180ms ease;
+      }
+
+      .help-sum-term:hover {
+        border-color: var(--line-strong);
+        background: white;
+      }
+
+      .help-sum-term:focus-visible {
+        outline: 2px solid var(--green);
+        outline-offset: 3px;
+      }
+
+      .help-sum-figure {
+        font-family: var(--font-display);
+        font-size: 28px;
+        font-variant-numeric: lining-nums tabular-nums;
+        font-weight: 500;
+        letter-spacing: -0.04em;
+        line-height: 1.05;
+      }
+
+      .help-sum-name {
+        color: var(--ink-soft);
+        font-size: 12px;
+        font-weight: 650;
+        line-height: 1.4;
+      }
+
+      .help-sum-op {
+        display: grid;
+        place-items: center;
+        color: var(--ink-soft);
+        font-size: 20px;
+        font-weight: 500;
+      }
+
+      /* What the Gmail connection reads, and what it never does. */
+      .help-pair {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 233px), 1fr));
+        gap: 13px 21px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .help-pair > li {
+        display: grid;
+        gap: 4px;
+        padding: 13px;
+        align-content: start;
+        border: 1px solid var(--line);
+        border-radius: 13px;
+        background: var(--surface);
+      }
+
+      .help-pair ul {
+        display: grid;
+        gap: 4px;
+        margin: 0;
+        padding-inline-start: 18px;
+        color: var(--ink-soft);
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      /* Demos: each page's tour, its length, and whether you have seen it. */
+      .help-demos {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+        gap: 13px;
+        margin: 21px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .help-demo {
+        display: grid;
+        min-width: 0;
+        grid-template-columns: 44px minmax(0, 1fr);
+        gap: 4px 13px;
+        padding: 13px;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        align-content: start;
+        background: var(--paper);
+      }
+
+      .help-demo > .help-icon {
+        grid-row: 1 / span 3;
+      }
+
+      .help-demo-about,
+      .help-demo-meta {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .help-demo-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      /* The start link takes the card's whole width, so a long name such as "Start the
+         Applications tour" stays inside its card, also when text spacing grows (WCAG 1.4.12). */
+      .help-demo-start {
+        max-width: 100%;
+        grid-column: 1 / -1;
+        justify-self: start;
+        margin-top: 4px;
+      }
+
+      .help-setup {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 13px 21px;
+        margin-top: 21px;
+        padding-top: 21px;
+        border-top: 1px solid var(--line);
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .help-setup p {
+        max-width: 470px;
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      /* The overdue demo (round 5, G1): one line that says what it shows (or why it can't), and
+         one button that starts and ends it. */
+      .help-overdue p,
+      .help-scale p {
+        max-width: 610px;
+      }
+
+      .help-overdue a,
+      .help-scale a {
+        color: var(--ink);
+        font-weight: 680;
+        text-underline-offset: 3px;
+      }
+
+      /* Guides (round 6, G8): each guide a card (its date, its title as the link, its summary),
+         newest first; ?guide=<id> shows one as an article with its steps, Try it, and Back to all
+         guides. */
+      .help-guides {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+        gap: 13px;
+        margin: 21px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .help-guide-item {
+        display: grid;
+        min-width: 0;
+        gap: 0;
+        padding: 13px 21px 21px;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        align-content: start;
+        background: var(--paper);
+      }
+
+      .help-guide-item-date,
+      .help-guide-date {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 650;
+        line-height: 1.4;
+      }
+
+      .help-guide-item-title a {
+        display: block;
+        padding: 12px 0;
+        color: var(--ink);
+        text-decoration-thickness: 1px;
+        text-underline-offset: 3px;
+      }
+
+      .help-guide-item-title a:focus-visible,
+      .help-guide-actions a:focus-visible {
+        border-radius: 4px;
+        outline: 2px solid var(--green);
+        outline-offset: 3px;
+      }
+
+      .help-guide-item-summary {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      .help-guides-more {
+        margin: 13px 0 0;
+      }
+
+      .help-guides-note {
+        margin: 21px 0 0;
+      }
+
+      .help-guide > .sample-note {
+        margin: -8px 0 0;
+      }
+
+      .help-guide-missing {
+        margin: 21px 0 0;
+        color: var(--ink);
+        font-size: 15px;
+        font-weight: 650;
+        line-height: 1.5;
+      }
+
+      .help-guide {
+        display: grid;
+        max-width: 720px;
+        gap: 21px;
+        margin: 21px 0 0;
+        padding-top: 21px;
+        border-top: 1px solid var(--line);
+      }
+
+      .help-guide:focus {
+        outline: none;
+      }
+
+      .help-guide-title {
+        margin: -13px 0 0;
+        color: var(--ink);
+        font-family: var(--font-display);
+        font-size: 28px;
+        font-weight: 500;
+        letter-spacing: -0.03em;
+        line-height: 1.15;
+        text-wrap: balance;
+      }
+
+      .help-guide-summary {
+        margin: -8px 0 0;
+        color: var(--ink-soft);
+        font-size: 17px;
+        line-height: 1.5;
+      }
+
+      .help-guide-part {
+        display: grid;
+        gap: 8px;
+      }
+
+      .help-guide-part p,
+      .help-guide-steps {
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      .help-guide-heading {
+        margin: 0;
+        color: var(--ink);
+        font-size: 15px;
+        font-weight: 700;
+        line-height: 1.35;
+      }
+
+      .help-guide-steps {
+        display: grid;
+        gap: 8px;
+        padding-inline-start: 21px;
+      }
+
+      .help-guide-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 13px;
+        margin: 0;
+        align-items: center;
+      }
+
+      /* The three platform models and the supporters' planned benefits: one line each. */
+      .help-models,
+      .help-benefits {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .help-models > li,
+      .help-benefits > li {
+        display: flex;
+        min-width: 0;
+        flex-wrap: wrap;
+        gap: 4px 8px;
+        padding: 8px 13px;
+        border: 1px solid var(--line);
+        border-radius: 13px;
+        align-items: center;
+        color: var(--ink-soft);
+        background: var(--surface);
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      .help-benefits > li {
+        display: grid;
+        gap: 2px;
+      }
+
+      .help-model-speed {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      /* Your agreements (round 6 part 2, P-6): a short card that says where they are. */
+      .help-agreements-line {
+        max-width: 720px;
+        margin: 13px 0 0;
+        color: var(--ink-soft);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      .help-agreements-line a {
+        color: var(--ink);
+        font-weight: 680;
+        text-underline-offset: 3px;
+      }
+
+      .help-agreements-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 13px;
+        margin: 21px 0 0;
+        align-items: center;
+      }
+
+      /* Contact: two paths in one place, then the support request when you ask for it. */
+      .help-paths {
+        display: grid;
+        gap: 13px;
+        margin-top: 21px;
+        align-items: start;
+      }
+
+      @media (min-width: 1101px) {
+        .help-paths {
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1.618fr);
+        }
+      }
+
+      .help-path {
+        display: grid;
+        min-width: 0;
+        grid-template-columns: 44px minmax(0, 1fr);
+        gap: 4px 13px;
+        padding: 21px;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        align-content: start;
+        background: var(--paper);
+      }
+
+      .help-path > .help-icon {
+        grid-row: 1 / span 3;
+      }
+
+      .help-path p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .help-path-action {
+        grid-column: 2;
+        justify-self: start;
+        margin-top: 8px;
+      }
+
+      .help-public-contact {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 21px;
+      }
+
+      /* One shrinkable column, so the topic select's longest option never widens the form past a
+         320px screen, also under WCAG text spacing (1.4.12). */
+      .support-form {
+        display: grid;
+        min-width: 0;
+        grid-column: 1 / -1;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 21px;
+        margin-top: 13px;
+      }
+
+      .field {
+        display: grid;
+        min-width: 0;
+        gap: 8px;
+      }
+
+      .support-submit {
+        justify-self: start;
+      }
+
+      /* Privacy, Security, and Accessibility: the principles, one per row. */
+      .principles {
+        display: grid;
+        margin: 21px 0 0;
+        padding: 0;
+        border-top: 1px solid var(--line);
+        list-style: none;
+      }
+
+      .principles li {
+        display: grid;
+        gap: 4px;
+        padding: 13px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .principle-detail {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      /* Prototype tools: what this browser's sample holds, and the reset. */
+      .trust-sample-stats {
+        margin-top: 21px;
+      }
+
+      .trust-tools-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 13px;
+        margin-top: 21px;
+        align-items: center;
+      }
+
+      .trust-tools-feedback {
+        margin-top: 13px;
+      }
+
+      .help-reset-details {
+        margin-top: 13px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .help-reset-details > summary {
+        display: inline-flex;
+        min-height: 44px;
+        align-items: center;
+        cursor: pointer;
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 680;
+      }
+
+      .help-reset-details > summary:focus-visible {
+        border-radius: 4px;
+        outline: 2px solid var(--green);
+        outline-offset: 3px;
+      }
+
+      .help-reset-details p {
+        max-width: 610px;
+        margin: 0;
+      }
+
+      @media (max-width: 720px) {
+        .support-submit {
+          width: 100%;
+        }
+      }
+
+      /* Phones: each topic card is its name and count, so the answers start sooner. */
+      @media (max-width: 520px) {
+        .help-topic-about {
+          display: none;
+        }
+
+        .help-demo-start,
+        .help-path-action {
+          grid-column: 1 / -1;
+        }
+      }
+
+      /* The narrowest phones (T4-7): a topic's decorative icon gives its room to the name, so
+         "Applications & résumés" stays on one line. */
+      @media (max-width: 359px) {
+        .help-topic {
+          grid-template-columns: 24px minmax(0, 1fr);
+        }
+
+        .help-topic .choice-card-icon {
+          display: none;
+        }
+      }
+
+      /* The reduced-motion and Pause motion resets, smooth scrolling included, are shared in
+         ./app-chrome.css. */
+
+      /* FieldFeedback for the support request: ink text on a short orange rule, beside the field. */
+      .help-field-error {
+        margin: 0;
+        padding-inline-start: 8px;
+        border-inline-start: 3px solid var(--orange);
+        color: var(--ink);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+    </style>
+    <script>
+      // Help opens in one of two variants, chosen here before the body is parsed: the public Help
+      // (?public, from the entry pages' How JobDeputy works) or the signed-in Help. The variant is
+      // named on the html element, so this page's CSS hides the other variant's content from the
+      // first paint. A signed-out visit also hides the shell's signed-in parts (Feedback and Invite
+      // friends, the account menu, the sidebar with the deputy, and the footer's account lines) as
+      // the parser reaches them, so nothing of the sample account shows, even for a moment.
+      {
+        const helpParameters = new URLSearchParams(window.location.search);
+        const root = document.documentElement;
+        const publicVisit = helpParameters.has('public');
+        root.dataset.helpView = publicVisit ? 'public' : 'signed-in';
+        if (publicVisit) {
+          // Back names the entry route the visitor came from (Sign in otherwise). It never carries
+          // a recovery token; the new-password step restores its checked link for this tab.
+          const publicOrigins = new Map([
+            ['login', ['./login-preview.html?skipLoader', '← Sign in']],
+            ['create', ['./access-preview.html?mode=create&skipLoader', '← Create account']],
+            ['reset', ['./access-preview.html?mode=reset&skipLoader', '← Reset password']],
+            ['set', ['./access-preview.html?mode=set&skipLoader', '← Choose new password']],
+          ]);
+          const [origin, backLabel] =
+            publicOrigins.get(helpParameters.get('from')) ?? publicOrigins.get('login');
+          // Round 6 part 3 (T1-8): the Region the visitor chose on the entry page comes with them
+          // here (?region=) and travels back with them, so Back never resets it. The new-password
+          // step has no Region to choose, so it takes none back.
+          const carriedRegion = String(helpParameters.get('region') ?? '').toLowerCase();
+          const backRegion =
+            ['us', 'in', 'uk'].includes(carriedRegion) && helpParameters.get('from') !== 'set'
+              ? `&region=${carriedRegion}`
+              : '';
+          const backHref = `${origin}${backRegion}`;
+          root.dataset.helpBack = backHref;
+          root.dataset.helpBackLabel = backLabel;
+          // The logo leads back there too, never into the signed-in app.
+          const brandLabel = `JobDeputy, ${backLabel.replace(/^←\s*/, '')}`;
+          const signedInShell =
+            '.header-feedback, .header-invite, .account-menu, #app-sidebar, #signed-in-footer-row, .footer-secondary > span:first-child';
+          const settle = (node) => {
+            if (!(node instanceof Element)) return;
+            for (const part of [
+              node,
+              ...node.querySelectorAll(`${signedInShell}, #trust-back, .app-header .brand`),
+            ]) {
+              if (part.matches(signedInShell)) part.hidden = true;
+              if (part.id === 'trust-back') {
+                part.href = backHref;
+                part.hidden = false;
+              }
+              if (part.matches('.app-header .brand')) {
+                part.href = backHref;
+                part.setAttribute('aria-label', brandLabel);
+              }
+            }
+          };
+          if (typeof MutationObserver === 'function') {
+            const watcher = new MutationObserver((records) => {
+              for (const record of records) for (const node of record.addedNodes) settle(node);
+            });
+            watcher.observe(root, { childList: true, subtree: true });
+            document.addEventListener('DOMContentLoaded', () => watcher.disconnect(), { once: true });
+          }
+        }
+      }
+    </script>
+  </head>
+  <body data-public="false">
+    <a class="skip-link" href="#trust-title">Skip to help</a>
+
+    <header class="app-header">
+      <a class="brand" href="./home-preview.html?skipLoader" aria-label="JobDeputy dashboard">
+        <img
+          class="brand-logo"
+          src="./jobdeputy-mark.svg"
+          alt=""
+          width="400"
+          height="290"
+        />
+        <span class="brand-copy">
+          <span class="brand-name"><span>Job</span><span>Deputy</span></span>
+          <span class="brand-note">Your search partner</span>
+        </span>
+      </a>
+      <div class="header-actions">
+        <!-- HeaderActions: start -->
+        <button class="header-action header-feedback" type="button" data-feedback-open aria-haspopup="dialog" data-tip="Send feedback">
+          <svg class="header-action-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5.75 4.75h12.5c1.1 0 2 .9 2 2v8c0 1.1-.9 2-2 2h-6.5l-4.25 3.5v-3.5H5.75c-1.1 0-2-.9-2-2v-8c0-1.1.9-2 2-2Z" /><path d="M8.25 9.25h7.5M8.25 12.5h4.5" /></svg>
+          <span class="header-action-label">Feedback</span>
+        </button>
+        <a class="header-action header-invite" href="./invite-preview.html" data-tip="Invite friends">
+          <svg class="header-action-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.75" y="8.25" width="16.5" height="4" rx="1" /><path d="M5.25 12.25v6.5c0 .55.45 1 1 1h11.5c.55 0 1-.45 1-1v-6.5" /><path d="M12 8.25v11.5" /><path d="M12 8.25c-2.25 0-4.25-.75-4.25-2.25 0-1 .75-1.75 1.75-1.75 1.75 0 2.5 2 2.5 4Zm0 0c2.25 0 4.25-.75 4.25-2.25 0-1-.75-1.75-1.75-1.75-1.75 0-2.5 2-2.5 4Z" /></svg>
+          <span class="header-action-label">Invite friends</span>
+        </a>
+        <!-- HeaderActions: end -->
+        <a class="header-action" id="trust-back" href="./login-preview.html?skipLoader" hidden
+          >← Sign in</a
+        >
+        <details class="account-menu">
+          <summary class="account-link" aria-label="Alex Morgan, Free access, account menu">
+            <span class="account-avatar">
+              <img src="./profile-avatar.svg" alt="" width="160" height="160" />
+            </span>
+            <span class="account-copy">
+              <strong>Alex Morgan</strong>
+              <span>Free access</span>
+            </span>
+          </summary>
+          <nav class="account-popover" aria-label="Account">
+            <span class="account-popover-status">
+              <span data-account-credits>339,100 tokens of AI credits left</span>
+            </span>
+            <a href="./profile-preview.html">Profile</a>
+            <a href="./account-preview.html">Settings</a>
+            <a href="./ai-preview.html">AI &amp; credits</a>
+            <a href="./shop-preview.html">Purchases</a>
+            <a href="./invite-preview.html">Invite friends</a>
+            <a href="./trust-preview.html#help">Help &amp; support</a>
+            <button class="account-popover-action" type="button" data-tour-open hidden>Show me around</button>
+            <button class="account-popover-action" type="button" data-feedback-open aria-haspopup="dialog">Send feedback</button>
+            <a class="account-signout" href="./login-preview.html?skipLoader">Sign out</a>
+          </nav>
+        </details>
+      </div>
+    </header>
+
+    <div class="app-frame">
+      <div class="app-sidebar" id="app-sidebar">
+        <div class="app-menu">
+          <button
+            class="compact-action app-menu-toggle"
+            id="app-menu-toggle"
+            type="button"
+            aria-expanded="true"
+            aria-controls="app-nav"
+            hidden
+          >
+            <svg class="app-menu-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+            <span class="app-menu-text">Menu<span class="app-menu-current"> · Help</span></span>
+          </button>
+        </div>
+        <!-- AppNav: start -->
+        <nav class="app-nav" id="app-nav" aria-label="Primary">
+          <ul class="app-nav-list">
+            <li>
+              <a class="app-nav-link" href="./home-preview.html?skipLoader">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.75 10.5 12 3.75l8.25 6.75" /><path d="M5.75 9v10.5h12.5V9" /><path d="M10 19.5v-5h4v5" /></svg>
+                <span class="app-nav-label">Dashboard</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./searches-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.25" /><path d="m15.25 15.25 4.75 4.75" /></svg>
+                <span class="app-nav-label">Searches</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./jobs-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="7.25" width="17" height="12.5" rx="2" /><path d="M8.75 7.25V5.5c0-.83.67-1.5 1.5-1.5h3.5c.83 0 1.5.67 1.5 1.5v1.75" /><path d="M3.5 12.5h17" /></svg>
+                <span class="app-nav-label">Job matches</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./applications-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.75" y="4.25" width="4.5" height="11.5" rx="1.25" /><rect x="9.75" y="4.25" width="4.5" height="15.5" rx="1.25" /><rect x="15.75" y="4.25" width="4.5" height="8" rx="1.25" /></svg>
+                <span class="app-nav-label">Applications</span>
+                <span class="app-nav-count is-attention">3<span class="sr-only"> need you</span></span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./documents-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.75 3.75h-6.5c-.97 0-1.75.78-1.75 1.75v13c0 .97.78 1.75 1.75 1.75h9.5c.97 0 1.75-.78 1.75-1.75V8.25Z" /><path d="M13.75 3.75v4.5h4.5" /><path d="M8.75 12.25h6.5M8.75 15.75h6.5" /></svg>
+                <span class="app-nav-label">Résumés</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./profile-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="8.25" r="3.75" /><path d="M4.75 20c.6-3.75 3.4-6 7.25-6s6.65 2.25 7.25 6" /></svg>
+                <span class="app-nav-label">Profile</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./account-preview.html">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9.88 5.85L10.48 3.38L13.52 3.38L14.12 5.85L16.26 7.09L18.7 6.38L20.22 9.01L18.38 10.76L18.38 13.24L20.22 14.99L18.7 17.62L16.26 16.91L14.12 18.15L13.52 20.62L10.48 20.62L9.88 18.15L7.74 16.91L5.3 17.62L3.78 14.99L5.62 13.24L5.62 10.76L3.78 9.01L5.3 6.38L7.74 7.09Z" /><circle cx="12" cy="12" r="3" /></svg>
+                <span class="app-nav-label">Settings</span>
+              </a>
+            </li>
+            <li>
+              <a class="app-nav-link" href="./trust-preview.html" aria-current="page">
+                <svg class="app-nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.75" /><path d="M9.6 9.6a2.5 2.5 0 1 1 3.3 2.36c-.53.2-.9.7-.9 1.27v.52" /><path d="M12 16.75h.01" /></svg>
+                <span class="app-nav-label">Help</span>
+              </a>
+            </li>
+          </ul>
+        </nav>
+        <!-- AppNav: end -->
+        <div class="app-sidebar-deputy">
+          <!-- DeputyDock: start -->
+          <aside
+            class="deputy-dock"
+            id="deputy-dock"
+            aria-labelledby="deputy-dock-title"
+            data-deputy
+            data-deputy-page="help"
+            data-deputy-state="idle"
+          >
+            <h2 class="sr-only" id="deputy-dock-title">Your deputy</h2>
+            <div class="deputy-art" data-deputy-art aria-hidden="true"></div>
+            <p class="deputy-speech" data-deputy-speech>Here when you need me.</p>
+            <p class="deputy-duty"><span class="deputy-duty-dot" aria-hidden="true"></span><span data-deputy-duty>Ready</span></p>
+            <div class="deputy-actions">
+              <details class="deputy-activity">
+                <summary class="deputy-activity-toggle">Activity</summary>
+                <!-- biome-ignore lint/a11y/useSemanticElements: the panel groups links and lists, not form controls, so a fieldset would be wrong -->
+                <div class="deputy-activity-panel" role="group" aria-labelledby="deputy-activity-title">
+                  <p class="deputy-activity-title" id="deputy-activity-title">What your deputy is doing</p>
+                  <h3 class="deputy-activity-label">Now</h3>
+                  <ul class="deputy-activity-list">
+                    <li>Searching Amazon Jobs</li>
+                  </ul>
+                  <h3 class="deputy-activity-label">Needs you</h3>
+                  <ul class="deputy-activity-list">
+                    <li>
+                      <a href="./materials-preview.html?app=search-infra&amp;from=applications"
+                        >Approve materials for Search Infrastructure (Google)</a
+                      >
+                    </li>
+                    <li><a href="./applications-preview.html?open=amazon-sde2">Follow up with Amazon</a></li>
+                    <li><a href="./searches-preview.html?source=acme">Fix the Acme source</a></li>
+                  </ul>
+                  <h3 class="deputy-activity-label">Done recently</h3>
+                  <ul class="deputy-activity-list">
+                    <li>Tailored a résumé and cover letter for Cloud Reliability · Oct 2</li>
+                    <li>Checked Google Careers: no new roles · Oct 2</li>
+                    <li>Saved 7 new roles from Google Careers · Oct 1</li>
+                  </ul>
+                  <p class="sample-note">Sample data · not connected</p>
+                </div>
+              </details>
+              <button class="deputy-motion" type="button" data-deputy-motion>Pause motion</button>
+            </div>
+            <p class="sr-only" data-deputy-announce role="status"></p>
+          </aside>
+          <!-- DeputyDock: end -->
+        </div>
+      </div>
+    <main class="app-main" id="main">
+      <div class="page-shell">
+        <section class="page-intro trust-intro" aria-labelledby="trust-title">
+          <div class="page-intro-copy">
+            <p class="eyebrow">Help &amp; support</p>
+            <h1 id="trust-title">Answers, privacy, and support.</h1>
+            <p class="intro-copy" data-signed-in>
+              Find an answer, read a guide, replay a tour, or tell us where something stopped.
+            </p>
+            <p class="intro-copy" data-public-only>
+              How JobDeputy works, how your data is kept, and help signing in.
+            </p>
+          </div>
+          <div class="page-intro-actions">
+            <button type="button" class="secondary-action page-tour" data-tour-open hidden>Take the tour</button>
+          </div>
+        </section>
+
+        <div class="trust-layout">
+          <nav class="section-links" aria-label="Trust and support sections">
+            <a class="compact-action" href="#faq">Answers</a>
+            <a class="compact-action" href="#guides" data-help-guides-link>Guides</a>
+            <a class="compact-action" href="#agreements" data-signed-in>Your agreements</a>
+            <a class="compact-action" href="#demos" data-signed-in>Demos</a>
+            <a class="compact-action" href="#contact">Contact</a>
+            <a class="compact-action" href="#privacy">Privacy</a>
+            <a class="compact-action" href="#security">Security</a>
+            <a class="compact-action" href="#accessibility">Accessibility</a>
+          </nav>
+
+          <!-- Help topics and answers: the topic cards and the search filter the answers below. -->
+          <section
+            class="task-surface"
+            id="help"
+            aria-labelledby="help-title"
+            data-tour-step="1"
+            data-tour-title="Ask me anything here."
+            data-tour-text="Choose a topic or type a word, and I narrow the answers below. Open a question to read my answer."
+          >
+            <span class="section-label" id="topics">Help topics</span>
+            <h2 id="help-title">What do you need help with?</h2>
+            <p class="section-copy">Choose topics or type a word; the answers below narrow as you go.</p>
+            <search
+              class="list-toolbar help-toolbar"
+              aria-label="Find an answer"
+              data-list-toolbar
+              data-list-target="faq-list"
+              data-list-empty="faq-empty"
+              data-list-noun="answer"
+              data-list-nouns="answers"
+            >
+              <div class="list-toolbar-search">
+                <label class="field-label" for="help-query">Search answers</label>
+                <input
+                  class="field-control"
+                  id="help-query"
+                  type="search"
+                  data-list-search
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="For example: Region"
+                />
+              </div>
+              <fieldset class="choice-cards help-topics" data-list-filter="topic">
+                <legend class="field-label">Topics</legend>
+                <label class="choice-card help-topic">
+                  <input type="checkbox" name="help-topic" value="start" />
+                  <span class="choice-card-control" aria-hidden="true"></span>
+                  <span class="choice-card-copy">
+                    <span class="choice-card-label">Getting started</span>
+                    <span class="choice-card-meta"><span class="help-topic-about"><span data-signed-in>What your deputy does, Settings, setup, tours</span><span data-public-only>What JobDeputy does, and the agreement</span> · </span><span class="list-toolbar-count"><span data-signed-in>7</span><span data-public-only>3</span></span> <span class="help-topic-noun">answers</span></span>
+                  </span>
+                  <svg class="choice-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5.75 20.5V4.25" /><path d="M5.75 4.75h10.5l-2 4 2 4H5.75" /></svg>
+                </label>
+                <label class="choice-card help-topic" data-signed-in>
+                  <input type="checkbox" name="help-topic" value="matches" />
+                  <span class="choice-card-control" aria-hidden="true"></span>
+                  <span class="choice-card-copy">
+                    <span class="choice-card-label">Job matches &amp; fit</span>
+                    <span class="choice-card-meta"><span class="help-topic-about">Your counts, the fit colours, and pages · </span><span class="list-toolbar-count">3</span> <span class="help-topic-noun">answers</span></span>
+                  </span>
+                  <svg class="choice-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="7.25" width="17" height="12.5" rx="2" /><path d="M8.75 7.25V5.5c0-.83.67-1.5 1.5-1.5h3.5c.83 0 1.5.67 1.5 1.5v1.75" /><path d="M3.5 12.5h17" /></svg>
+                </label>
+                <label class="choice-card help-topic" data-signed-in>
+                  <input type="checkbox" name="help-topic" value="applications" />
+                  <span class="choice-card-control" aria-hidden="true"></span>
+                  <span class="choice-card-copy">
+                    <span class="choice-card-label">Applications &amp; résumés</span>
+                    <span class="choice-card-meta"><span class="help-topic-about">Stages, auto-apply, autofill, templates · </span><span class="list-toolbar-count">6</span> <span class="help-topic-noun">answers</span></span>
+                  </span>
+                  <svg class="choice-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.75" y="4.25" width="4.5" height="11.5" rx="1.25" /><rect x="9.75" y="4.25" width="4.5" height="15.5" rx="1.25" /><rect x="15.75" y="4.25" width="4.5" height="8" rx="1.25" /></svg>
+                </label>
+                <label class="choice-card help-topic">
+                  <input type="checkbox" name="help-topic" value="searches" />
+                  <span class="choice-card-control" aria-hidden="true"></span>
+                  <span class="choice-card-copy">
+                    <span class="choice-card-label">Searches &amp; Keep watch</span>
+                    <span class="choice-card-meta"><span class="help-topic-about"><span data-signed-in>Runs, sources, and Keep watch</span><span data-public-only>Runs and Keep watch</span> · </span><span class="list-toolbar-count"><span data-signed-in>4</span><span data-public-only>2</span></span> <span class="help-topic-noun">answers</span></span>
+                  </span>
+                  <svg class="choice-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.25" /><path d="m15.25 15.25 4.75 4.75" /></svg>
+                </label>
+                <label class="choice-card help-topic">
+                  <input type="checkbox" name="help-topic" value="ai" />
+                  <span class="choice-card-control" aria-hidden="true"></span>
+                  <span class="choice-card-copy">
+                    <span class="choice-card-label">AI, keys &amp; prompts</span>
+                    <span class="choice-card-meta"><span class="help-topic-about">Deputy Assist, the models, prompt tests · </span><span class="list-toolbar-count">7</span> <span class="help-topic-noun">answers</span></span>
+                  </span>
+                  <svg class="choice-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 3.25c.5 3.2 2.05 4.75 5.25 5.25-3.2.5-4.75 2.05-5.25 5.25-.5-3.2-2.05-4.75-5.25-5.25C6.95 8 8.5 6.45 9 3.25Z" /><circle cx="17.25" cy="14.75" r="2.5" /><path d="m15.5 16.5-4.25 4.25M13 19l1.5 1.5" /></svg>
+                </label>
+                <label class="choice-card help-topic">
+                  <input type="checkbox" name="help-topic" value="credits" />
+                  <span class="choice-card-control" aria-hidden="true"></span>
+                  <span class="choice-card-copy">
+                    <span class="choice-card-label">Credits, Purchases <span class="help-topic-keep">&amp; support</span></span>
+                    <span class="choice-card-meta"><span class="help-topic-about"><span data-signed-in>Prices, Purchases, and supporter benefits</span><span data-public-only>What AI credits cost</span> · </span><span class="list-toolbar-count"><span data-signed-in>3</span><span data-public-only>1</span></span> <span class="help-topic-noun">answers</span></span>
+                  </span>
+                  <svg class="choice-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5.25 8.25h13.5l-1 11.5H6.25Z" /><path d="M9 10.75V7a3 3 0 0 1 6 0v3.75" /></svg>
+                </label>
+                <label class="choice-card help-topic">
+                  <input type="checkbox" name="help-topic" value="privacy" />
+                  <span class="choice-card-control" aria-hidden="true"></span>
+                  <span class="choice-card-copy">
+                    <span class="choice-card-label">Privacy &amp; your data</span>
+                    <span class="choice-card-meta"><span class="help-topic-about">Region, email, site passwords · </span><span class="list-toolbar-count">6</span> <span class="help-topic-noun">answers</span></span>
+                  </span>
+                  <svg class="choice-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.75 5.5 6.25v5.5c0 4 2.75 7.25 6.5 8.5 3.75-1.25 6.5-4.5 6.5-8.5v-5.5Z" /><path d="m9.25 12 2 2 3.5-3.75" /></svg>
+                </label>
+                <label class="choice-card help-topic">
+                  <input type="checkbox" name="help-topic" value="access" />
+                  <span class="choice-card-control" aria-hidden="true"></span>
+                  <span class="choice-card-copy">
+                    <span class="choice-card-label">Accessibility &amp; motion</span>
+                    <span class="choice-card-meta"><span class="help-topic-about">Pause motion, keyboard, and zoom · </span><span class="list-toolbar-count">2</span> <span class="help-topic-noun">answers</span></span>
+                  </span>
+                  <svg class="choice-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.75" /><circle cx="12" cy="7.75" r="1.25" /><path d="M8 10.25h8M12 10.25v3.5M12 13.75l-2.25 4M12 13.75l2.25 4" /></svg>
+                </label>
+                <label class="choice-card help-topic">
+                  <input type="checkbox" name="help-topic" value="signin" />
+                  <span class="choice-card-control" aria-hidden="true"></span>
+                  <span class="choice-card-copy">
+                    <span class="choice-card-label">Signing in</span>
+                    <span class="choice-card-meta"><span class="help-topic-about">Passwords, Regions, Google, LinkedIn · </span><span class="list-toolbar-count">3</span> <span class="help-topic-noun">answers</span></span>
+                  </span>
+                  <svg class="choice-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8.5" cy="14.5" r="3.75" /><path d="m11.25 11.75 7.5-7.5M16 7l2.25 2.25M14 9l1.5 1.5" /></svg>
+                </label>
+              </fieldset>
+              <p class="list-toolbar-result" data-list-count><span data-signed-in>41 answers</span><span data-public-only>24 answers</span></p>
+            </search>
+
+            <!-- Answers, grouped by topic. Figures come from the shared sample (data-metric). -->
+            <div class="help-faq" id="faq">
+              <div class="help-faq-list" id="faq-list">
+                <h3 class="help-faq-group" data-faq-group="start">Getting started</h3>
+                <details class="trust-question" id="faq-how" data-list-item data-filter-topic="start" data-keywords="how it works what is jobdeputy deputy overview search rank tailor apply">
+                  <summary>How does JobDeputy work?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      You add the career sites and job boards to search. Your deputy reads them,
+                      keeps the roles that match your profile, and ranks them in Job matches. You
+                      choose what moves to Applications, where your deputy tailors your résumé and
+                      cover letter for your review. At launch it can also fill and submit an
+                      application, only after you approve it.
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-apply" data-list-item data-filter-topic="start" data-keywords="apply submit without asking approval consent employer send">
+                  <summary>Does JobDeputy apply for jobs without asking me?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      No. Your deputy finds roles, drafts your materials, and reviews them, then
+                      waits for you to approve each one. At launch, once you approve, it can apply
+                      in the background within your rules, and you can watch any application as it
+                      fills. In this prototype nothing is ever sent to an employer.
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-agreement" data-list-item data-filter-topic="start" data-keywords="agreement user agreement terms sign signature version new version update changes reminder pause paused overdue record copy kept permanent">
+                  <summary>Why do I sign an agreement, and what if a new version comes?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      The User Agreement says what your deputy does for you and what you agree to.
+                      You sign it in one step when you create your account: one sentence, then Sign
+                      and continue, as the name on your account, with nothing to type. You sign each
+                      new version the same way, after reading what changed. We remind you in the
+                      app and by email for two weeks; if a new version still isn’t signed 14 days
+                      after it’s published, your deputy’s work pauses until you sign: searches,
+                      Keep watch checks, filling in applications, and drafting.
+                    </p>
+                    <p>
+                      Signing in, seeing everything, exporting your data, deleting your account,
+                      Help, and signing never pause. We keep every copy you sign permanently,
+                      apart from your account, so you and we can always show what you agreed to.
+                      <span data-signed-in><a href="./account-preview.html#agreements">Settings, Account</a>
+                        has each copy you signed and any version waiting for you.</span>
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-replay" data-list-item data-filter-topic="start" data-keywords="tour demo replay show me around setup onboarding again change answers" data-signed-in>
+                  <summary>How do I replay a tour or change my setup?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      Choose Take the tour at the top of any page, or start any page's tour from
+                      <a href="#demos">Demos</a> or from Show me around in the account menu or your
+                      deputy's panel; your deputy gives every tour. Run setup again, in
+                      Demos, asks the setup questions with your saved answers filled in.
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-skip-setup" data-list-item data-filter-topic="start" data-keywords="skip setup later finish to-do todo onboarding steps questions skipped unanswered first run" data-signed-in>
+                  <summary>Can I skip setup and finish it later?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      Yes. Every setup step has Skip the rest, and the first has Skip setup for
+                      now. Your deputy adds each step you skipped to your To-do, and each item
+                      opens the right place: your résumé, a first source, your roles, or your AI
+                      setting. The Dashboard works with nothing answered.
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-settings" data-list-item data-filter-topic="start" data-keywords="settings account connections prompts ai credits purchases shop tabs moved where profile gmail linkedin site accounts keys delete region" data-signed-in>
+                  <summary>What's in Settings, and where did things move?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      Settings has seven tabs, each its own page:
+                      <a href="./account-preview.html">Account</a> (how you sign in, the emails we
+                      send you, your home Region, the agreements you signed, your data, and deleting
+                      your account), <a href="./connections-preview.html">Connections</a> (Gmail and
+                      its daily scan, LinkedIn, your site accounts, and your AI keys),
+                      <a href="./prompts-preview.html">Prompts</a> (every prompt, its versions and
+                      tests, and the one place to edit them), <a href="./ai-preview.html">AI &amp;
+                      credits</a> (your AI setting, keys, and limits),
+                      <a href="./usage-preview.html">Usage</a> (your runs and tokens over any time,
+                      and how long they last), <a href="./shop-preview.html">Purchases</a> (your
+                      balances, one quick buy, and every receipt), and
+                      <a href="./activity-preview.html">Activity</a> (everything you, your deputy,
+                      and JobDeputy did). Profile keeps what your deputy uses to apply, and
+                      <a href="./applications-preview.html#how-you-apply">Your rules</a>, how your
+                      deputy applies, are in Applications. Old links still open the right place.
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-large-demo" data-list-item data-filter-topic="start" data-keywords="large account demo big many sources roles keywords companies other see all filter sample usual scale" data-signed-in>
+                  <summary>What does the large account demo show?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      How each page handles far more data than it can show, with a much bigger
+                      sample account. Charts show their top five plus Other, long lists show the
+                      first few with See all, and filters over many values become a list you can
+                      search. Start it with See a large account in <a href="#demos">Demos</a>; Back
+                      to the usual sample returns your own sample, exactly as you left it.
+                    </p>
+                  </div>
+                </details>
+
+                <h3 class="help-faq-group" data-faq-group="matches" data-signed-in>Job matches &amp; fit</h3>
+                <details class="trust-question" id="faq-counts" data-list-item data-filter-topic="matches" data-keywords="roles found new in applications not for me count numbers add up total views dashboard" data-signed-in>
+                  <summary>What do Roles found, To review, In Applications, and Not for me mean?</summary>
+                  <div class="trust-answer">
+                    <p class="help-sum">
+                      <a class="help-sum-term" href="./jobs-preview.html?view=all"><span class="help-sum-figure" data-metric="jobs.found">27</span><span class="help-sum-name">Roles found</span></a>
+                      <span class="help-sum-op"><span aria-hidden="true">=</span><span class="sr-only">equals</span></span>
+                      <a class="help-sum-term" href="./jobs-preview.html"><span class="help-sum-figure" data-metric="jobs.toReview">20</span><span class="help-sum-name">To review</span></a>
+                      <span class="help-sum-op"><span aria-hidden="true">+</span><span class="sr-only">plus</span></span>
+                      <a class="help-sum-term" href="./applications-preview.html"><span class="help-sum-figure" data-metric="jobs.tracked">5</span><span class="help-sum-name">In Applications</span></a>
+                      <span class="help-sum-op"><span aria-hidden="true">+</span><span class="sr-only">plus</span></span>
+                      <a class="help-sum-term" href="./jobs-preview.html?view=dismissed"><span class="help-sum-figure" data-metric="jobs.notForMe">2</span><span class="help-sum-name">Not for me</span></a>
+                    </p>
+                    <p>
+                      Roles found counts every role your searches kept. Each role is in exactly one
+                      place: To review in Job matches until you decide, in Applications once you add
+                      it, and Not for me once you set it aside, where you can bring it back. Job
+                      matches is a queue: adding a role or setting it aside takes it out and opens
+                      the next one. So the three always add up to Roles found.
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-fit" data-list-item data-filter-topic="matches" data-keywords="fit colour color colours strong good stretch green blue grey gray rank ranking must-haves" data-signed-in>
+                  <summary>What do the fit colours mean?</summary>
+                  <div class="trust-answer">
+                    <ul class="chart-key" aria-label="Fit levels">
+                      <li data-tone="green" data-fit="strong">
+                        <a class="chart-key-item" href="./jobs-preview.html?view=all&amp;fit=strong">
+                          <span class="chart-key-name" data-key-name>Strong fit</span>
+                          <span class="chart-key-count" data-metric="jobs.fit.strong">4</span><span class="sr-only" data-key-noun> roles.</span>
+                          <span class="chart-key-meaning"><span data-key-meaning>A target role, with most of what it asks</span><span class="sr-only">.</span></span>
+                          <span class="sr-only">Open in Job matches</span>
+                        </a>
+                      </li>
+                      <li data-tone="blue" data-fit="good">
+                        <a class="chart-key-item" href="./jobs-preview.html?view=all&amp;fit=good">
+                          <span class="chart-key-name" data-key-name>Good fit</span>
+                          <span class="chart-key-count" data-metric="jobs.fit.good">9</span><span class="sr-only" data-key-noun> roles.</span>
+                          <span class="chart-key-meaning"><span data-key-meaning>A target role, with a gap to check</span><span class="sr-only">.</span></span>
+                          <span class="sr-only">Open in Job matches</span>
+                        </a>
+                      </li>
+                      <li data-tone="quiet" data-fit="stretch">
+                        <a class="chart-key-item" href="./jobs-preview.html?view=all&amp;fit=stretch">
+                          <span class="chart-key-name" data-key-name>Stretch</span>
+                          <span class="chart-key-count" data-metric="jobs.fit.stretch">14</span><span class="sr-only" data-key-noun> roles.</span>
+                          <span class="chart-key-meaning"><span data-key-meaning>A level, place, or field beyond your choices</span><span class="sr-only">.</span></span>
+                          <span class="sr-only">Open in Job matches</span>
+                        </a>
+                      </li>
+                    </ul>
+                    <p>
+                      Your deputy compares each role's title and place with your target roles and
+                      preferences, and its keywords with your résumé; Why it fits on each role shows
+                      what matched and what's missing. The same names and colours appear on the
+                      Dashboard and in Job matches, where choosing a colour filters to it. Fit labels
+                      are a launch preview.
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-pages" data-list-item data-filter-topic="matches" data-keywords="page pages pagination next previous page numbers more roles list how many per page screen phone tablet" data-signed-in>
+                  <summary>Why does Job matches show a page at a time?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      So a long list stays quick to scan. Every long list shows where you are
+                      ("13 to 24 of 40"), Previous and Next above and below it, and a page size you
+                      choose: 12, 24, or 48. The page is kept in the address, and changing it brings
+                      the list's top into view, so you never scroll back up. Changing the view or a
+                      filter starts again on page 1, and a link to one role opens the page that
+                      holds it.
+                    </p>
+                  </div>
+                </details>
+
+                <h3 class="help-faq-group" data-faq-group="applications" data-signed-in>Applications &amp; résumés</h3>
+                <details class="trust-question" id="faq-stages" data-list-item data-filter-topic="applications" data-keywords="stage stages colour color shortlisted tailoring approval applied interviewing offer closed board list" data-signed-in>
+                  <summary>What do the application stages and colours mean?</summary>
+                  <div class="trust-answer">
+                    <ul class="chart-key" aria-label="Application stages">
+                      <li data-tone="quiet" data-stage="shortlisted">
+                        <a class="chart-key-item" href="./applications-preview.html?stage=shortlisted">
+                          <span class="chart-key-name" data-key-name>Shortlisted</span>
+                          <span class="chart-key-count" data-metric="apps.stage.shortlisted">2</span><span class="sr-only" data-key-noun> roles.</span>
+                          <span class="chart-key-meaning"><span data-key-meaning>You chose it; your deputy has not started the materials</span><span class="sr-only">.</span></span>
+                          <span class="sr-only">Open in Applications</span>
+                        </a>
+                      </li>
+                      <li data-tone="ink" data-stage="tailoring">
+                        <a class="chart-key-item" href="./applications-preview.html?stage=tailoring">
+                          <span class="chart-key-name" data-key-name>Tailoring</span>
+                          <span class="chart-key-count" data-metric="apps.stage.tailoring">1</span><span class="sr-only" data-key-noun> role.</span>
+                          <span class="chart-key-meaning"><span data-key-meaning>Your deputy is drafting the résumé and cover letter</span><span class="sr-only">.</span></span>
+                          <span class="sr-only">Open in Applications</span>
+                        </a>
+                      </li>
+                      <li data-tone="orange" data-stage="approval">
+                        <a class="chart-key-item" href="./applications-preview.html?stage=approval">
+                          <span class="chart-key-name" data-key-name>Approval</span>
+                          <span class="chart-key-count" data-metric="apps.stage.approval">1</span><span class="sr-only" data-key-noun> role.</span>
+                          <span class="chart-key-meaning"><span data-key-meaning>The drafts wait for your approval</span><span class="sr-only">.</span></span>
+                          <span class="sr-only">Open in Applications</span>
+                        </a>
+                      </li>
+                      <li data-tone="blue" data-stage="applied">
+                        <a class="chart-key-item" href="./applications-preview.html?stage=applied">
+                          <span class="chart-key-name" data-key-name>Applied</span>
+                          <span class="chart-key-count" data-metric="apps.stage.applied">2</span><span class="sr-only" data-key-noun> roles.</span>
+                          <span class="chart-key-meaning"><span data-key-meaning>Sent to the employer, by you or your deputy</span><span class="sr-only">.</span></span>
+                          <span class="sr-only">Open in Applications</span>
+                        </a>
+                      </li>
+                      <li data-tone="green" data-stage="interviewing">
+                        <a class="chart-key-item" href="./applications-preview.html?stage=interviewing">
+                          <span class="chart-key-name" data-key-name>Interviewing</span>
+                          <span class="chart-key-count" data-metric="apps.stage.interviewing">1</span><span class="sr-only" data-key-noun> role.</span>
+                          <span class="chart-key-meaning"><span data-key-meaning>You have an interview in progress</span><span class="sr-only">.</span></span>
+                          <span class="sr-only">Open in Applications</span>
+                        </a>
+                      </li>
+                      <li data-tone="green" data-stage="offer">
+                        <a class="chart-key-item" href="./applications-preview.html?stage=offer">
+                          <span class="chart-key-name" data-key-name>Offer</span>
+                          <span class="chart-key-count" data-metric="apps.stage.offer">0</span><span class="sr-only" data-key-noun> roles.</span>
+                          <span class="chart-key-meaning"><span data-key-meaning>You have an offer</span><span class="sr-only">.</span></span>
+                          <span class="sr-only">Open in Applications</span>
+                        </a>
+                      </li>
+                    </ul>
+                    <p>
+                      Applications is one board of the roles you chose, and each card moves along
+                      it as the work happens. Every card says who did each step: you, or your
+                      deputy when your rules let it approve or apply by itself. An email can move a
+                      card too, and every move can be undone. Closed roles (not selected,
+                      withdrawn, or declined) stay out of the active count: you have
+                      <span data-metric="apps.stage.closed">1</span>.
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-approve" data-list-item data-filter-topic="applications" data-keywords="approve approval materials tailored resume résumé cover letter undo applied" data-signed-in>
+                  <summary>What does Approve materials mean?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      It tells your deputy that a role's tailored résumé and cover letter are ready
+                      to use. Approve and apply, on the card, does both in one step: once approved,
+                      your deputy applies in the background within your rules, and Watch shows the
+                      form as it fills, if you want to see it. You can undo the approval until the
+                      role is marked applied. In this prototype nothing is sent.
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-auto-apply" data-list-item data-filter-topic="applications" data-keywords="review then auto-apply auto apply automatic approve approval rules background daily limit quiet hours needs you questions watch it reset system default" data-signed-in>
+                  <summary>What is Review, then auto-apply?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      It's how your deputy applies unless you change it. Your deputy drafts your
+                      résumé and cover letter and reviews them itself, with a score and named
+                      checks such as the posting's must-haves and that every claim is in your
+                      profile. You approve each one in a single step, then your deputy applies in
+                      the background within your rules: a daily limit, quiet hours, only when no
+                      new answers are needed, and only with the agreement signed.
+                    </p>
+                    <p>
+                      When a form asks something new, the role shows Needs you with the
+                      questions, and your answers fill in as the run continues. Auto-approve rules
+                      come set up but off. Change any rule, or Reset to the system default, in
+                      <a href="./applications-preview.html#how-you-apply">Your rules</a>, at the top
+                      of Applications.
+                      Planned for launch, Phase 2: nothing is sent in this prototype.
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-autofill" data-list-item data-filter-topic="applications" data-keywords="autofill fill form preview submit answers questions read self-identification override" data-signed-in>
+                  <summary>What does the autofill preview submit, and when is the form read?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      The preview lists the exact answers your deputy would submit; the employer's
+                      own page looks different. Your deputy reads the form's questions when you add
+                      a role to Applications, and again just before filling. Self-identification
+                      answers come from Profile, and you can answer differently for one
+                      application. Nothing is submitted in this prototype.
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-templates" data-list-item data-filter-topic="applications" data-keywords="template templates markdown classic modern compact upload pages page one-page length print" data-signed-in>
+                  <summary>Which résumé template should I use, and how many pages?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      Templates are Markdown: Classic (the default), Modern, and Compact, or upload
+                      your own .md template. We recommend a concise one-page résumé, and you can
+                      allow two. The editor's preview shows exactly the pages that print. Your
+                      setting is <span data-metric="docs.pageLimit">1</span>
+                      <span data-help-page-noun>page</span>.
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-default-resume" data-list-item data-filter-topic="applications" data-keywords="default resume résumé cv tailor base document" data-signed-in>
+                  <summary>Which résumé does my deputy tailor from?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      Your default résumé, or your default CV when a role asks for one, both chosen
+                      in Résumés: now <span data-help-default="resume">Alex_Morgan_Resume.pdf</span>
+                      and <span data-help-default="cv">Engineering_Leadership_CV.docx</span>. Each
+                      tailored draft starts from it, and you check every change before you approve.
+                    </p>
+                  </div>
+                </details>
+
+                <h3 class="help-faq-group" data-faq-group="searches">Searches &amp; Keep watch</h3>
+                <details class="trust-question" id="faq-runs" data-list-item data-filter-topic="searches" data-keywords="run runs search searches checked kept duplicates source history allowance free uses run again keep watch">
+                  <summary>What is a run?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      A run is one search of one source: your deputy reads the page, checks each
+                      role against your profile, and keeps the ones that fit. A role found twice is
+                      counted once. Each source lists its runs on its card in Searches, with how
+                      many roles each one checked and kept.
+                    </p>
+                    <p>
+                      Every search uses one run from your allowance, whoever starts it: you, with a
+                      new source or Run again, or Keep watch at night, one for each source it
+                      checks. Each Gmail scan uses one too, the daily scan and Scan now, and so does
+                      each daily summary email if you turn it on. AI work is counted in tokens.
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-attention" data-list-item data-filter-topic="searches" data-keywords="attention failed stopped error retry source broken sign-in blocked" data-signed-in>
+                  <summary>Why does a source need attention?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      Its last run stopped: the page may need a sign-in, block automated reading,
+                      take too long to load, or list no jobs. The source and its history stay, so
+                      you can check the address and choose Retry on its card in Searches. Right
+                      now <span data-metric="sources.attention">1</span> of your sources needs
+                      attention.
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="keep-watch" data-list-item data-filter-topic="searches" data-keywords="keep watch nightly night schedule automatic rerun new roles every day runs">
+                  <summary>What is Keep watch?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      An optional feature, planned for launch: your deputy reruns the sources you
+                      choose every night and adds any new roles to Job matches. It stays off until
+                      you set a source to Nightly with Keep watch in Searches.
+                      <span data-public-only>You get <span data-metric="watch.nightly.limit">10</span>
+                        free runs a month for every search, and Keep watch</span><span data-signed-in>Free
+                        runs return every month, and Keep watch</span>
+                      uses one run for each source it checks.
+                      <span data-signed-in data-help-watch="on">Your next check is
+                        <span data-metric="watch.nightly.nextRunAt">Sat, Oct 3, 02:00</span>
+                        Pacific, for <span data-help-watched>Google Careers and Microsoft Careers</span>.</span>
+                      <span data-signed-in data-help-watch="off" hidden>None of your sources has it on
+                        yet.</span>
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-nightly" data-list-item data-filter-topic="searches" data-keywords="runs left last lasts through buy more runs get more runs nightly packs bundles bought allowance month refresh" data-signed-in>
+                  <summary>How long do my runs last, and how do I get more?</summary>
+                  <div class="trust-answer">
+                    <!-- Your runs in one line from the store (round 6 part 2, UAT-RM-4, placement U-N6):
+                         the runs ring lives in Purchases (its home), with snapshots on the Dashboard
+                         and Searches, so Help says the figures once and links there. -->
+                    <p class="help-runs-line" id="help-runs-line">You have <span data-metric="watch.nightly.freeLeft">4</span> of <span data-metric="watch.nightly.limit">10</span> runs left this month; they last through <span data-metric="watch.nightly.lastsThrough">Sat, Oct 3</span>.</p>
+                    <p>
+                      Every search, Keep watch check, Gmail scan, and daily summary email uses one
+                      run, so that date counts everything you turned on.
+                      <span id="help-nightly-month"><span data-metric="watch.nightly.neededForMonth">83</span>
+                        more keep everything running through
+                        <span data-metric="watch.nightly.monthEnd">Sat, Oct 31</span>, and your free
+                        runs return <span data-metric="watch.nightly.refreshesOn">Sun, Nov 1</span>.</span>
+                      <a href="./usage-preview.html#runway">Usage</a> shows what used each run.
+                      Purchases adds runs by count, in packs or in bundles with AI credits. Every
+                      price is a sample and nothing is charged; in this prototype the runs are added
+                      at once.
+                    </p>
+                    <p class="help-answer-actions">
+                      <a class="compact-action" href="./shop-preview.html#nightly">Your runs in Purchases</a>
+                    </p>
+                  </div>
+                </details>
+
+                <h3 class="help-faq-group" data-faq-group="ai">AI, keys &amp; prompts</h3>
+                <details class="trust-question" id="faq-assist" data-list-item data-filter-topic="ai" data-keywords="deputy assist ai what is reading listings scoring fit tailoring cover letters answers readiness email replies tokens credits keep watch nightly">
+                  <summary>What is Deputy Assist?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      Deputy Assist is your deputy's AI work: reading job listings, scoring fit,
+                      tailoring your résumé, writing cover letters, drafting application answers
+                      and replies, reading application emails, and checking readiness. It's
+                      counted in tokens: on your own key, or on AI credits on our platform. Each
+                      search, Keep watch check, Gmail scan, and daily email is counted in runs. You
+                      can see both over any time in Usage. You choose what
+                      runs Deputy Assist, or turn it off and filter roles by keywords instead.
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-ai-setting" data-list-item data-filter-topic="ai" data-keywords="ai setting one setting choice model which ai source per source per search per task change platform credits own key keyword filtering off">
+                  <summary>What runs Deputy Assist, and can one search use a different AI?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      One setting for your account runs every search, Keep watch check, and draft,
+                      with one model: your OpenAI or Anthropic key with the model you chose for it,
+                      AI credits on the platform model you choose, or keyword filtering, which
+                      turns Deputy Assist off. There's no separate setting for a source or a task.
+                      A single run differs only when it says so: Run again can use AI credits for
+                      that one run, and a key that reaches its limit can fall back to them. Each run
+                      keeps what it ran with in its history, and a change applies from the next run.
+                    </p>
+                    <p class="help-answer-setting" data-signed-in>
+                      <span><span data-help-ai-summary>Every search and draft uses gpt-5-mini on your OpenAI key</span>.</span>
+                      <a class="chart-action" id="help-ai-change" href="./ai-preview.html#ai">Change<span class="sr-only"> the AI setting</span></a>
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-models" data-list-item data-filter-topic="ai" data-keywords="model models platform ministral gpt-oss deepseek bedrock choose change which recommended speed one setting">
+                  <summary>Which models can AI credits use?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      Three models we tested for your deputy's work, each on Amazon Bedrock in your
+                      home Region. Your account uses one of them for all its work on AI credits,
+                      chosen in the same one setting as your keys, and a change applies from the
+                      next run.
+                    </p>
+                    <ul class="help-models" id="help-models">
+                      <li><strong class="item-title">Ministral 3 14B</strong> <span class="status-pill">Recommended</span> <span class="help-model-speed">2.1 s a call in our test</span></li>
+                      <li><strong class="item-title">gpt-oss-120b</strong> <span class="help-model-speed">4.8 s a call in our test</span></li>
+                      <li><strong class="item-title">DeepSeek V3.2</strong> <span class="help-model-speed">9.5 s a call in our test</span></li>
+                    </ul>
+                    <p class="help-answer-setting" data-signed-in>
+                      <span>Your platform model is <span data-metric="ai.model.name">Ministral 3 14B</span>.</span>
+                      <a class="chart-action" href="./ai-preview.html#model">Change<span class="sr-only"> the platform model</span></a>
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-keys" data-list-item data-filter-topic="ai" data-keywords="own key keys openai anthropic api model change provider byot cost credits charge">
+                  <summary>Can I use my own AI key, and change its model?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      Yes. Add an OpenAI or Anthropic key in AI &amp; credits, one per provider.
+                      Work on your key uses none of your AI credits and we never charge for it,
+                      though your provider may; the job data a run needs goes to that provider,
+                      which you agree to when you save the key. On a saved key, Change model lists
+                      the model we recommend first. Larger models cost more per token on your key and
+                      can use more tokens.
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-limit" data-list-item data-filter-topic="ai" data-keywords="limit token tokens own key cap budget spend pause day week month reached reset platform credits fallback">
+                  <summary>Can I limit the tokens my own key uses?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      Yes. In AI &amp; credits, set an amount of tokens for a day, a week, or a
+                      month, counted in UTC, and choose what happens when your key reaches it:
+                      Pause AI work until the limit resets, or Use platform credits, so Deputy
+                      Assist switches to your AI credits while at least a search's worth is left.
+                      A run already going finishes, and its tokens still count. Only your own keys
+                      count toward it.
+                    </p>
+                    <p data-signed-in>
+                      <span data-help-limit="set">Your limit is
+                        <span data-metric="ai.limit.tokens">250,000</span> tokens
+                        <span data-help-limit-period>a month</span>, with
+                        <span data-metric="ai.limit.used">49,810</span> used
+                        <span data-help-limit-label>this month</span>; it resets
+                        <span data-metric="ai.limit.resetsAt">Sun, Nov 1</span>, 00:00 UTC.</span>
+                      <span data-help-limit="none" hidden>You haven't set a limit, so your key runs
+                        without one.</span>
+                      <span data-help-limit-next>When it's reached, AI work pauses.</span>
+                    </p>
+                    <p class="help-answer-actions" data-signed-in>
+                      <a class="compact-action" id="help-limit-action" href="./ai-preview.html#limit">Change limit</a>
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-prompts" data-list-item data-filter-topic="ai" data-keywords="prompt prompts instructions customize customise edit reset version versions system default guardrails checks safety rules model llm">
+                  <summary>Can I see and change the prompts your deputy uses?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      Yes. Each of the <span data-metric="prompts.total">8</span> AI tasks has its
+                      prompt in <a href="./prompts-preview.html">Settings, Prompts</a>: reading
+                      listings, scoring fit, tailoring the résumé, writing the cover letter, drafting
+                      application answers, checking readiness, reading application emails, and
+                      drafting replies. Prompts is the one place to edit them; every other page shows
+                      a short summary with Open in Prompts. You can rewrite a task's
+                      instructions, keep each version, and go back to any version or to the
+                      system default; every version is checked against our guardrails before it's
+                      saved. Every task runs on the one model of your AI setting. Its safety rules
+                      stay locked: text from a job page is only data, the answer is only data, and
+                      your deputy never browses, sends, applies, or pays because a page asks.
+                    </p>
+                    <p class="help-answer-actions" data-signed-in>
+                      <a class="compact-action" id="help-prompt-open" href="./prompts-preview.html?prompt=rank" data-return-link>Open Score fit in Prompts</a>
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-prompt-tests" data-list-item data-filter-topic="ai" data-keywords="prompt test testing tested version new live canary trial share runs rollback roll back rolled back auto rollback did not pass failed fail minimum drop points kept by you agreement with you test score keep rate limit">
+                  <summary>How is a new prompt version tested, and when does it roll back?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      Before a version you write goes live, your deputy tests it: it replays the
+                      version on your last <span data-help-rollout="decisions">40</span> decisions,
+                      scores how often it agrees with what you decided (its Test score), and runs
+                      the guardrail checks. You can leave while it runs; your deputy tells you when
+                      it's done. It fails if its Test score is below
+                      <span data-help-rollout="minimum">80</span>%, or more than
+                      <span data-help-rollout="drop">5 points</span> below the Test score of the
+                      version in use. A version that fails never goes live: it reads Did not pass,
+                      with the reason, and the version in use stays.
+                    </p>
+                    <p>
+                      A version that passes is tried on <span data-help-rollout="share">20</span>% of
+                      runs for <span data-help-rollout="days">3 days</span> first. Then Kept by you
+                      (of what it produced in real use, the share you kept) decides: below
+                      <span data-help-rollout="minimum">80</span>%, or more than
+                      <span data-help-rollout="drop">5 points</span> below the version in use, and
+                      your deputy rolls it back by itself. Only a version on trial or in use is
+                      ever rolled back, by these rules or by you.
+                      <span data-signed-in>Change these limits for your account or one prompt in
+                        <a href="./prompts-preview.html">Settings, Prompts</a>.</span>
+                    </p>
+                  </div>
+                </details>
+
+                <h3 class="help-faq-group" data-faq-group="credits">Credits, Purchases &amp; support</h3>
+                <details class="trust-question" id="faq-credits" data-list-item data-filter-topic="credits" data-keywords="ai credits credit tokens price prices pricing cost costs pay charge margin aws amazon bedrock rate tax checkout region free monthly bonus bought buy refresh">
+                  <summary>How do AI credits work, and what do they cost?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      AI credits pay for Deputy Assist on our platform. They're prepaid value,
+                      shown as tokens on your account's model. Every month brings free credits
+                      worth <span data-help-credits="free">250,000</span> tokens on
+                      <span data-help-credits="model">Ministral 3 14B</span>, refreshed on the 1st
+                      (UTC); a friend's first search earns you both bonus credits; and you can buy
+                      more. Free credits are used first, then bonus, then bought ones.
+                    </p>
+                    <p>
+                      Credits cost what Amazon Bedrock charges for your model in your home Region,
+                      plus a <span data-metric="ai.price.marginPct">10</span>% margin. For
+                      <span data-help-price-model>Ministral 3 14B</span> in
+                      <span data-help-pricing="regionName">US East (N. Virginia)</span>, AWS
+                      charges <span data-metric="ai.price.ministral-3-14b.awsIn">$0.20</span> a
+                      million tokens, so its credits cost
+                      <span data-metric="ai.price.ministral-3-14b.in">$0.22</span>.
+                      <span data-help-pricing="tax">Tax is added at checkout, based on your billing address.</span>
+                      Your own key never uses credits.
+                    </p>
+                    <p>
+                      AWS's rates are from
+                      <a id="help-pricing-source" href="https://aws.amazon.com/bedrock/pricing/" target="_blank" rel="noopener"><span data-help-pricing="source">Amazon Bedrock on-demand pricing, Standard tier</span><span class="sr-only"> (opens Amazon’s page in a new tab)</span></a>,
+                      checked <span data-metric="ai.price.checkedOn">Thu, Oct 1</span>.
+                    </p>
+                    <p class="sample-note" data-help-pricing="note">Sample prices · nothing is charged</p>
+                    <p data-signed-in>
+                      You have <span data-metric="ai.credits.left">339,100</span> tokens of credits
+                      left, and your free credits refresh
+                      <span data-metric="ai.credits.refreshesOn">Sun, Nov 1</span>.
+                    </p>
+                    <p class="help-answer-actions" data-signed-in>
+                      <button type="button" class="compact-action" data-topup-open="credits">Buy credits</button>
+                      <a class="compact-action" href="./shop-preview.html#prices">How prices are made</a>
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-shop" data-list-item data-filter-topic="credits" data-keywords="shop buy credits runs nightly packs bundles bundle discount purchase purchases price prices sample settings" data-signed-in>
+                  <summary>What can I buy in Purchases?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      In <a href="./shop-preview.html">Purchases</a>, in Settings: AI credits for Deputy Assist,
+                      runs for every search, and bundles of both. A bundle's discount is on its
+                      runs only, so credits always cost the AWS rate plus the margin. Buy credits
+                      and Get more runs, wherever you see them, open the same
+                      choices. Every price is a sample: nothing is charged, and in this prototype
+                      what you buy is added at once, with its receipt in
+                      <a href="./shop-preview.html#receipts">Receipts</a>.
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-support" data-list-item data-filter-topic="credits" data-keywords="support supporter supporters donate donation give monthly once pledge benefits list name q&amp;a early access vote tax deductible charity" data-signed-in>
+                  <summary>Can I support JobDeputy, and what do supporters get?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      Support isn't open yet. In Purchases,
+                      <a href="./shop-preview.html#support">Support JobDeputy</a>, choose once or
+                      monthly to say you'd like to; you'll choose an amount when it opens, and
+                      Withdraw undoes it.
+                      <span data-help-support hidden>You said you'd like to give
+                        <span data-help-cadence>monthly</span>.</span>
+                      As thanks, supporters can have these benefits, all planned:
+                    </p>
+                    <ul class="help-benefits" id="help-benefits">
+                      <li><strong class="item-title">The supporters list</strong> <span>Your name on the supporters list on our website, if you opt in, shown the way you choose. Change it or leave any time.</span></li>
+                      <li><strong class="item-title">A quarterly Q&amp;A</strong> <span>An online question and answer session with the team, every quarter.</span></li>
+                      <li><strong class="item-title">Early access</strong> <span>New features to try before everyone else.</span></li>
+                      <li><strong class="item-title">A vote on what we build</strong> <span>Help choose what we build next.</span></li>
+                    </ul>
+                    <p data-help-support-note>JobDeputy isn’t a charity, so support isn’t tax deductible, and the benefits are thanks, not a purchase.</p>
+                  </div>
+                </details>
+
+                <h3 class="help-faq-group" data-faq-group="privacy">Privacy &amp; your data</h3>
+                <details class="trust-question" id="faq-data" data-list-item data-filter-topic="privacy" data-keywords="where data stored region home united states india united kingdom residency encrypted">
+                  <summary>Where is my data stored?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      In the home Region you choose at sign-up: the United States, India, or the
+                      United Kingdom. Your profile, documents, searches, found roles, and encrypted
+                      keys stay there, and nothing is copied to another Region. When a run uses
+                      your own AI key, the job data it needs goes to that provider.
+                      <span data-signed-in>This account's Region is the United States.</span>
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-region" data-list-item data-filter-topic="privacy" data-keywords="change region move travel locked">
+                  <summary>Can I change my home Region?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      Not yet. The Region is set at sign-up and locked so your data never moves.
+                      Moving to another Region will mean exporting your data, deleting the account,
+                      and signing up there.
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-delete" data-list-item data-filter-topic="privacy" data-keywords="delete deletion account erase export download copy close">
+                  <summary>How do I delete my account or export my data?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      Deleting your account erases your sign-in, profile, documents, searches,
+                      keys, site passwords, and every record about you in your home Region, except
+                      the agreements you signed: we keep those permanently, apart from your
+                      account, and a new account signs the agreement again. Export, a download of
+                      everything, is planned for launch.
+                      <span data-signed-in>Request deletion in
+                        <a href="./account-preview.html">Settings, Account</a>; you type
+                        delete my account to confirm. In this prototype nothing is deleted.</span>
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-gmail" data-list-item data-filter-topic="privacy" data-keywords="gmail email mail read reads never sends one-time code status update move undo reply replies draft disconnect permission scopes">
+                  <summary>What does your deputy read in my email?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      Only mail about your job search, once you connect Gmail, and read-only, so
+                      it can't send, delete, move, or change any message.
+                    </p>
+                    <ul class="help-pair">
+                      <li>
+                        <strong class="item-title">It reads</strong>
+                        <ul data-gmail-list="reads">
+                          <li>One-time sign-in codes from job sites</li>
+                          <li>Emails from employers about your applications</li>
+                        </ul>
+                      </li>
+                      <li>
+                        <strong class="item-title">It never</strong>
+                        <ul data-gmail-list="never">
+                          <li>Reads other email, such as personal messages or newsletters</li>
+                          <li>Sends email: you send every reply yourself</li>
+                          <li>Keeps a one-time code: it’s shown once, then deleted</li>
+                        </ul>
+                      </li>
+                    </ul>
+                    <p>
+                      When an employer's email says your application moved forward or closed,
+                      your deputy moves it in Applications and tells you, and you can undo the
+                      move. When an email needs an answer, it can draft a reply for you to edit
+                      and send from your own email. It keeps only the facts it needs, such as the
+                      employer, the new status, and the subject line.
+                    </p>
+                    <p>
+                      While Gmail is connected, your deputy scans it once a day, at 07:00 your time,
+                      over the last 48 hours of mail, and Scan now reads what came since. Each scan
+                      uses one run. Settings, Connections lists the last scans; in Applications,
+                      Sync from Gmail scans and moves the cards, and each card an email moved says
+                      so, with Undo.
+                    </p>
+                    <p>
+                      <span data-signed-in data-gmail-state="connected">Connected as
+                        <span data-gmail-email>alex.morgan@example.com</span> since
+                        <span data-gmail-since>Sep 28</span>; you can disconnect it any time in
+                        <a href="./connections-preview.html#gmail">Settings, Connections</a>.</span>
+                      <span data-signed-in data-gmail-state="disconnected" hidden>Gmail isn’t
+                        connected; you can connect it in
+                        <a href="./connections-preview.html#gmail">Settings, Connections</a>, after a consent
+                        step.</span>
+                      Nothing reads email in this prototype.
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-site-accounts" data-list-item data-filter-topic="privacy" data-keywords="site account accounts employer sign up create password passwords vault generate generated choose strong one-time code show copy log captcha">
+                  <summary>Can my deputy create accounts on employers' sites, and where are the passwords?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      Yes, when a site asks for an account before you can apply, in an application
+                      you started. Your deputy creates it in your name, with your email address,
+                      and you choose the password: a strong one your deputy generates (20 random
+                      characters), or your own (at least 12 characters, and not a common one). The
+                      site's one-time code is read from your Gmail, shown once, and never stored.
+                    </p>
+                    <p>
+                      Passwords are kept encrypted in your vault, in your home Region, and used only
+                      to sign in to that site for your applications. You can see any of them in
+                      Settings, Connections after you confirm it's you: each stays hidden until you choose Show,
+                      and the vault log records every time one is shown. At a CAPTCHA your deputy
+                      stops and asks you; it never gets around one.
+                      <span data-signed-in>Your site accounts are in
+                        <a href="./connections-preview.html#site-accounts">Settings, Connections</a>.</span>
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-self-id" data-list-item data-filter-topic="privacy" data-keywords="self-identification gender race ethnicity veteran disability voluntary eeo prefer not to say">
+                  <summary>Why does Profile ask for self-identification?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      Only so your deputy can answer employers' voluntary questions the way you
+                      choose. It's never used to rank or filter roles, never required, and never
+                      counted as missing. Every question offers Prefer not to say or I don’t wish
+                      to answer, and until you answer, your deputy chooses Decline to answer on
+                      forms. You can change or clear it any time.
+                    </p>
+                  </div>
+                </details>
+
+                <h3 class="help-faq-group" data-faq-group="access">Accessibility &amp; motion</h3>
+                <details class="trust-question" id="faq-motion" data-list-item data-filter-topic="access" data-keywords="motion animation pause stop play reduced reduce moving panda">
+                  <summary>How do I stop the animations?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      On the sign-in pages, Pause story holds the story. Once you're signed in,
+                      Pause motion in your deputy's panel (under Activity on smaller screens) stops
+                      every animation on every page until you press Play motion, and the sign-in
+                      story then waits for Play story. If your device asks for reduced motion,
+                      nothing moves at all.
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-access" data-list-item data-filter-topic="access" data-keywords="accessibility keyboard screen reader zoom large text focus colour color blind">
+                  <summary>Can I use JobDeputy with a keyboard, a screen reader, or zoom?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      Yes. Every task works from the keyboard with visible focus, fields keep their
+                      labels, and changes are announced once. Pages reflow without sideways
+                      scrolling down to 320 pixels wide, about 400% zoom on a laptop, and a colour
+                      never carries meaning alone: each has a name and a count beside it.
+                    </p>
+                  </div>
+                </details>
+
+                <h3 class="help-faq-group" data-faq-group="signin">Signing in</h3>
+                <details class="trust-question" id="faq-forgot" data-list-item data-filter-topic="signin" data-keywords="forgot password reset recover email link">
+                  <summary>What if I forget my password?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      Choose Forgot password? on Sign in and enter your email and your account's
+                      home Region. If they match an account, reset instructions arrive by email,
+                      and the link works once, for a short time.
+                    </p>
+                    <p class="help-answer-actions">
+                      <a class="compact-action" href="./access-preview.html?mode=reset&amp;skipLoader">Reset your password</a>
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-sign-in" data-list-item data-filter-topic="signin" data-keywords="cannot sign in can't log in login region google linkedin account error">
+                  <summary>Why can't I sign in?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      Check the home Region first: accounts are looked up only in the Region you
+                      choose, so pick the one you signed up in, even when you travel. If you
+                      created the account with Google or LinkedIn, use Continue with Google or
+                      Continue with LinkedIn. For your privacy, the message never says whether an
+                      email has an account.
+                    </p>
+                  </div>
+                </details>
+                <details class="trust-question" id="faq-linkedin" data-list-item data-filter-topic="signin" data-keywords="linkedin sign in continue with linkedin import profile details export zip pdf share shares name email photo post">
+                  <summary>Can I sign in with LinkedIn, or import my details from it?</summary>
+                  <div class="trust-answer">
+                    <p>
+                      Yes. Continue with LinkedIn, on Sign in and Create account, signs you in:
+                      LinkedIn shares your name, email address, and profile photo with us, and
+                      nothing else. We never see your LinkedIn password or post anything for you.
+                    </p>
+                    <p>
+                      To import your details, download your data from LinkedIn yourself (the ZIP
+                      file from Settings, Data privacy, Get a copy of your data) or save your
+                      profile as a PDF, then choose Import from LinkedIn in Settings, Connections. Your deputy
+                      shows each detail it found next to what your profile has and saves only the
+                      ones you choose; the file isn't kept.
+                      <span data-signed-in><a href="./connections-preview.html#linkedin">Import from LinkedIn</a>
+                        is in Connections.</span>
+                    </p>
+                  </div>
+                </details>
+              </div>
+
+              <div class="empty-state help-empty" id="faq-empty" hidden>
+                <div class="empty-state-art" data-deputy-prop="magnifier" aria-hidden="true"></div>
+                <h3 class="empty-state-title">No answers match.</h3>
+                <p class="empty-state-copy">Try a shorter word, or show every answer again.</p>
+                <div class="empty-state-actions">
+                  <button class="compact-action" id="help-clear" type="button">Show all answers</button>
+                  <a class="compact-action" href="#contact-form" data-signed-in>Ask for help</a>
+                  <a class="compact-action" href="./login-preview.html?skipLoader" data-public-only>Sign in</a>
+                </div>
+              </div>
+              <p class="sample-note" data-signed-in>Sample data · not connected</p>
+            </div>
+          </section>
+
+          <!-- Guides (round 6, G8): an in-product article for each What's new item that needs one,
+               from JobDeputyStore.guides(): what changed, why it matters, the steps, and Try it.
+               ?guide=<id>#guides opens one as an article with Back to all guides. Public Help lists
+               only the guides marked public (guide.public), and hides the section without one. -->
+          <section
+            class="task-surface"
+            id="guides"
+            aria-labelledby="guides-title"
+            data-help-guides
+            data-tour-step="2"
+            data-tour-title="I explain what’s new here."
+            data-tour-text="Each guide says what changed, why it matters, and the steps. Try it opens the place where I do it."
+          >
+            <span class="section-label">Guides</span>
+            <h2 id="guides-title">How the new things work.</h2>
+            <p class="section-copy">What changed, why it matters, and the steps to try it.</p>
+            <p class="help-guide-missing" id="guide-missing" hidden>
+              That guide isn’t here. Here is every guide.
+            </p>
+            <article class="help-guide" id="guide-article" aria-labelledby="guide-article-title" tabindex="-1" hidden>
+              <p class="help-guide-date"><span data-guide-field="dateText"></span> · Guide</p>
+              <h3 class="help-guide-title" id="guide-article-title" data-guide-field="title">Guide</h3>
+              <p class="help-guide-summary" data-guide-field="summary"></p>
+              <div class="help-guide-part">
+                <h4 class="help-guide-heading">What changed</h4>
+                <p data-guide-field="whatChanged"></p>
+              </div>
+              <div class="help-guide-part">
+                <h4 class="help-guide-heading">Why it matters</h4>
+                <p data-guide-field="whyItMatters"></p>
+              </div>
+              <div class="help-guide-part">
+                <h4 class="help-guide-heading">How to do it</h4>
+                <ol class="help-guide-steps" id="guide-article-steps"></ol>
+              </div>
+              <p class="help-guide-actions">
+                <a class="primary-action" id="guide-article-try" href="./home-preview.html?skipLoader">Try it</a>
+                <a class="compact-action" id="guide-article-back" href="./trust-preview.html#guides">Back to all guides</a>
+              </p>
+              <p class="sample-note" data-guide-field="note"></p>
+            </article>
+            <ol class="help-guides" id="help-guides" aria-label="Guides, newest first"></ol>
+            <p class="help-guides-more" id="help-guides-more" hidden>
+              <button type="button" class="chart-action see-all-open" id="help-guides-all" aria-haspopup="dialog">See all</button>
+            </p>
+            <p class="sample-note help-guides-note" id="guides-note">Sample data · not connected</p>
+          </section>
+
+          <!-- Your agreements (round 6 part 2, P-6): the home is Settings, Account #agreements (the
+               version waiting, its reminders, what pauses and never does, Sign now, and every copy
+               you signed). Help keeps this short card: the version waiting and its pause date in one
+               line, Review and sign, and the link; trust-preview.html#agreements still lands here.
+               From JobDeputyStore.agreements(). -->
+          <section
+            class="task-surface"
+            id="agreements"
+            aria-labelledby="agreements-title"
+            data-signed-in
+            data-tour-step="3"
+            data-tour-title="Your agreements are in Account."
+            data-tour-text="I keep every copy you signed in Settings, Account. When a new version waits for you, this line says when my work would pause."
+          >
+            <span class="section-label">Your agreements</span>
+            <h2 id="agreements-title">Your agreements are in Settings, Account.</h2>
+            <p class="help-agreements-line" id="agreements-line">
+              <span data-help-agreement="pending">Version <span data-agreements-version>2026.10</span> waits for your signature; your deputy’s work pauses on <span data-metric="agreement.pauseAt">Thu, Oct 15</span> if it isn’t signed.</span>
+              <span data-help-agreement="overdue" hidden>Version <span data-agreements-version>2026.10</span> isn’t signed, so your deputy’s work is paused until you sign (the overdue demo, from <a href="#help-overdue">Demos</a>).</span>
+              <span data-help-agreement="signed" hidden>You signed the current version, <span data-agreements-current>2026.10</span>. Every copy you signed is kept for good.</span>
+            </p>
+            <p class="help-agreements-actions">
+              <a class="primary-action" id="agreements-sign" href="./agreement-preview.html?mode=update&amp;return=trust-preview.html%23agreements">Review and sign<span class="sr-only"> version <span data-agreements-version>2026.10</span></span></a>
+              <a class="compact-action" id="agreements-open" href="./account-preview.html#agreements">Open your agreements</a>
+            </p>
+          </section>
+
+          <!-- Demos: each page's guided tour, started on its page with ?tour=1. -->
+          <section
+            class="task-surface"
+            id="demos"
+            aria-labelledby="demos-title"
+            data-signed-in
+            data-tour-step="4"
+            data-tour-title="Watch me show each page."
+            data-tour-text="Start any page’s tour here or run setup again. See a large account shows how I handle far more data than the usual sample."
+          >
+            <span class="section-label">Demos</span>
+            <h2 id="demos-title">Replay a tour.</h2>
+            <p class="section-copy">Each page shows you its numbers and colours, a step at a time.</p>
+            <ol class="help-demos" id="help-demos">
+              <li class="help-demo" data-demo="dashboard">
+                <span class="help-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.75 10.5 12 3.75l8.25 6.75" /><path d="M5.75 9v10.5h12.5V9" /><path d="M10 19.5v-5h4v5" /></svg></span>
+                <h3 class="help-demo-title">Dashboard</h3>
+                <p class="help-demo-about">Your tiles, To-do and What’s new, every prompt, Gmail’s daily scan, usage, and keywords by role.</p>
+                <p class="help-demo-meta"><span class="status-pill" data-demo-seen hidden>Seen</span></p>
+                <a class="compact-action help-demo-start" href="./home-preview.html?skipLoader&amp;tour=1">Start the Dashboard tour</a>
+              </li>
+              <li class="help-demo" data-demo="searches">
+                <span class="help-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.25" /><path d="m15.25 15.25 4.75 4.75" /></svg></span>
+                <h3 class="help-demo-title">Searches</h3>
+                <p class="help-demo-about">Its numbers, your sources, a live search, Keep watch, and the prompts.</p>
+                <p class="help-demo-meta"><span class="status-pill" data-demo-seen hidden>Seen</span></p>
+                <a class="compact-action help-demo-start" href="./searches-preview.html?tour=1">Start the Searches tour</a>
+              </li>
+              <li class="help-demo" data-demo="jobs">
+                <span class="help-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="7.25" width="17" height="12.5" rx="2" /><path d="M8.75 7.25V5.5c0-.83.67-1.5 1.5-1.5h3.5c.83 0 1.5.67 1.5 1.5v1.75" /><path d="M3.5 12.5h17" /></svg></span>
+                <h3 class="help-demo-title">Job matches</h3>
+                <p class="help-demo-about">The review queue, its filters, the fit colours, and Why it fits.</p>
+                <p class="help-demo-meta"><span class="status-pill" data-demo-seen hidden>Seen</span></p>
+                <a class="compact-action help-demo-start" href="./jobs-preview.html?tour=1">Start the Job matches tour</a>
+              </li>
+              <li class="help-demo" data-demo="applications">
+                <span class="help-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.75" y="4.25" width="4.5" height="11.5" rx="1.25" /><rect x="9.75" y="4.25" width="4.5" height="15.5" rx="1.25" /><rect x="15.75" y="4.25" width="4.5" height="8" rx="1.25" /></svg></span>
+                <h3 class="help-demo-title">Applications</h3>
+                <p class="help-demo-about">The board as one flow, who did each step, Sync from Gmail, and your rules.</p>
+                <p class="help-demo-meta"><span class="status-pill" data-demo-seen hidden>Seen</span></p>
+                <a class="compact-action help-demo-start" href="./applications-preview.html?tour=1">Start the Applications tour</a>
+              </li>
+              <li class="help-demo" data-demo="resumes">
+                <span class="help-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.75 3.75h-6.5c-.97 0-1.75.78-1.75 1.75v13c0 .97.78 1.75 1.75 1.75h9.5c.97 0 1.75-.78 1.75-1.75V8.25Z" /><path d="M13.75 3.75v4.5h4.5" /><path d="M8.75 12.25h6.5M8.75 15.75h6.5" /></svg></span>
+                <h3 class="help-demo-title">Résumés</h3>
+                <p class="help-demo-about">Your drafts, the skills found roles ask for, previews, and templates.</p>
+                <p class="help-demo-meta"><span class="status-pill" data-demo-seen hidden>Seen</span></p>
+                <a class="compact-action help-demo-start" href="./documents-preview.html?tour=1">Start the Résumés tour</a>
+              </li>
+              <li class="help-demo" data-demo="materials">
+                <span class="help-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.75 3.75h-6.5c-.97 0-1.75.78-1.75 1.75v13c0 .97.78 1.75 1.75 1.75h9.5c.97 0 1.75-.78 1.75-1.75V8.25Z" /><path d="M13.75 3.75v4.5h4.5" /><path d="m9 17.25 5.5-5.5 1.75 1.75-5.5 5.5H9Z" /></svg></span>
+                <h3 class="help-demo-title">Materials</h3>
+                <p class="help-demo-about">Approve and apply, the template and length, your draft, and its printed pages.</p>
+                <p class="help-demo-meta"><span class="status-pill" data-demo-seen hidden>Seen</span></p>
+                <a class="compact-action help-demo-start" href="./materials-preview.html?app=search-infra&amp;tour=1">Start the Materials tour</a>
+              </li>
+              <li class="help-demo" data-demo="profile">
+                <span class="help-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="8.25" r="3.75" /><path d="M4.75 20c.6-3.75 3.4-6 7.25-6s6.65 2.25 7.25 6" /></svg></span>
+                <h3 class="help-demo-title">Profile</h3>
+                <p class="help-demo-about">What your deputy still needs to apply, your answers, and what forms asked.</p>
+                <p class="help-demo-meta"><span class="status-pill" data-demo-seen hidden>Seen</span></p>
+                <a class="compact-action help-demo-start" href="./profile-preview.html?tour=1">Start the Profile tour</a>
+              </li>
+              <li class="help-demo" data-demo="account">
+                <span class="help-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9.88 5.85L10.48 3.38L13.52 3.38L14.12 5.85L16.26 7.09L18.7 6.38L20.22 9.01L18.38 10.76L18.38 13.24L20.22 14.99L18.7 17.62L16.26 16.91L14.12 18.15L13.52 20.62L10.48 20.62L9.88 18.15L7.74 16.91L5.3 17.62L3.78 14.99L5.62 13.24L5.62 10.76L3.78 9.01L5.3 6.38L7.74 7.09Z" /><circle cx="12" cy="12" r="3" /></svg></span>
+                <h3 class="help-demo-title">Account</h3>
+                <p class="help-demo-about">How you sign in, the emails we send, your home Region, what you signed, and your data.</p>
+                <p class="help-demo-meta"><span class="status-pill" data-demo-seen hidden>Seen</span></p>
+                <a class="compact-action help-demo-start" href="./account-preview.html?tour=1">Start the Account tour</a>
+              </li>
+              <li class="help-demo" data-demo="connections">
+                <span class="help-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M10.25 13.75a3.75 3.75 0 0 0 5.3 0l3-3a3.75 3.75 0 0 0-5.3-5.3l-1.25 1.25" /><path d="M13.75 10.25a3.75 3.75 0 0 0-5.3 0l-3 3a3.75 3.75 0 0 0 5.3 5.3l1.25-1.25" /></svg></span>
+                <h3 class="help-demo-title">Connections</h3>
+                <p class="help-demo-about">Gmail and its daily scan, LinkedIn, your site accounts, and your AI keys.</p>
+                <p class="help-demo-meta"><span class="status-pill" data-demo-seen hidden>Seen</span></p>
+                <a class="compact-action help-demo-start" href="./connections-preview.html?tour=1">Start the Connections tour</a>
+              </li>
+              <li class="help-demo" data-demo="prompts">
+                <span class="help-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.75 6.25h14.5M4.75 12h9.5M4.75 17.75h6.5" /><path d="m15.75 15.5 2 2 3.5-3.75" /></svg></span>
+                <h3 class="help-demo-title">Prompts</h3>
+                <p class="help-demo-about">How each prompt is doing, its test scores and versions, and when it rolls back.</p>
+                <p class="help-demo-meta"><span class="status-pill" data-demo-seen hidden>Seen</span></p>
+                <a class="compact-action help-demo-start" href="./prompts-preview.html?tour=1">Start the Prompts tour</a>
+              </li>
+              <li class="help-demo" data-demo="ai-credits">
+                <span class="help-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 3.25c.5 3.2 2.05 4.75 5.25 5.25-3.2.5-4.75 2.05-5.25 5.25-.5-3.2-2.05-4.75-5.25-5.25C6.95 8 8.5 6.45 9 3.25Z" /><circle cx="17.25" cy="14.75" r="2.5" /><path d="m15.5 16.5-4.25 4.25M13 19l1.5 1.5" /></svg></span>
+                <h3 class="help-demo-title">AI &amp; credits</h3>
+                <p class="help-demo-about">Your one AI setting, the model, your credits, and your key’s limit.</p>
+                <p class="help-demo-meta"><span class="status-pill" data-demo-seen hidden>Seen</span></p>
+                <a class="compact-action help-demo-start" href="./ai-preview.html?tour=1">Start the AI &amp; credits tour</a>
+              </li>
+              <li class="help-demo" data-demo="usage">
+                <span class="help-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.75 19.25h14.5" /><path d="M7.25 16.25v-4.5M12 16.25V6.75M16.75 16.25v-7" /></svg></span>
+                <h3 class="help-demo-title">Usage</h3>
+                <p class="help-demo-about">Your runs and tokens over any time, by key, model, task, or prompt, and how long they last.</p>
+                <p class="help-demo-meta"><span class="status-pill" data-demo-seen hidden>Seen</span></p>
+                <a class="compact-action help-demo-start" href="./usage-preview.html?tour=1">Start the Usage tour</a>
+              </li>
+              <li class="help-demo" data-demo="shop">
+                <span class="help-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5.25 8.25h13.5l-1 11.5H6.25Z" /><path d="M9 10.75V7a3 3 0 0 1 6 0v3.75" /></svg></span>
+                <h3 class="help-demo-title">Purchases</h3>
+                <p class="help-demo-about">Your balances, one quick buy, how prices are made, and every receipt.</p>
+                <p class="help-demo-meta"><span class="status-pill" data-demo-seen hidden>Seen</span></p>
+                <a class="compact-action help-demo-start" href="./shop-preview.html?tour=1">Start the Purchases tour</a>
+              </li>
+              <li class="help-demo" data-demo="activity">
+                <span class="help-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9.25 6.75h10M9.25 12h10M9.25 17.25h10" /><circle cx="5" cy="6.75" r="1" /><circle cx="5" cy="12" r="1" /><circle cx="5" cy="17.25" r="1" /></svg></span>
+                <h3 class="help-demo-title">Activity</h3>
+                <p class="help-demo-about">Everything you, your deputy, and JobDeputy did, with who did it, filters, and Export.</p>
+                <p class="help-demo-meta"><span class="status-pill" data-demo-seen hidden>Seen</span></p>
+                <a class="compact-action help-demo-start" href="./activity-preview.html?tour=1">Start the Activity tour</a>
+              </li>
+              <li class="help-demo" data-demo="invite">
+                <span class="help-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.75" y="8.25" width="16.5" height="4" rx="1" /><path d="M5.25 12.25v6.5c0 .55.45 1 1 1h11.5c.55 0 1-.45 1-1v-6.5" /><path d="M12 8.25v11.5" /><path d="M12 8.25c-2.25 0-4.25-.75-4.25-2.25 0-1 .75-1.75 1.75-1.75 1.75 0 2.5 2 2.5 4Zm0 0c2.25 0 4.25-.75 4.25-2.25 0-1-.75-1.75-1.75-1.75-1.75 0-2.5 2-2.5 4Z" /></svg></span>
+                <h3 class="help-demo-title">Invite friends</h3>
+                <p class="help-demo-about">Your invite link, inviting by email, and your progress.</p>
+                <p class="help-demo-meta"><span class="status-pill" data-demo-seen hidden>Seen</span></p>
+                <a class="compact-action help-demo-start" href="./invite-preview.html?tour=1">Start the Invite friends tour</a>
+              </li>
+            </ol>
+            <div class="help-setup">
+              <p>Setup asks the first-time questions again, with your saved answers filled in.</p>
+              <a class="compact-action" href="./onboarding-preview.html?rerun=1">Run setup again</a>
+            </div>
+            <!-- The overdue demo (round 5, G1): setAgreementDemo('overdue') shows your deputy paused
+                 for the unsigned 2026.10 without moving the clock; the same button ends it, and so
+                 does signing. Once 2026.10 is signed there is nothing to show, and the line says
+                 so beside the disabled button (R5-4). -->
+            <div class="help-setup help-overdue" id="help-overdue">
+              <p id="help-overdue-copy">
+                <span data-help-overdue="off">See your deputy paused for an unsigned agreement:
+                  the banner on each page, what waits, and what keeps working.</span>
+                <span data-help-overdue="on" hidden>Showing the overdue state, also in
+                  <a href="./account-preview.html#agreements">your agreements in Account</a>. Try Run again in
+                  <a href="./searches-preview.html">Searches</a> or a draft in
+                  <a href="./materials-preview.html?app=search-infra">Materials</a>; signing ends
+                  it too.</span>
+                <span data-help-overdue="signed" hidden>The current version is signed, so nothing
+                  is overdue. Reset sample data to see this again.</span>
+              </p>
+              <button class="compact-action" id="help-overdue-toggle" type="button" aria-describedby="help-overdue-copy">See the overdue state</button>
+            </div>
+            <!-- The large account demo (round 6, G7): setScaleDemo('large') shows a much bigger
+                 sample on every page, so you can see how each one handles more data than it can
+                 show (top five plus Other, See all, searchable filters); Back to the usual sample
+                 (setScaleDemo(null)) returns your own sample exactly as you left it. The sizes come
+                 from the store (SCALE_DEMOS). -->
+            <div class="help-setup help-scale" id="help-scale" hidden>
+              <p id="help-scale-copy">
+                <span data-help-scale="off">See a large account: <span data-help-scale-sizes></span>.
+                  Every chart shows its top five plus Other, and long lists open with See all.</span>
+                <span data-help-scale="on" hidden>Showing the large account on every page. Look at
+                  <a href="./home-preview.html?skipLoader">the Dashboard</a>’s charts,
+                  <a href="./jobs-preview.html">Job matches</a>’ source filter,
+                  <a href="./searches-preview.html">Searches</a>, and
+                  <a href="./documents-preview.html">Résumés</a>’ company filter. Back to the usual
+                  sample returns yours, as you left it.</span>
+              </p>
+              <button class="compact-action" id="help-scale-toggle" type="button" aria-describedby="help-scale-copy">See a large account</button>
+            </div>
+            <p class="sr-only" id="help-overdue-announcement" role="status" aria-live="polite" aria-atomic="true"></p>
+          </section>
+
+          <!-- Contact: one place, two paths. Signed out, it points to sign-in. -->
+          <section class="task-surface" id="contact" aria-labelledby="contact-title">
+            <span class="section-label">Contact</span>
+            <h2 id="contact-title"><span data-signed-in>Tell us how it’s going, or where it stopped.</span><span data-public-only>Help with signing in.</span></h2>
+            <div class="help-paths" data-signed-in>
+              <section class="help-path" aria-labelledby="help-path-feedback">
+                <span class="help-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5.75 4.75h12.5c1.1 0 2 .9 2 2v8c0 1.1-.9 2-2 2h-6.5l-4.25 3.5v-3.5H5.75c-1.1 0-2-.9-2-2v-8c0-1.1.9-2 2-2Z" /><path d="M8.25 9.25h7.5M8.25 12.5h4.5" /></svg></span>
+                <h3 id="help-path-feedback">Send feedback</h3>
+                <p>Rate your deputy, share an idea, or tell us what broke.</p>
+                <button class="secondary-action help-path-action" type="button" data-feedback-open aria-haspopup="dialog">
+                  Send feedback
+                </button>
+              </section>
+              <section class="help-path help-path-request" id="contact-form" aria-labelledby="help-path-request">
+                <span class="help-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.75" /><circle cx="12" cy="12" r="3.5" /><path d="m5.8 5.8 3.7 3.7M14.5 14.5l3.7 3.7M18.2 5.8l-3.7 3.7M9.5 14.5l-3.7 3.7" /></svg></span>
+                <h3 id="help-path-request">Get help with a problem</h3>
+                <p>Describe what stopped, and we prepare a private support request.</p>
+                <form class="support-form" id="support-form" novalidate>
+                  <div class="field">
+                    <label class="field-label" for="support-topic">What needs help?</label>
+                    <select class="field-control" id="support-topic">
+                      <option>A search or a source</option>
+                      <option>Job matches</option>
+                      <option>Applications or the autofill preview</option>
+                      <option>Résumés and tailored materials</option>
+                      <option>AI, keys, or credits</option>
+                      <option>Gmail connection</option>
+                      <option>Account or sign-in</option>
+                      <option>Accessibility</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label class="field-label" for="support-message">What happened?</label>
+                    <textarea
+                      class="field-control"
+                      id="support-message"
+                      rows="5"
+                      required
+                      minlength="10"
+                      aria-describedby="support-message-help"
+                      placeholder="What you saw, and what you expected to happen."
+                    ></textarea>
+                    <p class="field-help" id="support-message-help">
+                      Never include passwords, API keys, or private links. Prototype only: nothing
+                      is sent.
+                    </p>
+                    <p class="help-field-error" id="support-message-error" hidden>
+                      Describe what happened in at least 10 characters.
+                    </p>
+                  </div>
+                  <button class="primary-action support-submit" type="submit">
+                    Prepare support request
+                  </button>
+                  <section
+                    class="feedback-panel"
+                    id="support-feedback"
+                    data-kind="success"
+                    hidden
+                    aria-labelledby="support-feedback-title"
+                    aria-describedby="support-feedback-message"
+                  >
+                    <span class="feedback-panel-icon" aria-hidden="true">✓</span>
+                    <span class="feedback-panel-copy">
+                      <strong class="feedback-panel-title" id="support-feedback-title"
+                        >Support request prepared</strong
+                      >
+                      <span class="feedback-panel-message" id="support-feedback-message"
+                        >No message was sent from this prototype. At launch this creates a private
+                        request in your home Region.</span
+                      >
+                    </span>
+                  </section>
+                  <p
+                    class="sr-only"
+                    id="support-announcement"
+                    role="status"
+                    aria-live="polite"
+                    aria-atomic="true"
+                  ></p>
+                </form>
+              </section>
+            </div>
+            <div data-public-only>
+              <p class="section-copy">Sign in to send feedback or get help with your searches.</p>
+              <div class="help-public-contact">
+                <a class="primary-action" href="./login-preview.html?skipLoader">Sign in</a>
+                <a class="secondary-action" href="./access-preview.html?mode=reset&amp;skipLoader">Reset your password</a>
+              </div>
+            </div>
+          </section>
+
+          <section class="task-surface trust-card" id="privacy" aria-labelledby="privacy-title">
+            <span class="section-label">Privacy</span>
+            <h2 id="privacy-title">Your search remains yours.</h2>
+            <p class="section-copy">Your data stays in your home Region, and you decide what leaves it.</p>
+            <ul class="principles">
+              <li>
+                <strong class="item-title">One home Region</strong>
+                <span class="principle-detail"
+                  >An account lives in the Region chosen at sign-up, with its profile, documents,
+                  searches, found roles, and encrypted keys.<span data-signed-in>
+                    This account's Region is the United States.</span
+                  ></span
+                >
+              </li>
+              <li>
+                <strong class="item-title">Read-only, job-only Gmail</strong>
+                <span class="principle-detail"
+                  >Once you connect it, your deputy reads one-time codes and status emails, and
+                  never sends, deletes, or reads other mail.</span
+                >
+              </li>
+              <li>
+                <strong class="item-title">Self-identification never ranks</strong>
+                <span class="principle-detail"
+                  >Voluntary answers fill only employers' voluntary questions; they never rank,
+                  filter, or count roles.</span
+                >
+              </li>
+              <li>
+                <strong class="item-title">You control deletion</strong>
+                <span class="principle-detail"
+                  >Deleting the account erases its records and files through the deletion
+                  workflow, except the agreements you signed, which are kept apart; export is
+                  planned for launch.</span
+                >
+              </li>
+            </ul>
+          </section>
+
+          <section class="task-surface trust-card" id="security" aria-labelledby="security-title">
+            <span class="section-label">Security</span>
+            <h2 id="security-title">Keys are credentials, not profile copy.</h2>
+            <p class="section-copy">Your AI keys are encrypted, never shown again, and yours alone.</p>
+            <ul class="principles">
+              <li>
+                <strong class="item-title">Encrypted, shown by its last four</strong>
+                <span class="principle-detail"
+                  >Keys are encrypted before storage; screens show the provider, model, status, and
+                  last four characters, and the full key never returns to the browser.</span
+                >
+              </li>
+              <li>
+                <strong class="item-title">Provider processing is explicit</strong>
+                <span class="principle-detail"
+                  >Before you save a key, you agree that the job data a run needs goes to that
+                  provider, outside your home Region.</span
+                >
+              </li>
+              <li>
+                <strong class="item-title">Safety rules stay locked</strong>
+                <span class="principle-detail"
+                  >Every AI task treats page text as data and answers only with data; it never
+                  browses, sends, applies, or pays on its own.</span
+                >
+              </li>
+              <li>
+                <strong class="item-title">Public pages only</strong>
+                <span class="principle-detail"
+                  >Searches read public careers pages and job boards, never a page behind your own
+                  sign-in.</span
+                >
+              </li>
+            </ul>
+          </section>
+
+          <section class="task-surface trust-card" id="accessibility" aria-labelledby="accessibility-title">
+            <span class="section-label">Accessibility</span>
+            <h2 id="accessibility-title">The workflow must work without guessing.</h2>
+            <p class="section-copy">Labels, focus, and status text carry every task; motion is optional.</p>
+            <ul class="principles">
+              <li>
+                <strong class="item-title">Keyboard and screen-reader structure</strong>
+                <span class="principle-detail"
+                  >Every control has a name, focus stays visible, and each change is announced
+                  once.</span
+                >
+              </li>
+              <li>
+                <strong class="item-title">Colour never works alone</strong>
+                <span class="principle-detail"
+                  >Each colour has a name and a count beside it, in a tip on hover or focus and in
+                  the chart key on touch screens.</span
+                >
+              </li>
+              <li>
+                <strong class="item-title">Motion you control</strong>
+                <span class="principle-detail"
+                  >Pause motion stops every animation on every page, and reduced motion is honoured
+                  everywhere.</span
+                >
+              </li>
+              <li>
+                <strong class="item-title">Feedback stays near the task</strong>
+                <span class="principle-detail"
+                  >Errors and recovery steps appear beside the field or action they belong
+                  to.</span
+                >
+              </li>
+            </ul>
+          </section>
+
+          <section
+            class="task-surface"
+            id="sample-data"
+            aria-labelledby="sample-data-title"
+            data-signed-in
+            data-tour-step="5"
+            data-tour-title="Start the sample over."
+            data-tour-text="Reset puts the sample data back the way it began, in this browser only. I send nothing."
+          >
+            <span class="section-label">Prototype tools</span>
+            <h2 id="sample-data-title">Reset sample data.</h2>
+            <p class="section-copy">Puts this browser’s sample back to the start. Nothing is sent.</p>
+            <dl class="stat-row trust-sample-stats" id="sample-stats">
+              <div class="stat">
+                <dt class="stat-label">Applications</dt>
+                <dd class="stat-figure" data-metric="apps.tracked">8</dd>
+              </div>
+              <div class="stat">
+                <dt class="stat-label">Searches run</dt>
+                <dd class="stat-figure" data-metric="runs.total">22</dd>
+              </div>
+              <div class="stat">
+                <dt class="stat-label">Tours seen</dt>
+                <dd class="stat-figure" data-metric="tours.seen">0</dd>
+              </div>
+              <div class="stat">
+                <!-- Round 6 part 3 (T6-R5): what the figure counts, in Settings, Prompts' words: the
+                     prompts whose version in use is one of yours (a version of yours on trial, or
+                     not in use, is not counted). -->
+                <dt class="stat-label">Prompts with your version in use</dt>
+                <dd class="stat-figure" data-metric="prompts.customized">6</dd>
+              </div>
+              <div class="stat">
+                <dt class="stat-label">Purchases</dt>
+                <dd class="stat-figure" data-metric="shop.purchases">0</dd>
+              </div>
+              <div class="stat">
+                <dt class="stat-label">Agreements signed</dt>
+                <dd class="stat-figure" data-metric="agreements.signed">1</dd>
+              </div>
+            </dl>
+            <details class="help-reset-details">
+              <summary>What a reset puts back</summary>
+              <p>
+                Applications and job decisions; searches, runs, and the live Amazon search; Keep
+                watch schedules; the AI setting, the platform model, and your key's token limit;
+                what you bought, your Support JobDeputy interest, and the supporters list; the
+                agreement you signed here and the overdue demo (the sample's own signed copy
+                stays); prompts, their versions, tests, and rollbacks; how your deputy applies and
+                your approvals; What's new; tours; Gmail, site accounts, LinkedIn imports, and
+                email updates; your profile and self-identification; résumé defaults, templates,
+                and drafts; the setup checklist and the steps you skipped, feedback notes, invites,
+                and Sign in's remembered account. Your Pause motion choice stays. In the large
+                account demo, a reset puts back the large sample; Back to the usual sample, in
+                Demos, returns yours.
+              </p>
+            </details>
+            <div class="trust-tools-actions">
+              <button class="secondary-action" id="sample-reset" type="button">Reset sample data</button>
+              <p class="sample-note">Sample data · not connected</p>
+            </div>
+            <section
+              class="feedback-panel trust-tools-feedback"
+              id="sample-feedback"
+              data-kind="success"
+              hidden
+              aria-labelledby="sample-feedback-title"
+              aria-describedby="sample-feedback-message"
+            >
+              <span class="feedback-panel-icon" aria-hidden="true">✓</span>
+              <span class="feedback-panel-copy">
+                <strong class="feedback-panel-title" id="sample-feedback-title">Sample data reset</strong>
+                <span class="feedback-panel-message" id="sample-feedback-message"
+                  >Everything above is back to the starting sample, and Sign in forgets this
+                  browser. Nothing was sent.</span
+                >
+              </span>
+            </section>
+            <p class="sr-only" id="sample-announcement" role="status" aria-live="polite" aria-atomic="true"></p>
+          </section>
+        </div>
+      </div>
+    </main>
+    </div>
+
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <div class="footer-primary">
+          <span class="footer-brand">
+            <strong>JobDeputy</strong>
+            <span>Your private workspace for finding relevant roles.</span>
+          </span>
+          <nav class="footer-nav" id="signed-in-footer-row" aria-label="Footer">
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./home-preview.html?skipLoader">Dashboard</a>
+              <a class="footer-link" href="./searches-preview.html">Searches</a>
+              <a class="footer-link" href="./jobs-preview.html">Job matches</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./applications-preview.html">Applications</a>
+              <a class="footer-link" href="./documents-preview.html">Résumés</a>
+              <a class="footer-link" href="./profile-preview.html">Profile</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./account-preview.html">Settings</a>
+              <a class="footer-link" href="./ai-preview.html">AI &amp; credits</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="./shop-preview.html">Purchases</a>
+              <a class="footer-link" href="./invite-preview.html">Invite friends</a>
+            </span>
+          </nav>
+        </div>
+        <div class="footer-secondary">
+          <span
+            ><strong>United States home Region</strong> · Your profile, searches, and stored keys
+            stay encrypted here.</span
+          >
+          <nav class="footer-nav" aria-label="Trust and support">
+            <span class="footer-nav-group">
+              <a class="footer-link" href="#privacy">Privacy</a>
+              <a class="footer-link" href="#security">Security</a>
+            </span>
+            <span class="footer-nav-group">
+              <a class="footer-link" href="#accessibility">Accessibility</a>
+              <a class="footer-link" href="#help">Help</a>
+            </span>
+          </nav>
+        </div>
+      </div>
+    </footer>
+
+    <script src="./app-shell.js"></script>
+    <script src="./app-components.js"></script>
+    <script src="./prompt-guard.js"></script>
+    <script src="./agreement-text.js"></script>
+    <script src="./sample-store.js"></script>
+    <script src="./deputy.js"></script>
+    <script src="./feedback.js"></script>
+    <script src="./app-panels.js"></script>
+    <script>
+      // The head script named the variant before the body was parsed.
+      const publicView = document.documentElement.dataset.helpView === 'public';
+      const trustBack = document.querySelector('#trust-back');
+      const accountMenu = document.querySelector('.account-menu');
+      const headerActions = document.querySelectorAll('.header-feedback, .header-invite');
+      const appSidebar = document.querySelector('#app-sidebar');
+      const signedInFooterRow = document.querySelector('#signed-in-footer-row');
+      const footerRegion = document.querySelector('.footer-secondary > span:first-child');
+      const helpToolbar = document.querySelector('.help-toolbar');
+      const helpQuery = document.querySelector('#help-query');
+      const helpClear = document.querySelector('#help-clear');
+      const faqList = document.querySelector('#faq-list');
+      const contactForm = document.querySelector('#contact-form');
+      const supportForm = document.querySelector('#support-form');
+      const supportTopic = document.querySelector('#support-topic');
+      const supportMessage = document.querySelector('#support-message');
+      const supportError = document.querySelector('#support-message-error');
+      const supportFeedback = document.querySelector('#support-feedback');
+      const supportAnnouncement = document.querySelector('#support-announcement');
+      const sampleReset = document.querySelector('#sample-reset');
+      const sampleFeedback = document.querySelector('#sample-feedback');
+      const sampleAnnouncement = document.querySelector('#sample-announcement');
+      const deputy = window.JobDeputyDeputy;
+      const store = window.JobDeputyStore;
+      const components = window.JobDeputyComponents;
+
+      // A signed-out visit (?public, from an entry route) shows only what needs no account: the
+      // public answers, Privacy, Security, Accessibility, and help signing in. Back names the
+      // entry route the visitor came from; the head script chose it.
+      if (publicView) {
+        document.body.dataset.public = 'true';
+        trustBack.href = document.documentElement.dataset.helpBack;
+        trustBack.textContent = document.documentElement.dataset.helpBackLabel;
+        trustBack.hidden = false;
+        accountMenu.hidden = true;
+        // Feedback and Invite friends belong to a signed-in visit.
+        for (const action of headerActions) action.hidden = true;
+        // An entry visit has no app sidebar and no deputy dock.
+        appSidebar.hidden = true;
+        signedInFooterRow.hidden = true;
+        // The footer's Region line describes the signed-in account.
+        footerRegion.hidden = true;
+        // Every signed-in part leaves the page: the tools, the demos, the support request, the
+        // account answers, and every figure of the sample account.
+        for (const part of document.querySelectorAll('main [data-signed-in]')) part.remove();
+        // The tour shows the signed-in Help; a signed-out visit has none.
+        for (const step of document.querySelectorAll('main [data-tour-step]')) {
+          step.removeAttribute('data-tour-step');
+        }
+        // No link leads into the signed-in app: the logo, and any other link to a signed-in page,
+        // goes back to the entry route instead (the head script already did the logo).
+        const backHref = document.documentElement.dataset.helpBack;
+        for (const link of document.querySelectorAll('a[href]')) {
+          const target = new URL(link.getAttribute('href'), window.location.href);
+          const file = target.pathname.split('/').pop();
+          const publicHelp = file === 'trust-preview.html' && target.searchParams.has('public');
+          const entry = ['login-preview.html', 'access-preview.html'].includes(file);
+          if (target.origin === window.location.origin && !publicHelp && !entry) {
+            link.href = backHref;
+          }
+        }
+      } else {
+        for (const part of document.querySelectorAll('main [data-public-only]')) part.remove();
+      }
+
+      // One StatusAnnouncement channel per part of the page. Clearing first lets a repeated
+      // message be read again.
+      const announcementTimers = new WeakMap();
+      const announceTo = (channel, message) => {
+        if (!channel) return;
+        window.clearTimeout(announcementTimers.get(channel));
+        channel.textContent = '';
+        announcementTimers.set(
+          channel,
+          window.setTimeout(() => {
+            channel.textContent = message;
+          }, 40),
+        );
+      };
+
+      // ------------------------------------------------------------------ figures
+      // Every number and date on the page comes from the shared sample (R3-3 and R3-4): each
+      // data-metric element shows store.metricText(key), and the fit and stage keys take their
+      // names and meanings from FITS and STAGES. Answers name the sample's own records (the
+      // watched sources, the AI choice, the default documents, and Gmail) from the store as well.
+      const list = (names) =>
+        names.length < 3
+          ? names.join(' and ')
+          : `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
+      const setText = (element, text) => {
+        if (element && element.textContent !== text) element.textContent = text;
+      };
+      const plainMeaning = (meaning) => String(meaning ?? '').replace(/\.$/, '');
+      // A figure as the store's own text, on the smallest element that holds it (R3-4).
+      const metricSpan = (key, className = '') => {
+        const span = document.createElement('span');
+        if (className) span.className = className;
+        span.dataset.metric = key;
+        span.textContent = store.metricText(key);
+        return span;
+      };
+      // Replaces a line's words and figures only when they changed, so nothing is redrawn (or
+      // re-read by a screen reader) on every store change.
+      const signatureOf = (nodes) =>
+        nodes
+          .map((node) => (node.nodeType === 1 ? `[${node.dataset?.metric ?? ''}|${node.className}]` : node.textContent))
+          .join('');
+      const replaceIfChanged = (node, parts) => {
+        if (!node) return;
+        const next = parts.map((part) => (typeof part === 'string' ? document.createTextNode(part) : part));
+        if (signatureOf([...node.childNodes]) !== signatureOf(next)) node.replaceChildren(...next);
+      };
+
+      // Your runs in one line (round 6 part 2, N3, UAT-RM-4): the free runs left of the month's
+      // free runs, or once you bought some every run left and the free ones among them, and how
+      // long they last while Keep watch is on; none left says so (the month line below says when
+      // free runs return). The ring is Purchases' (its home), with snapshots on the Dashboard and
+      // Searches.
+      const renderRunsLine = (runs) => {
+        if (!runs) return;
+        const left = Number(runs.left) || 0;
+        const bought = Number(runs.bought ?? runs.topups) || 0;
+        const watching = Number(runs.perNight) > 0;
+        const lasts = watching && Number(runs.nights) > 0 && Boolean(runs.lastsThrough);
+        replaceIfChanged(
+          document.querySelector('#help-runs-line'),
+          left === 0
+            ? ['You have no runs left this month.']
+            : [
+                ...(bought
+                  ? ['You have ', metricSpan('runs.left'), ' runs left this month, ', metricSpan('watch.nightly.freeLeft'), ' of your ', metricSpan('watch.nightly.limit'), ' free ones']
+                  : ['You have ', metricSpan('watch.nightly.freeLeft'), ' of ', metricSpan('watch.nightly.limit'), ' runs left this month']),
+                ...(lasts ? ['; they last through ', metricSpan('watch.nightly.lastsThrough'), '.'] : ['.']),
+              ],
+        );
+        const refresh = [', and your free runs return ', metricSpan('watch.nightly.refreshesOn'), '.'];
+        replaceIfChanged(
+          document.querySelector('#help-nightly-month'),
+          watching && Number(runs.neededForMonth) > 0
+            ? [metricSpan('watch.nightly.neededForMonth'), ' more keep every watched source checked through ', metricSpan('watch.nightly.monthEnd'), ...refresh]
+            : watching
+              ? ['Every watched source stays checked through ', metricSpan('watch.nightly.monthEnd'), ...refresh]
+              : ['None of your sources has it on yet', ...refresh],
+        );
+      };
+
+      // Your own key's token limit (aiLimit()): the amount, the period, what is used, the reset,
+      // and what happens when it is reached, or that no limit is set.
+      const PERIOD_WORDS = { day: 'a day', week: 'a week', month: 'a month' };
+      const renderLimit = () => {
+        const limit = store.aiLimit?.();
+        if (!limit) return;
+        const set = limit.tokens !== null && limit.tokens !== undefined;
+        for (const part of document.querySelectorAll('[data-help-limit]')) {
+          part.hidden = (part.dataset.helpLimit === 'set') !== set;
+        }
+        setText(document.querySelector('[data-help-limit-period]'), PERIOD_WORDS[limit.period] ?? '');
+        setText(document.querySelector('[data-help-limit-label]'), limit.periodLabel ?? '');
+        let next = '';
+        const choice = store.aiChoice?.();
+        if (set && !limit.appliesTo) {
+          next = 'It counts only while one of your keys runs Deputy Assist.';
+        } else if (set && limit.state === 'reached' && choice?.limited) {
+          // The store's own words (aiChoice().summary): AI work is paused until the reset, or
+          // searches and drafts run on platform credits until the reset.
+          next = `${choice.summary}.`;
+        } else if (set) {
+          next = `${limit.state === 'near' ? "You're close to it. " : ''}${
+            limit.onReach === 'platform'
+              ? "When it's reached, Deputy Assist switches to platform credits."
+              : "When it's reached, AI work pauses."
+          }`;
+        }
+        const nextPart = document.querySelector('[data-help-limit-next]');
+        setText(nextPart, next);
+        if (nextPart) nextPart.hidden = !next;
+        setText(document.querySelector('#help-limit-action'), set ? 'Change limit' : 'Set a limit');
+      };
+
+      // An element with a class and its words, as text (never HTML).
+      const make = (tag, className, text) => {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined) node.textContent = text;
+        return node;
+      };
+      // Redraws a list only when its items' words change, so nothing is redrawn (or re-read) on
+      // every store change.
+      const wordsOf = (node) => (node?.textContent ?? '').replace(/\s+/g, ' ').trim();
+      const replaceItems = (target, items, draw) => {
+        if (!target) return;
+        const drawn = items.map(draw);
+        if ([...target.children].map(wordsOf).join('\n') !== drawn.map(wordsOf).join('\n')) {
+          target.replaceChildren(...drawn);
+        }
+      };
+
+      // The three platform models (models(), in the store's order): each name, Recommended on the
+      // one we recommend, and its speed in our test.
+      const renderModels = () => {
+        const models = store.models?.() ?? [];
+        if (!models.length) return;
+        replaceItems(document.querySelector('#help-models'), models, (model) => {
+          const item = make('li');
+          item.append(make('strong', 'item-title', model.name));
+          if (model.recommended) item.append(' ', make('span', 'status-pill', 'Recommended'));
+          if (model.speed) item.append(' ', make('span', 'help-model-speed', model.speed));
+          return item;
+        });
+      };
+
+      // Prices come only from the store (R5-1): the rates and the margin are data-metric figures,
+      // and PRICING gives the Region, the tax line, the source and its link, and the sample note.
+      // The free credits are the plan's (CREDITS), worth that many tokens on the free model.
+      const renderPricing = () => {
+        const pricing = store.PRICING;
+        if (pricing) {
+          for (const part of document.querySelectorAll('main [data-help-pricing]')) {
+            const value = pricing[part.dataset.helpPricing];
+            if (typeof value === 'string' && value) setText(part, value);
+          }
+          const source = document.querySelector('#help-pricing-source');
+          if (source && pricing.sourceUrl && source.getAttribute('href') !== pricing.sourceUrl) {
+            source.setAttribute('href', pricing.sourceUrl);
+          }
+        }
+        const plan = store.CREDITS;
+        const models = store.models?.() ?? [];
+        if (plan) {
+          setText(document.querySelector('[data-help-credits="free"]'), store.format.tokens(plan.freeTokens));
+          const free = models.find((model) => model.id === plan.freeModel);
+          if (free) setText(document.querySelector('[data-help-credits="model"]'), free.name);
+        }
+        const example = models.find((model) => model.id === 'ministral-3-14b');
+        if (example) setText(document.querySelector('[data-help-price-model]'), example.name);
+      };
+
+      // The supporters' benefits (support().benefits), each planned, with the store's note.
+      const renderBenefits = (support) => {
+        if (support?.benefits?.length) {
+          replaceItems(document.querySelector('#help-benefits'), support.benefits, (benefit) => {
+            const item = make('li');
+            item.append(make('strong', 'item-title', benefit.title), ' ', make('span', '', benefit.text));
+            return item;
+          });
+        }
+        if (support?.note) setText(document.querySelector('[data-help-support-note]'), support.note);
+      };
+
+      // ------------------------------------------------------------------ your agreements
+      // Your agreements (round 6 part 2, P-6): Settings, Account is their home; this card says
+      // which version waits and when your deputy's work would pause (agreement.pauseAt), that it is
+      // paused (the overdue demo), or that you signed, with Review and sign coming back here.
+      const agreementsAnnouncement = document.querySelector('#help-overdue-announcement');
+      const RETURN_HERE = encodeURIComponent('trust-preview.html#agreements');
+      const withReturn = (href) => `${href}${href.includes('?') ? '&' : '?'}return=${RETURN_HERE}`;
+      const renderAgreements = (agreements) => {
+        if (!agreements) return;
+        const pending = agreements.pending ?? null;
+        const state = !pending ? 'signed' : pending.overdue ? 'overdue' : 'pending';
+        for (const part of document.querySelectorAll('[data-help-agreement]')) {
+          part.hidden = part.dataset.helpAgreement !== state;
+        }
+        for (const part of document.querySelectorAll('[data-agreements-version]')) {
+          if (pending) setText(part, pending.version);
+        }
+        // The signed state names the version, as Help did before the block moved to Account.
+        const current =
+          typeof agreements.current === 'string' ? agreements.current : agreements.current?.version;
+        for (const part of document.querySelectorAll('[data-agreements-current]')) {
+          if (current) setText(part, current);
+        }
+        const sign = document.querySelector('#agreements-sign');
+        if (!sign) return;
+        sign.hidden = !pending;
+        const href = withReturn(pending?.href ?? './agreement-preview.html?mode=update');
+        if (sign.getAttribute('href') !== href) sign.setAttribute('href', href);
+      };
+
+      // ------------------------------------------------------------------ the overdue demo
+      // Demos' See the overdue state: setAgreementDemo('overdue') pauses your deputy for the
+      // unsigned version without moving the clock, and the same button ends it
+      // (setAgreementDemo(null)); signing ends it too. With nothing pending (you signed), the
+      // button is disabled and the line beside it says why (R5-4).
+      const overdueToggle = document.querySelector('#help-overdue-toggle');
+      const renderOverdue = (agreements) => {
+        if (!overdueToggle) return;
+        const available = typeof store.setAgreementDemo === 'function' && Boolean(agreements);
+        const state = !agreements?.pending ? 'signed' : agreements.demo ? 'on' : 'off';
+        for (const part of document.querySelectorAll('[data-help-overdue]')) {
+          part.hidden = part.dataset.helpOverdue !== state;
+        }
+        overdueToggle.disabled = !available || state === 'signed';
+        setText(overdueToggle, state === 'on' ? 'End the overdue demo' : 'See the overdue state');
+      };
+      overdueToggle?.addEventListener('click', () => {
+        const showing = Boolean(store.agreements?.()?.demo);
+        const result = store.setAgreementDemo?.(showing ? null : 'overdue');
+        if (!result) {
+          announceTo(agreementsAnnouncement, 'The current version is signed, so nothing is overdue.');
+          return;
+        }
+        if (showing) {
+          announceTo(agreementsAnnouncement, 'The overdue demo ended. Your deputy is working again.');
+          deputy?.react('saved', { speech: 'Back to work.' });
+        } else {
+          announceTo(agreementsAnnouncement, 'Showing the overdue state: your deputy is paused until you sign.');
+          deputy?.react('error', { speech: 'Paused until you sign. A demo.' });
+        }
+      });
+
+      // ------------------------------------------------------------------ prompt tests
+      // The answer on prompt tests names the rollout rule from the store (rolloutSettings()): the
+      // account's own limits when signed in, the system default on public Help. Without the store's
+      // settings the answer keeps its words, which are the system default.
+      const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`;
+      const renderRollout = () => {
+        if (typeof store?.rolloutSettings !== 'function') return;
+        let settings = null;
+        try {
+          settings = store.rolloutSettings();
+        } catch {
+          return;
+        }
+        const rule = publicView ? (settings?.systemDefault ?? settings) : settings;
+        if (!rule) return;
+        const whole = (value) => (Number.isFinite(Number(value)) ? Math.round(Number(value)) : null);
+        const words = {
+          share: whole(rule.canarySharePct),
+          days: whole(rule.canaryDays),
+          minimum: whole(rule.minAgreementPct),
+          drop: whole(rule.maxDropPoints),
+        };
+        for (const part of document.querySelectorAll('[data-help-rollout]')) {
+          const value = words[part.dataset.helpRollout];
+          if (value === null || value === undefined) continue;
+          if (part.dataset.helpRollout === 'days') setText(part, plural(value, 'day', 'days'));
+          else if (part.dataset.helpRollout === 'drop') setText(part, plural(value, 'point', 'points'));
+          else setText(part, String(value));
+        }
+      };
+
+      // ------------------------------------------------------------------ guides
+      // Guides (round 6, G8): every guide from guides(), newest first, the first six with See all;
+      // ?guide=<id>#guides shows that one as an article (what changed, why it matters, the steps,
+      // Try it, and Back to all guides). Public Help lists only the guides marked public, and with
+      // none the section and its link leave the page. Every word is the store's, set as text.
+      const pageParameters = new URLSearchParams(window.location.search);
+      const wantedGuide = pageParameters.get('guide');
+      const guidesSection = document.querySelector('#guides');
+      const guidesLink = document.querySelector('[data-help-guides-link]');
+      const guidesList = document.querySelector('#help-guides');
+      const guidesMore = document.querySelector('#help-guides-more');
+      const guidesAll = document.querySelector('#help-guides-all');
+      const guideArticle = document.querySelector('#guide-article');
+      const guideMissing = document.querySelector('#guide-missing');
+      const GUIDES_FIRST = 6;
+      let guidesShowAll = false;
+      // A link to this page that keeps the page's own query as written (?skipLoader, the public
+      // variant and where the visitor came from, the demo, and the rest; round 6 part 3, T4-5),
+      // with only the guide changed.
+      const pageQuery = window.location.search
+        .replace(/^\?/, '')
+        .split('&')
+        .filter((part) => part && part.split('=')[0] !== 'guide');
+      const helpHref = (guideId, hash = '#guides') => {
+        const parts = [...pageQuery];
+        if (guideId) parts.push(`guide=${encodeURIComponent(guideId)}`);
+        return `./trust-preview.html${parts.length ? `?${parts.join('&')}` : ''}${hash}`;
+      };
+      // Only the app's own pages, as the store writes them ("./page-preview.html..."), are links.
+      const safeHref = (href) => (/^\.\/[\w-]+\.html(?:[?#][^\s"'<>]*)?$/.test(String(href ?? '')) ? href : '');
+      const seeAllPanel = () => {
+        const panel = components?.seeAll;
+        return typeof panel?.open === 'function' ? panel : null;
+      };
+      if (guidesAll && !seeAllPanel()) guidesAll.removeAttribute('aria-haspopup');
+      const visibleGuides = () => {
+        let all = [];
+        try {
+          all = typeof store?.guides === 'function' ? (store.guides() ?? []) : [];
+        } catch {
+          all = [];
+        }
+        return all.filter((guide) => guide?.id && guide?.title && (!publicView || guide.public === true));
+      };
+      const guideItem = (guide) => {
+        const item = make('li', 'help-guide-item', '');
+        item.append(make('p', 'help-guide-item-date', guide.dateText ?? ''));
+        const title = make('h3', 'help-guide-item-title', '');
+        const link = make('a', '', guide.title);
+        link.href = helpHref(guide.id);
+        if (guide.id === wantedGuide) link.setAttribute('aria-current', 'true');
+        title.append(link);
+        item.append(title, make('p', 'help-guide-item-summary', guide.summary ?? ''));
+        return item;
+      };
+      let guideShown = '';
+      const renderGuides = () => {
+        if (!guidesSection) return;
+        const guides = visibleGuides();
+        const none = guides.length === 0;
+        guidesSection.hidden = none;
+        if (guidesLink) guidesLink.hidden = none;
+        if (none) return;
+        const open = wantedGuide ? guides.find((guide) => guide.id === wantedGuide) : null;
+        guideMissing.hidden = !wantedGuide || Boolean(open);
+        guideArticle.hidden = !open;
+        guidesList.hidden = Boolean(open);
+        const sectionNote = document.querySelector('#guides-note');
+        if (sectionNote) sectionNote.hidden = Boolean(open);
+        if (open) {
+          for (const field of guideArticle.querySelectorAll('[data-guide-field]')) {
+            setText(field, String(open[field.dataset.guideField] ?? ''));
+          }
+          // The guide's own honest label (planned, sample) stands in for the section's note.
+          const note = guideArticle.querySelector('[data-guide-field="note"]');
+          note.hidden = !note.textContent.trim();
+          replaceItems(
+            guideArticle.querySelector('#guide-article-steps'),
+            (open.steps ?? []).filter(Boolean),
+            (step) => make('li', '', String(step)),
+          );
+          const tryIt = guideArticle.querySelector('#guide-article-try');
+          const href = publicView ? document.documentElement.dataset.helpBack : safeHref(open.tryIt?.href);
+          tryIt.hidden = !href;
+          if (href && tryIt.getAttribute('href') !== href) tryIt.setAttribute('href', href);
+          setText(tryIt, publicView ? 'Sign in to try it' : String(open.tryIt?.label || 'Try it'));
+          const back = guideArticle.querySelector('#guide-article-back');
+          if (back.getAttribute('href') !== helpHref(null)) back.setAttribute('href', helpHref(null));
+          guidesMore.hidden = true;
+          return;
+        }
+        const shown = guidesShowAll ? guides : guides.slice(0, GUIDES_FIRST);
+        replaceItems(guidesList, shown, guideItem);
+        guidesMore.hidden = guides.length <= GUIDES_FIRST;
+        setText(
+          guidesAll,
+          guidesShowAll && !seeAllPanel() ? `Show the newest ${GUIDES_FIRST}` : `See all ${guides.length}`,
+        );
+      };
+      guidesAll?.addEventListener('click', () => {
+        const guides = visibleGuides();
+        const panel = seeAllPanel();
+        if (panel) {
+          panel.open(
+            {
+              title: 'Guides',
+              noun: ['guide', 'guides'],
+              searchLabel: 'Find a guide',
+              // Newest first, as the list (the panel's "given" order), or by name; a guide has no
+              // count.
+              sorts: [
+                { id: 'given', label: 'Newest first' },
+                { id: 'name', label: 'Name, A to Z' },
+              ],
+              items: guides.map((guide) => ({
+                id: guide.id,
+                label: guide.title,
+                count: null,
+                value: null,
+                href: helpHref(guide.id),
+                meta: guide.dateText ?? '',
+              })),
+              note: 'Sample data · not connected',
+            },
+            guidesAll,
+          );
+          return;
+        }
+        guidesShowAll = !guidesShowAll;
+        renderGuides();
+        announceTo(
+          sampleAnnouncement,
+          guidesShowAll ? `Showing all ${guides.length} guides.` : `Showing the newest ${GUIDES_FIRST} guides.`,
+        );
+      });
+      // A guide opened by its address: bring the article into view and give it focus once.
+      const focusGuide = () => {
+        if (!wantedGuide || !guidesSection || guidesSection.hidden || guideShown === wantedGuide) return;
+        guideShown = wantedGuide;
+        guidesSection.scrollIntoView({ block: 'start' });
+        if (!guideArticle.hidden) guideArticle.focus({ preventScroll: true });
+      };
+
+      // ------------------------------------------------------------------ the large account demo
+      // Demos' See a large account (round 6, G7): setScaleDemo('large') shows the store's large
+      // sample on every page, and the same button, Back to the usual sample, returns the usual one
+      // (setScaleDemo(null)) exactly as it was. Its sizes are the store's (SCALE_DEMOS). Until the
+      // store has the demo, the row stays hidden.
+      const scaleRow = document.querySelector('#help-scale');
+      const scaleToggle = document.querySelector('#help-scale-toggle');
+      // SCALE_DEMOS.large.sizes: counts, and foundRoles as the store words it ("about 1,000").
+      const number = (value) => store.format.number(Number(value));
+      const SIZE_WORDS = [
+        ['sources', (sizes) => `${number(sizes.sources)} sources${Number(sizes.companies) > 0 ? ` across ${number(sizes.companies)} companies` : ''}`],
+        ['foundRoles', (sizes) => `${typeof sizes.foundRoles === 'string' ? sizes.foundRoles : number(sizes.foundRoles)} found roles`],
+        ['keywords', (sizes) => `${number(sizes.keywords)} keywords`],
+        ['applications', (sizes) => `${number(sizes.applications)} applications`],
+      ];
+      const sizesText = (sizes) => {
+        if (!sizes || typeof sizes !== 'object') return 'a much bigger sample account';
+        const parts = SIZE_WORDS.filter(([key]) =>
+          typeof sizes[key] === 'string' ? sizes[key].trim() : Number(sizes[key]) > 0,
+        ).map(([, words]) => words(sizes));
+        if (!parts.length) return 'a much bigger sample account';
+        return parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')}, and ${parts.at(-1)}`;
+      };
+      const scaleAvailable = () =>
+        typeof store?.setScaleDemo === 'function' && typeof store?.scaleDemo === 'function';
+      const renderScale = () => {
+        if (!scaleRow) return;
+        scaleRow.hidden = !scaleAvailable();
+        if (scaleRow.hidden) return;
+        const on = store.scaleDemo() === 'large';
+        for (const part of scaleRow.querySelectorAll('[data-help-scale]')) {
+          part.hidden = (part.dataset.helpScale === 'on') !== on;
+        }
+        setText(scaleRow.querySelector('[data-help-scale-sizes]'), sizesText(store.SCALE_DEMOS?.large?.sizes));
+        setText(scaleToggle, on ? 'Back to the usual sample' : 'See a large account');
+      };
+      scaleToggle?.addEventListener('click', () => {
+        if (!scaleAvailable()) return;
+        const on = store.scaleDemo() === 'large';
+        try {
+          store.setScaleDemo(on ? null : 'large');
+        } catch {
+          announceTo(agreementsAnnouncement, 'The demo couldn’t change. Reload the page and try again.');
+          deputy?.react('error');
+          return;
+        }
+        renderScale();
+        if (on) {
+          announceTo(agreementsAnnouncement, 'Back to the usual sample on every page.');
+          deputy?.react('saved', { speech: 'Back to your usual sample.' });
+        } else {
+          announceTo(agreementsAnnouncement, 'Showing the large account on every page.');
+          deputy?.react('saved', { speech: 'Here is a big account.' });
+        }
+      });
+
+      const renderFigures = () => {
+        if (!store) return;
+        renderRunsLine(store.allowance?.()?.runs ?? store.allowance?.()?.nightly);
+        renderLimit();
+        const agreements = store.agreements?.() ?? null;
+        renderAgreements(agreements);
+        renderOverdue(agreements);
+        for (const element of document.querySelectorAll('main [data-metric]')) {
+          setText(element, store.metricText(element.dataset.metric));
+        }
+        for (const [selector, items] of [
+          ['[data-fit]', store.FITS ?? []],
+          ['[data-stage]', store.STAGES ?? []],
+        ]) {
+          for (const row of document.querySelectorAll(`main ${selector}`)) {
+            const id = row.dataset.fit ?? row.dataset.stage;
+            const item = items.find((entry) => entry.id === id);
+            if (!item) continue;
+            if (item.tone) row.dataset.tone = item.tone;
+            setText(row.querySelector('[data-key-name]'), item.label);
+            setText(row.querySelector('[data-key-meaning]'), plainMeaning(item.meaning));
+            // Screen readers hear "1 role" and "2 roles".
+            const count = row.querySelector('.chart-key-count')?.textContent.trim();
+            setText(row.querySelector('[data-key-noun]'), count === '1' ? ' role.' : ' roles.');
+          }
+        }
+        const allowance = store.allowance?.();
+        const nightly = allowance?.nightly;
+        const watched = (nightly?.sources ?? [])
+          .map((id) => store.source?.(id)?.name)
+          .filter(Boolean);
+        for (const part of document.querySelectorAll('[data-help-watch]')) {
+          part.hidden = (part.dataset.helpWatch === 'on') !== watched.length > 0;
+        }
+        // A long watch list names the first three and counts the rest (R6-4).
+        setText(
+          document.querySelector('[data-help-watched]'),
+          watched.length > 3
+            ? `${watched.slice(0, 3).join(', ')}, and ${watched.length - 3} more`
+            : list(watched),
+        );
+        renderModels();
+        renderPricing();
+        // The one AI setting (R4-2), stated once: aiChoice().summary. When your key reached its
+        // limit the summary says what happens instead, and the link becomes Change limit (#limit).
+        const choice = store.aiChoice?.();
+        setText(document.querySelector('[data-help-ai-summary]'), choice?.summary ?? '');
+        const change = document.querySelector('#help-ai-change');
+        if (change && choice) {
+          const limited = Boolean(choice.limited);
+          const href = limited ? './ai-preview.html#limit' : (choice.href ?? './ai-preview.html#ai');
+          if (change.getAttribute('href') !== href) change.setAttribute('href', href);
+          const words = limited ? 'Change limit' : 'Change';
+          if (change.firstChild?.textContent !== words) change.firstChild.textContent = words;
+          const hidden = change.querySelector('.sr-only');
+          if (hidden) hidden.hidden = limited;
+        }
+        // Support JobDeputy: the interest you recorded in Purchases (support()), never an amount,
+        // and the supporters' planned benefits with the store's note (round 5, G5).
+        const support = store.support?.();
+        const pledged = document.querySelector('[data-help-support]');
+        if (pledged) pledged.hidden = !support?.pledged;
+        setText(document.querySelector('[data-help-cadence]'), support?.cadence === 'once' ? 'once' : 'monthly');
+        renderBenefits(support);
+        const pageNoun = document.querySelector('[data-help-page-noun]');
+        setText(pageNoun, store.metric('docs.pageLimit') === 1 ? 'page' : 'pages');
+        const documents = store.get().documents;
+        for (const name of document.querySelectorAll('[data-help-default]')) {
+          const id = documents?.defaults?.[name.dataset.helpDefault];
+          setText(name, documents?.library?.find((item) => item.id === id)?.name ?? 'not chosen yet');
+        }
+        // Gmail: whether it's connected, as whom, and since when, from the store. What it reads
+        // and never does is the agreement's own policy (section 9), so those lists stay as written.
+        const gmail = store.get().connections?.gmail;
+        if (gmail) {
+          const connected = gmail.status === 'connected';
+          for (const part of document.querySelectorAll('[data-gmail-state]')) {
+            part.hidden = (part.dataset.gmailState === 'connected') !== connected;
+          }
+          setText(document.querySelector('[data-gmail-email]'), gmail.email ?? '');
+          if (gmail.connectedAt) {
+            setText(document.querySelector('[data-gmail-since]'), store.format.shortDate(gmail.connectedAt));
+          }
+        }
+        // Demos: Seen once a page's tour has ended.
+        for (const demo of document.querySelectorAll('[data-demo]')) {
+          const seen = Boolean(store.tourSeen?.(demo.dataset.demo));
+          demo.querySelector('[data-demo-seen]').hidden = !seen;
+        }
+        renderRollout();
+        renderGuides();
+        renderScale();
+        indexAnswers();
+      };
+
+      // ------------------------------------------------------------------ answers
+      // The shared list toolbar filters the answers: its search matches each question, its answer,
+      // and a few extra words, and the topic cards (checkboxes) narrow it to their topics. A
+      // topic's heading shows while any of its answers does, and each card names its count.
+      const indexAnswers = () => {
+        for (const item of faqList?.querySelectorAll('[data-list-item]') ?? []) {
+          const text = `${item.textContent} ${item.dataset.keywords ?? ''}`.replace(/\s+/g, ' ').trim();
+          if (item.dataset.search !== text) item.dataset.search = text;
+        }
+      };
+
+      const syncAnswerGroups = () => {
+        for (const heading of faqList?.querySelectorAll('[data-faq-group]') ?? []) {
+          const items = faqList.querySelectorAll(
+            `[data-list-item][data-filter-topic="${heading.dataset.faqGroup}"]`,
+          );
+          heading.hidden = ![...items].some((item) => !item.hidden);
+        }
+        for (const card of helpToolbar?.querySelectorAll('.help-topic') ?? []) {
+          const count = Number(card.querySelector('.list-toolbar-count')?.textContent);
+          setText(card.querySelector('.help-topic-noun'), count === 1 ? 'answer' : 'answers');
+        }
+      };
+
+      helpToolbar?.addEventListener('jobdeputy:listchange', syncAnswerGroups);
+
+      const refreshAnswers = (options) => {
+        indexAnswers();
+        components?.list?.refresh(helpToolbar, options);
+        syncAnswerGroups();
+      };
+
+      // Show all answers clears the search and every topic, then puts focus back in the search.
+      helpClear?.addEventListener('click', () => {
+        helpQuery.value = '';
+        for (const topic of helpToolbar.querySelectorAll('input[type="checkbox"]')) {
+          topic.checked = false;
+        }
+        refreshAnswers({ announce: true });
+        helpQuery.focus();
+      });
+
+      // A link to one answer (setup's "What is Keep watch?" opens #keep-watch, for example) opens
+      // it, clearing a filter that hides it; #contact-form opens the support request.
+      const openLinkedPart = () => {
+        const id = decodeURIComponent(window.location.hash.slice(1));
+        const target = id ? document.getElementById(id) : null;
+        if (target instanceof HTMLDetailsElement && target.hasAttribute('data-list-item')) {
+          if (target.hidden) {
+            helpQuery.value = '';
+            for (const topic of helpToolbar.querySelectorAll('input[type="checkbox"]')) {
+              topic.checked = false;
+            }
+            refreshAnswers();
+          }
+          target.open = true;
+          target.scrollIntoView({ block: 'start' });
+        } else if (target === contactForm) {
+          supportTopic.focus({ preventScroll: true });
+        }
+      };
+
+      // ------------------------------------------------------------------ contact
+      // One Contact section, two paths: Send feedback opens the shared Feedback drawer
+      // (feedback.js), and Get help with a problem is the support request (prototype).
+      const setSupportError = (invalid) => {
+        supportError.hidden = !invalid;
+        supportMessage.setAttribute('aria-invalid', String(invalid));
+        supportMessage.setAttribute(
+          'aria-describedby',
+          invalid ? 'support-message-help support-message-error' : 'support-message-help',
+        );
+      };
+
+      supportForm?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        if (supportMessage.value.trim().length < 10) {
+          setSupportError(true);
+          supportFeedback.hidden = true;
+          supportMessage.focus();
+          return;
+        }
+        setSupportError(false);
+        supportFeedback.hidden = false;
+        deputy?.react('sent', { speech: 'Prepared. Nothing was sent.' });
+        announceTo(supportAnnouncement, 'Support request prepared. No message was sent from this prototype.');
+      });
+
+      supportMessage?.addEventListener('input', () => {
+        supportFeedback.hidden = true;
+        if (supportMessage.getAttribute('aria-invalid') === 'true' && supportMessage.value.trim().length >= 10) {
+          setSupportError(false);
+        }
+      });
+      supportTopic?.addEventListener('change', () => {
+        supportFeedback.hidden = true;
+      });
+
+      // ------------------------------------------------------------------ sample data
+      // Reset is local: the shared store returns to its seed (runs, tours, prompts and their
+      // versions, the token limit on your key, the platform model, what you bought, your Support
+      // JobDeputy interest and the supporters list, the agreement signed here and the overdue demo,
+      // What's new, Gmail, LinkedIn, site accounts, email updates, and everything else in it;
+      // reset() also puts the one AI setting back to the sample's OpenAI key), this tab's setup
+      // answers are cleared, and Sign in forgets the remembered account (its one-tap card). Pause
+      // motion stays as it is. Your agreements, the demo, and every figure follow the store's
+      // change, so the page shows the seed again at once.
+      sampleReset?.addEventListener('click', () => {
+        if (sampleReset.getAttribute('aria-busy') === 'true') return;
+        sampleReset.setAttribute('aria-busy', 'true');
+        sampleReset.textContent = 'Resetting…';
+        sampleFeedback.hidden = true;
+        deputy?.set('pending', { working: true, duty: 'Resetting', speech: 'Restoring the sample now.' });
+        announceTo(sampleAnnouncement, 'Resetting sample data…');
+        window.setTimeout(() => {
+          try {
+            store?.reset();
+            window.sessionStorage.removeItem('jobdeputy.onboarding');
+            window.localStorage.removeItem('jobdeputy.lastAccount');
+          } catch {
+            // Storage is unavailable; the store still resets for this page view.
+          }
+          sampleReset.removeAttribute('aria-busy');
+          sampleReset.textContent = 'Reset sample data';
+          sampleFeedback.hidden = false;
+          deputy?.react('saved', { speech: 'I restored the sample.' });
+          announceTo(sampleAnnouncement, 'Sample data reset. Nothing was sent.');
+        }, 618);
+      });
+
+      // ------------------------------------------------------------------ start
+      renderFigures();
+      store?.subscribe(renderFigures);
+      window.addEventListener('hashchange', openLinkedPart);
+      // The shared components set up the list toolbar when the document is ready; the answers'
+      // headings, the counts' nouns, and a linked answer follow it.
+      const ready = () => {
+        refreshAnswers();
+        openLinkedPart();
+        focusGuide();
+      };
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => window.setTimeout(ready), { once: true });
+      } else {
+        ready();
+      }
+    </script>
+    <span id="first-view" hidden></span>
+  </body>
+</html>
