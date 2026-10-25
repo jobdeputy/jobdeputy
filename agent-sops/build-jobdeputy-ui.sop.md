@@ -104,7 +104,9 @@ Build the feature using the existing project stack and the patterns identified a
   `AppNav` and `DeputyDock` blocks unchanged apart from their per-page attributes, and the shared
   `AppFooter` navigation and home-Region context; entry pages MAY use its reduced signed-out variant
 - A page with the deputy dock MUST NOT draw a second panda; empty states use prop-only deputy
-  illustrations
+  illustrations. The Dashboard's AI Boost panel is the one named exception, approved October 25,
+  2026 (`docs/ui-foundation.md#ai-boost-round-8`): it lends the dock's panda while it shows, so one
+  panda is still drawn per viewport
 - Internal pages MUST also reuse the `HeaderActions` block (Feedback and Invite friends) and load
   `feedback.js` and then `app-panels.js` after `deputy.js`
 - Every number, date, and list a signed-in page shows MUST come from `brand/sample-store.js` (the

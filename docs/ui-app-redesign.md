@@ -1621,3 +1621,46 @@ New in round 7:
   each scan's run and never counts in the tokens you pay for; the usual sample approves nothing
   automatically, because auto approve is off in its rules; and AI & credits counts credits as
   Ministral 3 14B tokens' worth, beside the platform tokens Usage counts.
+
+## Round 8: the owner's ask for AI Boost (October 25, 2026)
+
+The owner, not reviewing a build this time but asking directly for a new piece of personality:
+"i want realistic panda as ai boost and that need to be at right side of dashboard not in one
+small section." Four choices were put to the owner first, since each decided what to build: a
+detailed SVG illustration over a restyle or a supplied photo (a photo cannot animate between
+states and nothing here can generate one); the sidebar dock stepping out while the panel shows,
+to keep one panda per viewport; a sticky right column from 1280px with a compact card below that,
+rather than always-right or a full hero block; and the panel named **AI Boost** showing **Deputy
+Assist**'s real state, rather than renaming Deputy Assist itself or adding a new "Boost" action.
+The owner picked the recommended option on all four.
+
+This is a named, scoped exception to the locked foundation (`docs/ui-foundation.md#ai-boost-round-8`),
+not a redesign: the Dashboard's layout, tiles, and tour are unchanged, every other page keeps the
+dock alone, and the AI work is still Deputy Assist everywhere outside this one panel's title.
+
+New in round 8:
+
+- **AI Boost** (`#ai-boost`, `brand/ai-boost.js`, `brand/ai-boost.css`): a detailed, procedurally
+  drawn panda (soft fur shading, layered parts, tufted fur edges; no image file) on the right of
+  the Dashboard from 1280px, a compact card under the page intro from 721px to 1279px, and hidden
+  on phones, where the app bar's chip keeps the panda.
+- It invents nothing: `deputy.js` gained `lend()`/`unlend()` and a `jobdeputy:deputy` event, so the
+  panel mirrors the dock's real pose, duty, and speech, works only while `JobDeputyStore.activity()`
+  shows a live run, and celebrates only on a real `react()`.
+- Named states: `idle`, `curious` (hover, keyboard focus, or a tap), `thinking`, `processing`,
+  `success`, `celebrate`, `done`, `error`, `hello`, `away` (a tour has the panda instead). Idle
+  blinks and makes one small gesture every 13s to 21s, exactly as the dock.
+- The panda is a button that opens the dock's Activity panel, so it adds a destination rather than
+  decoration, as the SOP's "the panda feels decorative" guidance asks.
+- Fixed in the same change: the cast sheet's (`brand/deputy-preview.html`) state picker, replay,
+  reaction, and gesture controls did nothing in a real browser (a null scene handle looked up
+  before `deputy.js` adopts its hosts); they now look up the handle when used.
+
+### Open questions for the owner (round 8)
+
+- **The detailed drawing is original artwork for this task**, not a traced or licensed reference;
+  the owner may want a closer look at the proportions and shading against their own taste before
+  this ships widely.
+- **Hover and tap curiosity only apply at rest** (idle); while AI Boost is thinking or working, a
+  hover or tap instead perks the ears without leaving the work pose, so the panel never looks idle
+  while a run is live. Confirm this reads as intended rather than as unresponsive.

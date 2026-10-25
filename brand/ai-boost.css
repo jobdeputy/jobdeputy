@@ -1,0 +1,782 @@
+/*
+ * AI Boost (round 8): the Dashboard's larger, detailed panda deputy (brand/ai-boost.js).
+ *
+ * Layout: a sticky panel on the right of the Dashboard from 1280px (home-preview.html places it),
+ * a compact card under the page intro from 721px to 1279px, and nothing on phones, where the app
+ * bar's deputy chip keeps the panda. The panel reuses the dock's surface, speech bubble, and duty
+ * pill (deputy.css), so it reads as the same companion, larger.
+ *
+ * States on [data-boost-state]: idle, curious, thinking, processing, success, celebrate, done,
+ * error, hello, and away. A state's pose is plain transforms (so Pause motion and reduced motion
+ * still show it, still); its one-time motion runs only with [data-boost-play]; loops run only
+ * while deputy.js says work is pending or in progress. Every keyframe starts and ends at the
+ * state's pose, so the shared reset (app-chrome.css) leaves the pose, never a half-way frame.
+ * Transforms target wrapper groups only; the drawing's geometry has no transform attribute on
+ * any animated group.
+ */
+
+.ai-boost {
+  --boost-top: 89px;
+  position: relative;
+  display: grid;
+  min-width: 0;
+  gap: 13px;
+  padding: 21px;
+  border: 1px solid var(--line-soft);
+  border-radius: 22px;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  align-content: start;
+}
+
+.ai-boost-head {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+/* The visible name reads like the Dashboard's tile titles; the panel's h2 is visually hidden, as
+   the bands' section headings are. */
+.ai-boost-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 680;
+  line-height: 1.3;
+}
+
+.ai-boost-kicker {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* The panda is a button (it opens Activity): the stage keeps the drawing inside its rounded
+   frame, so a hop, a raised paw, or a sparkle never spills over the page. */
+.ai-boost-stage {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px solid var(--line-soft);
+  border-radius: 18px;
+  color: inherit;
+  background:
+    radial-gradient(circle at 18% 78%, var(--blue-soft), transparent 46%),
+    radial-gradient(circle at 86% 22%, var(--orange-soft), transparent 44%),
+    radial-gradient(circle at 70% 82%, var(--green-wash), transparent 50%),
+    var(--paper);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    border-color 180ms ease,
+    transform 180ms ease;
+}
+
+.ai-boost-stage:hover {
+  border-color: var(--line);
+}
+
+.ai-boost-stage:active {
+  transform: translateY(1px);
+}
+
+.ai-boost-stage:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+
+.ai-boost-art {
+  display: block;
+  aspect-ratio: 300 / 340;
+  max-height: calc(100vh - var(--boost-top) - 200px);
+  min-height: 200px;
+  margin: 0 auto;
+}
+
+.boost-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* The words: the dock's bubble (its tail toward the panda) and duty pill. */
+.ai-boost .deputy-speech {
+  font-size: 17px;
+}
+
+.ai-boost .deputy-duty {
+  justify-self: center;
+}
+
+/* A working state turns the dot into the dock's pending ring. */
+.ai-boost[data-boost-working] .deputy-duty-dot {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--green-line);
+  border-top-color: var(--green);
+  background: transparent;
+  box-shadow: none;
+  animation: boost-spin 987ms linear infinite;
+}
+
+.ai-boost[data-boost-state="error"] .deputy-duty-dot {
+  background: var(--orange);
+  box-shadow: 0 0 0 4px var(--orange-soft);
+}
+
+@media (forced-colors: active) {
+  .ai-boost-art {
+    forced-color-adjust: none;
+  }
+
+  .ai-boost[data-boost-working] .deputy-duty-dot {
+    border-color: CanvasText;
+    border-top-color: Highlight;
+  }
+}
+
+/* Phones: the app bar's deputy chip keeps the panda. */
+@media (max-width: 720px) {
+  .ai-boost {
+    display: none;
+  }
+}
+
+/* Compact card (721px to 1279px): the panda beside its words. */
+@media (min-width: 721px) and (max-width: 1279px) {
+  .ai-boost {
+    grid-template-columns: 148px minmax(0, 1fr);
+    gap: 8px 21px;
+    padding: 13px 21px 13px 13px;
+    align-items: center;
+  }
+
+  .ai-boost-stage {
+    grid-row: 1 / span 3;
+  }
+
+  .ai-boost-art {
+    min-height: 0;
+    max-height: none;
+  }
+
+  .ai-boost-head {
+    justify-content: flex-start;
+    gap: 13px;
+  }
+
+  .ai-boost .deputy-speech {
+    justify-self: start;
+    font-size: 16px;
+    text-align: left;
+  }
+
+  /* The tail points left, at the panda. */
+  .ai-boost .deputy-speech::before {
+    top: calc(50% - 6.5px);
+    left: -7px;
+    border-top: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .ai-boost .deputy-duty {
+    justify-self: start;
+  }
+}
+
+/* ------------------------------------------------------------------ the drawing's pivots */
+
+.boost-svg :is(g, path, ellipse, circle) {
+  transform-box: view-box;
+}
+
+.boost-panda,
+.boost-body {
+  transform-origin: 150px 316px;
+}
+
+.boost-shadow {
+  transform-origin: 150px 316px;
+}
+
+.boost-head {
+  transform-origin: 150px 178px;
+  transition: transform 618ms var(--ease-settle);
+}
+
+.boost-ear-left {
+  transform-origin: 98px 76px;
+  transition: transform 380ms var(--ease-spring);
+}
+
+.boost-ear-right {
+  transform-origin: 202px 76px;
+  transition: transform 380ms var(--ease-spring);
+}
+
+.boost-eye-left .boost-eye-open {
+  transform-origin: 117px 114px;
+}
+
+.boost-eye-right .boost-eye-open {
+  transform-origin: 183px 114px;
+}
+
+.boost-eye-open {
+  transition: transform 90ms ease;
+}
+
+.boost-pupil {
+  transition: transform 380ms var(--ease-settle);
+}
+
+.boost-arm-left {
+  transform-origin: 86px 198px;
+  transition: transform 618ms var(--ease-settle);
+}
+
+.boost-arm-right {
+  transform-origin: 216px 198px;
+  transition: transform 618ms var(--ease-spring);
+}
+
+.boost-mouth-open {
+  transform-origin: 150px 157px;
+}
+
+.boost-leaf-bite {
+  transform-origin: 150px 160px;
+}
+
+.boost-thought {
+  transform-origin: 232px 68px;
+  transition:
+    opacity 380ms ease,
+    transform 380ms var(--ease-spring);
+}
+
+.boost-spark-1 {
+  transform-origin: 42px 85px;
+}
+
+.boost-spark-2 {
+  transform-origin: 262px 101px;
+}
+
+.boost-spark-3 {
+  transform-origin: 244px 37px;
+}
+
+.boost-spark-4 {
+  transform-origin: 58px 32px;
+}
+
+/* ------------------------------------------------------------------ resting parts */
+
+.boost-eye-happy,
+.boost-eye-lid,
+.boost-mouth-open,
+.boost-leaf-bite,
+.boost-thought,
+.boost-spark {
+  opacity: 0;
+}
+
+.boost-thought {
+  transform: scale(0.6);
+}
+
+.boost-eye-happy,
+.boost-eye-lid,
+.boost-mouth-open,
+.boost-mouth-rest,
+.boost-leaf-bite,
+.boost-eye-open {
+  transition:
+    opacity 180ms ease,
+    transform 90ms ease;
+}
+
+/* ------------------------------------------------------------------ poses */
+
+/* idle: present and still; it breathes slowly (5.236s) and blinks now and then. */
+.ai-boost:is([data-boost-state="idle"], [data-boost-state="curious"]) .boost-body {
+  animation: boost-breathe 5.236s ease-in-out infinite;
+}
+
+.ai-boost:is([data-boost-state="idle"], [data-boost-state="curious"]) .boost-head {
+  animation: boost-breathe-head 5.236s ease-in-out infinite;
+}
+
+.ai-boost[data-boost-blink] .boost-eye-open {
+  transform: scaleY(0.08);
+}
+
+/* curious: hover, keyboard focus, or a tap. The head tilts, the ears perk, the eyes look up. */
+.ai-boost[data-boost-state="curious"] .boost-head {
+  transform: rotate(-7deg) translateY(-3px);
+}
+
+.ai-boost[data-boost-state="curious"] .boost-ear-left {
+  transform: rotate(-12deg);
+}
+
+.ai-boost[data-boost-state="curious"] .boost-ear-right {
+  transform: rotate(12deg);
+}
+
+.ai-boost[data-boost-state="curious"] .boost-pupil {
+  transform: translate(-1.6px, -1.4px);
+}
+
+/* While busy, a hover, focus, or tap perks the ears without leaving the work pose. */
+.ai-boost[data-boost-hover]:is([data-boost-state="thinking"], [data-boost-state="processing"]) .boost-ear-left {
+  transform: rotate(-10deg);
+}
+
+.ai-boost[data-boost-hover]:is([data-boost-state="thinking"], [data-boost-state="processing"]) .boost-ear-right {
+  transform: rotate(10deg);
+}
+
+/* thinking: work is pending. A paw scratches the head, the eyes look up, a thought waits. */
+.ai-boost[data-boost-state="thinking"] .boost-head {
+  transform: rotate(6deg);
+}
+
+.ai-boost[data-boost-state="thinking"] .boost-arm-right {
+  transform: rotate(-184deg);
+}
+
+.ai-boost[data-boost-state="thinking"] .boost-pupil {
+  transform: translate(1.8px, -2px);
+}
+
+.ai-boost[data-boost-state="thinking"] .boost-thought {
+  opacity: 1;
+  transform: none;
+}
+
+.ai-boost[data-boost-state="thinking"] .boost-arm-right {
+  animation: boost-scratch 987ms ease-in-out 380ms infinite;
+}
+
+.ai-boost[data-boost-state="thinking"] .boost-dot {
+  animation: boost-dot 1.618s ease-in-out infinite;
+}
+
+.ai-boost[data-boost-state="thinking"] .boost-dot-2 {
+  animation-delay: 180ms;
+}
+
+.ai-boost[data-boost-state="thinking"] .boost-dot-3 {
+  animation-delay: 360ms;
+}
+
+/* processing: a run is live. It munches a bamboo leaf and nods along, only while work runs. */
+.ai-boost[data-boost-state="processing"] .boost-mouth-rest {
+  opacity: 0;
+}
+
+.ai-boost[data-boost-state="processing"] :is(.boost-mouth-open, .boost-leaf-bite) {
+  opacity: 1;
+}
+
+.ai-boost[data-boost-state="processing"] .boost-pupil {
+  transform: translate(-1px, 1.4px);
+}
+
+.ai-boost[data-boost-state="processing"] .boost-mouth-open {
+  animation: boost-munch 618ms ease-in-out infinite alternate;
+}
+
+.ai-boost[data-boost-state="processing"] .boost-leaf-bite {
+  animation: boost-leaf 618ms ease-in-out infinite alternate;
+}
+
+.ai-boost[data-boost-state="processing"] .boost-head {
+  animation: boost-bob 1.618s ease-in-out infinite;
+}
+
+.ai-boost[data-boost-state="processing"] .boost-ear-right {
+  animation: boost-ear 5.236s ease-in-out infinite;
+}
+
+/* success, celebrate, done: happy eyes and a raised paw. */
+.ai-boost:is([data-boost-state="success"], [data-boost-state="celebrate"], [data-boost-state="done"])
+  .boost-eye-open {
+  opacity: 0;
+}
+
+.ai-boost:is([data-boost-state="success"], [data-boost-state="celebrate"], [data-boost-state="done"])
+  .boost-eye-happy {
+  opacity: 1;
+}
+
+.ai-boost:is([data-boost-state="success"], [data-boost-state="celebrate"], [data-boost-state="done"])
+  .boost-mouth-rest {
+  opacity: 0;
+}
+
+.ai-boost:is([data-boost-state="success"], [data-boost-state="celebrate"], [data-boost-state="done"])
+  .boost-mouth-open {
+  opacity: 1;
+}
+
+.ai-boost:is([data-boost-state="success"], [data-boost-state="done"]) .boost-arm-right {
+  transform: rotate(-168deg);
+}
+
+.ai-boost[data-boost-state="celebrate"] .boost-arm-right {
+  transform: rotate(-150deg);
+}
+
+/* One 618ms spring bounce, the sparkles pop once. */
+.ai-boost[data-boost-play][data-boost-state="success"] .boost-panda {
+  animation: boost-bounce 618ms var(--ease-spring) 1;
+}
+
+.ai-boost[data-boost-play][data-boost-state="success"] .boost-shadow {
+  animation: boost-shadow 618ms var(--ease-spring) 1;
+}
+
+.ai-boost[data-boost-play]:is([data-boost-state="success"], [data-boost-state="celebrate"]) .boost-spark {
+  animation: boost-spark 987ms var(--ease-settle) 1;
+}
+
+.ai-boost[data-boost-play]:is([data-boost-state="success"], [data-boost-state="celebrate"]) .boost-spark-2 {
+  animation-delay: 120ms;
+}
+
+.ai-boost[data-boost-play]:is([data-boost-state="success"], [data-boost-state="celebrate"]) .boost-spark-3 {
+  animation-delay: 240ms;
+}
+
+.ai-boost[data-boost-play]:is([data-boost-state="success"], [data-boost-state="celebrate"]) .boost-spark-4 {
+  animation-delay: 360ms;
+}
+
+/* celebrate: two hops and a little wiggle, about 1.6s, then back to the page's state. */
+.ai-boost[data-boost-play][data-boost-state="celebrate"] .boost-panda {
+  animation: boost-hops 1.605s var(--ease-settle) 1;
+}
+
+.ai-boost[data-boost-play][data-boost-state="celebrate"] .boost-shadow {
+  animation: boost-hops-shadow 1.605s var(--ease-settle) 1;
+}
+
+.ai-boost[data-boost-play][data-boost-state="celebrate"] .boost-arm-right {
+  animation: boost-wave 1.605s ease-in-out 1;
+}
+
+/* done: a task you finished; a nod with the paw up. */
+.ai-boost[data-boost-play][data-boost-state="done"] .boost-head {
+  animation: boost-nod 987ms var(--ease-settle) 1;
+}
+
+/* error: a calm, sympathetic tilt; the ears soften and the eyes look down. No shaking. */
+.ai-boost[data-boost-state="error"] .boost-head {
+  transform: rotate(9deg) translateY(2px);
+  transition-duration: 987ms;
+}
+
+.ai-boost[data-boost-state="error"] .boost-ear-left {
+  transform: rotate(-16deg) translateY(3px);
+}
+
+.ai-boost[data-boost-state="error"] .boost-ear-right {
+  transform: rotate(16deg) translateY(3px);
+}
+
+.ai-boost[data-boost-state="error"] .boost-eye-lid {
+  opacity: 1;
+}
+
+.ai-boost[data-boost-state="error"] .boost-pupil {
+  transform: translate(0, 2px);
+}
+
+/* hello: the first view of a session, one wave. */
+.ai-boost[data-boost-play][data-boost-state="hello"] .boost-arm-right {
+  animation: boost-hello 1.35s ease-in-out 1;
+}
+
+/* away: the tour card has the panda, so this one steps out; the stage stays. */
+.ai-boost[data-boost-state="away"] :is(.boost-panda, .boost-thought) {
+  opacity: 0;
+}
+
+.boost-panda {
+  transition: opacity 380ms ease;
+}
+
+/* ------------------------------------------------------------------ idle gestures (13s to 21s) */
+
+.ai-boost[data-boost-state="idle"][data-boost-gesture="tilt"] .boost-head {
+  animation: boost-tilt 1.618s var(--ease-settle) 1;
+}
+
+.ai-boost[data-boost-state="idle"][data-boost-gesture="ear"] .boost-ear-right {
+  animation: boost-twitch 987ms ease-in-out 1;
+}
+
+.ai-boost[data-boost-state="idle"][data-boost-gesture="look"] .boost-pupil {
+  animation: boost-look 1.618s var(--ease-settle) 1;
+}
+
+.ai-boost[data-boost-state="idle"][data-boost-gesture="nibble"] :is(.boost-mouth-open, .boost-leaf-bite) {
+  animation: boost-nibble 1.618s ease-in-out 1;
+}
+
+.ai-boost[data-boost-state="idle"][data-boost-gesture="nibble"] .boost-mouth-rest {
+  animation: boost-nibble-rest 1.618s ease-in-out 1;
+}
+
+/* Out of view, in a hidden tab, paused, or reduced: nothing loops. */
+.ai-boost[data-boost-still] *,
+body.loader-active .ai-boost * {
+  animation-play-state: paused;
+}
+
+/* ------------------------------------------------------------------ keyframes */
+
+@keyframes boost-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes boost-breathe {
+  50% {
+    transform: scale(1.012, 1.018);
+  }
+}
+
+@keyframes boost-breathe-head {
+  50% {
+    translate: 0 -1.4px;
+  }
+}
+
+@keyframes boost-scratch {
+  50% {
+    transform: rotate(-176deg);
+  }
+}
+
+@keyframes boost-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+
+@keyframes boost-munch {
+  to {
+    transform: scaleY(0.45);
+  }
+}
+
+@keyframes boost-leaf {
+  to {
+    transform: rotate(-6deg) translateY(-1.5px);
+  }
+}
+
+@keyframes boost-bob {
+  50% {
+    transform: translateY(1.6px) rotate(-1.2deg);
+  }
+}
+
+@keyframes boost-ear {
+  6% {
+    transform: rotate(8deg);
+  }
+  12% {
+    transform: none;
+  }
+}
+
+@keyframes boost-bounce {
+  40% {
+    transform: translateY(-16px);
+  }
+  75% {
+    transform: translateY(2px);
+  }
+}
+
+@keyframes boost-shadow {
+  40% {
+    transform: scale(0.82);
+    opacity: 0.7;
+  }
+}
+
+@keyframes boost-spark {
+  0% {
+    opacity: 0;
+    transform: scale(0.2) rotate(0deg);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1.15) rotate(30deg);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.9) rotate(60deg);
+  }
+}
+
+@keyframes boost-hops {
+  20% {
+    transform: translateY(-18px) rotate(-3deg);
+  }
+  40% {
+    transform: translateY(0) rotate(0deg);
+  }
+  60% {
+    transform: translateY(-14px) rotate(3deg);
+  }
+  80% {
+    transform: translateY(0) rotate(0deg);
+  }
+  90% {
+    transform: rotate(-1.5deg);
+  }
+}
+
+@keyframes boost-hops-shadow {
+  20%,
+  60% {
+    transform: scale(0.8);
+    opacity: 0.7;
+  }
+  40%,
+  80% {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes boost-wave {
+  25% {
+    transform: rotate(-172deg);
+  }
+  50% {
+    transform: rotate(-140deg);
+  }
+  75% {
+    transform: rotate(-170deg);
+  }
+}
+
+@keyframes boost-nod {
+  35% {
+    transform: rotate(0deg) translateY(5px);
+  }
+  70% {
+    transform: translateY(-1px);
+  }
+}
+
+@keyframes boost-hello {
+  0% {
+    transform: none;
+  }
+  25% {
+    transform: rotate(-160deg);
+  }
+  45% {
+    transform: rotate(-185deg);
+  }
+  65% {
+    transform: rotate(-160deg);
+  }
+  80% {
+    transform: rotate(-180deg);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes boost-tilt {
+  40%,
+  60% {
+    transform: rotate(-5deg);
+  }
+}
+
+@keyframes boost-twitch {
+  20% {
+    transform: rotate(10deg);
+  }
+  40% {
+    transform: rotate(-3deg);
+  }
+  60% {
+    transform: rotate(6deg);
+  }
+}
+
+@keyframes boost-look {
+  30%,
+  70% {
+    transform: translate(-2.4px, 0.4px);
+  }
+}
+
+@keyframes boost-nibble {
+  15%,
+  85% {
+    opacity: 1;
+  }
+  30%,
+  60% {
+    opacity: 1;
+    transform: scaleY(0.55);
+  }
+  45%,
+  75% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes boost-nibble-rest {
+  15%,
+  85% {
+    opacity: 0;
+  }
+}
+
+/* Reduced motion: every pose shows at once and nothing loops (app-chrome.css also settles every
+   animation and transition); the thought bubble and the happy or sorry face stay as still
+   expressions, and the duty text says what is happening. */
+@media (prefers-reduced-motion: reduce) {
+  .ai-boost *,
+  .ai-boost-stage {
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must beat every state's animation */
+    animation: none !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must beat every state's transition */
+    transition: none !important;
+  }
+}

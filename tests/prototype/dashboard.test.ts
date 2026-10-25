@@ -3442,10 +3442,11 @@ describe('links, words, and voice', () => {
     // of prose. D11's two approved lines (the orchestrator's yes) add 33; the testers' fixes
     // (what a scan found, T6-9; the keywords' found count, T5-20) add 8 and shorter labels give
     // back 10 (450 at the first render). T1-21's line at the foot of Job matches (where the found
-    // roles went, so the two tiles end level) adds 8: the budget is 458 words of prose and 630
-    // in all.
-    expect(all - data).toBeLessThanOrEqual(458);
-    expect(all).toBeLessThanOrEqual(630);
+    // roles went, so the two tiles end level) adds 8: the budget is 458 words of prose. Round 8
+    // (AI Boost, the owner's ask of October 25, 2026): the panel's title, its Deputy Assist
+    // label, and the deputy's line and duty add 10: 468 words of prose and 640 in all.
+    expect(all - data).toBeLessThanOrEqual(468);
+    expect(all).toBeLessThanOrEqual(640);
   });
 
   it('keeps first person out of the headings and dashes out of the copy, in every state', () => {
