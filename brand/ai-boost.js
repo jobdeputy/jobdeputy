@@ -167,6 +167,18 @@
         <stop offset="0" stop-color="#5cc79a"/>
         <stop offset="1" stop-color="#23795b"/>
       </linearGradient>
+      <radialGradient id="boost-sheen" cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stop-color="#ffffff" stop-opacity="0.65"/>
+        <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+      </radialGradient>
+      <radialGradient id="boost-ao" cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stop-color="#1c1712" stop-opacity="0.32"/>
+        <stop offset="1" stop-color="#1c1712" stop-opacity="0"/>
+      </radialGradient>
+      <radialGradient id="boost-gloss" cx="0.32" cy="0.26" r="0.6">
+        <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
+        <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+      </radialGradient>
     </defs>`;
 
   // A few hair strokes give the white fur its direction.
@@ -265,11 +277,30 @@
       <g class="boost-panda">
         <g class="boost-body">
           ${fur(torso, 'url(#boost-fur-white)', { tufts: 54, amp: 2.6, seed: 11 })}
-          ${strokes(['M126 236q-4 10-2 22', 'M150 244q0 10 1 20', 'M174 236q4 10 2 22', 'M138 274q2 6 6 10', 'M162 274q-2 6-6 10'], '#cfc6b4')}
+          <ellipse cx="150" cy="268" rx="52" ry="40" fill="url(#boost-ao)" opacity="0.4"/>
+          ${strokes(
+            [
+              'M126 236q-4 10-2 22',
+              'M150 244q0 10 1 20',
+              'M174 236q4 10 2 22',
+              'M138 274q2 6 6 10',
+              'M162 274q-2 6-6 10',
+              'M118 254q-3 9 0 18',
+              'M182 254q3 9 0 18',
+              'M132 290q4 6 10 8',
+              'M168 290q-4 6-10 8',
+            ],
+            '#cfc6b4',
+          )}
+          <ellipse cx="120" cy="204" rx="40" ry="24" fill="url(#boost-sheen)" opacity="0.5"/>
           ${fur(shoulders, 'url(#boost-fur-black)', { tufts: 40, amp: 2.4, seed: 13 })}
+          <ellipse cx="128" cy="188" rx="30" ry="12" fill="url(#boost-gloss)"/>
           <g class="boost-legs">
+            <ellipse cx="150" cy="286" rx="34" ry="11" fill="url(#boost-ao)" opacity="0.5"/>
             ${fur(ellipse(98, 292, 46, 31, { steps: 12, rotate: -8 }), 'url(#boost-fur-black)', { tufts: 34, amp: 2.4, seed: 17 })}
             ${fur(ellipse(202, 292, 46, 31, { steps: 12, rotate: 8 }), 'url(#boost-fur-black)', { tufts: 34, amp: 2.4, seed: 19 })}
+            <ellipse cx="88" cy="282" rx="18" ry="8" fill="url(#boost-gloss)" transform="rotate(-8 88 282)"/>
+            <ellipse cx="212" cy="282" rx="18" ry="8" fill="url(#boost-gloss)" transform="rotate(8 212 282)"/>
             <ellipse cx="92" cy="300" rx="19" ry="14" fill="url(#boost-pad)" transform="rotate(-8 92 300)"/>
             ${toes(92, 300, 1)}
             <ellipse cx="208" cy="300" rx="19" ry="14" fill="url(#boost-pad)" transform="rotate(8 208 300)"/>
@@ -279,22 +310,46 @@
         <g class="boost-arm boost-arm-left">
           ${bambooStalk()}
           ${fur(armLeft, 'url(#boost-fur-black)', { tufts: 28, amp: 2.2, seed: 23 })}
+          <ellipse cx="88" cy="214" rx="14" ry="9" fill="url(#boost-gloss)"/>
           <ellipse cx="102" cy="254" rx="12" ry="9" fill="#2a2724" opacity="0.6"/>
         </g>
         <g class="boost-head">
+          <ellipse cx="150" cy="186" rx="44" ry="14" fill="url(#boost-ao)" opacity="0.38"/>
           <g class="boost-ear boost-ear-left">
             ${fur(ellipse(90, 60, 27, 25, { steps: 10 }), 'url(#boost-fur-black)', { tufts: 26, amp: 2, seed: 29 })}
             <ellipse cx="92" cy="63" rx="13" ry="11" fill="#34312d"/>
+            <ellipse cx="82" cy="52" rx="10" ry="6" fill="url(#boost-gloss)"/>
           </g>
           <g class="boost-ear boost-ear-right">
             ${fur(ellipse(210, 60, 27, 25, { steps: 10 }), 'url(#boost-fur-black)', { tufts: 26, amp: 2, seed: 31 })}
             <ellipse cx="208" cy="63" rx="13" ry="11" fill="#34312d"/>
+            <ellipse cx="200" cy="52" rx="9" ry="5" fill="url(#boost-gloss)"/>
           </g>
+          <ellipse cx="96" cy="78" rx="18" ry="12" fill="url(#boost-ao)" opacity="0.3"/>
+          <ellipse cx="204" cy="78" rx="18" ry="12" fill="url(#boost-ao)" opacity="0.3"/>
           ${fur(head, 'url(#boost-fur-face)', { tufts: 60, amp: 2.6, seed: 37 })}
-          ${strokes(['M128 58q6-6 12-8', 'M150 52v-8', 'M160 52q6-4 12-2', 'M84 150q-6 6-8 14', 'M216 150q6 6 8 14'], '#d6cebe', 1.1, 0.6)}
+          ${strokes(
+            [
+              'M128 58q6-6 12-8',
+              'M150 52v-8',
+              'M160 52q6-4 12-2',
+              'M84 150q-6 6-8 14',
+              'M216 150q6 6 8 14',
+              'M96 96q-6 4-9 10',
+              'M204 96q6 4 9 10',
+              'M120 172q6 4 12 5',
+              'M180 172q-6 4-12 5',
+            ],
+            '#d6cebe',
+            1.1,
+            0.6,
+          )}
+          <ellipse cx="120" cy="90" rx="34" ry="22" fill="url(#boost-sheen)" opacity="0.55"/>
           <g class="boost-patches">
             ${fur(ellipse(114, 120, 21, 30, { steps: 12, rotate: 32, shape: (a) => 1 + 0.18 * Math.max(0, Math.sin(a)) }), 'url(#boost-patch)', { tufts: 30, amp: 1.3, seed: 41 })}
             ${fur(ellipse(186, 120, 21, 30, { steps: 12, rotate: -32, shape: (a) => 1 + 0.18 * Math.max(0, Math.sin(a)) }), 'url(#boost-patch)', { tufts: 30, amp: 1.3, seed: 43 })}
+            <ellipse cx="108" cy="110" rx="10" ry="8" fill="url(#boost-gloss)"/>
+            <ellipse cx="192" cy="110" rx="10" ry="8" fill="url(#boost-gloss)"/>
           </g>
           <g class="boost-eye boost-eye-left">
             <g class="boost-eye-open">
@@ -313,8 +368,10 @@
             <path class="boost-eye-lid" d="M172 101H194V114Q183 106 172 105.5Z" fill="#161513"/>
           </g>
           ${fur(ellipse(150, 152, 33, 24, { steps: 12 }), 'url(#boost-muzzle)', { tufts: 34, amp: 1.2, seed: 47 })}
+          <ellipse cx="150" cy="166" rx="24" ry="8" fill="url(#boost-ao)" opacity="0.22"/>
           <path class="boost-nose" d="M137 138q13-7 26 0q-1 10-13 14q-12-4-13-14z" fill="url(#boost-nose)"/>
           <ellipse cx="146" cy="139" rx="4" ry="1.8" fill="#fff" opacity="0.35"/>
+          <ellipse cx="140" cy="146" rx="9" ry="5" fill="url(#boost-sheen)" opacity="0.4"/>
           <g class="boost-mouth">
             <path class="boost-mouth-rest" d="M150 152v5M140 158q5 6 10 0q5 6 10 0" fill="none" stroke="#1b1a18" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
             <g class="boost-mouth-open">
@@ -329,6 +386,7 @@
         </g>
         <g class="boost-arm boost-arm-right">
           ${fur(armRight, 'url(#boost-fur-black)', { tufts: 28, amp: 2.2, seed: 53 })}
+          <ellipse cx="212" cy="214" rx="14" ry="9" fill="url(#boost-gloss)"/>
           <ellipse cx="198" cy="254" rx="12" ry="9" fill="#2a2724" opacity="0.6"/>
         </g>
       </g>
