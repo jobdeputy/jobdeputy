@@ -519,12 +519,12 @@ plain visible text, and pages announce their own events.
 - **One panda per viewport.** A page with the dock never draws a second panda; while a tour's
   deputy is in the tour card, the dock steps out. Empty states use prop-only illustrations
   (`data-deputy-prop`: clipboard, page, cards, shield, key, magnifier, form, envelope). **AI Boost
-  on the Dashboard is the named exception** (round 8, [ui-foundation.md, AI Boost (round
-  8)](ui-foundation.md#ai-boost-round-8)): while its panel shows, it lends the dock's panda, so
-  exactly one panda is still drawn.
-- **AI Boost (round 8).** The Dashboard's own larger, more detailed panda, on the right of the
-  page from `1280px`, a compact card from `721px` to `1279px`, and hidden on phones
-  (`brand/ai-boost.js`, `brand/ai-boost.css`). It never invents state: it mirrors the dock through
+  on the Dashboard is the named exception** (round 9, [ui-foundation.md, AI Boost (round
+  9)](ui-foundation.md#ai-boost-round-9)): once its script runs it lends the dock's panda for the
+  page's whole life, so exactly one panda is still drawn, always AI Boost's.
+- **AI Boost (round 8, superseded by round 9 below).** The Dashboard's own larger, more detailed
+  panda, on the right of the page from `1280px`, a compact card from `721px` to `1279px`, and
+  hidden on phones (`brand/ai-boost.js`, `brand/ai-boost.css`). It never invents state: it mirrors the dock through
   a `jobdeputy:deputy` event every `set`, `flash`, and `react()` dispatches (the pose, the page's
   own duty and speech, whether work is in progress, and whether a tour is active), so it shows
   only what the deputy companion really shows. Its named states are `idle`, `curious` (mouse
@@ -548,6 +548,23 @@ plain visible text, and pages announce their own events.
   only where the dock shows its own default line, never over a page's own words. The panel's
   visible name is **AI Boost**; it shows **Deputy Assist**'s real state, and nothing else in the
   product is renamed.
+- **AI Boost (round 9).** The owner reviewed round 8's panel against a screenshot of a small
+  round "talk to us" corner bubble and asked for that shape, keeping the panda
+  ([ui-foundation.md, AI Boost (round 9)](ui-foundation.md#ai-boost-round-9)). The drawing, its
+  mirrored states, its loops, and its voice rules above are unchanged; only the layout changed:
+  - The panel is now a `72px` circular bubble, fixed to the viewport's bottom-right corner, at
+    every width — phones included, so the app bar's deputy chip is no longer AI Boost's
+    narrow-width fallback.
+  - The drawing is scaled and nudged toward its head (CSS `transform` on `.boost-svg`, not a
+    second drawing) so the small circle frames a recognizable bust, the way the dock's own
+    phone-width chip frames just the face.
+  - The visible title, kicker, and duty text have no room on the bubble; they stay for assistive
+    technology (the stage button's accessible name and `aria-describedby`). The deputy's speech
+    line — the same real line as before, never reworded for the bubble — shows as a tooltip to the
+    bubble's left on hover, keyboard focus, and while a one-time pose plays, with its tail toward
+    the panda.
+  - Because the bubble is always on screen, AI Boost lends the dock's panda once, for the page's
+    life, instead of toggling by width; a tour still steps AI Boost's own panda out in turn.
 - **Forced colours.** The drawing keeps its own colours (`forced-color-adjust: none` on
   `.deputy-art` and `.deputy-prop-art`), like an image, so the panda never vanishes into a dark
   system canvas. Its speech and duty follow the system colours.

@@ -1664,3 +1664,64 @@ New in round 8:
 - **Hover and tap curiosity only apply at rest** (idle); while AI Boost is thinking or working, a
   hover or tap instead perks the ears without leaving the work pose, so the panel never looks idle
   while a run is live. Confirm this reads as intended rather than as unresponsive.
+
+## Round 9: the owner's review of AI Boost (October 26, 2026)
+
+Two screenshots of a small round "talk to us" bubble, fixed to a page's bottom-right corner with a
+"Need help? Talk to Digital Assistant" tooltip: "i want ai boost like this." Round 8's large panel
+is a decision made a few messages earlier in the same conversation, so two questions were put to
+the owner before changing anything, since the screenshots alone did not say whether the panda
+stays or the panel goes everywhere:
+
+- **What to change.** Shrink AI Boost into that corner bubble (reversing round 8's "not in one
+  small section" placement) — not adding a tooltip to the existing panel, and not copying some
+  other detail from the screenshots. The owner picked shrinking it.
+- **The bubble's artwork.** The screenshots show a generic round robot icon, not a panda. The
+  owner picked keeping the panda character, small and round, over switching to a generic icon.
+- **Where it lives.** The owner picked replacing round 8's panel everywhere (every width, not a
+  bubble-on-narrow/panel-on-wide split), so AI Boost is now one layout at every size.
+
+New in round 9, all in `brand/ai-boost.js` and `brand/ai-boost.css` (`brand/home-preview.html`
+only lost the panel's grid CSS, since a fixed bubble needs none):
+
+- **A `72px` floating circular bubble**, fixed to the viewport's bottom-right corner (`21px` from
+  each edge; `13px` on phones narrower than `421px`), on top of the page at every width. The same
+  procedurally drawn panda (round 8's SVG, since made more realistic in the same session: layered
+  shading, fur-stroke texture, and gloss highlights added to `pandaSvg()`) now draws into it,
+  scaled and nudged toward its head (`.boost-svg`'s `transform: scale(1.6) translateY(-6%)`) so the
+  small circle frames a recognizable bust, the same crop idea as the dock's own phone-width chip.
+- **The panel's title, kicker, and duty text are visually hidden** (there is no room on a `72px`
+  circle) but stay in the markup for assistive technology: the stage button's
+  `aria-label="Your deputy: open Activity"` and `aria-describedby="ai-boost-duty"` are unchanged,
+  and the duty paragraph's dot becomes a small status badge on the bubble's edge (the same pending
+  ring and error colour as round 8, just smaller).
+- **The deputy's speech shows as a tooltip** to the bubble's left, tail pointing at the panda (a
+  mirrored version of the `.deputy-speech` bubble, same component, same voice rules), appearing on
+  hover, keyboard focus, and while a one-time pose (`[data-boost-play]`) plays, so success,
+  celebrate, and error still speak without a hover. The line itself is unchanged: still the real
+  `deputy.js` speech, never reworded for the bubble.
+- **The dock now lends its panda once, for the page's whole life**, instead of toggling with a
+  width media query (`JobDeputyDeputy.lend()` called at startup, never `unlend()`'d back, except
+  that a tour still steps AI Boost's own panda out in turn, exactly as round 8). Motion no longer
+  gates on a width match either, since the bubble is always on screen; it still stops under Pause
+  motion, reduced motion, a hidden tab, and while scrolled out of view.
+- The app bar's deputy chip is no longer AI Boost's narrow-width fallback — the bubble itself now
+  covers every width, phones included — though the chip mechanism (`deputy.css`'s
+  `[data-deputy-size="chip"]`) is untouched and still exists for the dock itself if it is ever
+  shown unlent.
+
+Verified in the same change: all 2,816 prototype tests pass (30 in `ai-boost.test.ts`, two of
+round 8's rewritten for the new layout, two added for the tooltip and the bubble's crop); the
+audit (`scripts/ui-audit.mjs --pages=home --parity --focus --motion --reduced`) passes at 390px,
+768px, and 1440px apart from the same pre-existing long-task flake round 8 found and documented
+(confirmed again by re-running against the unmodified check history); `focus.not-obscured` passes
+at every width, so the fixed bubble does not sit over a focused control.
+
+### Open questions for the owner (round 9)
+
+- **The crop (`scale(1.6) translateY(-6%)`) was picked by eye** from a small contact sheet of four
+  options, not a rule; the owner may want it tighter, looser, or centred differently.
+- **The bubble always shows, including mid-tour and on the entry pages' signed-out chrome** (it
+  only ever draws on signed-in pages with the dock, as round 8 did) — confirm a persistent
+  bottom-right bubble is wanted on every signed-in page's view of the Dashboard, not just a glance
+  at it.

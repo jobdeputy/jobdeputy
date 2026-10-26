@@ -53,9 +53,10 @@ describe('AI Boost on the Dashboard', () => {
     expect(home.split('<script src="./ai-boost.js"></script>')).toHaveLength(2);
   });
 
-  it('is laid out by CSS from the first paint, and lends the dock’s panda only from the script', () => {
+  it('is a fixed corner bubble at every width, and lends the dock’s panda for good', () => {
     expect(panel).toMatch(/<aside class="ai-boost" id="ai-boost"[^>]* data-boost data-boost-state="idle">/);
-    expect(css).toMatch(/@media \(max-width: 720px\) \{\n {2}\.ai-boost \{\n {4}display: none;/);
+    expect(css).toMatch(/\.ai-boost \{\n {2}position: fixed;\n {2}right: 21px;\n {2}bottom: 21px;/);
+    expect(css).not.toMatch(/display: none/);
     expect(deputy).not.toContain('[data-boost]');
     expect(script).toContain("deputy.lend({ speech: 'I’m in AI Boost.' });");
   });
@@ -154,8 +155,17 @@ describe('the AI Boost styles', () => {
     expect(script).toContain('new IntersectionObserver(');
   });
 
-  it('reads the sticky offset from the chrome’s scroll padding instead of hard-coding it', () => {
-    expect(script).toContain('window.getComputedStyle(root).scrollPaddingTop');
+  it('shows its words as a tooltip, tail toward the bubble, on hover, focus, and a played pose', () => {
+    expect(css).toMatch(/\.ai-boost \.deputy-speech \{\n {2}position: absolute;/);
+    expect(css).toContain('border-right: 1px solid var(--line);\n  border-bottom: 1px solid var(--line);');
+    expect(css).toMatch(
+      /\.ai-boost:hover \.deputy-speech,\n\.ai-boost:focus-within \.deputy-speech,\n\.ai-boost\[data-boost-play\] \.deputy-speech \{/,
+    );
+  });
+
+  it('zooms the drawing toward its head so the bubble frames a bust, and keeps the duty text for assistive technology only', () => {
+    expect(css).toMatch(/\.boost-svg \{\n {2}display: block;\n {2}width: 100%;\n {2}height: 100%;\n {2}overflow: visible;\n {2}transform: scale\(/);
+    expect(css).toContain('.ai-boost [data-boost-duty] {');
   });
 });
 

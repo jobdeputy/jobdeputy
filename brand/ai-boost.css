@@ -1,10 +1,12 @@
 /*
- * AI Boost (round 8): the Dashboard's larger, detailed panda deputy (brand/ai-boost.js).
+ * AI Boost (round 9): the Dashboard's detailed panda deputy (brand/ai-boost.js), in a floating
+ * bubble fixed to the viewport's bottom-right corner, at every width.
  *
- * Layout: a sticky panel on the right of the Dashboard from 1280px (home-preview.html places it),
- * a compact card under the page intro from 721px to 1279px, and nothing on phones, where the app
- * bar's deputy chip keeps the panda. The panel reuses the dock's surface, speech bubble, and duty
- * pill (deputy.css), so it reads as the same companion, larger.
+ * Layout: round 8 gave the panda a large right-hand panel; the owner asked on October 26, 2026 to
+ * shrink it back to a small corner bubble, the way a "talk to us" chat widget sits. The bubble
+ * reuses the dock's speech bubble and duty dot (deputy.css), so it still reads as the same
+ * companion: the art is just a cropped, zoomed view of the same drawing, and the words move into
+ * a tooltip that shows on hover, keyboard focus, and while a state is playing.
  *
  * States on [data-boost-state]: idle, curious, thinking, processing, success, celebrate, done,
  * error, hello, and away. A state's pose is plain transforms (so Pause motion and reduced motion
@@ -12,64 +14,42 @@
  * while deputy.js says work is pending or in progress. Every keyframe starts and ends at the
  * state's pose, so the shared reset (app-chrome.css) leaves the pose, never a half-way frame.
  * Transforms target wrapper groups only; the drawing's geometry has no transform attribute on
- * any animated group.
+ * any animated group. None of this changed from round 8 — only the layout below did.
  */
 
 .ai-boost {
-  --boost-top: 89px;
-  position: relative;
+  position: fixed;
+  right: 21px;
+  bottom: 21px;
+  z-index: 40;
   display: grid;
-  min-width: 0;
-  gap: 13px;
-  padding: 21px;
-  border: 1px solid var(--line-soft);
-  border-radius: 22px;
-  color: var(--ink);
-  background: var(--surface);
-  box-shadow: var(--shadow);
-  align-content: start;
+  width: 72px;
 }
 
+/* The name and kicker read fine as the stage button's accessible name; visually there is no room
+   for them on a 72px bubble. */
 .ai-boost-head {
-  display: flex;
-  min-width: 0;
-  gap: 8px;
-  align-items: baseline;
-  justify-content: space-between;
-}
-
-/* The visible name reads like the Dashboard's tile titles; the panel's h2 is visually hidden, as
-   the bands' section headings are. */
-.ai-boost-title {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 680;
-  line-height: 1.3;
-}
-
-.ai-boost-kicker {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 650;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
   white-space: nowrap;
 }
 
-/* The panda is a button (it opens Activity): the stage keeps the drawing inside its rounded
-   frame, so a hop, a raised paw, or a sparkle never spills over the page. */
+/* The panda is a button (it opens Activity): the stage is a circle, and keeps the drawing inside
+   it, so a hop, a raised paw, or a sparkle never spills over the page. */
 .ai-boost-stage {
   position: relative;
   display: block;
-  width: 100%;
-  min-width: 0;
+  width: 72px;
+  height: 72px;
   margin: 0;
   padding: 0;
   overflow: hidden;
   isolation: isolate;
   border: 1px solid var(--line-soft);
-  border-radius: 18px;
+  border-radius: 50%;
   color: inherit;
   background:
     radial-gradient(circle at 18% 78%, var(--blue-soft), transparent 46%),
@@ -78,17 +58,25 @@
     var(--paper);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  box-shadow:
+    var(--shadow),
+    0 10px 24px rgb(0 0 0 / 16%);
   transition:
     border-color 180ms ease,
-    transform 180ms ease;
+    transform 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .ai-boost-stage:hover {
   border-color: var(--line);
+  transform: translateY(-2px);
+  box-shadow:
+    var(--shadow),
+    0 14px 28px rgb(0 0 0 / 20%);
 }
 
 .ai-boost-stage:active {
-  transform: translateY(1px);
+  transform: translateY(0);
 }
 
 .ai-boost-stage:focus-visible {
@@ -98,26 +86,81 @@
 
 .ai-boost-art {
   display: block;
-  aspect-ratio: 300 / 340;
-  max-height: calc(100vh - var(--boost-top) - 200px);
-  min-height: 200px;
-  margin: 0 auto;
+  width: 100%;
+  height: 100%;
 }
 
+/* The full drawing, scaled up and nudged toward its head so the bubble frames a bust, the way the
+   dock's own phone-width chip frames just the face (deputy.css's chip clip-path). */
 .boost-svg {
   display: block;
   width: 100%;
   height: 100%;
   overflow: visible;
+  transform: scale(1.6) translateY(-6%);
+  transform-origin: 50% 50%;
 }
 
-/* The words: the dock's bubble (its tail toward the panda) and duty pill. */
+/* The words: a tooltip to the bubble's left, its tail toward the panda. Shown on hover, keyboard
+   focus, and while a one-time pose plays (so success/celebrate/error speak without a hover). */
 .ai-boost .deputy-speech {
-  font-size: 17px;
+  position: absolute;
+  right: calc(100% + 14px);
+  bottom: 4px;
+  left: auto;
+  z-index: 1;
+  width: max-content;
+  max-width: 220px;
+  margin: 0;
+  font-size: 15px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(6px);
+  transition:
+    opacity 180ms ease,
+    transform 180ms var(--ease-settle);
 }
 
+.ai-boost .deputy-speech::before {
+  top: calc(50% - 6.5px);
+  right: -7px;
+  left: auto;
+  border-top: 0;
+  border-left: 0;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.ai-boost:hover .deputy-speech,
+.ai-boost:focus-within .deputy-speech,
+.ai-boost[data-boost-play] .deputy-speech {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+
+/* The duty dot becomes a small status badge on the bubble's edge; its text stays for assistive
+   technology only (the stage button's aria-describedby). */
 .ai-boost .deputy-duty {
-  justify-self: center;
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  z-index: 2;
+  display: block;
+  min-height: 0;
+  padding: 3px;
+  border: 1px solid var(--line-soft);
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.ai-boost [data-boost-duty] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
 }
 
 /* A working state turns the dot into the dock's pending ring. */
@@ -147,53 +190,11 @@
   }
 }
 
-/* Phones: the app bar's deputy chip keeps the panda. */
-@media (max-width: 720px) {
+/* Narrow phones: tuck the bubble closer to the corner so it never crowds a thumb-width edge. */
+@media (max-width: 420px) {
   .ai-boost {
-    display: none;
-  }
-}
-
-/* Compact card (721px to 1279px): the panda beside its words. */
-@media (min-width: 721px) and (max-width: 1279px) {
-  .ai-boost {
-    grid-template-columns: 148px minmax(0, 1fr);
-    gap: 8px 21px;
-    padding: 13px 21px 13px 13px;
-    align-items: center;
-  }
-
-  .ai-boost-stage {
-    grid-row: 1 / span 3;
-  }
-
-  .ai-boost-art {
-    min-height: 0;
-    max-height: none;
-  }
-
-  .ai-boost-head {
-    justify-content: flex-start;
-    gap: 13px;
-  }
-
-  .ai-boost .deputy-speech {
-    justify-self: start;
-    font-size: 16px;
-    text-align: left;
-  }
-
-  /* The tail points left, at the panda. */
-  .ai-boost .deputy-speech::before {
-    top: calc(50% - 6.5px);
-    left: -7px;
-    border-top: 0;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-  }
-
-  .ai-boost .deputy-duty {
-    justify-self: start;
+    right: 13px;
+    bottom: 13px;
   }
 }
 

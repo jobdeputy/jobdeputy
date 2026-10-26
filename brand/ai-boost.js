@@ -1,31 +1,33 @@
-// AI Boost (round 8): the Dashboard's larger, detailed panda deputy in a right-hand panel.
+// AI Boost (round 9): the Dashboard's detailed panda deputy, in a floating corner bubble.
 //
 // The owner asked on October 25, 2026 for "a realistic panda as AI Boost on the right side of the
-// Dashboard, not in one small section". This script draws that panda (a detailed SVG with
-// natural proportions, soft fur shading, and tufted fur edges, built here so it needs no image
-// file) and keeps it in step with the deputy companion:
+// Dashboard, not in one small section" (round 8: a large right-hand panel). On October 26, 2026
+// the owner asked for it back as a small floating bubble, bottom-right, like a typical "talk to
+// us" chat widget — this round. The same detailed SVG (natural proportions, soft fur shading,
+// tufted fur edges, built here so it needs no image file) now draws into that bubble; only
+// ai-boost.css's layout changed; the state machine below is unchanged from round 8:
 //
-// - deputy.js stays the only source of state. Every pose the dock shows arrives here as the
-//   jobdeputy:deputy event (page states, moments, reactions, and the tour), so the panel never
-//   invents work: it thinks only while work is pending, munches only while a run is live, and
-//   celebrates only when deputy.js reacts to a finished action.
-// - While the panel is on screen the dock steps out (JobDeputyDeputy.lend), so one panda per
-//   viewport holds; during a tour the panel steps out too, because the tour card has the panda.
+// - deputy.js stays the only source of state. Every pose the bubble shows arrives here as the
+//   jobdeputy:deputy event (page states, moments, reactions, and the tour), so it never invents
+//   work: it thinks only while work is pending, munches only while a run is live, and celebrates
+//   only when deputy.js reacts to a finished action.
+// - The bubble is on screen for the page's whole life, so the dock steps out for good
+//   (JobDeputyDeputy.lend), keeping one panda per viewport; during a tour the bubble steps out
+//   too, because the tour card has the panda.
 // - Motion: named states on [data-boost-state] (idle, curious, thinking, processing, success,
 //   celebrate, done, error, hello, away) and one-time motion on [data-boost-play]. Blinks and one
 //   small idle gesture run from timers that stop while paused (html[data-motion="paused"]), under
-//   reduced motion, in a hidden tab, and while the panel is out of view.
+//   reduced motion, in a hidden tab, and while the bubble is out of view.
 // - The panda is a button that opens the dock's Activity; hover, keyboard focus, and a tap show
-//   the curious pose. Speech and duty are plain visible text, never live regions: the page
-//   announces its own events.
+//   the curious pose, and reveal its words as a tooltip (CSS, not a live region: the page
+//   announces its own events).
 //
-// Without this script (or if it fails), the dock keeps its panda and the panel shows only its words.
+// Without this script (or if it fails), the dock keeps its panda and the bubble shows no art.
 
 (() => {
   'use strict';
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
-  const WIDE = '(min-width: 721px)';
   const BLINK_MS = 180;
   const BLINK_MIN = 5236;
   const BLINK_MAX = 8472;
@@ -485,7 +487,6 @@
     }
 
     const root = document.documentElement;
-    const wide = window.matchMedia(WIDE);
     const reducedQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     const timers = {};
     let base = 'idle';
@@ -499,8 +500,7 @@
       window.clearTimeout(timers[name]);
       delete timers[name];
     };
-    const moving = () =>
-      root.dataset.motion !== 'paused' && !reducedQuery.matches && !document.hidden && inView && wide.matches;
+    const moving = () => root.dataset.motion !== 'paused' && !reducedQuery.matches && !document.hidden && inView;
 
     // One-time motion restarts with a style flush between removing and adding the attribute.
     const play = () => {
@@ -693,22 +693,9 @@
 
     // ---------------------------------------------------------------- where it shows
 
-    // The sticky offset follows the fixed chrome (its scroll padding), never a hard-coded height.
-    const placement = () => {
-      // CSS shows the panel from 721px; the dock lends its panda only while the panel shows.
-      const show = wide.matches;
-      const top = window.getComputedStyle(root).scrollPaddingTop;
-      if (top && top !== 'auto') {
-        panel.style.setProperty('--boost-top', top);
-      }
-      if (show) {
-        deputy.lend({ speech: 'I’m in AI Boost.' });
-      } else {
-        deputy.unlend();
-      }
-      resume();
-    };
-    wide.addEventListener('change', placement);
+    // The bubble is fixed to the corner at every width, so the dock lends its panda once, here,
+    // for the page's whole life (never unlent, since the bubble never goes away).
+    deputy.lend({ speech: 'I’m in AI Boost.' });
     reducedQuery.addEventListener('change', resume);
     document.addEventListener('visibilitychange', resume);
     new MutationObserver(resume).observe(root, { attributes: true, attributeFilter: ['data-motion'] });
@@ -718,7 +705,7 @@
         resume();
       }).observe(panel);
     }
-    placement();
+    resume();
     // The drawing goes in its own task after the first paint: its box is already sized (the
     // stage's aspect ratio), so nothing moves, and the page's boot task stays as it was.
     window.setTimeout(() => {

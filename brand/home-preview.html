@@ -1541,36 +1541,8 @@
 
       /* The reduced-motion and Pause motion resets are shared in ./app-chrome.css. */
 
-      /* AI Boost (round 8): the larger panda deputy (ai-boost.css). From 1280px it is a sticky
-         column on the right, beside the intro and the bands; from 721px to 1279px a compact card
-         under the intro; on phones it stays hidden and the app bar's chip keeps the panda. */
-      @media (min-width: 1280px) {
-        .home-main .page-shell:has(> .ai-boost) {
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) 280px;
-          column-gap: 21px;
-          align-items: start;
-        }
-
-        /* The intro places itself in the first free cell (row 1, column 1). */
-        .home-main .page-shell > .dash-page {
-          grid-column: 1;
-          grid-row: 2;
-        }
-
-        .home-main .ai-boost {
-          position: sticky;
-          top: var(--boost-top);
-          grid-column: 2;
-          grid-row: 1 / span 2;
-        }
-      }
-
-      @media (min-width: 721px) and (max-width: 1279px) {
-        .home-main .ai-boost {
-          margin: -13px 0 34px;
-        }
-      }
+      /* AI Boost (round 9): the panda shrank back to a floating corner bubble (ai-boost.css),
+         fixed in the viewport at every width, so it needs no layout rules of its own here. */
     </style>
   </head>
   <body class="loader-active">
@@ -1795,10 +1767,11 @@
           </div>
         </section>
 
-        <!-- AI Boost: start (round 8). The larger panda deputy. CSS shows the panel from 721px
-             (so the first paint has its final layout); ai-boost.js draws the panda, follows the
-             dock's real state, and steps the dock out. Without the script the dock keeps its
-             panda and the panel shows only its words. -->
+        <!-- AI Boost: start (round 9). A floating panda bubble, fixed to the viewport's
+             bottom-right corner at every width (CSS places it, so the first paint has its final
+             position); ai-boost.js draws the panda, follows the dock's real state, and steps the
+             dock out. Its words show as a tooltip on hover or keyboard focus. Without the script
+             the dock keeps its panda and the bubble shows nothing but the art. -->
         <aside class="ai-boost" id="ai-boost" aria-labelledby="ai-boost-title" data-boost data-boost-state="idle">
           <div class="ai-boost-head">
             <h2 class="sr-only" id="ai-boost-title">AI Boost</h2>

@@ -31,6 +31,10 @@ current task, to depart from three rules below for one named exception: a larger
 panda deputy on the right of the Dashboard only, titled AI Boost, instead of the dock alone. See
 [AI Boost (round 8)](#ai-boost-round-8) for the exact exception and what still holds everywhere
 else.
+**Amended October 26, 2026 with AI Boost, round 9**: the product owner reviewed round 8's panel
+against a screenshot of a small floating "talk to us" corner bubble and asked for that shape
+instead, keeping the panda character. Round 8's panel placement is superseded; see
+[AI Boost (round 9)](#ai-boost-round-9) for the current exception.
 The owner reviews the result before it is locked.
 
 This document is the composition and continuity contract for every JobDeputy product page. It
@@ -176,6 +180,35 @@ its speech and duty are plain visible text connected to the real action, and it 
 paper canvas, tokens, and voice rules. "AI Boost" is a label on this one panel; the AI work itself
 is still named **Deputy Assist** everywhere, including inside the panel, which names both (see
 [Deputy companion](design-system.md#deputy-companion-signed-in-pages) for the full behavior).
+
+### AI Boost (round 9)
+
+**Approved October 26, 2026** by the product owner's explicit instruction, given two screenshots of
+a small round "talk to us" bubble fixed to a page's bottom-right corner: "i want ai boost like
+this" — then, asked whether the panda should stay or the bubble should use a generic icon like the
+screenshot: "Panda, small and round"; then, asked whether the bubble should replace round 8's panel
+everywhere or only at narrower widths: "Replace the panel everywhere". This **supersedes round 8's
+placement only**; round 8's permission to draw a more detailed, naturalistic panda still holds
+(round 9 uses the same drawing, just smaller and cropped), and nothing else approved in round 8 is
+withdrawn:
+
+- AI Boost no longer appears as a panel beside the page content at any width. It is a small
+  (`72px`) circular bubble fixed to the viewport's bottom-right corner, on top of the page, at
+  every width including phones — the one-exception panda no longer needs the app bar's deputy chip
+  as a narrow-width fallback, because the bubble itself is the fallback.
+- Because the bubble is on screen for the page's whole life, the dock steps out for good the
+  moment AI Boost's script runs (`JobDeputyDeputy.lend()`, never `unlend()`'d back, except that a
+  tour still steps AI Boost's own panda out in turn, exactly as round 8 specified). One panda per
+  viewport still holds; it is simply always AI Boost's bubble now, not the dock, on every
+  signed-in Dashboard view.
+- The panel's visible title, kicker, and duty text have no room on a `72px` bubble; they stay in
+  the markup for assistive technology (the stage button's accessible name and
+  `aria-describedby`), and the deputy's speech line shows instead as a tooltip to the bubble's
+  left on hover, keyboard focus, and while a one-time pose (`[data-boost-play]`) is playing — the
+  same real, unmodified deputy.js speech as round 8, just shown differently.
+
+Everything else in round 8's text above still applies unchanged: the character, its named states,
+real-state-only motion, Pause motion and reduced motion, and the Deputy Assist naming.
 
 ### Connected navigation and state
 
