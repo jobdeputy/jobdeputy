@@ -57,6 +57,7 @@
   // the ledge and the leaning bamboo stay, with these words.
   const AWAY_DUTY = 'Showing you around';
   const AWAY_SPEECH = 'I’m in the tour card.';
+  const LENT_SPEECH = 'I’m in AI Boost.';
   const POINTS = ['left', 'right', 'up', 'down'];
   // A background notice (a prompt test that finished, a run that needs answers) lives with the
   // deputy until you open Activity (round 6, UAT M-19): its duty says it in three words or fewer
@@ -821,6 +822,11 @@
   let noticeTimer = 0;
   // The active tour panda (guide), or null; a dock adopted later steps out for it too.
   let guided = null;
+  // AI Boost (round 8): the Dashboard's larger deputy outside the dock, or null. While it is lent,
+  // every live dock steps out exactly as for the tour (one panda per viewport), keeps its real
+  // duty, and says where the panda is; the boost panel follows each state through the
+  // jobdeputy:deputy event below.
+  let lent = null;
 
   const readPaused = () => {
     try {
@@ -976,7 +982,7 @@
       ? AGREEMENT_DUTY
       : notice
         ? NOTICE_DUTY[notice]
-        : deputy.away
+        : deputy.away && !(lent && !guided)
           ? AWAY_DUTY
           : modeOf(deputy) === 'paused' && isResting(deputy)
             ? PAUSED_DUTY
@@ -991,6 +997,29 @@
     }
   };
 
+  // Tells the page what the deputy now shows (round 8, AI Boost): the pose, its own copy (not the
+  // stepped-out line), whether work is in progress, and whether it is stepped out for a tour. The
+  // boost panel mirrors this; nothing else listens. Hosts without events (the tests' fake DOM)
+  // skip it.
+  const tellPage = (deputy, copy) => {
+    const { host } = deputy;
+    if (deputy.demo || typeof host.dispatchEvent !== 'function' || typeof CustomEvent !== 'function') {
+      return;
+    }
+    host.dispatchEvent(
+      new CustomEvent('jobdeputy:deputy', {
+        bubbles: true,
+        detail: {
+          state: deputy.state,
+          duty: copy?.duty ?? '',
+          speech: copy?.speech ?? '',
+          working: host.hasAttribute('data-deputy-working'),
+          guided: Boolean(guided),
+        },
+      }),
+    );
+  };
+
   // Speech and duty are plain visible text, never live regions; pages announce their own events.
   // Resting on its page state while the agreement pause is on, the deputy says why it waits; a
   // reaction or a held moment (a tour) keeps its own line.
@@ -998,13 +1027,16 @@
     deputy.copy = copy;
     writeDuty(deputy);
     const said = deputy.away
-      ? AWAY_SPEECH
+      ? lent && !guided
+        ? lent.speech
+        : AWAY_SPEECH
       : heldForAgreement(deputy) && !deputy.held && isResting(deputy)
         ? AGREEMENT_SPEECH
         : copy.speech;
     for (const echo of deputy.speechEchoes) {
       echo.textContent = said;
     }
+    tellPage(deputy, copy);
     const { speech } = deputy;
     if (!speech) {
       return;
@@ -1638,7 +1670,7 @@
     host.dataset.deputyMode = modeOf(deputy);
     // A tour that started before this dock was adopted keeps its panda in the tour card; a cast
     // sheet demo can be pinned stepped out with data-deputy-away.
-    if ((guided && !demo) || (demo && host.hasAttribute('data-deputy-away'))) {
+    if (((guided || lent) && !demo) || (demo && host.hasAttribute('data-deputy-away'))) {
       deputy.away = true;
       host.setAttribute('data-deputy-away', '');
     }
@@ -1974,14 +2006,15 @@
   // target (left, right, up, or down), the left paw free. While it is out, every live deputy host
   // steps out (data-deputy-away): the ledge and the leaning bamboo stay, so one panda per viewport
   // holds. Pause motion and reduced motion change its pose at once (deputy.css).
+  // Also used by lend (AI Boost): already stepped out, the copy is still rewritten, so the line
+  // changes between the tour's and the boost panel's.
   const setAway = (deputy, on) => {
-    if (deputy.away === on) {
-      return;
-    }
-    deputy.away = on;
-    deputy.host.toggleAttribute('data-deputy-away', on);
-    if (on) {
-      endGesture(deputy);
+    if (deputy.away !== on) {
+      deputy.away = on;
+      deputy.host.toggleAttribute('data-deputy-away', on);
+      if (on) {
+        endGesture(deputy);
+      }
     }
     writeCopy(deputy, deputy.copy ?? restOf(deputy).copy, true);
   };
@@ -2049,7 +2082,7 @@
         guided = null;
       }
       for (const deputy of live()) {
-        setAway(deputy, false);
+        setAway(deputy, Boolean(lent));
         if (finished) {
           react(deputy, 'celebrate');
         } else {
@@ -2336,6 +2369,29 @@
     // speech, active, update({ point, speech }), release({ finished }) }. See guide-api.md in the
     // round's work folder and docs/design-system.md, "Deputy companion".
     guide,
+    // AI Boost (round 8): lend({ speech }) steps every live dock out for the boost panel's panda
+    // (before or after the docks start); unlend() brings them back. The docks keep their real duty
+    // and keep sending jobdeputy:deputy, so the panel shows the same state.
+    lend(options = {}) {
+      const speech =
+        typeof options.speech === 'string' && options.speech.trim() ? options.speech : LENT_SPEECH;
+      lent = { speech };
+      for (const deputy of live()) {
+        setAway(deputy, true);
+      }
+    },
+    unlend() {
+      if (!lent) {
+        return;
+      }
+      lent = null;
+      for (const deputy of live()) {
+        setAway(deputy, Boolean(guided));
+      }
+    },
+    get lent() {
+      return Boolean(lent);
+    },
     // The active tour panda's direction, or null.
     get guiding() {
       return guided?.active ? guided.point : null;

@@ -26,6 +26,15 @@ Amended on October 7, 2026 with round 7, on two of the owner's asks in their six
 authentication story is the brand line and three steps instead of the eleven-chapter narrative
 (G1), and signing the User Agreement is one step (G3)
 ([ui-app-redesign.md, round 7](ui-app-redesign.md#round-7-the-owners-sixth-review-october-6-and-7-2026)).
+**Amended October 25, 2026 with AI Boost**, the product owner's explicit approval, given in the
+current task, to depart from three rules below for one named exception: a larger, more detailed
+panda deputy on the right of the Dashboard only, titled AI Boost, instead of the dock alone. See
+[AI Boost (round 8)](#ai-boost-round-8) for the exact exception and what still holds everywhere
+else.
+**Amended October 26, 2026 with AI Boost, round 9**: the product owner reviewed round 8's panel
+against a screenshot of a small floating "talk to us" corner bubble and asked for that shape
+instead, keeping the panda character. Round 8's panel placement is superseded; see
+[AI Boost (round 9)](#ai-boost-round-9) for the current exception.
 The owner reviews the result before it is locked.
 
 This document is the composition and continuity contract for every JobDeputy product page. It
@@ -138,7 +147,68 @@ accessibility. This document defines how those parts MUST be assembled across pa
 - The deputy companion appears in the sidebar dock on every signed-in page. Its pose MUST name the
   page's work or the operation under way, using the named states in
   [Deputy companion](design-system.md#deputy-companion-signed-in-pages). It MUST NOT appear as
-  unrelated decoration, repeat the introductory story, or appear twice in one viewport.
+  unrelated decoration, repeat the introductory story, or appear twice in one viewport. **AI Boost
+  on the Dashboard is the one named exception**; see below.
+
+### AI Boost (round 8)
+
+**Approved October 25, 2026** by the product owner's explicit instruction in the current task: "I
+want realistic panda as AI Boost and that need to be at right side of dashboard not in one small
+section." This departs from three rules above, for the Dashboard only:
+
+- The panda is normally the cartoon panda-on-JD character everywhere; AI Boost MAY draw a more
+  detailed, more naturalistic panda (soft fur shading, layered parts, natural proportions) instead
+  of the compact dock drawing, because the owner asked for "realistic." It MUST still be
+  recognizably the same JobDeputy deputy: the same markings, the same bamboo companion, the same
+  named states and reactions, drawn in more detail rather than as a different character.
+- The deputy companion normally lives only in the sidebar dock; on the Dashboard only, it MAY also
+  appear as a larger panel on the right of the page content (`#ai-boost`, `brand/ai-boost.js` and
+  `brand/ai-boost.css`), titled **AI Boost**, from `1280px` wide; a compact card under the page
+  intro from `721px` to `1279px`; hidden on phones, where the app bar's deputy chip keeps the
+  panda. No other page gets this panel.
+- A page with the dock normally MUST NOT draw a second panda. On the Dashboard the dock steps out
+  (the same mechanism as a tour: `JobDeputyDeputy.lend()`/`unlend()`) while AI Boost's panel shows,
+  so one panda is drawn at a time; the dock keeps its real duty text and comes back the moment the
+  panel is hidden or a tour starts (which steps AI Boost's own panda out in turn), so one panda per
+  viewport still holds at every width.
+
+Everything else in this document, `docs/design-system.md`, and the UI SOP applies to AI Boost
+unchanged: its states map to the deputy's real named states and reactions (it invents no state and
+no progress of its own), its loops run only while real work is pending or in progress, Pause
+motion and `prefers-reduced-motion: reduce` stop every one of its animations exactly as elsewhere,
+its speech and duty are plain visible text connected to the real action, and it keeps the warm
+paper canvas, tokens, and voice rules. "AI Boost" is a label on this one panel; the AI work itself
+is still named **Deputy Assist** everywhere, including inside the panel, which names both (see
+[Deputy companion](design-system.md#deputy-companion-signed-in-pages) for the full behavior).
+
+### AI Boost (round 9)
+
+**Approved October 26, 2026** by the product owner's explicit instruction, given two screenshots of
+a small round "talk to us" bubble fixed to a page's bottom-right corner: "i want ai boost like
+this" — then, asked whether the panda should stay or the bubble should use a generic icon like the
+screenshot: "Panda, small and round"; then, asked whether the bubble should replace round 8's panel
+everywhere or only at narrower widths: "Replace the panel everywhere". This **supersedes round 8's
+placement only**; round 8's permission to draw a more detailed, naturalistic panda still holds
+(round 9 uses the same drawing, just smaller and cropped), and nothing else approved in round 8 is
+withdrawn:
+
+- AI Boost no longer appears as a panel beside the page content at any width. It is a small
+  (`72px`) circular bubble fixed to the viewport's bottom-right corner, on top of the page, at
+  every width including phones — the one-exception panda no longer needs the app bar's deputy chip
+  as a narrow-width fallback, because the bubble itself is the fallback.
+- Because the bubble is on screen for the page's whole life, the dock steps out for good the
+  moment AI Boost's script runs (`JobDeputyDeputy.lend()`, never `unlend()`'d back, except that a
+  tour still steps AI Boost's own panda out in turn, exactly as round 8 specified). One panda per
+  viewport still holds; it is simply always AI Boost's bubble now, not the dock, on every
+  signed-in Dashboard view.
+- The panel's visible title, kicker, and duty text have no room on a `72px` bubble; they stay in
+  the markup for assistive technology (the stage button's accessible name and
+  `aria-describedby`), and the deputy's speech line shows instead as a tooltip to the bubble's
+  left on hover, keyboard focus, and while a one-time pose (`[data-boost-play]`) is playing — the
+  same real, unmodified deputy.js speech as round 8, just shown differently.
+
+Everything else in round 8's text above still applies unchanged: the character, its named states,
+real-state-only motion, Pause motion and reduced motion, and the Deputy Assist naming.
 
 ### Connected navigation and state
 

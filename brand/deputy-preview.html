@@ -4256,7 +4256,16 @@
       // strip's Filling in progress, a staggered Replay all, and the reduced-motion preview. Pause
       // motion is the deputy's own control (data-deputy-motion).
       const deputy = window.JobDeputyDeputy;
-      const scene = deputy.get(document.querySelector('#cast-scene'));
+      // deputy.js adopts the hosts on DOMContentLoaded, after this script, so the scene's handle
+      // is looked up when a control is used.
+      const sceneHost = document.querySelector('#cast-scene');
+      const scene = {
+        show: (...args) => deputy.get(sceneHost)?.show(...args),
+        replay: () => deputy.get(sceneHost)?.replay(),
+        react: (name) => deputy.get(sceneHost)?.react(name),
+        gesture: (name) => deputy.get(sceneHost)?.gesture(name),
+        away: (on) => deputy.get(sceneHost)?.away(on),
+      };
       const working = document.querySelector('#cast-working');
       const sceneChoices = [...document.querySelectorAll('input[name="cast-scene-state"]')];
 

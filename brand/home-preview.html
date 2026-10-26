@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="./app-chrome.css" />
     <link rel="stylesheet" href="./app-components.css" />
     <link rel="stylesheet" href="./deputy.css" />
+    <link rel="stylesheet" href="./ai-boost.css" />
     <link rel="expect" href="#first-view" blocking="render" />
     <style>
       :root {
@@ -1539,6 +1540,9 @@
       }
 
       /* The reduced-motion and Pause motion resets are shared in ./app-chrome.css. */
+
+      /* AI Boost (round 9): the panda shrank back to a floating corner bubble (ai-boost.css),
+         fixed in the viewport at every width, so it needs no layout rules of its own here. */
     </style>
   </head>
   <body class="loader-active">
@@ -1762,6 +1766,25 @@
             <button type="button" class="secondary-action page-tour" data-tour-open hidden>Take the tour</button>
           </div>
         </section>
+
+        <!-- AI Boost: start (round 9). A floating panda bubble, fixed to the viewport's
+             bottom-right corner at every width (CSS places it, so the first paint has its final
+             position); ai-boost.js draws the panda, follows the dock's real state, and steps the
+             dock out. Its words show as a tooltip on hover or keyboard focus. Without the script
+             the dock keeps its panda and the bubble shows nothing but the art. -->
+        <aside class="ai-boost" id="ai-boost" aria-labelledby="ai-boost-title" data-boost data-boost-state="idle">
+          <div class="ai-boost-head">
+            <h2 class="sr-only" id="ai-boost-title">AI Boost</h2>
+            <p class="ai-boost-title" aria-hidden="true">AI Boost</p>
+            <p class="ai-boost-kicker">Deputy Assist</p>
+          </div>
+          <button class="ai-boost-stage" type="button" data-boost-stage aria-label="Your deputy: open Activity" aria-describedby="ai-boost-duty">
+            <span class="ai-boost-art" data-boost-art aria-hidden="true"></span>
+          </button>
+          <p class="deputy-speech" data-boost-speech>Here’s what I found.</p>
+          <p class="deputy-duty" id="ai-boost-duty"><span class="deputy-duty-dot" aria-hidden="true"></span><span data-boost-duty>Reporting in</span></p>
+        </aside>
+        <!-- AI Boost: end -->
 
         <div class="dash-page" id="dash-page">
           <!-- A returning sign-in (?signin=google|linkedin|email|onetap): one line, dismissible. -->
@@ -4981,6 +5004,7 @@
         prefersReducedMotion = event.matches;
       });
     </script>
+    <script src="./ai-boost.js"></script>
     <span id="first-view" hidden></span>
   </body>
 </html>
