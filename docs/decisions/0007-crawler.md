@@ -30,7 +30,7 @@ T06 lets a user submit a URL that a worker fetches from inside AWS. That raises 
 **Amendments to 0006:**
 
 - `sourceId` is a hash of the source's normalized URL, not a ULID. The key is still (`userId`, `sourceId`), so each user has their own copy, and saving the same page twice is impossible.
-- The `events` table is renamed **`audit`** (key `userId`, `auditId` ULID) and is built in T06, before any reader needs it: it is the user's audit history. Entries are written in the same transaction as the action they record, are never changed, and are erased only with the account (the user's own data). Operator and AWS-level actions are audited by CloudTrail ([#21](https://github.com/jobdeputy/jobdeputy/issues/21)).
+- The `events` table is renamed **`audit`** (key `userId`, `auditId` ULID) and is built in T06, before any reader needs it: it is the user's audit history. Entries are written in the same transaction as the action they record, are never changed, and are erased only with the account (the user's own data). Operator and AWS-level actions are audited by CloudTrail ([#21](https://github.com/jobdeputy/jobdeputy-archive/issues/21)).
 
 ## Why
 
