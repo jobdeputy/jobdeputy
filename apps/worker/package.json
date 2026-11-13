@@ -30,6 +30,6 @@
   },
   "devDependencies": {
     "@jobdeputy/test-fixtures": "workspace:*",
-    "@types/aws-lambda": "^8.10.163"
+    "@types/aws-lambda": "^8.10.164"
   }
 }
