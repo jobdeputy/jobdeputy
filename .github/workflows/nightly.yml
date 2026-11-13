@@ -2,8 +2,9 @@ name: Nightly
 
 # T13: the full integration suite runs every night against the shared dev stack,
 # even when no code changes, so nothing can break silently. T08b: one real call to the
-# platform model checks the LLM path (decision 0010). The result of both is emailed to
-# the alert list (the same addresses as the AWS alarms) every night, passed or not.
+# platform model checks the LLM path (decision 0010). A dependency audit catches advisories
+# published since the last push (CI audits only when code changes). The result of all three
+# is emailed to the alert list (the same addresses as the AWS alarms) every night, passed or not.
 # See docs/runbooks/alarms.md.
 #
 # GitHub disables scheduled workflows after 60 days without commits; it emails the
@@ -83,9 +84,51 @@ jobs:
           { echo 'summary<<EOF_SUMMARY'; cat "$RUNNER_TEMP/eval.txt"; echo 'EOF_SUMMARY'; } >> "$GITHUB_OUTPUT"
           exit "$status"
 
+  audit:
+    name: Nightly dependency audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      summary: ${{ steps.audit.outputs.summary }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      # Reads only the lockfile: no install, no AWS. Fails on high or critical, as CI does.
+      - name: Audit the lockfile against today's advisories
+        id: audit
+        run: |
+          f="$RUNNER_TEMP/audit.json"
+          set +e
+          pnpm audit --json > "$f"
+          set -e
+          pnpm audit || true # the readable table, for the run log
+          if ! jq -e '.metadata.vulnerabilities' "$f" >/dev/null 2>&1; then
+            summary="The audit did not finish; see the run log."
+            status=2
+          else
+            list=$(jq -r '[.advisories[] | select(.severity == "high" or .severity == "critical")
+              | if .patched_versions == "<0.0.0" then "\(.module_name) (no fixed version yet)"
+                else "\(.module_name) \(.patched_versions | sub("^>="; "< "))" end] | unique | join(", ")' "$f")
+            count=$(jq '[.advisories[] | select(.severity == "high" or .severity == "critical") | .module_name] | unique | length' "$f")
+            rest=$(jq -r '.metadata.vulnerabilities | "\(.moderate) moderate, \(.low) low"' "$f")
+            if [ "$count" -gt 0 ]; then
+              summary="${count} high or critical: ${list} (also ${rest})."
+              status=1
+            else
+              summary="No high or critical advisories (${rest})."
+              status=0
+            fi
+          fi
+          echo "$summary"
+          echo "summary=$summary" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
   report:
     name: Email the nightly result
-    needs: [integration, model-check]
+    needs: [integration, model-check, audit]
     # Runs whatever happened, so a failed or skipped night is always reported.
     if: always()
     runs-on: ubuntu-24.04
@@ -102,6 +145,8 @@ jobs:
           INTEGRATION: ${{ needs.integration.result }}
           MODEL: ${{ needs.model-check.result }}
           MODEL_SUMMARY: ${{ needs.model-check.outputs.summary }}
+          AUDIT: ${{ needs.audit.result }}
+          AUDIT_SUMMARY: ${{ needs.audit.outputs.summary }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           verdict() {
@@ -113,20 +158,23 @@ jobs:
           }
           integration=$(verdict "$INTEGRATION")
           model=$(verdict "$MODEL")
+          audit=$(verdict "$AUDIT")
           # The raw result only when a part did not run (for example "cancelled").
           why() { case "$1" in success|failure) ;; *) echo " ($1)" ;; esac; }
-          if [ "$INTEGRATION" = "success" ] && [ "$MODEL" = "success" ]; then
+          if [ "$INTEGRATION" = "success" ] && [ "$MODEL" = "success" ] && [ "$AUDIT" = "success" ]; then
             SUBJECT="JobDeputy nightly PASSED (dev-iad)"
             TODO="Nothing to do."
           else
-            SUBJECT="JobDeputy nightly: integration ${integration}, model check ${model} (dev-iad)"
-            TODO="What to do: docs/runbooks/alarms.md (Nightly integration failed; Nightly model check failed)."
+            SUBJECT="JobDeputy nightly: integration ${integration}, model check ${model}, audit ${audit} (dev-iad)"
+            TODO="What to do: docs/runbooks/alarms.md (Nightly integration failed; Nightly model check failed; Nightly dependency audit failed)."
           fi
-          MESSAGE=$(printf '%s\n\n%s\n%s\n\n%s\n\n%s\n%s\n' \
+          MESSAGE=$(printf '%s\n\n%s\n%s\n%s\n\n%s\n\n%s\n\n%s\n%s\n' \
             "Nightly run against jobdeputy-dev-iad." \
             "Integration tests: ${integration}$(why "$INTEGRATION")" \
             "Real-model check: ${model}$(why "$MODEL")" \
+            "Dependency audit: ${audit}$(why "$AUDIT")" \
             "${MODEL_SUMMARY:-No model check result.}" \
+            "Audit: ${AUDIT_SUMMARY:-No audit result.}" \
             "Details: ${RUN_URL}" \
             "$TODO")
           aws sns publish \
