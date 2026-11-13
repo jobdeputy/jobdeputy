@@ -11,6 +11,6 @@
   },
   "dependencies": {
     "@aws-lambda-powertools/logger": "2.35.0",
-    "zod": "4.6.5"
+    "zod": "4.6.6"
   }
 }

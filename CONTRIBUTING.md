@@ -28,7 +28,7 @@
 
 Every PR must pass the **Integration** check: the PR's code is deployed to its own temporary AWS stack, the full integration suite runs, and the stack is deleted ([docs/testing.md](docs/testing.md)). PRs from forks get no AWS access, so the check fails for them; after reviewing the code, a maintainer pushes the branch to this repository to run it. A PR or push that changes only Markdown or the web app (`apps/web/`, which no stack deploys yet) passes or reuses the previous commit's passing result, so doc and design changes do not redeploy.
 
-**Dependabot PRs** bring new third-party code, so they never get AWS access on their own: their Integration check fails until a maintainer approves. To approve: review the PR (what changes, the changelog, anything suspicious), then add the **`safe-to-test`** label. That run is triggered by you and deploys and tests normally. After Dependabot pushes again, remove and re-add the label. Adding any other label to a PR reuses the commit's earlier passing result instead of redeploying.
+**Dependency updates** are done by hand in a `chore/` PR: Dependabot is off (November 13, 2026), and CI's audit step fails the build on any high or critical advisory, which is the signal to update. If Dependabot is turned back on, its PRs bring new third-party code, so they never get AWS access on their own: their Integration check fails until a maintainer approves. To approve: review the PR (what changes, the changelog, anything suspicious), then add the **`safe-to-test`** label. That run is triggered by you and deploys and tests normally. After Dependabot pushes again, remove and re-add the label. Adding any other label to a PR reuses the commit's earlier passing result instead of redeploying.
 
 ## Keeping a branch current
 

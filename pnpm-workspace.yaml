@@ -5,3 +5,8 @@ packages:
   - "tests/*"
 allowBuilds:
   esbuild: true
+# Security fixes in packages we only get through @strands-agents/sdk (high advisories, Nov 2026).
+# Remove each once the SDK depends on a fixed version itself.
+overrides:
+  '@modelcontextprotocol/sdk': 1.32.0
+  body-parser: 2.4.0
