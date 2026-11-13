@@ -10,7 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@aws-lambda-powertools/logger": "2.35.0",
+    "@aws-lambda-powertools/logger": "2.36.0",
     "zod": "4.6.5"
   }
 }
