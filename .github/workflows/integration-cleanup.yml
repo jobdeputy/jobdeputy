@@ -1,0 +1,66 @@
+name: Integration cleanup
+
+# T11 safety nets: delete a PR's stack when the PR closes, and once a day delete
+# any PR stack older than 24 hours (for example after a cancelled run).
+
+on:
+  pull_request:
+    types: [closed]
+  schedule:
+    # Off the hour: GitHub delays jobs scheduled at :00 when it is busy.
+    - cron: '41 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  cleanup:
+    name: Delete PR stacks
+    # Forks never get AWS access.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    environment: pr
+    timeout-minutes: 30
+    steps:
+      # For scripts/cleanup-log-groups.sh.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_PR_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Choose stacks
+        id: pick
+        env:
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -n "$PR" ]; then
+            stacks="jobdeputy-dev-pr${PR}-iad"
+          else
+            cutoff=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%S)
+            # ISO timestamps compare correctly as strings.
+            stacks=$(aws cloudformation list-stacks --output json | jq -r --arg cutoff "$cutoff" '
+              .StackSummaries[]
+              | select(.StackName | startswith("jobdeputy-dev-pr"))
+              | select(.StackStatus != "DELETE_COMPLETE")
+              | select(.CreationTime < $cutoff)
+              | .StackName' | sort -u | tr '\n' ' ')
+          fi
+          echo "Stacks to delete: ${stacks:-none}"
+          echo "stacks=${stacks}" >> "$GITHUB_OUTPUT"
+
+      - name: Delete
+        if: steps.pick.outputs.stacks != ''
+        env:
+          STACKS: ${{ steps.pick.outputs.stacks }}
+        run: |
+          for stack in $STACKS; do
+            scripts/delete-pr-stack.sh "$stack"
+            scripts/cleanup-log-groups.sh stack "$stack"
+          done
+
+      - name: Sweep log groups (daily)
+        if: github.event_name != 'pull_request'
+        run: scripts/cleanup-log-groups.sh sweep

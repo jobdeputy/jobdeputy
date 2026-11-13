@@ -1,0 +1,757 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 610 377"
+  role="img"
+  aria-labelledby="logo-title logo-description"
+>
+  <title id="logo-title">JobDeputy</title>
+  <desc id="logo-description">
+    A smiling panda deputy scans job cards with a magnifier, keeps the promising one in its paw, and
+    finishes the loading progress bar. Its bamboo stands beside it on the monogram.
+  </desc>
+  <!-- jobdeputy-animated.svg#settled shows the settled final pose without animation. -->
+  <view id="settled" viewBox="0 0 610 377" />
+
+  <defs>
+    <linearGradient id="ink" x1="92" y1="73" x2="451" y2="286" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2d2b27" />
+      <stop offset="0.52" stop-color="#1b1a18" />
+      <stop offset="1" stop-color="#1b1a18" />
+    </linearGradient>
+    <linearGradient id="bamboo" x1="0" y1="0" x2="0" y2="61" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ccebdc" />
+      <stop offset="1" stop-color="#2f9e77" />
+    </linearGradient>
+    <filter id="soft-shadow" x="-30%" y="-30%" width="160%" height="180%">
+      <feDropShadow dx="0" dy="13" stdDeviation="13" flood-color="#000" flood-opacity="0.12" />
+    </filter>
+    <filter id="card-shadow" x="-40%" y="-40%" width="180%" height="200%">
+      <feDropShadow dx="0" dy="7" stdDeviation="7" flood-color="#1b1a18" flood-opacity="0.13" />
+    </filter>
+    <clipPath id="jdAL-eye-l"><ellipse cx="167" cy="162" rx="16.32" ry="17.28" /></clipPath>
+    <clipPath id="jdAL-eye-r"><ellipse cx="253" cy="162" rx="16.32" ry="17.28" /></clipPath>
+    <radialGradient id="jdAL-ear-felt" cx="0.38" cy="0.3" r="0.62"><stop offset="0" stop-color="#2d2b27" stop-opacity="1" data-token="ink-soft" /><stop offset="0.55" stop-color="#2d2b27" stop-opacity="0.45" data-token="ink-soft (45%)" /><stop offset="1" stop-color="#2d2b27" stop-opacity="0" data-token="ink-soft (0%)" /></radialGradient>
+  </defs>
+
+  <style>
+    :root {
+      --story: 2.605s;
+      --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+      --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .mark {
+      filter: url(#soft-shadow);
+    }
+
+    /* A gap of 2 path lengths keeps the next dash off the path while the stroke waits to draw;
+       with a gap of 1 it starts exactly at the path end and its round cap shows as a dot. */
+    .draw {
+      stroke-dasharray: 1 2;
+      stroke-dashoffset: 0;
+      animation: draw 0.987s var(--ease-settle) backwards;
+    }
+
+    .d-form {
+      animation-delay: 0.13s;
+    }
+
+    .search-route {
+      fill: none;
+      stroke: #2f9e77;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 7;
+      stroke-dasharray: 1;
+      stroke-dashoffset: 0;
+      opacity: 0;
+    }
+
+    .route-j {
+      animation: route-j var(--story) var(--ease-settle) both;
+    }
+
+    .route-d {
+      animation: route-d var(--story) var(--ease-settle) both;
+    }
+
+    .panda-rig {
+      transform-origin: 344px 102px;
+      animation:
+        clock-in var(--story) var(--ease-settle) both,
+        breathe 5.236s ease-in-out var(--story) infinite;
+    }
+
+    .panda-head {
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: panda-thinks var(--story) var(--ease-settle) both;
+    }
+
+    .pupil {
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: eyes-scan var(--story) var(--ease-settle) both;
+    }
+
+    .eye {
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: blink 5.236s ease-in-out var(--story) infinite;
+    }
+
+    /* The magnifier in the right paw (round 6, the hand rule): it rides with the paw across the
+       cards, then is put away as the paw takes the selected card. */
+    .scanner {
+      opacity: 0;
+      transform-box: view-box;
+      transform-origin: 386px 102px;
+      animation: scan-cards var(--story) var(--ease-settle) both;
+    }
+
+    /* The bamboo stands on the monogram beside the panda (never in a paw); it appears as he
+       arrives. */
+    .bamboo-lean {
+      animation: bamboo-in var(--story) var(--ease-settle) both;
+    }
+
+    .search-glow {
+      opacity: 0;
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: glow-scan var(--story) ease-in-out both;
+    }
+
+    .job-card {
+      filter: url(#card-shadow);
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+
+    .card-one {
+      opacity: 0;
+      animation: reject-left var(--story) var(--ease-settle) both;
+    }
+
+    .card-two {
+      transform: translate(44px, -40px) scale(0.78) rotate(8deg);
+      animation: keep-card var(--story) var(--ease-settle) both;
+    }
+
+    .card-three {
+      opacity: 0;
+      animation: reject-right var(--story) var(--ease-settle) both;
+    }
+
+    .card-check {
+      opacity: 1;
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: check-card var(--story) var(--ease-spring) both;
+    }
+
+    .catch-paw {
+      transform-box: view-box;
+      transform-origin: 384px 101px;
+      animation: catch-card var(--story) var(--ease-settle) both;
+    }
+
+    .card-grip {
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: grip-card var(--story) var(--ease-spring) both;
+    }
+
+    .wordmark {
+      animation: wordmark-in 0.618s var(--ease-settle) 0.32s backwards;
+    }
+
+    @keyframes draw {
+      from {
+        stroke-dashoffset: 1;
+      }
+      to {
+        stroke-dashoffset: 0;
+      }
+    }
+
+    @keyframes route-j {
+      0%,
+      22% {
+        opacity: 0;
+        stroke-dashoffset: 1;
+      }
+      28% {
+        opacity: 1;
+      }
+      58% {
+        opacity: 1;
+        stroke-dashoffset: 0;
+      }
+      74%,
+      100% {
+        opacity: 0;
+        stroke-dashoffset: 0;
+      }
+    }
+
+    @keyframes route-d {
+      0%,
+      55% {
+        opacity: 0;
+        stroke-dashoffset: 1;
+      }
+      61% {
+        opacity: 1;
+      }
+      86% {
+        opacity: 1;
+        stroke-dashoffset: 0;
+      }
+      100% {
+        opacity: 0;
+        stroke-dashoffset: 0;
+      }
+    }
+
+    @keyframes clock-in {
+      0%,
+      7% {
+        opacity: 0;
+        transform: translateY(-42px) rotate(-8deg);
+      }
+      17% {
+        opacity: 1;
+        transform: translateY(5px) rotate(2deg);
+      }
+      22% {
+        transform: translateY(-3px) rotate(-1deg);
+      }
+      100% {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    @keyframes breathe {
+      0%,
+      100% {
+        transform: translateY(0) rotate(0);
+      }
+      50% {
+        transform: translateY(-3px) rotate(-0.6deg);
+      }
+    }
+
+    @keyframes panda-thinks {
+      0%,
+      26% {
+        transform: rotate(0);
+      }
+      44% {
+        transform: translateX(-2px) rotate(-5deg);
+      }
+      59% {
+        transform: translateX(2px) rotate(5deg);
+      }
+      68% {
+        transform: translateY(2px) rotate(-7deg);
+      }
+      80% {
+        transform: translateY(-4px) rotate(3deg);
+      }
+      91% {
+        transform: translateY(1px) rotate(-1deg);
+      }
+      100% {
+        transform: none;
+      }
+    }
+
+    @keyframes eyes-scan {
+      0%,
+      30% {
+        transform: translate(0);
+      }
+      43% {
+        transform: translate(-5.75px, 2.3px);
+      }
+      57% {
+        transform: translate(5.75px, 2.3px);
+      }
+      70% {
+        transform: translate(0, 3.68px);
+      }
+      84% {
+        transform: translate(4.6px, -2.3px);
+      }
+      100% {
+        transform: translate(0);
+      }
+    }
+
+    @keyframes blink {
+      0%,
+      44%,
+      48%,
+      100% {
+        transform: scaleY(1);
+      }
+      46% {
+        transform: scaleY(0.08);
+      }
+    }
+
+    @keyframes scan-cards {
+      0%,
+      24% {
+        opacity: 1;
+        transform: rotate(0deg);
+      }
+      38% {
+        transform: rotate(6deg);
+      }
+      48% {
+        transform: rotate(-2deg);
+      }
+      58% {
+        transform: rotate(-8deg);
+      }
+      68% {
+        opacity: 1;
+        transform: rotate(2deg);
+      }
+      78% {
+        opacity: 0;
+        transform: rotate(-8deg);
+      }
+      100% {
+        transform: rotate(-8deg);
+      }
+    }
+
+    @keyframes bamboo-in {
+      0%,
+      7% {
+        opacity: 0;
+      }
+      17%,
+      100% {
+        opacity: 1;
+      }
+    }
+
+    @keyframes glow-scan {
+      0%,
+      28% {
+        opacity: 0;
+        transform: translateX(-44px) scale(0.72);
+      }
+      37% {
+        opacity: 0.3;
+      }
+      58% {
+        opacity: 0.3;
+        transform: translateX(48px) scale(1);
+      }
+      69% {
+        opacity: 0.18;
+        transform: translateX(0) scale(0.78);
+      }
+      76%,
+      100% {
+        opacity: 0;
+        transform: translateX(0) scale(0.6);
+      }
+    }
+
+    @keyframes reject-left {
+      0%,
+      26% {
+        opacity: 0;
+        transform: translate(62px, 20px) scale(0.56) rotate(8deg);
+      }
+      36%,
+      58% {
+        opacity: 1;
+        transform: translate(0) scale(1) rotate(-3deg);
+      }
+      70% {
+        opacity: 1;
+        transform: translate(-19px, 10px) scale(0.9) rotate(-16deg);
+      }
+      82%,
+      100% {
+        opacity: 0;
+        transform: translate(-70px, 78px) scale(0.7) rotate(-35deg);
+      }
+    }
+
+    @keyframes keep-card {
+      0%,
+      28% {
+        opacity: 0;
+        transform: translate(-28px, 20px) scale(0.56) rotate(-5deg);
+      }
+      38%,
+      67% {
+        opacity: 1;
+        transform: translate(0) scale(1) rotate(1deg);
+      }
+      76% {
+        transform: translate(0, -5px) scale(1.08) rotate(-2deg);
+      }
+      88%,
+      100% {
+        opacity: 1;
+        transform: translate(44px, -40px) scale(0.78) rotate(8deg);
+      }
+    }
+
+    @keyframes reject-right {
+      0%,
+      30% {
+        opacity: 0;
+        transform: translate(-48px, 20px) scale(0.56) rotate(-8deg);
+      }
+      40%,
+      60% {
+        opacity: 1;
+        transform: translate(0) scale(1) rotate(4deg);
+      }
+      71% {
+        opacity: 1;
+        transform: translate(17px, 12px) scale(0.9) rotate(18deg);
+      }
+      83%,
+      100% {
+        opacity: 0;
+        transform: translate(72px, 80px) scale(0.68) rotate(38deg);
+      }
+    }
+
+    @keyframes check-card {
+      0%,
+      64% {
+        opacity: 0;
+        transform: scale(0.2) rotate(-20deg);
+      }
+      74% {
+        opacity: 1;
+        transform: scale(1.22) rotate(4deg);
+      }
+      82%,
+      100% {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    /* The right paw carries the magnifier over each card (left, the kept one, right, and back),
+       then takes the selected card. */
+    @keyframes catch-card {
+      0%,
+      26% {
+        transform: rotate(0);
+      }
+      38% {
+        transform: translate(-60px, 12px) rotate(4deg);
+      }
+      48% {
+        transform: translate(-3px, 12px) rotate(0deg);
+      }
+      58% {
+        transform: translate(52px, 14px) rotate(-4deg);
+      }
+      67% {
+        transform: translate(-3px, 10px) rotate(0deg);
+      }
+      74% {
+        transform: rotate(0);
+        animation-timing-function: var(--ease-spring);
+      }
+      84% {
+        transform: translate(6px, -8px) rotate(-24deg);
+        animation-timing-function: var(--ease-spring);
+      }
+      92% {
+        transform: translate(2px, -2px) rotate(5deg);
+      }
+      100% {
+        transform: none;
+      }
+    }
+
+    @keyframes grip-card {
+      0%,
+      76% {
+        opacity: 0;
+        transform: translate(-5px, 8px) scale(0.5) rotate(-18deg);
+      }
+      88% {
+        opacity: 1;
+        transform: translate(1px, -1px) scale(1.12) rotate(3deg);
+      }
+      100% {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    @keyframes wordmark-in {
+      from {
+        opacity: 0;
+        transform: translateY(13px);
+      }
+      to {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    /* Settled final pose: no story and no ambient loop. Without its animation, every part rests at
+       its 100% keyframe (the frame at 2.605s): the magnifier put away (its base style is hidden), the
+       bamboo standing, the card in the right paw; only the scanner restates its final angle. It applies
+       under reduced motion, and when a host requests jobdeputy-animated.svg#settled, because not
+       every browser passes the motion preference into an image. */
+    @media (prefers-reduced-motion: reduce) {
+      .draw,
+      .search-route,
+      .panda-rig,
+      .panda-head,
+      .pupil,
+      .eye,
+      .scanner,
+      .bamboo-lean,
+      .search-glow,
+      .job-card,
+      .card-check,
+      .catch-paw,
+      .card-grip,
+      .wordmark {
+        animation: none;
+      }
+
+      .scanner {
+        transform: rotate(-8deg);
+      }
+    }
+
+    :root:has(#settled:target)
+      :is(
+        .draw,
+        .search-route,
+        .panda-rig,
+        .panda-head,
+        .pupil,
+        .eye,
+        .scanner,
+        .bamboo-lean,
+        .search-glow,
+        .job-card,
+        .card-check,
+        .catch-paw,
+        .card-grip,
+        .wordmark
+      ) {
+      animation: none;
+    }
+
+    :root:has(#settled:target) .scanner {
+      transform: rotate(-8deg);
+    }
+  </style>
+
+  <g class="mark">
+    <path
+      class="draw j-form"
+      pathLength="1"
+      d="M251 104V193C251 242 221 270 178 270C143 270 118 253 106 226"
+      fill="none"
+      stroke="url(#ink)"
+      stroke-width="55"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path
+      class="draw d-form"
+      pathLength="1"
+      d="M251 104H326C392 104 430 134 430 187C430 240 392 270 326 270H251"
+      fill="none"
+      stroke="url(#ink)"
+      stroke-width="55"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </g>
+
+  <path
+    class="search-route route-j"
+    pathLength="1"
+    d="M251 104V193C251 242 221 270 178 270C143 270 118 253 106 226"
+  />
+  <path
+    class="search-route route-d"
+    pathLength="1"
+    d="M251 104H326C392 104 430 134 430 187C430 240 392 270 326 270H251"
+  />
+
+  <g class="search-glow" aria-hidden="true">
+    <ellipse cx="330" cy="165" rx="96" ry="68" fill="#ccebdc" opacity="0.7" />
+  </g>
+
+  <g class="job-card card-one" aria-hidden="true">
+    <rect x="270" y="142" width="52" height="37" rx="8" fill="#fff" stroke="#d9d5cd" />
+    <circle cx="282" cy="154" r="5" fill="#d9def8" />
+    <path
+      d="M292 151H312M292 157H306M278 169H312"
+      stroke="#98948b"
+      stroke-width="3"
+      stroke-linecap="round"
+      opacity="0.75"
+    />
+  </g>
+  <g class="job-card card-three" aria-hidden="true">
+    <rect x="383" y="145" width="50" height="36" rx="8" fill="#fff" stroke="#d9d5cd" />
+    <circle cx="395" cy="157" r="5" fill="#ffd5c6" />
+    <path
+      d="M405 154H424M405 160H418M391 171H423"
+      stroke="#98948b"
+      stroke-width="3"
+      stroke-linecap="round"
+      opacity="0.75"
+    />
+  </g>
+
+  <g class="bamboo-lean" aria-hidden="true">
+    <g transform="rotate(8 276 104)">
+      <path d="M276 46V104" fill="none" stroke="url(#bamboo)" stroke-width="6" stroke-linecap="round" data-token="green-soft to green" />
+      <path d="M276 60C258 50 255 62 273 71Z" fill="#2f9e77" opacity="0.86" data-token="green" />
+      <path d="M277 78C294 67 298 78 279 88Z" fill="#ccebdc" data-token="green-soft" />
+      <circle cx="276" cy="46" r="5" fill="#ccebdc" data-token="green-soft" />
+      <circle cx="276" cy="46" r="2.2" fill="#2f9e77" data-token="green" />
+    </g>
+  </g>
+
+  <g class="panda-rig">
+    <ellipse cx="346" cy="97" rx="54" ry="26" fill="#2d2b27" transform="rotate(5 346 97)" data-token="ink-soft" />
+    <ellipse cx="350" cy="94" rx="30" ry="21" fill="#faf8f3" transform="rotate(4 350 94)" data-token="paper" />
+    <ellipse cx="313" cy="100" rx="15" ry="24" fill="#1b1a18" transform="rotate(-24 313 100)" data-token="ink" />
+    <g class="catch-paw">
+      <g class="scanner">
+        <path d="M380 112L366 132" fill="none" stroke="#526fe5" stroke-width="7" stroke-linecap="round" data-token="blue" />
+        <circle cx="356" cy="146" r="15" fill="#d9def8" fill-opacity="0.52" stroke="#526fe5" stroke-width="5.5" data-token="blue-soft (52%) / blue" />
+        <path d="M348 143Q352 137 359 139" fill="none" stroke="#faf8f3" stroke-width="3" stroke-linecap="round" opacity="0.85" data-token="paper" />
+      </g>
+      <ellipse cx="386" cy="102" rx="15" ry="24" fill="#1b1a18" transform="rotate(30 386 102)" data-token="ink" />
+    </g>
+    <g class="panda-head">
+      <g transform="translate(267.4 5.16) scale(0.36)">
+      <g class="panda-ears">
+        <g class="panda-ear ear-left"><circle cx="139" cy="96.5" r="33.22" fill="#1b1a18" data-token="ink" />
+          <circle class="ear-inner" cx="136.23" cy="100.19" r="18.6" fill="#2d2b27" data-token="ink-soft" />
+          <circle class="ear-sheen" cx="139" cy="96.5" r="33.22" fill="url(#jdAL-ear-felt)" data-token="ink-soft sheen (gradient)" /></g>
+        <g class="panda-ear ear-right"><circle cx="281" cy="96.5" r="33.22" fill="#1b1a18" data-token="ink" />
+          <circle class="ear-inner" cx="283.77" cy="100.19" r="18.6" fill="#2d2b27" data-token="ink-soft" />
+          <circle class="ear-sheen" cx="281" cy="96.5" r="33.22" fill="url(#jdAL-ear-felt)" data-token="ink-soft sheen (gradient)" /></g>
+      </g>
+      <g class="panda-face">
+        <path class="face-shape" d="M210 72C266 72 310 103.16 310 154C310 208 267 244 210 244C153 244 110 208 110 154C110 103.16 154 72 210 72Z" fill="#faf8f3" stroke="rgba(27, 26, 24, 0.24)" stroke-width="2" data-token="paper / line-strong" />
+        <path class="face-shade" d="M118 183.7C128 222 165 244 210 244C255 244 292 222 302 183.7C288 216 265 232 210 232C155 232 132 216 118 183.7Z" fill="#f0ece3" data-token="paper-deep" />
+        <ellipse class="patch patch-left" cx="166" cy="163" rx="30.8" ry="36.3" fill="#1b1a18" transform="rotate(16 166 163)" data-token="ink" />
+        <ellipse class="patch patch-right" cx="254" cy="163" rx="30.8" ry="36.3" fill="#1b1a18" transform="rotate(-16 254 163)" data-token="ink" />
+        <g class="panda-cheeks">
+          <ellipse cx="141.5" cy="199" rx="14.5" ry="8.6" fill="#ffd5c6" data-token="orange-soft" />
+          <ellipse cx="278.5" cy="199" rx="14.5" ry="8.6" fill="#ffd5c6" data-token="orange-soft" />
+        </g>
+        <g class="eye panda-eye eye-left">
+          <ellipse class="eye-white" cx="167" cy="162" rx="16.32" ry="17.28" fill="#faf8f3" data-token="paper" />
+          <g clip-path="url(#jdAL-eye-l)">
+            <ellipse class="eye-lid" cx="167" cy="136.94" rx="26.11" ry="11.4" fill="#f0ece3" data-token="paper-deep" />
+            <g class="pupil">
+              <circle cx="167" cy="162" r="8.64" fill="#1b1a18" data-token="ink" />
+              <circle class="catchlight" cx="163.76" cy="158.28" r="3.72" fill="#faf8f3" data-token="paper" />
+              <circle class="catchlight catchlight-small" cx="171.1" cy="166.3" r="1.56" fill="#faf8f3" data-token="paper" />
+            </g>
+            <ellipse class="eye-lower" cx="167" cy="183.1" rx="21" ry="10.56" fill="#1b1a18" data-token="ink" />
+          </g>
+        </g>
+        <g class="eye panda-eye eye-right">
+          <ellipse class="eye-white" cx="253" cy="162" rx="16.32" ry="17.28" fill="#faf8f3" data-token="paper" />
+          <g clip-path="url(#jdAL-eye-r)">
+            <ellipse class="eye-lid" cx="253" cy="136.94" rx="26.11" ry="11.4" fill="#f0ece3" data-token="paper-deep" />
+            <g class="pupil">
+              <circle cx="253" cy="162" r="8.64" fill="#1b1a18" data-token="ink" />
+              <circle class="catchlight" cx="249.76" cy="158.28" r="3.72" fill="#faf8f3" data-token="paper" />
+              <circle class="catchlight catchlight-small" cx="257.1" cy="166.3" r="1.56" fill="#faf8f3" data-token="paper" />
+            </g>
+            <ellipse class="eye-lower" cx="253" cy="183.1" rx="21" ry="10.56" fill="#1b1a18" data-token="ink" />
+          </g>
+        </g>
+        <path class="panda-nose" d="M200 185.6Q210 179.65 220 185.6Q219 195.12 210 197.5Q201 195.12 200 185.6Z" fill="#1b1a18" data-token="ink" />
+        <ellipse class="nose-shine" cx="206.6" cy="185.6" rx="3.2" ry="1.87" fill="#faf8f3" opacity="0.5" data-token="paper (50%)" />
+        <g class="panda-mouth">
+          <g class="mouth mouth-idle" transform="translate(210 200) scale(1.2) translate(-210 -200)">
+            <path d="M210 197.5V202.6" fill="none" stroke="#1b1a18" stroke-width="3.4" stroke-linecap="round" data-token="ink" />
+            <path d="M194 202.6Q210 207.6 226 202.6Q224.5 222 210 223.5Q195.5 222 194 202.6Z" fill="#1b1a18" stroke="#1b1a18" stroke-width="2.4" stroke-linejoin="round" data-token="ink" />
+            <path d="M200.5 216.8Q210 209.8 219.5 216.8Q215 222.4 210 222.6Q205 222.4 200.5 216.8Z" fill="#ffd5c6" data-token="orange-soft" />
+            <path d="M190.6 199.6Q192.4 203.4 195.2 203.4M229.4 199.6Q227.6 203.4 224.8 203.4" fill="none" stroke="#1b1a18" stroke-width="2.6" stroke-linecap="round" data-token="ink" />
+          </g>
+        </g>
+      </g>
+    </g>
+    </g>
+  </g>
+
+  <g class="job-card card-two" aria-hidden="true">
+    <rect
+      x="325"
+      y="140"
+      width="56"
+      height="40"
+      rx="9"
+      fill="#fff"
+      stroke="#2f9e77"
+      stroke-width="2"
+    />
+    <circle cx="338" cy="153" r="6" fill="#ccebdc" />
+    <path
+      d="M350 150H371M350 157H365M335 170H369"
+      stroke="#706d66"
+      stroke-width="3"
+      stroke-linecap="round"
+      opacity="0.75"
+    />
+    <g class="card-check">
+      <circle cx="373" cy="171" r="9" fill="#2f9e77" />
+      <path
+        d="M369 171L372 174L378 167"
+        fill="none"
+        stroke="#fff"
+        stroke-width="2.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    </g>
+  </g>
+
+  <g class="card-grip" aria-hidden="true">
+    <ellipse cx="383" cy="113" rx="8.5" ry="13.5" fill="#1b1a18" transform="rotate(-30 383 113)" data-token="ink" />
+  </g>
+
+  <g class="wordmark">
+    <text
+      x="305"
+      y="337"
+      fill="#1b1a18"
+      font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif"
+      font-size="34"
+      font-weight="650"
+      letter-spacing="7"
+      text-anchor="middle"
+    >
+      JOBDEPUTY
+    </text>
+    <rect x="247" y="353" width="116" height="4" rx="2" fill="#1b1a18" opacity="0.1" />
+  </g>
+</svg>

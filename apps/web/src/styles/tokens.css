@@ -1,0 +1,64 @@
+/* JobDeputy design tokens, carried over unchanged from the approved prototype (round 7). */
+:root {
+  color-scheme: light;
+  --ink: #1b1a18;
+  --ink-soft: #2d2b27;
+  --muted: #706d66;
+  --quiet: #98948b;
+  --paper: #faf8f3;
+  --paper-deep: #f0ece3;
+  --surface: rgba(255, 255, 255, 0.82);
+  --surface-strong: rgba(255, 255, 255, 0.92);
+  --header-surface: rgba(250, 248, 243, 0.82);
+  --line: rgba(27, 26, 24, 0.12);
+  --line-soft: rgba(27, 26, 24, 0.08);
+  --line-strong: rgba(27, 26, 24, 0.24);
+  --green: #2f9e77;
+  --green-soft: #ccebdc;
+  --green-wash: rgba(204, 235, 220, 0.55);
+  --green-line: rgba(47, 158, 119, 0.36);
+  --green-ink: #23795b;
+  --orange: #f36b3f;
+  --orange-soft: #ffd5c6;
+  --danger-ink: #9c4028;
+  --blue: #526fe5;
+  --blue-soft: #d9def8;
+  --on-ink-muted: rgba(255, 255, 255, 0.68);
+  --shadow: 0 21px 55px rgba(55, 48, 36, 0.07);
+  --shadow-control: 0 10px 21px rgba(27, 26, 24, 0.15);
+  --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --font-text:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-text);
+  font-synthesis: none;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.shell {
+  display: grid;
+  min-height: 100vh;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 16px;
+  text-align: center;
+}
+
+.shell-title {
+  margin: 8px 0 0;
+  font: 400 clamp(40px, 8vw, 72px) / 1 var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+.shell-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 18px;
+}

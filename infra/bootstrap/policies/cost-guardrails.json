@@ -1,0 +1,69 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyCostlyServicesUntilLaunch",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:RunInstances",
+        "ec2:RequestSpotInstances",
+        "ec2:CreateFleet",
+        "ec2:PurchaseReservedInstancesOffering",
+        "ec2:CreateNatGateway",
+        "ec2:AllocateAddress",
+        "ec2:CreateVpcEndpoint",
+        "ec2:CreateTransitGateway",
+        "ec2:CreateVpnConnection",
+        "ec2:CreateClientVpnEndpoint",
+        "elasticloadbalancing:CreateLoadBalancer",
+        "rds:CreateDBInstance",
+        "rds:CreateDBCluster",
+        "elasticache:CreateCacheCluster",
+        "elasticache:CreateReplicationGroup",
+        "elasticache:CreateServerlessCache",
+        "es:CreateDomain",
+        "aoss:CreateCollection",
+        "redshift:CreateCluster",
+        "redshift-serverless:CreateWorkgroup",
+        "eks:CreateCluster",
+        "kafka:CreateCluster",
+        "kafka:CreateClusterV2",
+        "sagemaker:Create*",
+        "lambda:PutProvisionedConcurrencyConfig",
+        "secretsmanager:CreateSecret",
+        "guardduty:CreateDetector",
+        "config:PutConfigurationRecorder",
+        "aws-marketplace:Subscribe",
+        "savingsplans:CreateSavingsPlan",
+        "route53domains:*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyBedrockExceptPlatformModel",
+      "Effect": "Deny",
+      "Action": "bedrock:*",
+      "NotResource": [
+        "arn:aws:bedrock:us-east-1::foundation-model/mistral.ministral-3-14b-instruct",
+        "arn:aws:bedrock:ap-south-1::foundation-model/mistral.ministral-3-14b-instruct",
+        "arn:aws:bedrock:eu-west-2::foundation-model/mistral.ministral-3-14b-instruct"
+      ]
+    },
+    {
+      "Sid": "OnlyInvokePlatformModel",
+      "Effect": "Deny",
+      "NotAction": "bedrock:InvokeModel",
+      "Resource": [
+        "arn:aws:bedrock:us-east-1::foundation-model/mistral.ministral-3-14b-instruct",
+        "arn:aws:bedrock:ap-south-1::foundation-model/mistral.ministral-3-14b-instruct",
+        "arn:aws:bedrock:eu-west-2::foundation-model/mistral.ministral-3-14b-instruct"
+      ]
+    },
+    {
+      "Sid": "DenyLeavingOrganization",
+      "Effect": "Deny",
+      "Action": "organizations:LeaveOrganization",
+      "Resource": "*"
+    }
+  ]
+}

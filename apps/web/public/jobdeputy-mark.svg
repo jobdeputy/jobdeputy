@@ -1,0 +1,161 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="70 15 400 290"
+  role="img"
+  aria-labelledby="mark-title mark-description"
+>
+  <title id="mark-title">JobDeputy</title>
+  <desc id="mark-description">A smiling panda deputy perched on the JD monogram, holding a selected job card, with its bamboo beside it.</desc>
+
+  <defs>
+    <linearGradient id="mark-ink" x1="92" y1="73" x2="451" y2="286" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2d2b27" />
+      <stop offset="0.52" stop-color="#1b1a18" />
+      <stop offset="1" stop-color="#1b1a18" />
+    </linearGradient>
+    <linearGradient id="mark-bamboo" x1="0" y1="0" x2="0" y2="61" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ccebdc" />
+      <stop offset="1" stop-color="#2f9e77" />
+    </linearGradient>
+    <filter id="mark-shadow" x="-30%" y="-30%" width="160%" height="180%">
+      <feDropShadow dx="0" dy="13" stdDeviation="13" flood-color="#000" flood-opacity="0.12" />
+    </filter>
+    <filter id="mark-card-shadow" x="-40%" y="-40%" width="180%" height="200%">
+      <feDropShadow dx="0" dy="7" stdDeviation="7" flood-color="#1b1a18" flood-opacity="0.13" />
+    </filter>
+    <clipPath id="jdAL-eye-l"><ellipse cx="167" cy="162" rx="16.32" ry="17.28" /></clipPath>
+    <clipPath id="jdAL-eye-r"><ellipse cx="253" cy="162" rx="16.32" ry="17.28" /></clipPath>
+    <radialGradient id="jdAM-ear-felt" cx="0.38" cy="0.3" r="0.62"><stop offset="0" stop-color="#2d2b27" stop-opacity="1" data-token="ink-soft" /><stop offset="0.55" stop-color="#2d2b27" stop-opacity="0.45" data-token="ink-soft (45%)" /><stop offset="1" stop-color="#2d2b27" stop-opacity="0" data-token="ink-soft (0%)" /></radialGradient>
+  </defs>
+
+  <g filter="url(#mark-shadow)">
+    <path
+      d="M251 104V193C251 242 221 270 178 270C143 270 118 253 106 226"
+      fill="none"
+      stroke="url(#mark-ink)"
+      stroke-width="55"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M251 104H326C392 104 430 134 430 187C430 240 392 270 326 270H251"
+      fill="none"
+      stroke="url(#mark-ink)"
+      stroke-width="55"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </g>
+
+  <g>
+    <!-- The bamboo stands on the D beside the panda, leaning in behind his left side (round 6: never
+         in a paw); it matches the animated logo's settled pose. -->
+    <g transform="rotate(8 276 104)">
+      <path d="M276 46V104" fill="none" stroke="url(#mark-bamboo)" stroke-width="6" stroke-linecap="round" data-token="green-soft to green" />
+      <path d="M276 60C258 50 255 62 273 71Z" fill="#2f9e77" opacity="0.86" data-token="green" />
+      <path d="M277 78C294 67 298 78 279 88Z" fill="#ccebdc" data-token="green-soft" />
+      <circle cx="276" cy="46" r="5" fill="#ccebdc" data-token="green-soft" />
+      <circle cx="276" cy="46" r="2.2" fill="#2f9e77" data-token="green" />
+    </g>
+    <ellipse cx="346" cy="97" rx="54" ry="26" fill="#2d2b27" transform="rotate(5 346 97)" data-token="ink-soft" />
+    <ellipse cx="350" cy="94" rx="30" ry="21" fill="#faf8f3" transform="rotate(4 350 94)" data-token="paper" />
+    <ellipse cx="313" cy="100" rx="15" ry="24" fill="#1b1a18" transform="rotate(-24 313 100)" data-token="ink" />
+    <g>
+      <ellipse cx="386" cy="102" rx="15" ry="24" fill="#1b1a18" transform="rotate(30 386 102)" data-token="ink" />
+    </g>
+    <g>
+      <g transform="translate(267.4 5.16) scale(0.36)">
+      <g class="panda-ears">
+        <g class="panda-ear ear-left"><circle cx="139" cy="96.5" r="33.22" fill="#1b1a18" data-token="ink" />
+          <circle class="ear-inner" cx="136.23" cy="100.19" r="18.6" fill="#2d2b27" data-token="ink-soft" />
+          <circle class="ear-sheen" cx="139" cy="96.5" r="33.22" fill="url(#jdAM-ear-felt)" data-token="ink-soft sheen (gradient)" /></g>
+        <g class="panda-ear ear-right"><circle cx="281" cy="96.5" r="33.22" fill="#1b1a18" data-token="ink" />
+          <circle class="ear-inner" cx="283.77" cy="100.19" r="18.6" fill="#2d2b27" data-token="ink-soft" />
+          <circle class="ear-sheen" cx="281" cy="96.5" r="33.22" fill="url(#jdAM-ear-felt)" data-token="ink-soft sheen (gradient)" /></g>
+      </g>
+      <g class="panda-face">
+        <path class="face-shape" d="M210 72C266 72 310 103.16 310 154C310 208 267 244 210 244C153 244 110 208 110 154C110 103.16 154 72 210 72Z" fill="#faf8f3" stroke="rgba(27, 26, 24, 0.24)" stroke-width="2" data-token="paper / line-strong" />
+        <path class="face-shade" d="M118 183.7C128 222 165 244 210 244C255 244 292 222 302 183.7C288 216 265 232 210 232C155 232 132 216 118 183.7Z" fill="#f0ece3" data-token="paper-deep" />
+        <ellipse class="patch patch-left" cx="166" cy="163" rx="30.8" ry="36.3" fill="#1b1a18" transform="rotate(16 166 163)" data-token="ink" />
+        <ellipse class="patch patch-right" cx="254" cy="163" rx="30.8" ry="36.3" fill="#1b1a18" transform="rotate(-16 254 163)" data-token="ink" />
+        <g class="panda-cheeks">
+          <ellipse cx="141.5" cy="199" rx="14.5" ry="8.6" fill="#ffd5c6" data-token="orange-soft" />
+          <ellipse cx="278.5" cy="199" rx="14.5" ry="8.6" fill="#ffd5c6" data-token="orange-soft" />
+        </g>
+        <g class="eye panda-eye eye-left">
+          <ellipse class="eye-white" cx="167" cy="162" rx="16.32" ry="17.28" fill="#1b1a18" data-token="ink" />
+          <g clip-path="url(#jdAL-eye-l)">
+            <ellipse class="eye-lid" cx="167" cy="136.94" rx="26.11" ry="11.4" fill="#f0ece3" data-token="paper-deep" />
+            <g class="pupil">
+              <circle cx="167" cy="162" r="8.64" fill="#1b1a18" data-token="ink" />
+              <circle class="catchlight" cx="163.76" cy="158.28" r="4.7" fill="#faf8f3" data-token="paper" />
+              <circle class="catchlight catchlight-small" cx="170.9" cy="166.5" r="2" fill="#faf8f3" data-token="paper" />
+            </g>
+          </g>
+        </g>
+        <g class="eye panda-eye eye-right">
+          <ellipse class="eye-white" cx="253" cy="162" rx="16.32" ry="17.28" fill="#1b1a18" data-token="ink" />
+          <g clip-path="url(#jdAL-eye-r)">
+            <ellipse class="eye-lid" cx="253" cy="136.94" rx="26.11" ry="11.4" fill="#f0ece3" data-token="paper-deep" />
+            <g class="pupil">
+              <circle cx="253" cy="162" r="8.64" fill="#1b1a18" data-token="ink" />
+              <circle class="catchlight" cx="249.76" cy="158.28" r="4.7" fill="#faf8f3" data-token="paper" />
+              <circle class="catchlight catchlight-small" cx="256.9" cy="166.5" r="2" fill="#faf8f3" data-token="paper" />
+            </g>
+          </g>
+        </g>
+        <path class="panda-nose" d="M200 185.6Q210 179.65 220 185.6Q219 195.12 210 197.5Q201 195.12 200 185.6Z" fill="#1b1a18" data-token="ink" />
+        <ellipse class="nose-shine" cx="206.6" cy="185.6" rx="3.2" ry="1.87" fill="#faf8f3" opacity="0.5" data-token="paper (50%)" />
+        <g class="panda-mouth">
+          <g class="mouth mouth-idle" transform="translate(210 200) scale(1.3) translate(-210 -200)">
+            <path d="M210 197.5V202.6" fill="none" stroke="#1b1a18" stroke-width="3.4" stroke-linecap="round" data-token="ink" />
+            <path d="M194 202.6Q210 207.6 226 202.6Q224.5 222 210 223.5Q195.5 222 194 202.6Z" fill="#1b1a18" stroke="#1b1a18" stroke-width="2.4" stroke-linejoin="round" data-token="ink" />
+            <path d="M200.5 216.8Q210 209.8 219.5 216.8Q215 222.4 210 222.6Q205 222.4 200.5 216.8Z" fill="#ffd5c6" data-token="orange-soft" />
+            <path d="M190.6 199.6Q192.4 203.4 195.2 203.4M229.4 199.6Q227.6 203.4 224.8 203.4" fill="none" stroke="#1b1a18" stroke-width="2.6" stroke-linecap="round" data-token="ink" />
+          </g>
+        </g>
+      </g>
+    </g>
+    </g>
+  </g>
+
+  <g
+    filter="url(#mark-card-shadow)"
+    style="
+      transform-box: fill-box;
+      transform-origin: center;
+      transform: translate(44px, -40px) scale(0.78) rotate(8deg);
+    "
+  >
+    <rect
+      x="325"
+      y="140"
+      width="56"
+      height="40"
+      rx="9"
+      fill="#fff"
+      stroke="#2f9e77"
+      stroke-width="2"
+    />
+    <circle cx="338" cy="153" r="6" fill="#ccebdc" />
+    <path
+      d="M350 150H371M350 157H365M335 170H369"
+      stroke="#706d66"
+      stroke-width="3"
+      stroke-linecap="round"
+      opacity="0.75"
+    />
+    <circle cx="373" cy="171" r="9" fill="#2f9e77" />
+    <path
+      d="M369 171L372 174L378 167"
+      fill="none"
+      stroke="#fff"
+      stroke-width="2.5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </g>
+  <g>
+    <ellipse cx="383" cy="113" rx="8.5" ry="13.5" fill="#1b1a18" transform="rotate(-30 383 113)" data-token="ink" />
+  </g>
+</svg>

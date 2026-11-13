@@ -1,0 +1,15 @@
+{
+  "name": "@jobdeputy/test-fixtures",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "fflate": "0.8.3"
+  }
+}

@@ -1,0 +1,179 @@
+name: Integration
+
+# T11: every PR deploys its own stack from its code, runs the full integration
+# suite, and deletes the stack. Required check, so a PR cannot merge if any
+# feature (new or old) is broken. See docs/testing.md.
+
+on:
+  pull_request:
+    # labeled: a maintainer's safe-to-test label approves a Dependabot PR (below).
+    types: [opened, synchronize, reopened, labeled]
+
+permissions:
+  contents: read
+  checks: read # reuse the previous commit's result for pushes that deploy nothing new
+  pull-requests: write # post the model eval result (T08b)
+  id-token: write # GitHub OIDC -> AWS, no stored keys
+
+concurrency:
+  # One run per PR. Never cancel: stopping mid-deploy leaves a stack stuck.
+  group: integration-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  integration:
+    name: Integration
+    runs-on: ubuntu-24.04
+    environment: pr
+    timeout-minutes: 45
+    env:
+      STACK: jobdeputy-dev-pr${{ github.event.pull_request.number }}-iad
+      OWNER: pr${{ github.event.pull_request.number }}
+      AWS_REGION: us-east-1
+    steps:
+      - name: Refuse PRs from forks
+        if: github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "::error::PRs from forks get no AWS access. A maintainer can push this branch to jobdeputy/jobdeputy after review to run the integration tests."
+          exit 1
+
+      # Dependency updates bring new third-party code. GitHub gives Dependabot's own
+      # runs no secrets, and we do not want unreviewed code near AWS anyway: a
+      # maintainer reviews the PR, then adds the safe-to-test label, and that run
+      # (triggered by the maintainer) gets AWS access. Never "skip" here: a skipped
+      # required check counts as passed.
+      - name: Dependabot PRs need a maintainer's safe-to-test label
+        if: github.event.pull_request.user.login == 'dependabot[bot]'
+        env:
+          ACTOR: ${{ github.actor }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          if [ "$ACTOR" = "dependabot[bot]" ]; then
+            echo "::error::Dependabot PR: a maintainer reviews it, then adds the 'safe-to-test' label to run Integration (after new pushes, remove and re-add the label)."
+            exit 1
+          fi
+          if ! jq -e 'index("safe-to-test")' <<< "$LABELS" >/dev/null; then
+            echo "::error::Dependabot PR: add the 'safe-to-test' label after review to run Integration."
+            exit 1
+          fi
+          echo "Approved by $ACTOR with the safe-to-test label."
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Decide whether to deploy
+        id: changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BEFORE: ${{ github.event.action == 'synchronize' && github.event.before || '' }}
+          ACTION: ${{ github.event.action }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          # True only if every file changed between two commits is outside the deployed
+          # stack: Markdown, or the web app (apps/web/), which CI builds and tests and no
+          # stack deploys yet. Fails safe: a missing commit or an empty diff counts as "deploys".
+          deploys_nothing() {
+            local files
+            files=$(git diff --name-only "$1" "$2") || return 1
+            [ -n "$files" ] || return 1
+            ! grep -qvE '(\.md$|^apps/web/)' <<< "$files"
+          }
+
+          # 0. A label added to a (non-Dependabot) PR does not change code: if this
+          #    exact commit already passed Integration, reuse that result.
+          if [ "$ACTION" = "labeled" ] && [ "$AUTHOR" != "dependabot[bot]" ]; then
+            previous=$(gh api "repos/$REPO/commits/$HEAD_SHA/check-runs?check_name=Integration" \
+              --jq '[.check_runs[] | select(.status == "completed")] | sort_by(.completed_at) | last | .conclusion // ""')
+            if [ "$previous" = "success" ]; then
+              echo "Label added; commit ${HEAD_SHA:0:7} already passed Integration: reusing that result."
+              echo "code=false" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+          fi
+
+          # 1. Nothing the stack deploys changed in the whole PR: nothing to test.
+          if deploys_nothing "$BASE" "$HEAD_SHA"; then
+            echo "Only Markdown or the web app changed in this PR: no deploy needed."
+            echo "code=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+
+          # 2. Nothing deployed changed since the last push, and that commit already passed:
+          #    the code is identical to what was tested, so reuse the result.
+          if [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null \
+             && deploys_nothing "$BEFORE" "$HEAD_SHA"; then
+            previous=$(gh api "repos/$REPO/commits/$BEFORE/check-runs?check_name=Integration" \
+              --jq '[.check_runs[] | select(.status == "completed")] | sort_by(.completed_at) | last | .conclusion // ""')
+            if [ "$previous" = "success" ]; then
+              echo "Only Markdown or the web app changed since ${BEFORE:0:7}, which passed Integration: reusing that result."
+              echo "code=false" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+            echo "Previous commit's Integration result was '${previous:-none}': running in full."
+          fi
+
+          echo "code=true" >> "$GITHUB_OUTPUT"
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        if: steps.changes.outputs.code == 'true'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.changes.outputs.code == 'true'
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - if: steps.changes.outputs.code == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        if: steps.changes.outputs.code == 'true'
+        with:
+          role-to-assume: ${{ secrets.AWS_PR_ROLE_ARN }}
+          aws-region: us-east-1
+
+      # T08b: a change to a prompt, schema, model, or packages/llm runs the eval against
+      # the real platform model (about $0.001), posts the result on the PR, and fails on a
+      # regression against the saved baseline (packages/llm/eval/baselines).
+      - name: Model eval (only when packages/llm or the model changes)
+        if: steps.changes.outputs.code == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if ! git diff --name-only "$BASE" "$HEAD_SHA" \
+               | grep -qE '^packages/llm/(src/|eval/|package\.json$)|^packages/shared/src/ai\.ts$'; then
+            echo "No LLM change in this PR: eval skipped."; exit 0
+          fi
+          set +e
+          pnpm --filter @jobdeputy/llm eval --runs 2 --summary "$RUNNER_TEMP/eval.md"
+          status=$?
+          set -e
+          [ -s "$RUNNER_TEMP/eval.md" ] || echo "The eval did not finish (exit $status); see the run log." > "$RUNNER_TEMP/eval.md"
+          { echo "### Model eval"; echo; cat "$RUNNER_TEMP/eval.md"; } > "$RUNNER_TEMP/comment.md"
+          gh pr comment "$PR" --edit-last --create-if-none --body-file "$RUNNER_TEMP/comment.md"
+          exit "$status"
+
+      - name: Deploy the PR stack
+        if: steps.changes.outputs.code == 'true'
+        working-directory: infra
+        env:
+          JD_ACCOUNT_DEV_IAD: ${{ secrets.JD_ACCOUNT_DEV_IAD }}
+        run: |
+          exec_role="arn:aws:iam::${JD_ACCOUNT_DEV_IAD}:role/cdk-hnb659fds-cfn-exec-role-${JD_ACCOUNT_DEV_IAD}-us-east-1"
+          pnpm cdk deploy "$STACK" -c stage=dev -c owner="$OWNER" -c cliCredentials=true \
+            --role-arn "$exec_role" --require-approval never
+
+      - name: Integration tests (full suite)
+        if: steps.changes.outputs.code == 'true'
+        env:
+          JD_STACK: ${{ env.STACK }}
+          JD_FULL: '1'
+        run: pnpm test:integration
+
+      - name: Delete the PR stack
+        if: always() && steps.changes.outputs.code == 'true'
+        run: |
+          scripts/delete-pr-stack.sh "$STACK"
+          scripts/cleanup-log-groups.sh stack "$STACK"

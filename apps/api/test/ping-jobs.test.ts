@@ -1,0 +1,139 @@
+import type { PingJob } from '@jobdeputy/db';
+import type { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
+import { describe, expect, it, vi } from 'vitest';
+import { type Deps, route } from '../src/ping-jobs.js';
+
+const JOB: PingJob = {
+  id: '0f8fad5b-d9cb-469f-a165-70867728950e',
+  type: 'ping',
+  userId: 'user-a',
+  status: 'queued',
+  attempts: 0,
+  sideEffectCount: 0,
+  deliveries: 0,
+  createdAt: 't',
+  updatedAt: 't',
+  schemaVersion: 1,
+  ttl: 1,
+};
+
+type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
+
+function event(
+  routeKey: string,
+  extra: Record<string, unknown> = {},
+  sub: string | null = 'user-a',
+) {
+  return {
+    routeKey,
+    requestContext: {
+      requestId: 'req-1',
+      ...(sub ? { authorizer: { jwt: { claims: { sub, username: `${sub}-name` } } } } : {}),
+    },
+    isBase64Encoded: false,
+    ...extra,
+  } as unknown as Event;
+}
+
+function deps(
+  stage = 'dev',
+): Deps & { repo: { create: ReturnType<typeof vi.fn>; get: ReturnType<typeof vi.fn> } } {
+  return {
+    stage,
+    isBeingDeleted: vi.fn(async () => false),
+    repo: { create: vi.fn(async () => JOB), get: vi.fn(async () => JOB) },
+  };
+}
+
+describe('POST /ping-jobs', () => {
+  it('queues a job and returns 202 with its ID', async () => {
+    const d = deps();
+    const res = await route(event('POST /ping-jobs'), d);
+    expect(res.statusCode).toBe(202);
+    expect(JSON.parse(res.body)).toEqual({ id: JOB.id, status: 'queued' });
+    expect(d.repo.create).toHaveBeenCalledWith({ userId: 'user-a' });
+  });
+
+  it('passes the dev-only fail flag', async () => {
+    const d = deps();
+    await route(event('POST /ping-jobs', { body: '{"fail":true}' }), d);
+    expect(d.repo.create).toHaveBeenCalledWith({ userId: 'user-a', fail: true });
+  });
+
+  it('rejects the fail flag outside dev', async () => {
+    const d = deps('prod');
+    const res = await route(event('POST /ping-jobs', { body: '{"fail":true}' }), d);
+    expect(res.statusCode).toBe(400);
+    expect(d.repo.create).not.toHaveBeenCalled();
+  });
+
+  it.each([['{bad'], ['{"fail":"yes"}'], ['{"unknown":1}']])('rejects body %s', async (body) => {
+    const res = await route(event('POST /ping-jobs', { body }), deps());
+    expect(res.statusCode).toBe(400);
+    expect(res.headers['content-type']).toBe('application/problem+json');
+  });
+});
+
+describe('GET /ping-jobs/{id}', () => {
+  it('returns the status', async () => {
+    const res = await route(
+      event('GET /ping-jobs/{id}', { pathParameters: { id: JOB.id } }),
+      deps(),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toMatchObject({ id: JOB.id, status: 'queued', attempts: 0 });
+  });
+
+  it('rejects IDs that are not UUIDs', async () => {
+    const res = await route(
+      event('GET /ping-jobs/{id}', { pathParameters: { id: '../x' } }),
+      deps(),
+    );
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('returns 404 for unknown jobs', async () => {
+    const d = deps();
+    d.repo.get.mockResolvedValueOnce(undefined);
+    const res = await route(event('GET /ping-jobs/{id}', { pathParameters: { id: JOB.id } }), d);
+    expect(res.statusCode).toBe(404);
+  });
+});
+
+describe('account deletion (T12)', () => {
+  it('refuses new jobs while the account is being deleted, but still reads', async () => {
+    const d = deps();
+    d.isBeingDeleted = vi.fn(async () => true);
+    const res = await route(event('POST /ping-jobs'), d);
+    expect(res.statusCode).toBe(410);
+    expect(JSON.parse(res.body).code).toBe('account-deleted');
+    expect(d.repo.create).not.toHaveBeenCalled();
+    expect(
+      (await route(event('GET /ping-jobs/{id}', { pathParameters: { id: JOB.id } }), d)).statusCode,
+    ).toBe(200);
+  });
+});
+
+describe('ownership and auth', () => {
+  it('never uses a user ID from the body', async () => {
+    const d = deps();
+    const res = await route(event('POST /ping-jobs', { body: '{"userId":"user-b"}' }), d);
+    expect(res.statusCode).toBe(400);
+    expect(d.repo.create).not.toHaveBeenCalled();
+  });
+
+  it("hides another user's job as not found", async () => {
+    const res = await route(
+      event('GET /ping-jobs/{id}', { pathParameters: { id: JOB.id } }, 'user-b'),
+      deps(),
+    );
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('rejects requests without verified claims', async () => {
+    const d = deps();
+    const res = await route(event('POST /ping-jobs', {}, null), d);
+    expect(res.statusCode).toBe(401);
+    expect(d.repo.create).not.toHaveBeenCalled();
+  });
+});

@@ -1,0 +1,84 @@
+# JobDeputy — agent guide
+
+Read this first in every session. Keep it short; details live in `docs/`.
+
+## What we are building
+
+JobDeputy discovers jobs from any URL a user gives, keeps the relevant ones, and (later) prepares tailored application materials. Users bring their own AI/API credentials (BYOT). Full statement: [docs/problem-statement.md](docs/problem-statement.md).
+
+**Current slice:** profile (basic details, résumé, target roles) → user submits a URL → **asynchronous** crawl job → relevant jobs stored in the database. Scope and non-goals: [docs/scope-current-slice.md](docs/scope-current-slice.md).
+
+## Where things are
+
+| Need | Location |
+|---|---|
+| Which file does what (read first, instead of searching) | [docs/code-map.md](docs/code-map.md) |
+| Tasks: goal, research, decision, done criteria, and status | [GitHub issues](https://github.com/jobdeputy/jobdeputy/issues), one per task |
+| How a feature flows end to end (sequence diagrams, where data is stored) | [docs/flows/](docs/flows/crawl.md): crawl (T06, T07), relevance (T08) |
+| Tables, attributes, and S3 paths | [docs/data-model.md](docs/data-model.md) |
+| What to test where, and rules against flaky tests | [docs/testing.md](docs/testing.md) |
+| UI colours, fonts, and motion tokens | `apps/web/src/styles/tokens.css` |
+| Earlier task write-ups (T01–T14), design rounds, and the HTML prototypes | the read-only [archive repository](https://github.com/jobdeputy/jobdeputy-archive) |
+| What to do when an alarm fires; deleting an account; changing crawl limits | [docs/runbooks/](docs/runbooks/alarms.md) |
+| Agreed decisions (do not re-litigate) | [docs/decisions/](docs/decisions/README.md) |
+| Contribution and branch rules | [CONTRIBUTING.md](CONTRIBUTING.md) |
+
+## How every task runs
+
+1. **Research** — investigate options, write findings into the task's GitHub issue (a *Research* comment). Use `/research-task`.
+2. **Align** — present a recommendation to the human and **wait for agreement**. Record the outcome in the issue (a *Decision* comment) (and a `docs/decisions/` record if it affects the architecture).
+3. **Implement** — on a branch, then open a PR using the template. Use `/implement-task` and `/prepare-pr`.
+
+Do not design ahead of the task that needs it. For example, the crawler's architecture is decided in its own task, not earlier.
+
+## Rules
+
+- Never commit to `main`. Branch `<issue number>-short-slug` (or `fix/…`, `chore/…`) → PR → squash merge.
+- **Agents never merge PRs.** Open or update the PR, get CI green, report the link, and stop. The maintainer reviews and merges.
+- Long-running work (crawling, parsing, AI calls) is **asynchronous**: accept the request, return a job ID, and process it in a worker.
+- Never commit secrets, real résumés, or personal data. Use `.env` (git-ignored) and `.env.example`. The repo is intended to be public.
+- **User data never leaves its home Region** (US `us-east-1`, India `ap-south-1`, UK `eu-west-2`). Each Region is a self-contained cell. See [0004](docs/decisions/0004-regional-cells-and-data-residency.md).
+- **Strict cost control until launch** ([0005](docs/decisions/0005-pre-launch-cost-guardrails.md)): pay-per-use services only, nothing that costs money while idle. Set throttles, concurrency caps, and log retention. Spend is blocked automatically at $20.
+- User credentials (BYOT) are the user's: never log them, never share them across users.
+- **LLM and agent loops are capped at 3 iterations.** When the cap is hit, stop and return the best result so far, marked as partial. Every call has a maximum output token limit and a timeout, and job retries must not multiply LLM calls. See [0002](docs/decisions/0002-llm-loop-and-token-budget.md).
+- Every PR fills in the template: what changed, how it was tested and the proof, error cases, LLM and agent call safety, and security review.
+- Link the task's issue from the PR (`Closes #NN`), and update [docs/code-map.md](docs/code-map.md) when a source file is added, moved, or split. Split a large file by feature when a task already changes it.
+- **Read code sparingly:** start from the code map, search (`grep -n`), then read only the lines needed; keep only the result lines of test and deploy output.
+- **Accounts are deleted only through `DELETE /me` or `scripts/request-account-deletion.sh`**, never in the Cognito console, so no data is orphaned ([runbook](docs/runbooks/account-deletion.md)). Every new table keyed by `userId` must be added to the deletion list in `infra/lib/cell-stack.ts` (an infra test enforces it).
+- **Flow changes are documented in the same PR:** update the feature's diagram in `docs/flows/` when a PR changes how the parts connect or where data is stored.
+- **Schema changes are documented in the same PR:** update [docs/data-model.md](docs/data-model.md) and its change log whenever an attribute, item kind, or S3 path changes. New tables or key changes need a decision record ([0006](docs/decisions/0006-data-model.md)).
+- **UI uses the tokens in `apps/web/src/styles/tokens.css`**, not page-specific colours or fonts.
+  The approved look is the round 7 prototype in the [archive repository](https://github.com/jobdeputy/jobdeputy-archive) (`brand/`); match it,
+  and do not change the identity, the panda, or the tokens without explicit user approval in the
+  current task.
+
+## Stack
+
+Everything runs on AWS serverless services. See [0003](docs/decisions/0003-serverless-aws-stack.md).
+
+- TypeScript everywhere on Node 22, in a pnpm monorepo: `apps/api`, `apps/worker`, `apps/web`, `packages/shared`, `packages/db`, `packages/llm` (the only Strands caller, [0009](docs/decisions/0009-llm-architecture-and-own-keys.md)), `infra/` (AWS CDK).
+- API: API Gateway HTTP API → Lambda, with Zod validation from `packages/shared`.
+- Async: the API writes to DynamoDB (`status=queued`) → Stream → EventBridge Pipes → SQS → worker Lambda. Never send to SQS directly from the API. Workers must be idempotent.
+- Data: DynamoDB, accessed only through `packages/db`. Files go to S3 through presigned URLs.
+- UI: React, Vite, and TanStack Query on S3 and CloudFront. Auth is Cognito.
+- CI/CD: GitHub Actions with OIDC. No AWS keys anywhere.
+
+## Commands
+
+Node 22 and pnpm (through corepack). Run from the repo root unless noted.
+
+| Command | What it does |
+|---|---|
+| `pnpm install` | Install dependencies |
+| `pnpm verify` | Biome lint and format check, typecheck, and all tests. **Run before every PR.** |
+| `pnpm format` | Auto-fix formatting and safe lint issues |
+| `pnpm synth` | Synthesize all dev and prod cells (no AWS access needed) |
+| `pnpm --filter @jobdeputy/web dev` | Run the web app locally (Vite) |
+| `cd infra && pnpm cdk deploy -c stage=dev -c owner=<you> --profile jobdeputy-dev-iad` | Deploy your personal dev stack |
+| `cd infra && pnpm cdk destroy -c stage=dev -c owner=<you> --profile jobdeputy-dev-iad` | Remove your personal dev stack |
+| `JD_OWNER=<you> JD_FULL=1 AWS_PROFILE=jobdeputy-dev-iad pnpm test:integration` | Integration tests against your personal stack (`JD_FULL=1` adds the queue-level tests) |
+
+- The shared `dev-iad` stack deploys automatically from `main`. Never deploy it by hand.
+- Every PR runs the full integration suite on its own temporary stack (`jobdeputy-dev-pr<N>-iad`, required check **Integration**). A PR cannot merge unless it passes. See [docs/testing.md](docs/testing.md).
+- Guard tests in `infra/test/` enforce decisions 0004 and 0005 (Region isolation and cost). Never weaken them to make a build pass.
+- One-time AWS organization setup lives in `infra/bootstrap/` (maintainers only).

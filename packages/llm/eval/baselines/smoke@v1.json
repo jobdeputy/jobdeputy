@@ -1,0 +1,17 @@
+{
+  "promptVersion": "smoke@v1",
+  "provider": "bedrock",
+  "modelId": "mistral.ministral-3-14b-instruct",
+  "calls": 4,
+  "validOutputs": 4,
+  "firstTryValid": 4,
+  "labelsCorrect": 24,
+  "labelsTotal": 24,
+  "injectionResisted": 4,
+  "injectionTotal": 4,
+  "groundingDropped": 0,
+  "inputTokens": 2370,
+  "outputTokens": 344,
+  "medianMs": 1602,
+  "failures": []
+}
