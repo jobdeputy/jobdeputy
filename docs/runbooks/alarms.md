@@ -84,7 +84,7 @@ The queue health check exists in shared stacks only: personal and PR stacks have
 
 ## Nightly integration failed
 
-Nightly emails its result every night, scheduled for 02:23 UTC (off the hour; GitHub may still start it late). The email says **"JobDeputy nightly PASSED (dev-iad)"** when everything passed. Otherwise the subject is **"JobDeputy nightly: integration FAILED, model check PASSED (dev-iad)"**, with FAILED or DID NOT RUN for each part. The email has a link to the run.
+Nightly emails its result every night, scheduled for 02:23 UTC (off the hour; GitHub may still start it late). The email says **"JobDeputy nightly PASSED (dev-iad)"** when everything passed. Otherwise the subject is **"JobDeputy nightly: integration FAILED, model check PASSED, audit PASSED (dev-iad)"**, with FAILED or DID NOT RUN for each part. The email has a link to the run.
 
 - **DID NOT RUN:** the tests were cancelled or never started, usually because two deploys queued while Nightly waited (it never overlaps a deploy of the same stack). Re-run it (step 4). If it happens often, look at what deploys at that hour.
 
@@ -97,9 +97,21 @@ Nightly emails its result every night, scheduled for 02:23 UTC (off the hour; Gi
 
 The email shows the eval table: calls, valid output, labels, injections resisted, and tokens, with the saved baseline. The check makes one real call per case to the platform model ([0010](../decisions/0010-platform-ai-model.md)) through `packages/llm`.
 
-- **An injection succeeded, or accuracy fell below the baseline:** the model or its behaviour changed with no code change. Run the eval locally 2 or 3 times (`AWS_PROFILE=jobdeputy-dev-iad pnpm --filter @jobdeputy/llm eval --runs 3`). If it repeats, open an issue and check the model on its provider page ([#49](https://github.com/jobdeputy/jobdeputy/issues/49) looks for replacements). Never update the baseline to make it pass.
+- **An injection succeeded, or accuracy fell below the baseline:** the model or its behaviour changed with no code change. Run the eval locally 2 or 3 times (`AWS_PROFILE=jobdeputy-dev-iad pnpm --filter @jobdeputy/llm eval --runs 3`). If it repeats, open an issue and check the model on its provider page ([#49 in the archive](https://github.com/jobdeputy/jobdeputy-archive/issues/49) looks for replacements). Never update the baseline to make it pass.
 - **Did not finish, or `AccessDenied`:** the IAM grant or the cost guardrail no longer allows the pinned model, or Bedrock is down in the Region. Check `bedrock:InvokeModel` for `jobdeputy-github-deploy` (`infra/lib/cicd-stack.ts`) and the `jd-cost-guardrails` SCP.
 - **Throttled:** Bedrock quotas in dev. Re-run; if it repeats, check the Bedrock service quotas.
+
+## Nightly dependency audit failed
+
+The audit checks the lockfile against advisories published since the last push. CI audits only when code changes, so a new advisory for a package we already use shows up here first. The email's **Audit** line names each package with a high or critical advisory and the versions that are affected, for example `undici < 7.30.1`. Moderate and low advisories are counted but do not fail it.
+
+1. Open a `chore/` branch and move each named package to the first fixed version that is at least two weeks old (newer only if no older version has the fix). Pin it exactly, as the rest of the repo does.
+2. **A direct dependency** (in an app's or package's `package.json`): bump it there.
+3. **Reached only through another package** (`pnpm why <name>` shows the chain): first try a version of that parent that already depends on the fix. If there is none, add an exact `overrides` entry in `pnpm-workspace.yaml` with a comment saying when to remove it.
+4. **No fixed version yet:** read the advisory. If our code can't reach the vulnerable path, record why in an issue and check again weekly. Otherwise, replace or remove the package.
+5. `pnpm verify` and `pnpm audit --audit-level high` both pass, then open the PR. Re-run Nightly after the merge to confirm.
+
+**DID NOT RUN or "did not finish":** the npm registry was unreachable or `pnpm audit` broke. Re-run; if it repeats, run `pnpm audit` locally.
 
 **GitHub's 60-day rule:** GitHub disables scheduled workflows (Nightly, and the daily Integration cleanup) after 60 days with no commits. It emails the repository admins first. To re-enable: Actions → the workflow → **Enable workflow**. The AWS alarms and the dev reaper run in AWS and are not affected.
 

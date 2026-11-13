@@ -156,7 +156,7 @@ Work history and education are prefilled from the parsed résumé, and the user 
 |---|---|
 | `SEARCH` | `version`, `locations L<{city?, region?, country}>`, `workplace L` (`onsite`, `hybrid`, `remote`), `employmentTypes L` (`full_time`, `contract`, …), `minSalary?` (money), `seniority L`, `excludeKeywords L` |
 | `ROLE#<roleId>` | `roleId` (ULID), `version`, `title`, `altTitles L`, `seniority L`, `locations? L` (overrides `SEARCH`), `mustHave L`, `exclude L`, `resumeDocumentId?`, `priority N`, `active B` |
-| `COMPANY_RULE#<companyId>` | Later (with the shared company list, [#40](https://github.com/jobdeputy/jobdeputy/issues/40)): per-company rules, `mode` (`limit`, `block`, or `prefer`), `maxJobs N`, `extraCompanyIds L`, `note?`. The one limit for every company is in `CRAWL_SETTINGS` (T08c). |
+| `COMPANY_RULE#<companyId>` | Later (with the shared company list, [#40](https://github.com/jobdeputy/jobdeputy-archive/issues/40)): per-company rules, `mode` (`limit`, `block`, or `prefer`), `maxJobs N`, `extraCompanyIds L`, `note?`. The one limit for every company is in `CRAWL_SETTINGS` (T08c). |
 | `AI_SETTINGS` | T08b2: `version`, `defaultSource` (`platform`, `none` (T08b3), `openai`, or `anthropic`; `stub` in dev stacks). A provider needs a saved key that is not `invalid`; deleting that key sets it back to `platform`. |
 | `CRAWL_SETTINGS` | T06c: `version`, `dailyLimit?` (the user's own daily crawl limit, 1 to the admin maximum; absent = the admin default). The limit applied is `min(dailyLimit ?? default, maximum)`, so an admin lowering the maximum always wins. T08c: `companyJobsLimit?` (jobs shown per company, 1 to the admin's `companyJobsMax`; absent = `companyJobsDefault`), applied the same way. |
 | `APPLY_SETTINGS` | `mode` (`off`, `review_each`, or `auto_within_rules`; default `review_each`; `auto_within_rules` arrives in Phase 2), `dailyMax N`, `alwaysReview L` (for example `cover_letter`, `custom_questions`), `quietHours? {start, end, timezone}`, `notify {email B}` |
@@ -197,7 +197,7 @@ Key: `userId`, `crawlId` (ULID).
 | `DOCUMENTS` | `itemCount N`, `defaultDocumentId?`: counted like `ROLES` (cap 10). A first upload becomes the default only if it claims `defaultDocumentId` in its transaction; a default switch requires the marker it read; deleting the default frees it. Pending uploads expire without running code, so a count or marker that disagrees with the documents that exist is corrected once, then the create retried. |
 | `ACTIVE` | `crawlIds SS`: the user's queued or running crawls. Added in the crawl request transaction (only while fewer than the admin's `maxActive`), removed in the transaction that ends the crawl; a submit that finds the set full first frees IDs of crawls that are finished, gone, or stale. |
 
-**How the per-company limit works (T08c):** "company" is the job's `companyKey` until the shared company list exists ([#40](https://github.com/jobdeputy/jobdeputy/issues/40)). It is a snapshot, not a count over time: after the code filter, each crawl ranks the company's candidates it read together with the shown jobs other pages listed (by role priority, then the newest posting; T08d ranks by score). The best, up to the limit, are `counted`; the rest `over_limit` (hidden and kept 7 days, ranked again on the next crawl). Jobs the crawl read and dropped leave the list; closed jobs free their places. The replace is conditional on `version`, so two crawls at once stay exact.
+**How the per-company limit works (T08c):** "company" is the job's `companyKey` until the shared company list exists ([#40](https://github.com/jobdeputy/jobdeputy-archive/issues/40)). It is a snapshot, not a count over time: after the code filter, each crawl ranks the company's candidates it read together with the shown jobs other pages listed (by role priority, then the newest posting; T08d ranks by score). The best, up to the limit, are `counted`; the rest `over_limit` (hidden and kept 7 days, ranked again on the next crawl). Jobs the crawl read and dropped leave the list; closed jobs free their places. The replace is conditional on `version`, so two crawls at once stay exact.
 
 ## 7. `audit`: audit history (renamed from `events`, [0007](decisions/0007-crawler.md))
 
@@ -234,11 +234,11 @@ So the same job is stored once per user, and a re-crawl updates it.
 | `dedupeKey` | S | yes | See above |
 | `title` | S | yes | Plain text, at most 300 characters |
 | `jobUrl` | S | yes | The posting's page; `http(s)` only, passing the crawl URL rules (no private addresses, credentials, or LinkedIn) |
-| `companyKey` | S | yes | Who is hiring, until the shared company list exists ([#40](https://github.com/jobdeputy/jobdeputy/issues/40)): `greenhouse:acme`, `lever:acme`, `ashby:acme`, `workday:<host>/<site>`, or `site:<domain>`. Lowercase. |
+| `companyKey` | S | yes | Who is hiring, until the shared company list exists ([#40](https://github.com/jobdeputy/jobdeputy-archive/issues/40)): `greenhouse:acme`, `lever:acme`, `ashby:acme`, `workday:<host>/<site>`, or `site:<domain>`. Lowercase. |
 | `locations` | L | yes, may be empty | `{text, city?, region?, country?}`: `text` as the site wrote it; the parts only when the site gives them; `country` only as an ISO 3166 alpha-2 code. At most 20. Empty when the list only says "3 Locations". |
 | `contentHash` | S | yes | Hash of what the user reads except the description (title, company, places, workplace, type, salary, apply link); a change, or a new `descriptionHash`, means re-score |
 | `companyName` | S | no | As the site wrote it, at most 200 characters. Lever, Ashby, and Workday lists do not give it; the app then shows the board. |
-| `companyId` | S | no | Resolved from `companyKey` once `companies` exists ([#40](https://github.com/jobdeputy/jobdeputy/issues/40)) |
+| `companyId` | S | no | Resolved from `companyKey` once `companies` exists ([#40](https://github.com/jobdeputy/jobdeputy-archive/issues/40)) |
 | `applyUrl` | S | no | Only when it differs from `jobUrl`; same rules |
 | `ats` | S | no | `greenhouse`, `lever`, `ashby`, or `workday`; absent for a company's own site |
 | `externalId` | S | no | The board's posting ID (Workday: the requisition ID) |
@@ -257,7 +257,7 @@ So the same job is stored once per user, and a re-crawl updates it.
 | `sourceIds` | SS | yes, until closed | The saved pages that currently list it (a string set, so saving again adds nothing). A complete crawl of a page that no longer lists it removes that page; absent once no page lists it. |
 | `firstCrawlId`, `lastCrawlId` | S | yes | |
 | `firstSeenAt`, `lastSeenAt` | S | yes | |
-| `extraction` | M | yes | `{method, version}`: `ats_feed` or `schema_org` now; `llm` later ([T07d](https://github.com/jobdeputy/jobdeputy/issues/41)) |
+| `extraction` | M | yes | `{method, version}`: `ats_feed` or `schema_org` now; `llm` later ([T07d](https://github.com/jobdeputy/jobdeputy-archive/issues/41)) |
 | `closedAt` | S | no | Set when no saved page lists it any more (T07c: after complete crawls, never partial ones), or (T08d3) its posting answered 404 or 410 when its description was read, though its board still lists it; removed when a crawl lists it again |
 
 ### Fit for the user (T08 and later)
@@ -306,7 +306,7 @@ A re-crawl updates only the posting and discovery groups; it never overwrites th
 
 ## 9. `companies`: shared company list (public, per cell)
 
-Deferred to the first feature that needs a resolved company, such as company rules ([0008](decisions/0008-job-extraction.md), [#40](https://github.com/jobdeputy/jobdeputy/issues/40)). Until then jobs carry `companyKey`.
+Deferred to the first feature that needs a resolved company, such as company rules ([0008](decisions/0008-job-extraction.md), [#40](https://github.com/jobdeputy/jobdeputy-archive/issues/40)). Until then jobs carry `companyKey`.
 
 Key: `companyId` (a slug, for example `amazon`).
 

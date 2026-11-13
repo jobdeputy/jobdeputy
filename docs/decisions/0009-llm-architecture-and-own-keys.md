@@ -43,7 +43,7 @@ Which platform model to use is a separate decision ([T08a](../tasks/t08a-ai-mode
    - **Amended by T08b3 (2026-09-30):** the run is counted when the user submits a crawl with the platform model, in `usage`, in the crawl request transaction, with exact caps like the crawl limits. A crawl that fails before its AI work gives the run back.
    - With the allowance used up, a crawl with the platform model is refused (429 `platform-ai-limit-reached`, with when the next free run is available). The user can crawl with their own key, or with `aiSource: none` (the free keyword filter only). Previously this said the run would continue with the code filter only; the maintainer chose to refuse it up front instead, so it is clear before the crawl.
    - Runs with the user's own key do not count against it.
-   - The limits live in SSM next to the crawl limits. Premium quotas are decided later ([#47](https://github.com/jobdeputy/jobdeputy/issues/47)).
+   - The limits live in SSM next to the crawl limits. Premium quotas are decided later ([#47](https://github.com/jobdeputy/jobdeputy-archive/issues/47)).
 5. **All token use is recorded, for every user and every run:**
    - per month, per key source (platform or own), provider, and model: calls, input tokens, output tokens, and runs, with the same broken down per task;
    - on each run (for example, the crawl): the model, calls, and tokens;

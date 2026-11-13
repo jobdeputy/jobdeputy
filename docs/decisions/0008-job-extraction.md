@@ -28,9 +28,9 @@ T07 turns a crawled page into jobs. [0007](0007-crawler.md) set the direction: c
 - **Per crawl** (T07c): at most 10 requests after the first page, 500 jobs, and 1 second between requests to the same host. The crawl worker's time limit goes to 180 seconds, with 150 seconds for the crawl. Hitting a limit ends the crawl as `succeeded` but **partial**, with the reason.
 - **Closed jobs:** a job missing from a complete (not partial) crawl of the same source gets `closedAt`. A partial crawl never closes a job. T08 also closes a job whose own page is gone when it fetches the description.
 - **Deduplication:** `jobId` is a hash of the board and its posting ID; otherwise the posting's link (normalized, tracking parameters dropped); otherwise company, title, and first location (only when one link lists several postings). Re-crawls update the same item.
-- **Extraction runs in the crawl worker**, straight after the fetch: parsing takes milliseconds, so a separate queue adds nothing. An LLM step will have its own queue and worker ([#41](https://github.com/jobdeputy/jobdeputy/issues/41)); crawls that end with `no_readable_jobs` keep their page for 30 days, so it can pick them up without changes to the crawl worker.
+- **Extraction runs in the crawl worker**, straight after the fetch: parsing takes milliseconds, so a separate queue adds nothing. An LLM step will have its own queue and worker ([#41](https://github.com/jobdeputy/jobdeputy-archive/issues/41)); crawls that end with `no_readable_jobs` keep their page for 30 days, so it can pick them up without changes to the crawl worker.
 - **Amendments to 0006:**
-  - `companies` and `company-aliases` are built with the first feature that needs a resolved company, such as company rules ([#40](https://github.com/jobdeputy/jobdeputy/issues/40)). Until then each job stores the company name as found and a `companyKey` (`greenhouse:acme`, `workday:<host>/<site>`, or `site:<domain>`).
+  - `companies` and `company-aliases` are built with the first feature that needs a resolved company, such as company rules ([#40](https://github.com/jobdeputy/jobdeputy-archive/issues/40)). Until then each job stores the company name as found and a `companyKey` (`greenhouse:acme`, `workday:<host>/<site>`, or `site:<domain>`).
   - `jobs.locations` items are `{text, city?, region?, country?}`: `text` is always what the site wrote; the parts are kept only when the site gives them, and `country` only as an ISO code.
   - `jobs.description` is plain text of at most 32,000 characters (`descriptionTruncated` when cut). It is absent until known.
 
@@ -42,7 +42,7 @@ T07 turns a crawled page into jobs. [0007](0007-crawler.md) set the direction: c
 
 ## Consequences
 
-- Pages with jobs only in plain HTML give 0 jobs until [#41](https://github.com/jobdeputy/jobdeputy/issues/41). The note makes this visible and countable.
+- Pages with jobs only in plain HTML give 0 jobs until [#41](https://github.com/jobdeputy/jobdeputy-archive/issues/41). The note makes this visible and countable.
 - Many jobs have no description until T08 fetches it; relevance must work from the title, place, and type first.
-- Company rules and the "one page with many companies" review wait for [#40](https://github.com/jobdeputy/jobdeputy/issues/40).
+- Company rules and the "one page with many companies" review wait for [#40](https://github.com/jobdeputy/jobdeputy-archive/issues/40).
 - Each board reader depends on an undocumented or lightly documented public format. A changed format fails the whole feed (`FeedFormatError`), which T07b records on the crawl instead of storing half-read jobs.

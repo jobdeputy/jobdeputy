@@ -44,7 +44,7 @@ Relevance was easy for most models; prompt injection separated them. No model ne
 
    - Cost at the allowance ([0009](0009-llm-architecture-and-own-keys.md): 4 runs per month), assuming one run scores 50 candidates in 5 calls of about 6,000 input and 400 output tokens: about $0.006 per run in us-east-1 and $0.010 in eu-west-2, so about $0.04 per user per month, or $40 per month for 1,000 users at the full allowance. The per-run token caps bound the worst case.
    - **Fallback:** `openai.gpt-oss-120b-1:0` (all three Regions, passed every check, about 2.6 times the cost and twice as slow). Switching needs a new decision and the guardrail change.
-   - A monthly job looks for newer, cheaper, or better models ([#49](https://github.com/jobdeputy/jobdeputy/issues/49)). Users with their own key pick any model; we recommend one per provider ([#51](https://github.com/jobdeputy/jobdeputy/issues/51)).
+   - A monthly job looks for newer, cheaper, or better models ([#49](https://github.com/jobdeputy/jobdeputy-archive/issues/49)). Users with their own key pick any model; we recommend one per provider ([#51](https://github.com/jobdeputy/jobdeputy-archive/issues/51)).
 
 2. **Cost guardrails** (`jd-cost-guardrails`, [0005](0005-pre-launch-cost-guardrails.md)): Bedrock stays denied except `bedrock:InvokeModel` on the pinned model's foundation-model ARNs in the three Regions. `kms:CreateKey` is no longer denied (one key per cell, [0009](0009-llm-architecture-and-own-keys.md)). `aws-marketplace:Subscribe` stays denied.
 
@@ -56,7 +56,7 @@ Relevance was easy for most models; prompt injection separated them. No model ne
    5. **Output is only data.** Model output never triggers an action by itself. In phase 2, applying, sending, or paying needs the user's explicit confirmation. The UI shows model text escaped, never as HTML or links it did not come with.
    6. **Least privilege.** An LLM worker may invoke only the pinned model and read and write only the items of its own task ([0009](0009-llm-architecture-and-own-keys.md)). Caps on turns, tokens, and calls bound any abuse ([0002](0002-llm-loop-and-token-budget.md)).
    7. **Tested and watched.** Every task has injection cases in its unit tests (stub model) and in the eval suite, and the nightly real-model check includes one. Rejected outputs are counted per task and model as a metric.
-   8. **Reviewed monthly** ([#50](https://github.com/jobdeputy/jobdeputy/issues/50)).
+   8. **Reviewed monthly** ([#50](https://github.com/jobdeputy/jobdeputy-archive/issues/50)).
 
 ## Why
 
@@ -65,6 +65,6 @@ Relevance was easy for most models; prompt injection separated them. No model ne
 
 ## Consequences
 
-- The sample set is small (20 jobs, 3 pages). The nightly real-model check, token usage, and the rejected-output metric show whether quality holds on real data; [#49](https://github.com/jobdeputy/jobdeputy/issues/49) grows the samples.
+- The sample set is small (20 jobs, 3 pages). The nightly real-model check, token usage, and the rejected-output metric show whether quality holds on real data; [#49](https://github.com/jobdeputy/jobdeputy-archive/issues/49) grows the samples.
 - A model change means a new decision, a guardrail update by the maintainer, and a rerun of the eval.
 - The maintainer applies the guardrail with `infra/bootstrap/02-guardrails.sh` after merge.

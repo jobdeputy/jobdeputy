@@ -182,8 +182,8 @@ Details: [data-model.md](../data-model.md).
 - **Every task call** writes one log line: calls, tokens, latency, rejected outputs, grounding rejections, score spread, jobs sent, low scores. Never a user ID or text.
 - **Metrics and alarms** (T08b3): totals and per task; alarms on 10 or more rejected outputs, or 5 or more timeouts, in an hour.
 - **Queue health check** (T08d1): every 5 minutes; emails when the relevance queue backs up or has dead letters.
-- **Daily LLM report** (T08e1, [#65](https://github.com/jobdeputy/jobdeputy/issues/65)): per prompt version and model against limits; emails only when one is crossed.
-- **Next** (T08e2, [#66](https://github.com/jobdeputy/jobdeputy/issues/66)): a sample rescored by a second model, a shadow prompt, and gradual rollout of prompt or model changes.
+- **Daily LLM report** (T08e1, [#65](https://github.com/jobdeputy/jobdeputy-archive/issues/65)): per prompt version and model against limits; emails only when one is crossed.
+- **Next** (T08e2, [#66](https://github.com/jobdeputy/jobdeputy-archive/issues/66)): a sample rescored by a second model, a shadow prompt, and gradual rollout of prompt or model changes.
 
 ## Numbers
 
