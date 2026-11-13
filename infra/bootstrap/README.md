@@ -18,6 +18,7 @@ One-time organization setup for [T03](https://github.com/jobdeputy/jobdeputy-arc
 | `02-guardrails.sh` | Creates the service control policies. Attaches a Region lock to each workload account and the cost guardrails to `Workloads`. Creates the `jd-budget-stop` policy without attaching it. |
 | `03-budget.sh` | Creates the $20 gross-cost budget with alerts at $5, $10, and $15 actual and $20 forecast. Creates the budget action that attaches `jd-budget-stop` to `Workloads` at $20 actual, and a daily anomaly email for impact of $1 or more. |
 | `04-access-analyzer.sh` | Creates an organization-wide IAM Access Analyzer (free) that flags any resource shared publicly or outside the organization. `us-east-1` now; pass `ap-south-1 eu-west-2` at launch. |
+| `05-delegate-web-zone.sh` | Decision 0011: adds the NS record in `jobdeputy.com` that delegates a stage's web zone (default `dev.jobdeputy.com`) to the zone in its workload account. Run once after the first deploy of `jobdeputy-dev-web-dns`. Uses `WORKLOAD_PROFILE` (default `jobdeputy-dev-iad`) and `MGMT_PROFILE` (default `jobdeputy-mgmt`). |
 
 ```sh
 export AWS_PROFILE=jobdeputy-mgmt
@@ -25,6 +26,7 @@ DEV_IAD_EMAIL=... ADMIN_USERNAME=... ./01-organization.sh
 ./02-guardrails.sh
 ALERT_EMAIL=... ./03-budget.sh
 ./04-access-analyzer.sh
+./05-delegate-web-zone.sh   # after the first deploy of jobdeputy-dev-web-dns
 ```
 
 Prod accounts (`jobdeputy-prod-iad`, `-bom`, `-lhr`) are created at launch by extending `01-organization.sh`. `02-guardrails.sh` already knows their Regions.

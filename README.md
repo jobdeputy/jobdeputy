@@ -20,7 +20,7 @@ JobDeputy helps job seekers find relevant roles from any job site and prepare ta
 npm install -g corepack@latest && corepack enable pnpm
 pnpm install
 pnpm verify   # lint, typecheck, tests
-pnpm synth    # build the AWS CloudFormation for every Region cell
+pnpm synth    # build the web app and the AWS CloudFormation for every stack
 pnpm --filter @jobdeputy/web dev   # run the web app locally
 ```
 

@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import {
   App,
   type AppProps,
@@ -6,8 +7,11 @@ import {
 } from 'aws-cdk-lib';
 import { CELLS } from '../config/cells.js';
 import { accountEnvVar, isStageName, STAGES, type StageName } from '../config/stages.js';
+import { WEB_SITES } from '../config/web.js';
 import { CellStack } from './cell-stack.js';
 import { KeysStack } from './keys-stack.js';
+import { WebDnsStack } from './web-dns-stack.js';
+import { WebStack } from './web-stack.js';
 
 export interface BuildAppOptions {
   readonly stage: StageName;
@@ -24,6 +28,11 @@ export interface BuildAppOptions {
    * (T11). The caller passes the CDK execution role with `cdk deploy --role-arn`.
    */
   readonly cliCredentials?: boolean;
+  /**
+   * The built web app, uploaded by the stage's web stack (decision 0011). Must exist when
+   * given; left out (unit tests) the web stack is built without uploading anything.
+   */
+  readonly webContentDir?: string;
 }
 
 const OWNER_PATTERN = /^[a-z][a-z0-9-]{1,15}$/;
@@ -69,7 +78,40 @@ export function buildApp(options: BuildAppOptions): App {
     // The cell reads the key's ARN from SSM at deploy time, so the key must exist first.
     if (keys) cellStack.addDependency(keys);
   }
+  if (!owner) addWebStacks(app, stage, env, options.webContentDir);
   return app;
+}
+
+/**
+ * Decision 0011: the stage's web app, served by CloudFront from the US cell's account
+ * (CloudFront's certificate must be in us-east-1). Shared stacks only: personal and PR
+ * stacks have no web app.
+ */
+function addWebStacks(
+  app: App,
+  stage: StageName,
+  env: Record<string, string | undefined>,
+  contentDir: string | undefined,
+): void {
+  const site = WEB_SITES[stage];
+  if (!site) return;
+  if (contentDir !== undefined && !existsSync(contentDir)) {
+    throw new Error(
+      `The web app is not built (${contentDir} is missing): run pnpm --filter @jobdeputy/web build.`,
+    );
+  }
+  const account = env[accountEnvVar(stage, 'iad')];
+  const stackEnv = { region: CELLS.iad.region, ...(account ? { account } : {}) };
+  const dns = new WebDnsStack(app, `jobdeputy-${stage}-web-dns`, {
+    domain: site.domain,
+    env: stackEnv,
+  });
+  new WebStack(app, `jobdeputy-${stage}-web`, {
+    domain: site.domain,
+    zone: dns.zone,
+    env: stackEnv,
+    ...(contentDir !== undefined ? { contentDir } : {}),
+  });
 }
 
 // Cast: the class's optional getters do not satisfy exactOptionalPropertyTypes.

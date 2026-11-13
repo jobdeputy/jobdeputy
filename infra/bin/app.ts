@@ -1,7 +1,10 @@
+import { join } from 'node:path';
 import { App } from 'aws-cdk-lib';
 import { GITHUB_OIDC_SUBJECT_PREFIX } from '../config/github.js';
+import { WEB_DIST_DIR } from '../config/web.js';
 import { buildApp, stageFromContext } from '../lib/build-app.js';
 import { CicdStack } from '../lib/cicd-stack.js';
+import { REPO_ROOT } from '../lib/constructs/node-function.js';
 
 // One App only: the CDK CLI auto-synthesizes every App on exit.
 const app = new App();
@@ -9,7 +12,14 @@ const stage = stageFromContext(app.node.tryGetContext('stage'));
 const owner = app.node.tryGetContext('owner') as string | undefined;
 const cliCredentials = String(app.node.tryGetContext('cliCredentials')) === 'true';
 
-buildApp({ app, stage, cliCredentials, ...(owner ? { owner } : {}) });
+// The web stack uploads the built app; buildApp fails if it has not been built.
+buildApp({
+  app,
+  stage,
+  cliCredentials,
+  webContentDir: join(REPO_ROOT, WEB_DIST_DIR),
+  ...(owner ? { owner } : {}),
+});
 
 // Deployed once per workload account by an admin: cdk deploy -c cicd=true
 if (app.node.tryGetContext('cicd') === 'true' || app.node.tryGetContext('cicd') === true) {

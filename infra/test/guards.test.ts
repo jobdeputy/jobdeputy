@@ -11,10 +11,13 @@ describe('Region cells (decision 0004)', () => {
   it('dev deploys only the US cell', () => {
     const app = buildApp({ stage: 'dev', env: {} });
     const stacks = app.synth().stacks.map((s) => [s.stackName, s.environment.region]);
-    // T08b2: the cell and its keys stack (the KMS key), in the same Region.
+    // T08b2: the cell and its keys stack (the KMS key), in the same Region; 0011: the web
+    // app and its zone, in us-east-1 too (CloudFront's certificate must be there).
     expect(stacks).toEqual([
       ['jobdeputy-dev-iad-keys', 'us-east-1'],
+      ['jobdeputy-dev-web-dns', 'us-east-1'],
       ['jobdeputy-dev-iad', 'us-east-1'],
+      ['jobdeputy-dev-web', 'us-east-1'],
     ]);
   });
 

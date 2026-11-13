@@ -11,7 +11,7 @@
     "format": "biome check --write .",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "synth": "pnpm --filter @jobdeputy/infra synth",
+    "synth": "pnpm --filter @jobdeputy/web build && pnpm --filter @jobdeputy/infra synth",
     "verify": "pnpm check && pnpm typecheck && pnpm test",
     "test:integration": "pnpm --filter @jobdeputy/integration-tests test:integration"
   },
