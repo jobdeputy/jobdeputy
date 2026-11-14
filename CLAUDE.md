@@ -72,7 +72,7 @@ Node 22 and pnpm (through corepack). Run from the repo root unless noted.
 | `pnpm install` | Install dependencies |
 | `pnpm verify` | Biome lint and format check, typecheck, and all tests. **Run before every PR.** |
 | `pnpm format` | Auto-fix formatting and safe lint issues |
-| `pnpm synth` | Synthesize all dev and prod cells (no AWS access needed) |
+| `pnpm synth` | Build the web app, then synthesize all dev and prod stacks (no AWS access needed). Any `cdk` command for a shared stage needs the web app built first |
 | `pnpm --filter @jobdeputy/web dev` | Run the web app locally (Vite) |
 | `cd infra && pnpm cdk deploy -c stage=dev -c owner=<you> --profile jobdeputy-dev-iad` | Deploy your personal dev stack |
 | `cd infra && pnpm cdk destroy -c stage=dev -c owner=<you> --profile jobdeputy-dev-iad` | Remove your personal dev stack |

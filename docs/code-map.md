@@ -10,6 +10,7 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 
 | To change… | Edit |
 |---|---|
+| Where the web app is served, or its security headers (CSP) | `infra/config/web.ts`, `infra/lib/web-stack.ts` |
 | A table, grant, route, queue, Lambda, or alarm | `infra/lib/cell-stack.ts` (constructs in `infra/lib/constructs/`); guard tests in `infra/test/` |
 | An API route's behaviour | `apps/api/src/<feature>.ts` (`route()` switches on `routeKey`); the route must also be added in `cell-stack.ts` |
 | Request validation or shared limits | `packages/shared/src/<feature>.ts` (Zod schemas, limits, error codes) |
@@ -112,6 +113,7 @@ An empty shell for now; screens come one at a time. Runs with `pnpm --filter @jo
 | `bin/app.ts`, `lib/build-app.ts`, `config/` | which stacks exist per stage, cell, and owner |
 | `lib/cell-stack.ts` | everything in one Region cell: tables, Lambdas, grants, routes, pipelines, alarms |
 | `lib/keys-stack.ts` | the cell's KMS key for own AI keys, in its own stack (kept on delete); its ARN in SSM |
+| `lib/web-stack.ts`, `lib/web-dns-stack.ts` | the web app (0011): private S3 bucket, CloudFront with security headers and SPA routing, certificate, DNS records, upload of `apps/web/dist`; the delegated zone (kept on delete). Domains in `config/web.ts` |
 | `lib/constructs/` | `ai-keys` (key API, key-check worker, KMS grants), `llm-monitoring` (LLM dashboard, alarms, `llmMetricsEnvironment`), `async-pipeline` (stream → Pipe → queue → worker), `queue-worker`, `queue-health` (the scheduled check that watches every queue; T08d1), `relevance` (T08d: the relevance worker, its Pipe on the crawls stream, its grants), `auth`, `documents` (bucket, malware scan), `node-function` |
 | `lib/cicd-stack.ts` | GitHub OIDC roles (deploy, PR integration) |
 | `lib/guards.ts` | cost and Region guard checks |

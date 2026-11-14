@@ -29,7 +29,7 @@ Four layers, from preventive to reactive:
 ## Honest limits
 
 - AWS updates budgets a few times a day, so actual spend can pass $20 before the block applies. The earlier alerts and the preventive layer are what keep us far below it.
-- Service control policies do not apply to the management account. It holds no workloads; only the Route 53 hosted zone ($0.50 per month) and the domain renewal (yearly, due 2027-09-27, which counts toward that month) are billed there.
+- Service control policies do not apply to the management account. It holds no workloads; only the Route 53 hosted zone ($0.50 per month; the delegated `dev.jobdeputy.com` zone in the dev account is a second, approved in [0011](0011-web-hosting.md)) and the domain renewal (yearly, due 2027-09-27, which counts toward that month) are billed there.
 - Storage that already exists (S3, DynamoDB, logs) keeps billing at a very small rate while blocked.
 
 ## Why
