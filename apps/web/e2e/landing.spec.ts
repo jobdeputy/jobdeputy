@@ -19,7 +19,7 @@ async function expectHeroFillsScreen(page: Page) {
   const viewport = page.viewportSize();
   if (!header || !hero || !viewport) throw new Error('No header, hero, or viewport size.');
   expect(hero.y).toBeCloseTo(header.y + header.height, 0);
-  // Asks the page, so the check follows the theme's lg breakpoint.
+  // Tailwind's lg is 64rem (not overridden in the theme); 600px is the hero's lg:min-h.
   const isLarge = await page.evaluate(() => matchMedia('(width >= 64rem)').matches);
   const roomForMinimum = viewport.height - (header.y + header.height) >= 600;
   if (isLarge && roomForMinimum) {
