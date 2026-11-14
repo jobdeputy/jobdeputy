@@ -73,40 +73,47 @@ describe('DeputyWorking', () => {
   function Working(props: { active: boolean; background?: boolean; step?: string }) {
     return <DeputyWorking status="Searching" speech="On it." {...props} />;
   }
-  const status = () => screen.getByRole('status');
+  /** The three live regions, in order: the pill, the step, the long-wait line. */
+  const regions = () => screen.getAllByRole('status');
+  const pill = () => regions()[0]?.textContent;
+  const stepRegion = () => regions()[1]?.textContent;
+  const longRegion = () => regions()[2]?.textContent;
 
-  it('shows nothing for 300 ms, with its status region already there and empty', () => {
+  it('shows nothing for 300 ms, with its live regions already there and empty', () => {
     render(<Working active />);
-    expect(status().textContent).toBe('');
+    expect(regions()).toHaveLength(3);
+    expect(regions().map((region) => region.textContent)).toEqual(['', '', '']);
+    // Empty regions stay in the accessibility tree: visually hidden, never display:none.
+    expect(regions()[2]?.className).toContain('sr-only');
     expect(document.querySelector('svg')).toBeNull();
     act(() => vi.advanceTimersByTime(300));
-    expect(status().textContent).toContain('Searching');
+    expect(pill()).toBe('Searching');
     expect(screen.getByText('On it.')).toBeTruthy();
     expect(document.querySelector('svg')).not.toBeNull();
   });
 
-  it('reads out the step the job reports', () => {
+  it('reads out the step the job reports, on its own', () => {
     const { rerender } = render(<Working active step="Reading page 1 of 12" />);
-    act(() => vi.advanceTimersByTime(300));
+    act(() => vi.advanceTimersByTime(LONG_WAIT_MS));
     rerender(<Working active step="Reading page 2 of 12" />);
-    expect(status().textContent).toContain('Reading page 2 of 12');
+    // Its own region: the pill and the long-wait line are not read again with it.
+    expect(stepRegion()).toBe('Reading page 2 of 12');
+    expect(pill()).toBe('Searching');
   });
 
   it('adds "Still working…" after 8 s', () => {
     render(<Working active />);
     act(() => vi.advanceTimersByTime(LONG_WAIT_MS - 1));
-    expect(status().textContent).not.toContain('Still working…');
+    expect(longRegion()).toBe('');
     act(() => vi.advanceTimersByTime(1));
-    expect(status().textContent).toContain('Still working…');
+    expect(longRegion()).toBe('Still working…');
+    expect(regions()[2]?.className).not.toContain('sr-only');
   });
 
   it('says a background job carries on if the user leaves', () => {
     render(<Working active background />);
     act(() => vi.advanceTimersByTime(LONG_WAIT_MS));
-    expect(status().textContent).toContain(
-      'This keeps going in the background. You can leave this page.',
-    );
-    expect(status().textContent).not.toContain('Still working…');
+    expect(longRegion()).toBe('This keeps going in the background. You can leave this page.');
   });
 
   it('stays its 500 ms once shown, then goes when the job ends', () => {
@@ -117,6 +124,6 @@ describe('DeputyWorking', () => {
     expect(screen.queryByText('On it.')).not.toBeNull();
     act(() => vi.advanceTimersByTime(1));
     expect(screen.queryByText('On it.')).toBeNull();
-    expect(status().textContent).toBe('');
+    expect(regions().map((region) => region.textContent)).toEqual(['', '', '']);
   });
 });

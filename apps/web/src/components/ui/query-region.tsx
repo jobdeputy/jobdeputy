@@ -19,8 +19,8 @@ export type QueryState<T> = Pick<
  * - **First load** (also one TanStack has paused, offline, until the network returns): its
  *   content is `aria-busy`, holding the skeleton's size but blank; after 300 ms the skeleton shows
  *   and the polite status line says `label` ("Loading your matches"). Once shown, it stays at
- *   least 500 ms (useDelayedPending). After 8 s, "Still working…" shows over the skeleton and is
- *   read out with the label.
+ *   least 500 ms (useDelayedPending). After 8 s of a running load, "Still working…" shows on a
+ *   chip over the skeleton and is read out with the label.
  * - **Refreshing** (data on screen, a newer copy loading): the data stays, readable and not busy,
  *   and after 300 ms a quiet "Updating…" sits at its top right, letting clicks through. Nothing is
  *   read out: a refetch on every window focus would be noise.
@@ -47,7 +47,8 @@ export function QueryRegion<T>({
   const refreshing = !loading && query.isFetching && query.data !== undefined;
   const skeletonShown = useDelayedPending(loading);
   const updatingShown = useDelayedPending(refreshing);
-  const longLoad = useLongWait(loading) && skeletonShown;
+  // Only a load that is actually running is "still working": a paused one is waiting for the network.
+  const longLoad = useLongWait(loading && !query.isPaused) && skeletonShown;
   // The skeleton holds its 500 ms even when the data comes sooner, so it never flashes.
   const holding = loading || skeletonShown;
   // "Updating…" only ever sits on data: never over a skeleton, an error, or nothing.
@@ -87,7 +88,7 @@ export function QueryRegion<T>({
       {longLoad && (
         <p
           aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 top-1/2 m-0 -translate-y-1/2 text-center text-sm text-muted-foreground"
+          className="pointer-events-none absolute top-1/2 left-1/2 m-0 -translate-1/2 rounded-full bg-surface-strong px-3 py-1 text-sm whitespace-nowrap text-muted-foreground shadow-panel"
         >
           {copy.loading.stillWorking}
         </p>

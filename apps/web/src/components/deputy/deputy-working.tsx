@@ -1,3 +1,4 @@
+import { DeputySpeech, DeputyStatus } from '@/components/deputy/deputy-speech.tsx';
 import { Panda } from '@/components/deputy/panda.tsx';
 import { Spinner } from '@/components/ui/spinner.tsx';
 import { copy } from '@/copy/index.ts';
@@ -12,8 +13,8 @@ import { cn } from '@/lib/utils.ts';
  * that runs on the server (`background`), that it carries on if the user leaves. The screen swaps
  * it for the job's result when the job ends.
  *
- * The pill, the step and the long-wait line sit in one polite status region, so each is read out
- * as it appears, without taking focus; the panda is decorative.
+ * The pill, the step and the long-wait line are each a polite status region, so each is read out
+ * on its own as it changes, without taking focus; the panda is decorative.
  */
 export function DeputyWorking({
   active,
@@ -41,38 +42,42 @@ export function DeputyWorking({
   const shown = useDelayedPending(active);
   const long = useLongWait(active, longWaitAfter);
 
-  // The status region is always there, empty until the deputy shows: screen readers skip the
-  // text a live region is born with, so it must exist before its first words.
+  // The live regions are always there, empty until their line comes: screen readers skip the
+  // text a live region is born with, and one that is display:none is not there at all, so an
+  // empty one is visually hidden (sr-only), never hidden outright. One region per line, so a new
+  // step is read on its own, not with the pill and the long-wait sentence again.
+  const longLine =
+    shown && long ? (background ? copy.loading.background : copy.loading.stillWorking) : '';
+  const stepLine = shown && step ? step : '';
   return (
     <div
       data-slot="deputy-working"
       data-shown={shown || undefined}
       data-long={(shown && long) || undefined}
-      className={cn(shown && 'flex items-center gap-4', className)}
+      className={cn('flex items-center gap-4', className)}
     >
       {shown && <Panda pose="pending" className="size-28 shrink-0" />}
-      <div className={cn(shown && 'grid min-w-0 justify-items-start gap-2')}>
-        {shown && (
-          <p className="m-0 rounded-[18px_18px_18px_5px] border border-line bg-white/88 px-3 py-2 font-display text-sm leading-[1.3] italic shadow-[0_15px_38px_color-mix(in_oklab,var(--color-ink)_10%,transparent)]">
-            {speech}
-          </p>
-        )}
-        <div role="status" className="grid justify-items-start gap-1">
+      <div className="grid min-w-0 justify-items-start gap-2">
+        {shown && <DeputySpeech className="px-3 py-2 text-sm">{speech}</DeputySpeech>}
+        <div role="status">
           {shown && (
-            <>
-              <p className="m-0 inline-flex min-h-7 items-center gap-[7px] rounded-full border border-line-soft bg-surface px-[11px] text-xs font-[650] tracking-[0.03em] text-muted-foreground shadow-panel">
-                <Spinner className="size-2.5 text-green" />
-                {status}
-              </p>
-              {step && <p className="m-0 text-sm text-foreground">{step}</p>}
-              {long && (
-                <p className="m-0 text-sm text-muted-foreground">
-                  {background ? copy.loading.background : copy.loading.stillWorking}
-                </p>
-              )}
-            </>
+            <DeputyStatus
+              className="whitespace-normal"
+              dot={<Spinner className="size-2.5 text-green" />}
+            >
+              {status}
+            </DeputyStatus>
           )}
         </div>
+        <p role="status" className={cn('m-0 text-sm text-foreground', !stepLine && 'sr-only')}>
+          {stepLine}
+        </p>
+        <p
+          role="status"
+          className={cn('m-0 text-sm text-muted-foreground', !longLine && 'sr-only')}
+        >
+          {longLine}
+        </p>
       </div>
     </div>
   );
