@@ -128,10 +128,14 @@ test.describe('landing page', () => {
   });
 });
 
-/** Stops the page's installed clock where it is; after this only fastForward moves time. */
+/**
+ * Stops the page's installed clock about a second on; after this only fastForward moves time. The
+ * margin keeps the target ahead of the clock, which runs on until the pause lands (a target in the
+ * past throws). Call it once the story is paused, so no step can pass in that second.
+ */
 async function freezeClock(page: Page) {
   const now = await page.evaluate(() => Date.now());
-  await page.clock.pauseAt(now + 1);
+  await page.clock.pauseAt(now + 1000);
 }
 
 /** The strip's step buttons, in order. */
