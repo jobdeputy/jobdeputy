@@ -13,6 +13,45 @@
      bar's segment crossing the track once every 1618ms. */
   --animate-spinner: spinner 987ms linear infinite;
   --animate-progress-sweep: progress-sweep 1618ms ease-in-out infinite;
+  /* The boot loader (index.html): it appears only once the wait passes 300 ms (useDelayedPending's
+     delay), fading in with the prototype's 380ms detail-in; at once under reduced motion. Its
+     track fills to 92% over the logo's 2.605s story; the last 8% waits for the app. */
+  --animate-boot-reveal: boot-reveal 380ms var(--ease-settle) 300ms both;
+  --animate-boot-reveal-still: boot-reveal 1ms 300ms both;
+  --animate-boot-fill: boot-fill 2605ms linear both;
+  /* Its reload offer appears at the 8 s long wait, at once (its own keyframes, so lib/boot-loader.ts
+     finds the reveal by name). */
+  --animate-boot-slow: boot-slow 1ms 8000ms both;
+
+  /* Hidden (out of the accessibility tree too) until the delay ends. */
+  @keyframes boot-reveal {
+    from {
+      opacity: 0;
+      visibility: hidden;
+    }
+    to {
+      opacity: 1;
+      visibility: visible;
+    }
+  }
+
+  @keyframes boot-slow {
+    from {
+      visibility: hidden;
+    }
+    to {
+      visibility: visible;
+    }
+  }
+
+  @keyframes boot-fill {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(0.92);
+    }
+  }
 
   @keyframes spinner {
     to {

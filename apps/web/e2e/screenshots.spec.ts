@@ -12,10 +12,22 @@ const SCREENS = [
   { name: 'sign-in', path: '/', open: 'Sign in' },
   // Every shared component state (#17); the pending buttons appear after the 300 ms delay.
   { name: 'gallery', path: '/gallery.html', ready: '[data-pending]' },
+  // The boot loader at the end of its story, held up by an app script that never arrives.
+  { name: 'boot-loader', path: '/', ready: '#boot-loader', blockScript: true, storyEnd: true },
+  // The same boot, stalled past the 8 s long wait: the reload offer.
+  {
+    name: 'boot-loader-slow',
+    path: '/',
+    ready: '#boot-loader [role="status"] a',
+    blockScript: true,
+  },
 ];
 
 for (const screen of SCREENS) {
   test(`screenshot: ${screen.name}`, async ({ page }, testInfo) => {
+    if (screen.blockScript) {
+      await page.route('**/assets/*.js', (route) => route.abort());
+    }
     await page.goto(screen.path);
     if (screen.open) {
       await page
@@ -28,11 +40,37 @@ for (const screen of SCREENS) {
     if (screen.ready) {
       await page.locator(screen.ready).first().waitFor();
     }
+    if (screen.storyEnd) {
+      // The logo's 2.605 s story runs from when its image arrives, so wait for that, not a clock.
+      await page.waitForFunction(() => {
+        const logo = (performance.getEntriesByType('resource') as PerformanceResourceTiming[]).find(
+          (entry) => entry.name.endsWith('/jobdeputy-animated.svg'),
+        );
+        return logo !== undefined && performance.now() > logo.responseEnd + 2705;
+      });
+    }
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({
       path: join(SCREENSHOTS_DIR, `${screen.name}--${testInfo.project.name}.png`),
       fullPage: true,
-      animations: 'disabled',
+      // 'disabled' fast-forwards finite animations, which would show the loader's 8 s reload
+      // offer early; the loader's screens are captured as they stand.
+      animations: screen.blockScript ? 'allow' : 'disabled',
     });
   });
 }
+
+// The boot loader with scripts turned off: the noscript line, without a loading look.
+test.describe('without JavaScript', () => {
+  test.use({ javaScriptEnabled: false });
+
+  test('screenshot: boot-loader-no-js', async ({ page }, testInfo) => {
+    await page.goto('/');
+    await page.locator('#boot-loader noscript p').waitFor();
+    await page.screenshot({
+      path: join(SCREENSHOTS_DIR, `boot-loader-no-js--${testInfo.project.name}.png`),
+      fullPage: true,
+      animations: 'disabled',
+    });
+  });
+});

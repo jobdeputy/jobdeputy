@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { type AuthControl, AuthDrawer, type AuthMode } from '@/components/landing/auth-drawer.tsx';
 import { Hero } from '@/components/landing/hero.tsx';
 import { SiteHeader } from '@/components/landing/site-header.tsx';
+import { useFinishBoot } from '@/lib/boot-loader.ts';
 
 /** The public landing page: the story of what the deputy does, and the way in (sign up or sign in). */
 export function App() {
@@ -9,6 +10,8 @@ export function App() {
   const [authOpen, setAuthOpen] = useState(false);
   // Four buttons open the drawer; focus returns to whichever one did.
   const opener = useRef<HTMLElement | null>(null);
+  // Nothing to fetch before the landing page shows, so the boot ends on its first render.
+  useFinishBoot();
 
   const auth: AuthControl = {
     open: authOpen,
