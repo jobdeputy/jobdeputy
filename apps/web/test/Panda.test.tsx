@@ -1,8 +1,13 @@
-import { cleanup, render } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { act, cleanup, render } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Panda, type PandaPose } from '../src/components/deputy/panda.tsx';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  // Even when a test fails part-way: real timers and an unmocked Math.random for the next.
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 /** Each prop's first path, which tells it apart. */
 const PROP_MARKS = {
@@ -41,7 +46,7 @@ describe('Panda', () => {
 
   it('looks where the pose looks: up while pending', () => {
     const { container } = render(<Panda pose="pending" />);
-    const pupils = container.querySelectorAll<SVGGElement>('g.duration-\\[380ms\\]');
+    const pupils = container.querySelectorAll<SVGGElement>('g[clip-path] g.duration-\\[380ms\\]');
     expect([...pupils].map((pupil) => pupil.style.transform)).toEqual([
       'translate(0px, -3px)',
       'translate(0px, -3px)',
@@ -74,5 +79,131 @@ describe('Panda flourishes', () => {
         ),
       ).toBeNull();
     }
+  });
+});
+
+describe('Panda, alive', () => {
+  const body = (container: HTMLElement) =>
+    container.querySelector('g.origin-\\[210px_391px\\]') as SVGGElement;
+  const eyes = (container: HTMLElement) =>
+    [...container.querySelectorAll('g.origin-center')].filter((eye) =>
+      eye.classList.contains('animate-panda-blink'),
+    ).length;
+
+  it('lifts his whole body 7px while pending, and only then', () => {
+    const { container, rerender } = render(<Panda pose="pending" />);
+    expect(body(container).style.transform).toBe('translate(0px, -7px) rotate(1deg)');
+    // The head and arms ride on the body.
+    expect(body(container).querySelector('g.origin-\\[210px_158px\\]')).not.toBeNull();
+    rerender(<Panda pose="setup" />);
+    expect(body(container).style.transform).toBe('');
+  });
+
+  /** Records what the panda asks the Web Animations API for (happy-dom runs no animations). */
+  function recordAnimations() {
+    const calls: { keyframes: Keyframe[]; options: KeyframeAnimationOptions }[] = [];
+    const cancel = vi.fn();
+    vi.spyOn(Element.prototype, 'animate').mockImplementation(((
+      keyframes: Keyframe[],
+      options: KeyframeAnimationOptions,
+    ) => {
+      calls.push({ keyframes, options });
+      return { cancel } as unknown as Animation;
+    }) as Element['animate']);
+    return { calls, cancel };
+  }
+
+  /** getComputedStyle as the breath stops: first with the breath, then the pose alone. */
+  function computedStyle(withBreath: string, pose = 'none', transitionProperty = 'transform') {
+    let reads = 0;
+    vi.spyOn(window, 'getComputedStyle').mockImplementation(() => {
+      reads += 1;
+      return {
+        transform: reads === 1 ? withBreath : pose,
+        transitionDuration: '0.38s',
+        transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+        transitionProperty,
+      } as CSSStyleDeclaration;
+    });
+  }
+
+  it('breathes only while alive, on top of the pose, and eases back when the breath stops', () => {
+    const { calls, cancel } = recordAnimations();
+    const { rerender } = render(<Panda />);
+    expect(calls).toHaveLength(0);
+    rerender(<Panda alive />);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.options).toMatchObject({
+      iterations: Number.POSITIVE_INFINITY,
+      composite: 'add',
+    });
+    computedStyle('matrix(1, 0, 0, 1, 0, -3)');
+    rerender(<Panda alive={false} />);
+    expect(cancel).toHaveBeenCalled();
+    // The breath's own part (3px up) back to nothing, on the body's own transition, on top of
+    // whatever the pose is doing.
+    expect(calls[1]?.keyframes).toEqual([
+      { transform: 'matrix(1, 0, 0, 1, 0, -3)' },
+      { transform: 'none' },
+    ]);
+    expect(calls[1]?.options).toEqual({
+      duration: 380,
+      easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+      composite: 'add',
+    });
+  });
+
+  it('eases back only the breath, not the pose under it', () => {
+    const { calls } = recordAnimations();
+    const { rerender } = render(<Panda pose="pending" alive />);
+    // Lifted 7px by the pose, 3px more by the breath.
+    computedStyle('matrix(1, 0, 0, 1, 0, -10)', 'matrix(1, 0, 0, 1, 0, -7)');
+    rerender(<Panda pose="pending" alive={false} />);
+    expect(calls[1]?.keyframes[0]).toEqual({ transform: 'matrix(1, 0, 0, 1, 0, -3)' });
+  });
+
+  it('does not ease back from a breath at rest, or where transitions are off', () => {
+    const { calls } = recordAnimations();
+    const { rerender } = render(<Panda alive />);
+    // At rest over a lifted pose, give or take rounding.
+    computedStyle('matrix(1, 0, 0, 1, 0, -7.0000000001)', 'matrix(1, 0, 0, 1, 0, -7)');
+    rerender(<Panda alive={false} />);
+    rerender(<Panda alive />);
+    computedStyle('matrix(1, 0, 0, 1, 0, -3)', 'none', 'none');
+    rerender(<Panda alive={false} />);
+    // Two breaths, no ease-back.
+    expect(calls).toHaveLength(2);
+  });
+
+  it('never breathes under reduced motion', () => {
+    const { calls } = recordAnimations();
+    // The page keeps one media query list (useReducedMotion), so answer for every list.
+    const lists = Object.getPrototypeOf(window.matchMedia('(prefers-reduced-motion: reduce)'));
+    vi.spyOn(lists, 'matches', 'get').mockReturnValue(true);
+    render(<Panda alive />);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('blinks now and then while alive, both eyes at once, and never otherwise', () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(1);
+    const { container, rerender } = render(<Panda />);
+    // Not alive: still no blink at the moment one would have come.
+    act(() => vi.advanceTimersByTime(7800));
+    expect(eyes(container)).toBe(0);
+    rerender(<Panda alive />);
+    act(() => vi.advanceTimersByTime(7799));
+    expect(eyes(container)).toBe(0);
+    act(() => vi.advanceTimersByTime(1));
+    expect(eyes(container)).toBe(2);
+    act(() => vi.advanceTimersByTime(220));
+    expect(eyes(container)).toBe(0);
+    // Stopped mid-blink: the eyes open at once and stay open.
+    act(() => vi.advanceTimersByTime(7800));
+    expect(eyes(container)).toBe(2);
+    rerender(<Panda alive={false} />);
+    expect(eyes(container)).toBe(0);
+    act(() => vi.advanceTimersByTime(20_000));
+    expect(eyes(container)).toBe(0);
   });
 });

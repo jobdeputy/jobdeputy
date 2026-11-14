@@ -19,10 +19,17 @@ const SCENES: OnePer<Copy['landing']['steps']['items'], PandaPose> = ['setup', '
  */
 export function StoryStage({
   index,
+  alive = false,
+  held = false,
   controls,
   className,
 }: {
   index: number;
+  /** The story is playing where someone can see it: the deputy breathes and blinks. */
+  alive?: boolean;
+  /** Paused by the Pause button: every flourish on the stage holds where it is (the breath, which
+   *  stops with the story, eases back to the pose). */
+  held?: boolean;
   controls?: ReactNode;
   className?: string;
 }) {
@@ -30,12 +37,18 @@ export function StoryStage({
   const step = steps.items[index] ?? steps.items[0];
   const scene = SCENES[index] ?? 'setup';
   return (
-    <div className={cn('story-stage', className)} data-scene={scene}>
+    <div
+      // Held by Pause: every flourish stops where it is. The variant (class and attribute) beats
+      // the animate-* utilities that would set them running.
+      className={cn('story-stage data-held:**:[animation-play-state:paused]', className)}
+      data-scene={scene}
+      data-held={held || undefined}
+    >
       <div className="story-stage-halo" aria-hidden="true" />
       <div className="story-stage-props" aria-hidden="true">
         <StoryProps scene={scene} />
       </div>
-      <Panda className="story-stage-art" pose={scene} />
+      <Panda className="story-stage-art" pose={scene} alive={alive} />
       <DeputySpeech
         aria-hidden="true"
         className="story-stage-speech px-2.5 py-2 text-center text-xs md:px-3.5 md:py-3 md:text-[clamp(0.875rem,1.1vw,1rem)]"

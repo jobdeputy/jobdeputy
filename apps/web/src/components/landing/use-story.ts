@@ -29,7 +29,8 @@ function onVisibility(onChange: () => void) {
  * Replay starts over. Choosing a step (the arrows or the strip) shows it and pauses. Under
  * reduced motion it never plays by itself: the play button becomes "Advance story", one step a
  * press. `announcement` says where a person moved to ("Step 2 of 3: It finds"); autoplay says
- * nothing, and clears it. It waits while no one can watch: until the page shows from under the
+ * nothing, and clears it. `held`: paused by the Pause button, so the step's flourish holds
+ * mid-way (choosing a step plays its flourish to the end). It waits while no one can watch: until the page shows from under the
  * boot loader, and while the tab is hidden (a step then starts over when the tab comes back).
  */
 export function useStory() {
@@ -37,6 +38,9 @@ export function useStory() {
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [announcement, setAnnouncement] = useState('');
+  // Paused by the Pause button: the step's flourish holds where it is (a chosen step instead
+  // plays its flourish to the end).
+  const [held, setHeld] = useState(false);
   const revealed = useRevealed();
   const hidden = useSyncExternalStore(
     onVisibility,
@@ -66,6 +70,7 @@ export function useStory() {
   const goTo = useCallback((target: number) => {
     const next = Math.max(0, Math.min(LAST, target));
     setPlaying(false);
+    setHeld(false);
     setIndex(next);
     setAnnouncement(
       fill(copy.landing.story.position, {
@@ -90,6 +95,7 @@ export function useStory() {
   const toggle = useCallback(() => {
     if (mode === 'pause') {
       setPlaying(false);
+      setHeld(true);
     } else if (mode === 'advance') {
       goTo(index + 1);
     } else if (mode === 'replay') {
@@ -98,13 +104,17 @@ export function useStory() {
       } else {
         setIndex(0);
         setPlaying(true);
+        setHeld(false);
         setAnnouncement('');
       }
     } else {
       setPlaying(true);
+      setHeld(false);
       setAnnouncement('');
     }
   }, [mode, index, reducedMotion, goTo]);
 
-  return { index, mode, announcement, toggle, goTo };
+  // Moving while someone can watch: the deputy breathes and blinks only then.
+  const animating = playing && revealed && !hidden;
+  return { index, mode, animating, held, announcement, toggle, goTo };
 }

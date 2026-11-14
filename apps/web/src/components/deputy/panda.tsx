@@ -1,4 +1,13 @@
-import { type CSSProperties, type ReactNode, type SVGProps, useId } from 'react';
+import {
+  type CSSProperties,
+  type ReactNode,
+  type RefObject,
+  type SVGProps,
+  useEffect,
+  useId,
+  useRef,
+} from 'react';
+import { useReducedMotion } from '@/lib/use-reduced-motion.ts';
 import { cn } from '@/lib/utils.ts';
 
 /** The poses the deputy can hold: the landing story's three chapters, and pending work (#17). */
@@ -15,6 +24,8 @@ const POSES: Record<
   PandaPose,
   {
     head: string;
+    /** The whole body's lift (about 210,391); none outside pending. */
+    body?: string;
     arm: number;
     prop: Prop;
     propTurn: number;
@@ -53,6 +64,7 @@ const POSES: Record<
     look: [4, -1],
   },
   pending: {
+    body: 'translate(0px, -7px) rotate(1deg)',
     head: 'translate(0px, -3px) rotate(1deg)',
     arm: -34,
     prop: 'hourglass',
@@ -73,21 +85,38 @@ const MOVES =
  * - `pending` (#17): working on something that takes a while; the hourglass, eyes up.
  * A change of pose moves the head, the arm and the eyes there over 618ms, and the new prop fades
  * in as the arm arrives; the story's poses then play their flourish once (the pencil writes, the
- * magnifier scans). (The prototype also lifts the body 7px when pending; not drawn yet.)
+ * magnifier scans). Pending lifts the whole body 7px. While `alive` (the story playing) he breathes
+ * and blinks every 4.2–7.8s.
  * Colours are brand tokens (Tailwind fill-/stroke- classes), so nothing here is an off-brand hex.
  */
-export function Panda({ className, pose = 'setup' }: { className?: string; pose?: PandaPose }) {
+export function Panda({
+  className,
+  pose = 'setup',
+  alive = false,
+}: {
+  className?: string;
+  pose?: PandaPose;
+  /** While the landing story plays: he breathes and, now and then, blinks. */
+  alive?: boolean;
+}) {
   // Unique per instance: a second panda on the page must not borrow this one's clip paths.
   const id = useId();
   const eyeLeft = `${id}-eye-l`;
   const eyeRight = `${id}-eye-r`;
   const earFelt = `${id}-ear-felt`;
   const current = POSES[pose];
+  const reducedMotion = useReducedMotion();
+  const art = useRef<SVGSVGElement>(null);
+  const body = useRef<SVGGElement>(null);
+  useBlink(alive && !reducedMotion, art);
+  useBreath(alive, reducedMotion, body);
+  // A blink closes each eye to a tenth of its height, about its centre, for 180ms.
+  const eyeClass = 'origin-center [transform-box:fill-box]';
   const look: CSSProperties = {
     transform: `translate(${current.look[0]}px, ${current.look[1]}px)`,
   };
   return (
-    <svg className={className} viewBox="0 0 420 420" aria-hidden="true" focusable="false">
+    <svg ref={art} className={className} viewBox="0 0 420 420" aria-hidden="true" focusable="false">
       <defs>
         <clipPath id={eyeLeft}>
           <ellipse cx="167" cy="162" rx="13.6" ry="14.4" />
@@ -128,144 +157,257 @@ export function Panda({ className, pose = 'setup' }: { className?: string; pose?
         <circle className="fill-green-soft" cx="122" cy="220" r="9" />
         <circle className="fill-green" cx="122" cy="220" r="3.6" />
       </g>
-      <ellipse className="fill-ink-soft" cx="210" cy="304" rx="80" ry="84" />
-      <ellipse className="fill-paper-deep" cx="210" cy="324" rx="70" ry="58" />
-      <ellipse className="fill-paper" cx="210" cy="318" rx="67" ry="52" />
-      <g transform="rotate(-12 150 368)">
-        <ellipse className="fill-ink" cx="150" cy="368" rx="45" ry="25" />
-      </g>
-      <g transform="rotate(12 270 368)">
-        <ellipse className="fill-ink" cx="270" cy="368" rx="45" ry="25" />
-      </g>
-      {/* The head: ears, face, eyes, nose, mouth. It tilts about 210,158. */}
-      <g className={cn(MOVES, 'origin-[210px_158px]')} style={{ transform: current.head }}>
-        <circle className="fill-ink" cx="139" cy="96.5" r="33.22" />
-        <circle className="fill-ink-soft" cx="136.23" cy="100.19" r="18.6" />
-        <circle cx="139" cy="96.5" r="33.22" fill={`url(#${earFelt})`} />
-        <circle className="fill-ink" cx="281" cy="96.5" r="33.22" />
-        <circle className="fill-ink-soft" cx="283.77" cy="100.19" r="18.6" />
-        <circle cx="281" cy="96.5" r="33.22" fill={`url(#${earFelt})`} />
-        <path
-          className="fill-paper stroke-line-strong"
-          d="M210 72C266 72 310 103.16 310 154C310 208 267 244 210 244C153 244 110 208 110 154C110 103.16 154 72 210 72Z"
-          strokeWidth="2"
-        />
-        <path
-          className="fill-paper-deep"
-          d="M118 183.7C128 222 165 244 210 244C255 244 292 222 302 183.7C288 216 265 232 210 232C155 232 132 216 118 183.7Z"
-        />
-        <ellipse
-          className="fill-ink"
-          cx="166"
-          cy="163"
-          rx="28"
-          ry="33"
-          transform="rotate(16 166 163)"
-        />
-        <ellipse
-          className="fill-ink"
-          cx="254"
-          cy="163"
-          rx="28"
-          ry="33"
-          transform="rotate(-16 254 163)"
-        />
-        <ellipse className="fill-orange-soft" cx="141.5" cy="199" rx="14.5" ry="8.6" />
-        <ellipse className="fill-orange-soft" cx="278.5" cy="199" rx="14.5" ry="8.6" />
-        <ellipse className="fill-paper" cx="167" cy="162" rx="13.6" ry="14.4" />
-        <g clipPath={`url(#${eyeLeft})`}>
-          <ellipse className="fill-paper-deep" cx="167" cy="141.12" rx="21.76" ry="9.5" />
-          <g
-            className="transition-transform duration-[380ms] ease-settle motion-reduce:transition-none"
-            style={look}
-          >
-            <circle className="fill-ink" cx="167" cy="162" r="7.2" />
-            <circle className="fill-paper" cx="164.3" cy="158.9" r="3.1" />
-            <circle className="fill-paper" cx="170.4" cy="165.6" r="1.3" />
-          </g>
-          <ellipse className="fill-ink" cx="167" cy="179.6" rx="17.5" ry="8.8" />
-        </g>
-        <ellipse className="fill-paper" cx="253" cy="162" rx="13.6" ry="14.4" />
-        <g clipPath={`url(#${eyeRight})`}>
-          <ellipse className="fill-paper-deep" cx="253" cy="141.12" rx="21.76" ry="9.5" />
-          <g
-            className="transition-transform duration-[380ms] ease-settle motion-reduce:transition-none"
-            style={look}
-          >
-            <circle className="fill-ink" cx="253" cy="162" r="7.2" />
-            <circle className="fill-paper" cx="250.3" cy="158.9" r="3.1" />
-            <circle className="fill-paper" cx="256.4" cy="165.6" r="1.3" />
-          </g>
-          <ellipse className="fill-ink" cx="253" cy="179.6" rx="17.5" ry="8.8" />
-        </g>
-        <path
-          className="fill-ink"
-          d="M200 185.6Q210 179.65 220 185.6Q219 195.12 210 197.5Q201 195.12 200 185.6Z"
-        />
-        <ellipse className="fill-paper" cx="206.6" cy="185.6" rx="3.2" ry="1.87" opacity="0.5" />
-        <path
-          className="stroke-ink"
-          d="M210 197.5V202.6"
-          fill="none"
-          strokeWidth="3.4"
-          strokeLinecap="round"
-        />
-        <path
-          className="fill-ink stroke-ink"
-          d="M194 202.6Q210 207.6 226 202.6Q224.5 222 210 223.5Q195.5 222 194 202.6Z"
-          strokeWidth="2.4"
-          strokeLinejoin="round"
-        />
-        <path
-          className="fill-orange-soft"
-          d="M200.5 216.8Q210 209.8 219.5 216.8Q215 222.4 210 222.6Q205 222.4 200.5 216.8Z"
-        />
-        <path
-          className="stroke-ink"
-          d="M190.6 199.6Q192.4 203.4 195.2 203.4M229.4 199.6Q227.6 203.4 224.8 203.4"
-          fill="none"
-          strokeWidth="2.6"
-          strokeLinecap="round"
-        />
-      </g>
-      {/* The left arm rests in every pose; the right one holds the pose's prop. */}
-      <g transform="rotate(14 162.7 261.16)">
-        <ellipse
-          className="fill-ink"
-          cx="153"
-          cy="295"
-          rx="28"
-          ry="44"
-          transform="rotate(16 153 295)"
-        />
-        <ellipse className="fill-ink" cx="141" cy="330" rx="25" ry="23" />
-      </g>
+      {/* The body, carrying the head and arms: it lifts when pending and breathes while the
+          story plays, about the base of the body (210,391). */}
       <g
-        className={cn(
-          MOVES,
-          'origin-[257.3px_261.16px] motion-reduce:animate-none',
-          current.armFlourish,
-        )}
-        style={{ transform: `rotate(${current.arm}deg)` }}
+        ref={body}
+        className="origin-[210px_391px] transition-transform duration-[380ms] ease-settle [transform-box:view-box] motion-reduce:transition-none"
+        style={{ transform: current.body }}
       >
-        <ellipse
-          className="fill-ink"
-          cx="267"
-          cy="295"
-          rx="28"
-          ry="44"
-          transform="rotate(-16 267 295)"
-        />
-        <ellipse className="fill-ink" cx="279" cy="330" rx="25" ry="23" />
-        {PROPS.map(({ name, Shape }) => (
-          <PropInPaw key={name} active={name === current.prop} pose={current}>
-            <Shape />
-          </PropInPaw>
-        ))}
-        <ellipse className="fill-ink" cx="281" cy="326" rx="15" ry="12.88" />
+        <ellipse className="fill-ink-soft" cx="210" cy="304" rx="80" ry="84" />
+        <ellipse className="fill-paper-deep" cx="210" cy="324" rx="70" ry="58" />
+        <ellipse className="fill-paper" cx="210" cy="318" rx="67" ry="52" />
+        <g transform="rotate(-12 150 368)">
+          <ellipse className="fill-ink" cx="150" cy="368" rx="45" ry="25" />
+        </g>
+        <g transform="rotate(12 270 368)">
+          <ellipse className="fill-ink" cx="270" cy="368" rx="45" ry="25" />
+        </g>
+        {/* The head: ears, face, eyes, nose, mouth. It tilts about 210,158. */}
+        <g className={cn(MOVES, 'origin-[210px_158px]')} style={{ transform: current.head }}>
+          <circle className="fill-ink" cx="139" cy="96.5" r="33.22" />
+          <circle className="fill-ink-soft" cx="136.23" cy="100.19" r="18.6" />
+          <circle cx="139" cy="96.5" r="33.22" fill={`url(#${earFelt})`} />
+          <circle className="fill-ink" cx="281" cy="96.5" r="33.22" />
+          <circle className="fill-ink-soft" cx="283.77" cy="100.19" r="18.6" />
+          <circle cx="281" cy="96.5" r="33.22" fill={`url(#${earFelt})`} />
+          <path
+            className="fill-paper stroke-line-strong"
+            d="M210 72C266 72 310 103.16 310 154C310 208 267 244 210 244C153 244 110 208 110 154C110 103.16 154 72 210 72Z"
+            strokeWidth="2"
+          />
+          <path
+            className="fill-paper-deep"
+            d="M118 183.7C128 222 165 244 210 244C255 244 292 222 302 183.7C288 216 265 232 210 232C155 232 132 216 118 183.7Z"
+          />
+          <ellipse
+            className="fill-ink"
+            cx="166"
+            cy="163"
+            rx="28"
+            ry="33"
+            transform="rotate(16 166 163)"
+          />
+          <ellipse
+            className="fill-ink"
+            cx="254"
+            cy="163"
+            rx="28"
+            ry="33"
+            transform="rotate(-16 254 163)"
+          />
+          <ellipse className="fill-orange-soft" cx="141.5" cy="199" rx="14.5" ry="8.6" />
+          <ellipse className="fill-orange-soft" cx="278.5" cy="199" rx="14.5" ry="8.6" />
+          <g data-eye className={eyeClass}>
+            <ellipse className="fill-paper" cx="167" cy="162" rx="13.6" ry="14.4" />
+            <g clipPath={`url(#${eyeLeft})`}>
+              <ellipse className="fill-paper-deep" cx="167" cy="141.12" rx="21.76" ry="9.5" />
+              <g
+                className="transition-transform duration-[380ms] ease-settle motion-reduce:transition-none"
+                style={look}
+              >
+                <circle className="fill-ink" cx="167" cy="162" r="7.2" />
+                <circle className="fill-paper" cx="164.3" cy="158.9" r="3.1" />
+                <circle className="fill-paper" cx="170.4" cy="165.6" r="1.3" />
+              </g>
+              <ellipse className="fill-ink" cx="167" cy="179.6" rx="17.5" ry="8.8" />
+            </g>
+          </g>
+          <g data-eye className={eyeClass}>
+            <ellipse className="fill-paper" cx="253" cy="162" rx="13.6" ry="14.4" />
+            <g clipPath={`url(#${eyeRight})`}>
+              <ellipse className="fill-paper-deep" cx="253" cy="141.12" rx="21.76" ry="9.5" />
+              <g
+                className="transition-transform duration-[380ms] ease-settle motion-reduce:transition-none"
+                style={look}
+              >
+                <circle className="fill-ink" cx="253" cy="162" r="7.2" />
+                <circle className="fill-paper" cx="250.3" cy="158.9" r="3.1" />
+                <circle className="fill-paper" cx="256.4" cy="165.6" r="1.3" />
+              </g>
+              <ellipse className="fill-ink" cx="253" cy="179.6" rx="17.5" ry="8.8" />
+            </g>
+          </g>
+          <path
+            className="fill-ink"
+            d="M200 185.6Q210 179.65 220 185.6Q219 195.12 210 197.5Q201 195.12 200 185.6Z"
+          />
+          <ellipse className="fill-paper" cx="206.6" cy="185.6" rx="3.2" ry="1.87" opacity="0.5" />
+          <path
+            className="stroke-ink"
+            d="M210 197.5V202.6"
+            fill="none"
+            strokeWidth="3.4"
+            strokeLinecap="round"
+          />
+          <path
+            className="fill-ink stroke-ink"
+            d="M194 202.6Q210 207.6 226 202.6Q224.5 222 210 223.5Q195.5 222 194 202.6Z"
+            strokeWidth="2.4"
+            strokeLinejoin="round"
+          />
+          <path
+            className="fill-orange-soft"
+            d="M200.5 216.8Q210 209.8 219.5 216.8Q215 222.4 210 222.6Q205 222.4 200.5 216.8Z"
+          />
+          <path
+            className="stroke-ink"
+            d="M190.6 199.6Q192.4 203.4 195.2 203.4M229.4 199.6Q227.6 203.4 224.8 203.4"
+            fill="none"
+            strokeWidth="2.6"
+            strokeLinecap="round"
+          />
+        </g>
+        {/* The left arm rests in every pose; the right one holds the pose's prop. */}
+        <g transform="rotate(14 162.7 261.16)">
+          <ellipse
+            className="fill-ink"
+            cx="153"
+            cy="295"
+            rx="28"
+            ry="44"
+            transform="rotate(16 153 295)"
+          />
+          <ellipse className="fill-ink" cx="141" cy="330" rx="25" ry="23" />
+        </g>
+        <g
+          className={cn(
+            MOVES,
+            'origin-[257.3px_261.16px] motion-reduce:animate-none',
+            current.armFlourish,
+          )}
+          style={{ transform: `rotate(${current.arm}deg)` }}
+        >
+          <ellipse
+            className="fill-ink"
+            cx="267"
+            cy="295"
+            rx="28"
+            ry="44"
+            transform="rotate(-16 267 295)"
+          />
+          <ellipse className="fill-ink" cx="279" cy="330" rx="25" ry="23" />
+          {PROPS.map(({ name, Shape }) => (
+            <PropInPaw key={name} active={name === current.prop} pose={current}>
+              <Shape />
+            </PropInPaw>
+          ))}
+          <ellipse className="fill-ink" cx="281" cy="326" rx="15" ry="12.88" />
+        </g>
       </g>
     </svg>
   );
+}
+
+/** How often he blinks while alive: every 4.2s to 7.8s, at random, as in the prototype. */
+const BLINK_EVERY_MS = [4200, 7800] as const;
+
+/** The class a blink adds to each eye for its 180ms. */
+const BLINK = 'animate-panda-blink';
+
+/**
+ * Blinks the eyes (`[data-eye]` in `art`) now and then while `alive`, never otherwise. It toggles
+ * their class itself, so a blink does not re-render the panda; stopping opens the eyes at once.
+ */
+function useBlink(alive: boolean, art: RefObject<SVGSVGElement | null>) {
+  useEffect(() => {
+    const eyes = art.current?.querySelectorAll('[data-eye]');
+    if (!alive || !eyes) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const set = (closed: boolean) => {
+      for (const eye of eyes) eye.classList.toggle(BLINK, closed);
+    };
+    const next = () => {
+      const [least, most] = BLINK_EVERY_MS;
+      timer = setTimeout(
+        () => {
+          set(true);
+          timer = setTimeout(() => {
+            set(false);
+            next();
+          }, 220);
+        },
+        least + Math.random() * (most - least),
+      );
+    };
+    next();
+    return () => {
+      clearTimeout(timer);
+      set(false);
+    };
+  }, [alive, art]);
+}
+
+/**
+ * One breath: the body rises 4px and tips half a degree, every golden 5.236s (the prototype's).
+ * Added on top of the pose's own transform (`composite: 'add'`), so a lifted pose breathes too.
+ */
+const BREATH: Keyframe[] = [
+  { transform: 'translate(0, 0) rotate(0deg)' },
+  { transform: 'translate(0, -4px) rotate(-0.5deg)' },
+  { transform: 'translate(0, 0) rotate(0deg)' },
+];
+
+/**
+ * Breathes the body while `alive`; never under reduced motion. When the breath stops (the story
+ * pauses or ends), the body eases back from wherever the breath had it, over its own transform
+ * transition (380ms, the settle curve), as the prototype does, instead of snapping. Both the
+ * breath and the ease-back are added on top of the pose (`composite: 'add'`): a pose change
+ * underneath still shows, and a breath that starts again simply adds to an ease-back still
+ * finishing, so nothing jumps. All in effects, through the Web Animations API.
+ */
+function useBreath(alive: boolean, reducedMotion: boolean, body: RefObject<SVGGElement | null>) {
+  useEffect(() => {
+    const element = body.current;
+    if (!alive || reducedMotion || !element?.animate) return;
+    const breath = element.animate(BREATH, {
+      duration: 5236,
+      iterations: Number.POSITIVE_INFINITY,
+      easing: 'ease-in-out',
+      composite: 'add',
+    });
+    // Cancelling an animation rejects its `finished`; that is expected here, not an error.
+    breath.finished?.catch(() => {});
+    return () => {
+      // The breath's own part of the transform now: the whole, less the pose under it.
+      const withBreath = getComputedStyle(element).transform;
+      breath.cancel();
+      const style = getComputedStyle(element);
+      const duration = Number.parseFloat(style.transitionDuration) * 1000;
+      if (style.transitionProperty === 'none' || !(duration > 0)) return;
+      const offset = breathOffset(style.transform, withBreath);
+      if (!offset) return;
+      element
+        .animate([{ transform: offset }, { transform: 'none' }], {
+          duration,
+          easing: style.transitionTimingFunction,
+          composite: 'add',
+        })
+        .finished?.catch(() => {});
+    };
+  }, [alive, reducedMotion, body]);
+}
+
+/** The transform that takes `pose` to `withBreath`, or null when there is none to undo. */
+function breathOffset(pose: string, withBreath: string): string | null {
+  if (typeof DOMMatrix === 'undefined') return null;
+  const toMatrix = (transform: string) =>
+    new DOMMatrix(!transform || transform === 'none' ? undefined : transform);
+  const offset = toMatrix(pose).inverse().multiply(toMatrix(withBreath));
+  // Within rounding of no change: nothing to undo (inverse-times-multiply is rarely exact).
+  const { a, b, c, d, e, f } = offset;
+  const still = [a - 1, b, c, d - 1, e, f].every((part) => Math.abs(part) < 1e-6);
+  return still ? null : offset.toString();
 }
 
 /**
