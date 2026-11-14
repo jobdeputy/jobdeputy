@@ -183,6 +183,16 @@ describe('QueryRegion', () => {
     expect(screen.getByText('Updating…').closest('p')?.className).toContain('pointer-events-none');
   });
 
+  it('says it is still working once a first load passes 8 s', () => {
+    render(<Region query={loading} />);
+    act(() => vi.advanceTimersByTime(7999));
+    expect(status()).toBe('Loading your matches');
+    expect(screen.queryByText('Still working…')).toBeNull();
+    act(() => vi.advanceTimersByTime(1));
+    expect(status()).toBe('Loading your matches. Still working…');
+    expect(screen.getByText('Still working…').getAttribute('aria-hidden')).toBe('true');
+  });
+
   it('keeps its status line outside the busy content', () => {
     render(<Region query={loading} />);
     expect(content().contains(screen.getByRole('status'))).toBe(false);

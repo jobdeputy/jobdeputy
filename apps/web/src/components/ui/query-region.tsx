@@ -2,8 +2,8 @@ import type { UseQueryResult } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { Skeleton, type SkeletonKind } from '@/components/ui/skeleton.tsx';
 import { Spinner } from '@/components/ui/spinner.tsx';
-import { copy } from '@/copy/index.ts';
-import { useDelayedPending } from '@/lib/use-delayed-pending.ts';
+import { copy, fill } from '@/copy/index.ts';
+import { useDelayedPending, useLongWait } from '@/lib/use-delayed-pending.ts';
 import { cn } from '@/lib/utils.ts';
 
 /** What QueryRegion reads from a TanStack Query result: pass the query itself. */
@@ -19,7 +19,8 @@ export type QueryState<T> = Pick<
  * - **First load** (also one TanStack has paused, offline, until the network returns): its
  *   content is `aria-busy`, holding the skeleton's size but blank; after 300 ms the skeleton shows
  *   and the polite status line says `label` ("Loading your matches"). Once shown, it stays at
- *   least 500 ms (useDelayedPending).
+ *   least 500 ms (useDelayedPending). After 8 s, "Still working…" shows over the skeleton and is
+ *   read out with the label.
  * - **Refreshing** (data on screen, a newer copy loading): the data stays, readable and not busy,
  *   and after 300 ms a quiet "Updating…" sits at its top right, letting clicks through. Nothing is
  *   read out: a refetch on every window focus would be noise.
@@ -46,6 +47,7 @@ export function QueryRegion<T>({
   const refreshing = !loading && query.isFetching && query.data !== undefined;
   const skeletonShown = useDelayedPending(loading);
   const updatingShown = useDelayedPending(refreshing);
+  const longLoad = useLongWait(loading) && skeletonShown;
   // The skeleton holds its 500 ms even when the data comes sooner, so it never flashes.
   const holding = loading || skeletonShown;
   // "Updating…" only ever sits on data: never over a skeleton, an error, or nothing.
@@ -69,7 +71,7 @@ export function QueryRegion<T>({
       {/* Mounted empty with the region, so the label is read when it arrives; outside the busy
           content, whose updates screen readers may hold back until it is done. */}
       <p role="status" className="sr-only">
-        {skeletonShown ? label : ''}
+        {longLoad ? fill(copy.loading.stillLoading, { label }) : skeletonShown ? label : ''}
       </p>
       {updatingVisible && (
         <p
@@ -82,6 +84,14 @@ export function QueryRegion<T>({
       <div data-slot="query-region-content" aria-busy={holding || undefined}>
         {body}
       </div>
+      {longLoad && (
+        <p
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-1/2 m-0 -translate-y-1/2 text-center text-sm text-muted-foreground"
+        >
+          {copy.loading.stillWorking}
+        </p>
+      )}
     </div>
   );
 }

@@ -50,6 +50,12 @@ export const en = {
   loading: {
     /** Beside data already on screen while a newer copy loads. */
     refreshing: 'Updating…',
+    /** Added once a wait passes 8 s. */
+    stillWorking: 'Still working…',
+    /** Read out when a region's first load passes 8 s: "Loading your matches. Still working…". */
+    stillLoading: '{label}. Still working…',
+    /** Added to a long background job (a search, a tailoring) once it passes 8 s. */
+    background: 'This keeps going in the background. You can leave this page.',
     /** Read out as a progress bar passes each quarter: "Uploading résumé, 50%". */
     progressMilestone: '{label}, {percent}',
   },

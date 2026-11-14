@@ -105,6 +105,25 @@ test('a query region goes from skeleton to data, and keeps its data while it ref
   await expectNoAccessibilityViolations(page);
 });
 
+test('a first load that runs long says it is still working', async ({ page }) => {
+  const live = page.getByTestId('live-region');
+  await live.getByRole('button', { name: 'Load' }).click();
+  await expect(live.getByRole('status')).toHaveText('Loading your matches. Still working…', {
+    timeout: 15_000,
+  });
+  await expect(live.getByText('Still working…', { exact: true })).toBeVisible();
+});
+
+test('the deputy works with his hourglass, and says a long job carries on', async ({ page }) => {
+  const working = page.locator('[data-slot="deputy-working"][data-shown]');
+  await expect(working).toHaveCount(2);
+  await expect(working.first().getByRole('status')).toContainText('Reading page 3 of 12');
+  await expect(working.first().locator('svg path[d^="M2 -84"]')).toBeVisible();
+  await expect(working.nth(1).getByRole('status')).toContainText(
+    'This keeps going in the background. You can leave this page.',
+  );
+});
+
 test('a failed first load hands over to its error', async ({ page }) => {
   const live = page.getByTestId('live-region');
   await live.getByRole('button', { name: 'Load' }).click();

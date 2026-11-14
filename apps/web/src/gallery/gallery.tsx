@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useState } from 'react';
+import { DeputyWorking } from '@/components/deputy/deputy-working.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { Progress } from '@/components/ui/progress.tsx';
 import { QueryRegion, type QueryState } from '@/components/ui/query-region.tsx';
@@ -105,6 +106,21 @@ export function Gallery() {
           </QueryRegion>
         </Demo>
         <LiveQueryRegion />
+      </Section>
+
+      <Section title="Deputy working">
+        <Demo title="Running, with a step">
+          <DeputyWorking active status="Searching" speech="On it." step="Reading page 3 of 12" />
+        </Demo>
+        <Demo title="Long wait, in the background (shown at once here; 8 s in the app)">
+          <DeputyWorking
+            active
+            status="Tailoring"
+            speech="Taking a closer look."
+            background
+            longWaitAfter={0}
+          />
+        </Demo>
       </Section>
     </main>
   );

@@ -1,0 +1,122 @@
+import { act, cleanup, render, renderHook, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DeputyWorking } from '../src/components/deputy/deputy-working.tsx';
+import { Panda } from '../src/components/deputy/panda.tsx';
+import { LONG_WAIT_MS, useLongWait } from '../src/lib/use-delayed-pending.ts';
+
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
+
+describe('useLongWait', () => {
+  it('turns true once the wait has lasted 8 s, and false as soon as it ends', () => {
+    const { result, rerender } = renderHook(({ active }) => useLongWait(active), {
+      initialProps: { active: true },
+    });
+    act(() => vi.advanceTimersByTime(LONG_WAIT_MS - 1));
+    expect(result.current).toBe(false);
+    act(() => vi.advanceTimersByTime(1));
+    expect(result.current).toBe(true);
+    rerender({ active: false });
+    expect(result.current).toBe(false);
+  });
+
+  it('never reports a long wait for a render after the wait has ended', () => {
+    const seen: [boolean, boolean][] = [];
+    const { rerender } = renderHook(
+      ({ active }) => {
+        const long = useLongWait(active);
+        seen.push([active, long]);
+        return long;
+      },
+      { initialProps: { active: true } },
+    );
+    act(() => vi.advanceTimersByTime(LONG_WAIT_MS));
+    rerender({ active: false });
+    expect(seen.filter(([active, long]) => !active && long)).toEqual([]);
+  });
+
+  it('starts counting again for a new wait', () => {
+    const { result, rerender } = renderHook(({ active }) => useLongWait(active), {
+      initialProps: { active: true },
+    });
+    act(() => vi.advanceTimersByTime(5000));
+    rerender({ active: false });
+    rerender({ active: true });
+    act(() => vi.advanceTimersByTime(LONG_WAIT_MS - 1));
+    expect(result.current).toBe(false);
+  });
+});
+
+describe('Panda', () => {
+  it('holds the pencil to set up and the hourglass while pending', () => {
+    const { container, rerender } = render(<Panda />);
+    // The hourglass's glass is the only path drawn with a line-strong stroke and a paper fill.
+    const glass = () => container.querySelector('path.fill-paper.stroke-line-strong[d^="M2 -84"]');
+    const pencil = () => container.querySelector('path.stroke-orange[d="M-8 9L34 -33"]');
+    expect(pencil()).not.toBeNull();
+    expect(glass()).toBeNull();
+    rerender(<Panda pose="pending" />);
+    expect(glass()).not.toBeNull();
+    expect(pencil()).toBeNull();
+    expect(container.querySelector('g[transform="rotate(-34 257.3 261.16)"]')).not.toBeNull();
+    expect(container.querySelectorAll('g[transform="translate(0 -3)"]')).toHaveLength(2);
+  });
+});
+
+describe('DeputyWorking', () => {
+  function Working(props: { active: boolean; background?: boolean; step?: string }) {
+    return <DeputyWorking status="Searching" speech="On it." {...props} />;
+  }
+  const status = () => screen.getByRole('status');
+
+  it('shows nothing for 300 ms, with its status region already there and empty', () => {
+    render(<Working active />);
+    expect(status().textContent).toBe('');
+    expect(document.querySelector('svg')).toBeNull();
+    act(() => vi.advanceTimersByTime(300));
+    expect(status().textContent).toContain('Searching');
+    expect(screen.getByText('On it.')).toBeTruthy();
+    expect(document.querySelector('svg')).not.toBeNull();
+  });
+
+  it('reads out the step the job reports', () => {
+    const { rerender } = render(<Working active step="Reading page 1 of 12" />);
+    act(() => vi.advanceTimersByTime(300));
+    rerender(<Working active step="Reading page 2 of 12" />);
+    expect(status().textContent).toContain('Reading page 2 of 12');
+  });
+
+  it('adds "Still working…" after 8 s', () => {
+    render(<Working active />);
+    act(() => vi.advanceTimersByTime(LONG_WAIT_MS - 1));
+    expect(status().textContent).not.toContain('Still working…');
+    act(() => vi.advanceTimersByTime(1));
+    expect(status().textContent).toContain('Still working…');
+  });
+
+  it('says a background job carries on if the user leaves', () => {
+    render(<Working active background />);
+    act(() => vi.advanceTimersByTime(LONG_WAIT_MS));
+    expect(status().textContent).toContain(
+      'This keeps going in the background. You can leave this page.',
+    );
+    expect(status().textContent).not.toContain('Still working…');
+  });
+
+  it('stays its 500 ms once shown, then goes when the job ends', () => {
+    const { rerender } = render(<Working active />);
+    act(() => vi.advanceTimersByTime(300));
+    rerender(<Working active={false} />);
+    act(() => vi.advanceTimersByTime(499));
+    expect(screen.queryByText('On it.')).not.toBeNull();
+    act(() => vi.advanceTimersByTime(1));
+    expect(screen.queryByText('On it.')).toBeNull();
+    expect(status().textContent).toBe('');
+  });
+});

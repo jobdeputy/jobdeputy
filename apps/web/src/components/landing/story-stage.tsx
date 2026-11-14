@@ -1,6 +1,6 @@
+import { Panda } from '@/components/deputy/panda.tsx';
 import { copy } from '@/copy/index.ts';
 import { cn } from '@/lib/utils.ts';
-import { Panda } from './panda.tsx';
 
 /**
  * The deputy at work on the first step, "Set it up": the panda with his pencil, the setup card he
