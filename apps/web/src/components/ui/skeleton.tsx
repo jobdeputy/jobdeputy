@@ -6,7 +6,8 @@ import { cn } from '@/lib/utils.ts';
  * Placeholder shapes for a region waiting for its first data (#17), the prototype's
  * `.skeleton-block` (round 7, R10-1). It takes the region's final size, so nothing jumps when the
  * data arrives: `rows` sets how many lines, list rows or cards it stands for. A calm highlight
- * sweeps across once every golden second (1618ms); under reduced motion it stands still. Forced
+ * sweeps across once every golden second (1618ms), masked to the shapes so the gaps between them
+ * stay still; under reduced motion it stands still. Forced
  * colours draw a dashed outline instead. It is decorative (`aria-hidden`): the region around it
  * is `aria-busy` and says what is loading (QueryRegion does both).
  */
@@ -26,15 +27,15 @@ const skeletonVariants = cva(
           'min-h-[calc(var(--skeleton-rows)*63px-8px)] rounded-[15px] bg-[linear-gradient(var(--color-paper-deep),var(--color-paper-deep))] after:rounded-[inherit]',
         /** Lines of text: 13px bars, 8px apart. */
         lines:
-          'min-h-[calc(var(--skeleton-rows)*21px-8px)] rounded-[4px] bg-[repeating-linear-gradient(var(--color-paper-deep)_0_13px,transparent_13px_21px)]',
+          'min-h-[calc(var(--skeleton-rows)*21px-8px)] rounded-[4px] bg-[repeating-linear-gradient(var(--color-paper-deep)_0_13px,transparent_13px_21px)] after:[mask-image:repeating-linear-gradient(black_0_13px,transparent_13px_21px)]',
         /** List rows: 55px, 8px apart. */
-        rows: 'min-h-[calc(var(--skeleton-rows)*63px-8px)] rounded-[11px] bg-[repeating-linear-gradient(var(--color-paper-deep)_0_55px,transparent_55px_63px)]',
+        rows: 'min-h-[calc(var(--skeleton-rows)*63px-8px)] rounded-[11px] bg-[repeating-linear-gradient(var(--color-paper-deep)_0_55px,transparent_55px_63px)] after:[mask-image:repeating-linear-gradient(black_0_55px,transparent_55px_63px)]',
         /** Card tiles: 144px, 13px apart. */
         cards:
-          'min-h-[calc(var(--skeleton-rows)*157px-13px)] rounded-[15px] bg-[repeating-linear-gradient(var(--color-paper-deep)_0_144px,transparent_144px_157px)]',
+          'min-h-[calc(var(--skeleton-rows)*157px-13px)] rounded-[15px] bg-[repeating-linear-gradient(var(--color-paper-deep)_0_144px,transparent_144px_157px)] after:[mask-image:repeating-linear-gradient(black_0_144px,transparent_144px_157px)]',
         /** A bar chart: bars on a baseline. */
         chart:
-          'min-h-40 bg-[linear-gradient(var(--color-line-soft),var(--color-line-soft)),repeating-linear-gradient(90deg,var(--color-paper-deep)_0_21px,transparent_21px_34px)] bg-position-[0_100%,0_100%] bg-size-[100%_1px,100%_62%]',
+          'min-h-40 bg-[linear-gradient(var(--color-line-soft),var(--color-line-soft)),repeating-linear-gradient(90deg,var(--color-paper-deep)_0_21px,transparent_21px_34px)] bg-position-[0_100%,0_100%] bg-size-[100%_1px,100%_62%] after:[mask-image:repeating-linear-gradient(90deg,black_0_21px,transparent_21px_34px)] after:[mask-position:0_100%] after:[mask-repeat:no-repeat] after:[mask-size:100%_62%]',
       },
     },
     defaultVariants: { kind: 'block' },

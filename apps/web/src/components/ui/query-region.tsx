@@ -9,26 +9,27 @@ import { cn } from '@/lib/utils.ts';
 /** What QueryRegion reads from a TanStack Query result: pass the query itself. */
 export type QueryState<T> = Pick<
   UseQueryResult<T>,
-  'data' | 'isLoading' | 'isFetching' | 'isError'
+  'data' | 'isLoading' | 'isFetching' | 'isPending' | 'isPaused' | 'isError'
 >;
 
 /**
  * A screen region filled by a query (#17), with its loading states built in, so a screen never
  * wires its own. Pass the query, the skeleton that stands in for its data, and what is loading.
  *
- * - **First load:** its content is `aria-busy`, holding the skeleton's size but blank; after 300 ms
- *   the skeleton shows and the polite status line says `label` ("Loading your matches"). Once
- *   shown, it stays at least 500 ms (useDelayedPending).
- * - **Refreshing** (data on screen, a newer copy loading): the data stays, the content is
- *   `aria-busy`, and after 300 ms a quiet "Updating…" sits at its top right. Nothing is read out:
- *   a refetch on every window focus would be noise.
+ * - **First load** (also one TanStack has paused, offline, until the network returns): its
+ *   content is `aria-busy`, holding the skeleton's size but blank; after 300 ms the skeleton shows
+ *   and the polite status line says `label` ("Loading your matches"). Once shown, it stays at
+ *   least 500 ms (useDelayedPending).
+ * - **Refreshing** (data on screen, a newer copy loading): the data stays, readable and not busy,
+ *   and after 300 ms a quiet "Updating…" sits at its top right, letting clicks through. Nothing is
+ *   read out: a refetch on every window focus would be noise.
  * - **Failed with no data:** `error` shows (the error component's job, not this one's).
  */
 export function QueryRegion<T>({
   query,
   skeleton,
   label,
-  error = null,
+  error,
   className,
   children,
 }: {
@@ -36,11 +37,12 @@ export function QueryRegion<T>({
   skeleton: { kind?: SkeletonKind; rows?: number };
   /** Said once the skeleton shows: what the region is waiting for. */
   label: string;
-  error?: ReactNode;
+  /** Shown when the first load fails. Required, so no screen forgets it (null opts out). */
+  error: ReactNode;
   className?: string;
   children: (data: T) => ReactNode;
 }) {
-  const loading = query.isLoading;
+  const loading = query.isLoading || (query.isPending && query.isPaused);
   const refreshing = !loading && query.isFetching && query.data !== undefined;
   const skeletonShown = useDelayedPending(loading);
   const updatingShown = useDelayedPending(refreshing);
@@ -59,7 +61,9 @@ export function QueryRegion<T>({
   return (
     <div
       data-slot="query-region"
-      data-state={skeletonShown ? 'loading' : updatingShown ? 'refreshing' : undefined}
+      data-state={
+        holding ? (skeletonShown ? 'loading' : undefined) : updatingShown ? 'refreshing' : undefined
+      }
       className={cn('relative', className)}
     >
       {/* Mounted empty with the region, so the label is read when it arrives; outside the busy
@@ -67,15 +71,15 @@ export function QueryRegion<T>({
       <p role="status" className="sr-only">
         {skeletonShown ? label : ''}
       </p>
-      {updatingShown && (
+      {updatingShown && !holding && query.data !== undefined && (
         <p
           aria-hidden="true"
-          className="absolute top-0 right-0 z-1 m-0 inline-flex items-center gap-1.5 rounded-full bg-surface-strong px-2 py-0.5 text-xs text-muted-foreground"
+          className="pointer-events-none absolute top-0 right-0 z-1 m-0 inline-flex items-center gap-1.5 rounded-full bg-surface-strong px-2 py-0.5 text-xs text-muted-foreground"
         >
           <Spinner /> {copy.loading.refreshing}
         </p>
       )}
-      <div data-slot="query-region-content" aria-busy={holding || refreshing || undefined}>
+      <div data-slot="query-region-content" aria-busy={holding || undefined}>
         {body}
       </div>
     </div>

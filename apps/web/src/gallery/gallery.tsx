@@ -86,18 +86,20 @@ export function Gallery() {
       <Section title="Query region">
         <Demo title="First load (skeleton after 300 ms)">
           <QueryRegion
-            query={{ data: undefined, isLoading: true, isFetching: true, isError: false }}
+            query={{ ...SETTLED, isLoading: true, isFetching: true, isPending: true }}
             skeleton={{ kind: 'rows', rows: 2 }}
             label="Loading your matches"
+            error={null}
           >
             {() => null}
           </QueryRegion>
         </Demo>
         <Demo title="Refreshing (data stays)">
           <QueryRegion
-            query={{ data: MATCHES, isLoading: false, isFetching: true, isError: false }}
+            query={{ ...SETTLED, data: MATCHES, isFetching: true }}
             skeleton={{ kind: 'rows', rows: 2 }}
             label="Loading your matches"
+            error={null}
           >
             {(matches) => <MatchList matches={matches} />}
           </QueryRegion>
@@ -127,6 +129,16 @@ function Demo({
 
 const MATCHES = ['Staff engineer, Lumen', 'Platform lead, Northwind'];
 
+/** A query at rest with no data: the demos change only what their state needs. */
+const SETTLED: QueryState<string[]> = {
+  data: undefined,
+  isLoading: false,
+  isFetching: false,
+  isPending: false,
+  isPaused: false,
+  isError: false,
+};
+
 function MatchList({ matches }: { matches: string[] }) {
   return (
     <ul className="m-0 grid list-none gap-2 p-0">
@@ -144,12 +156,7 @@ function MatchList({ matches }: { matches: string[] }) {
  * background refresh, "Fail" ends a load with an error. No timers, so a test decides each step.
  */
 function LiveQueryRegion() {
-  const [query, setQuery] = useState<QueryState<string[]>>({
-    data: undefined,
-    isLoading: false,
-    isFetching: false,
-    isError: false,
-  });
+  const [query, setQuery] = useState<QueryState<string[]>>(SETTLED);
   const set = (next: Partial<QueryState<string[]>>) =>
     setQuery((current) => ({ ...current, ...next }));
 
@@ -158,15 +165,15 @@ function LiveQueryRegion() {
       <div className="flex flex-wrap gap-3">
         <Button
           variant="outline"
-          onClick={() =>
-            set({ data: undefined, isLoading: true, isFetching: true, isError: false })
-          }
+          onClick={() => set({ ...SETTLED, isLoading: true, isFetching: true, isPending: true })}
         >
           Load
         </Button>
         <Button
           variant="outline"
-          onClick={() => set({ data: MATCHES, isLoading: false, isFetching: false })}
+          onClick={() =>
+            set({ data: MATCHES, isLoading: false, isFetching: false, isPending: false })
+          }
         >
           Data arrives
         </Button>
@@ -175,7 +182,9 @@ function LiveQueryRegion() {
         </Button>
         <Button
           variant="outline"
-          onClick={() => set({ isLoading: false, isFetching: false, isError: true })}
+          onClick={() =>
+            set({ isLoading: false, isFetching: false, isPending: false, isError: true })
+          }
         >
           Fail
         </Button>

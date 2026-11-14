@@ -42,8 +42,8 @@ for (const screen of SCREENS) {
         .click();
       await page.getByRole('dialog').waitFor();
     }
-    if (screen.ready) {
-      await page.locator(screen.ready).first().waitFor();
+    for (const ready of [screen.ready ?? []].flat()) {
+      await page.locator(ready).first().waitFor();
     }
     if (screen.storyEnd) {
       // The logo's 2.605 s story runs from when its image arrives, so wait for that, not a clock.

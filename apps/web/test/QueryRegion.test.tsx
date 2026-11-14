@@ -16,12 +16,16 @@ const loading: QueryState<string[]> = {
   data: undefined,
   isLoading: true,
   isFetching: true,
+  isPending: true,
+  isPaused: false,
   isError: false,
 };
 const loaded: QueryState<string[]> = {
   data: ['Staff engineer'],
   isLoading: false,
   isFetching: false,
+  isPending: false,
+  isPaused: false,
   isError: false,
 };
 
@@ -110,7 +114,8 @@ describe('QueryRegion', () => {
   it('keeps data on screen while it refreshes, adding a quiet note after 300 ms', () => {
     render(<Region query={{ ...loaded, isFetching: true }} />);
     expect(screen.getByText('Staff engineer')).toBeTruthy();
-    expect(content().getAttribute('aria-busy')).toBe('true');
+    // Readable as it is: a refresh on every window focus must not mark it busy.
+    expect(content().hasAttribute('aria-busy')).toBe(false);
     expect(screen.queryByText('Updating…')).toBeNull();
     act(() => vi.advanceTimersByTime(300));
     expect(screen.getByText('Updating…').closest('[aria-hidden="true"]')).not.toBeNull();
@@ -121,7 +126,11 @@ describe('QueryRegion', () => {
   });
 
   it('hands a failed first load to its error', () => {
-    render(<Region query={{ ...loading, isLoading: false, isFetching: false, isError: true }} />);
+    render(
+      <Region
+        query={{ ...loading, isLoading: false, isFetching: false, isPending: false, isError: true }}
+      />,
+    );
     expect(screen.getByText('Could not load.')).toBeTruthy();
     expect(content().hasAttribute('aria-busy')).toBe(false);
   });
@@ -133,10 +142,45 @@ describe('QueryRegion', () => {
   });
 
   it('shows nothing for a query that is not running and has no data', () => {
+    // A disabled query: pending, not fetching, not paused.
     render(<Region query={{ ...loading, isLoading: false, isFetching: false }} />);
     expect(skeleton()).toBeNull();
     expect(content().hasAttribute('aria-busy')).toBe(false);
     expect(region().textContent).toBe('');
+  });
+
+  it('treats a first load paused offline as loading', () => {
+    render(<Region query={{ ...loading, isLoading: false, isFetching: false, isPaused: true }} />);
+    expect(content().getAttribute('aria-busy')).toBe('true');
+    act(() => vi.advanceTimersByTime(300));
+    expect(skeleton()?.className).not.toContain('invisible');
+    expect(status()).toBe('Loading your matches');
+  });
+
+  it('keeps its data when a refresh is paused offline', () => {
+    render(<Region query={{ ...loaded, isPaused: true }} />);
+    act(() => vi.advanceTimersByTime(1000));
+    expect(screen.getByText('Staff engineer')).toBeTruthy();
+    expect(skeleton()).toBeNull();
+  });
+
+  it('never shows "Updating…" over a skeleton', () => {
+    const { rerender } = render(<Region query={loading} />);
+    act(() => vi.advanceTimersByTime(300));
+    // The data comes, then a refetch starts, both inside the skeleton's 500 ms hold.
+    rerender(<Region query={loaded} />);
+    act(() => vi.advanceTimersByTime(10));
+    rerender(<Region query={{ ...loaded, isFetching: true }} />);
+    act(() => vi.advanceTimersByTime(489));
+    expect(skeleton()).not.toBeNull();
+    expect(screen.queryByText('Updating…')).toBeNull();
+    expect(region().dataset.state).toBe('loading');
+  });
+
+  it('lets clicks through its "Updating…" note', () => {
+    render(<Region query={{ ...loaded, isFetching: true }} />);
+    act(() => vi.advanceTimersByTime(300));
+    expect(screen.getByText('Updating…').closest('p')?.className).toContain('pointer-events-none');
   });
 
   it('keeps its status line outside the busy content', () => {

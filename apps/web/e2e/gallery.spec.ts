@@ -69,6 +69,13 @@ test('skeletons shimmer, each in its shape', async ({ page }) => {
       'skeleton-sweep',
     );
   }
+  // The highlight crosses the rows only, not the gaps between them.
+  expect(
+    await skeletons
+      .and(page.locator('[data-kind="rows"]'))
+      .first()
+      .evaluate((el) => getComputedStyle(el, '::after').maskImage),
+  ).toContain('repeating-linear-gradient');
   // The shape keeps its rows' size: three 55px rows, 8px apart.
   const rows = skeletons.and(page.locator('[data-kind="rows"]')).first();
   expect(await rows.evaluate((el) => el.getBoundingClientRect().height)).toBe(181);
@@ -92,6 +99,7 @@ test('a query region goes from skeleton to data, and keeps its data while it ref
 
   await live.getByRole('button', { name: 'Refetch' }).click();
   await expect(region).toHaveAttribute('data-state', 'refreshing');
+  await expect(content).not.toHaveAttribute('aria-busy');
   await expect(region.getByText('Updating…')).toBeVisible();
   await expect(region.getByText('Staff engineer, Lumen')).toBeVisible();
   await expectNoAccessibilityViolations(page);
