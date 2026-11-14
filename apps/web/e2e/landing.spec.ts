@@ -260,8 +260,8 @@ test.describe('with reduced motion', () => {
     await expect(stripSteps(page).nth(0)).toHaveAttribute('aria-current', 'step');
     await page.getByRole('button', { name: 'Advance story' }).click();
     await expect(stripSteps(page).nth(1)).toHaveAttribute('aria-current', 'step');
-    // The step's flourish holds still too, and the deputy does not breathe (the story would
-    // have him breathing by now if it did).
+    // The step's flourish holds still too, and the deputy does not breathe (the story never
+    // plays itself here; the panda's own reduced-motion guard is unit-tested).
     await expect(page.locator('.animate-search-sweep')).toHaveCSS('animation-name', 'none');
     expect(await breathing(page)).toBe(false);
   });

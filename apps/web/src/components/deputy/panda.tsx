@@ -359,28 +359,19 @@ const BREATH: Keyframe[] = [
 ];
 
 /**
- * Breathes the body while `alive`. When the breath stops (the story pauses or ends), the body
- * eases back from wherever the breath had it, over its own transform transition (380ms, the
- * settle curve), as the prototype does, instead of snapping; not under reduced motion. A breath
- * that starts again waits for any ease-back or pose change still running, so nothing jumps. All in
- * effects, through the Web Animations API.
+ * Breathes the body while `alive`; never under reduced motion. When the breath stops (the story
+ * pauses or ends), the body eases back from wherever the breath had it, over its own transform
+ * transition (380ms, the settle curve), as the prototype does, instead of snapping. Both the
+ * breath and the ease-back are added on top of the pose (`composite: 'add'`): a pose change
+ * underneath still shows, and a breath that starts again simply adds to an ease-back still
+ * finishing, so nothing jumps. All in effects, through the Web Animations API.
  */
 function useBreath(alive: boolean, reducedMotion: boolean, body: RefObject<SVGGElement | null>) {
   useEffect(() => {
     const element = body.current;
     if (!alive || reducedMotion || !element?.animate) return;
-    // Let a running ease-back (or pose change) finish first.
-    const settling = Math.max(
-      0,
-      ...element.getAnimations().map((animation) => {
-        const { duration, delay } = animation.effect?.getComputedTiming() ?? {};
-        const elapsed = Number(animation.currentTime ?? 0);
-        return Number(duration ?? 0) + Number(delay ?? 0) - elapsed;
-      }),
-    );
     const breath = element.animate(BREATH, {
       duration: 5236,
-      delay: settling,
       iterations: Number.POSITIVE_INFINITY,
       easing: 'ease-in-out',
       composite: 'add',
@@ -388,25 +379,32 @@ function useBreath(alive: boolean, reducedMotion: boolean, body: RefObject<SVGGE
     // Cancelling an animation rejects its `finished`; that is expected here, not an error.
     breath.finished?.catch(() => {});
     return () => {
-      // Where the breath has the body now, then back to its pose on its own transition.
-      const {
-        transform: from,
-        transitionDuration,
-        transitionTimingFunction,
-        transitionProperty,
-      } = getComputedStyle(element);
+      // The breath's own part of the transform now: the whole, less the pose under it.
+      const withBreath = getComputedStyle(element).transform;
       breath.cancel();
-      const duration = Number.parseFloat(transitionDuration) * 1000;
-      const rest = element.style.transform || 'none';
-      if (!from || from === 'none' || transitionProperty === 'none' || !(duration > 0)) return;
+      const style = getComputedStyle(element);
+      const duration = Number.parseFloat(style.transitionDuration) * 1000;
+      if (style.transitionProperty === 'none' || !(duration > 0)) return;
+      const offset = breathOffset(style.transform, withBreath);
+      if (!offset) return;
       element
-        .animate([{ transform: from }, { transform: rest }], {
+        .animate([{ transform: offset }, { transform: 'none' }], {
           duration,
-          easing: transitionTimingFunction,
+          easing: style.transitionTimingFunction,
+          composite: 'add',
         })
         .finished?.catch(() => {});
     };
   }, [alive, reducedMotion, body]);
+}
+
+/** The transform that takes `pose` to `withBreath`, or null when there is none to undo. */
+function breathOffset(pose: string, withBreath: string): string | null {
+  if (typeof DOMMatrix === 'undefined') return null;
+  const toMatrix = (transform: string) =>
+    new DOMMatrix(!transform || transform === 'none' ? undefined : transform);
+  const offset = toMatrix(pose).inverse().multiply(toMatrix(withBreath));
+  return offset.isIdentity ? null : offset.toString();
 }
 
 /**

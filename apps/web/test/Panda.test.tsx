@@ -114,18 +114,22 @@ describe('Panda, alive', () => {
     return { calls, cancel };
   }
 
-  function computedStyle(transitionProperty = 'transform') {
-    vi.spyOn(window, 'getComputedStyle').mockReturnValue({
-      transform: 'matrix(1, 0, 0, 1, 0, -3)',
-      transitionDuration: '0.38s',
-      transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
-      transitionProperty,
-    } as CSSStyleDeclaration);
+  /** getComputedStyle as the breath stops: first with the breath, then the pose alone. */
+  function computedStyle(withBreath: string, pose = 'none', transitionProperty = 'transform') {
+    let reads = 0;
+    vi.spyOn(window, 'getComputedStyle').mockImplementation(() => {
+      reads += 1;
+      return {
+        transform: reads === 1 ? withBreath : pose,
+        transitionDuration: '0.38s',
+        transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+        transitionProperty,
+      } as CSSStyleDeclaration;
+    });
   }
 
   it('breathes only while alive, on top of the pose, and eases back when the breath stops', () => {
     const { calls, cancel } = recordAnimations();
-    computedStyle();
     const { rerender } = render(<Panda />);
     expect(calls).toHaveLength(0);
     rerender(<Panda alive />);
@@ -133,11 +137,12 @@ describe('Panda, alive', () => {
     expect(calls[0]?.options).toMatchObject({
       iterations: Number.POSITIVE_INFINITY,
       composite: 'add',
-      delay: 0,
     });
+    computedStyle('matrix(1, 0, 0, 1, 0, -3)');
     rerender(<Panda alive={false} />);
     expect(cancel).toHaveBeenCalled();
-    // Back from where the breath had it, on the body's own transition.
+    // The breath's own part (3px up) back to nothing, on the body's own transition, on top of
+    // whatever the pose is doing.
     expect(calls[1]?.keyframes).toEqual([
       { transform: 'matrix(1, 0, 0, 1, 0, -3)' },
       { transform: 'none' },
@@ -145,26 +150,38 @@ describe('Panda, alive', () => {
     expect(calls[1]?.options).toEqual({
       duration: 380,
       easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+      composite: 'add',
     });
   });
 
-  it('does not ease back where transitions are off (reduced motion)', () => {
+  it('eases back only the breath, not the pose under it', () => {
     const { calls } = recordAnimations();
-    computedStyle('none');
-    const { rerender } = render(<Panda alive />);
-    rerender(<Panda alive={false} />);
-    expect(calls).toHaveLength(1);
+    const { rerender } = render(<Panda pose="pending" alive />);
+    // Lifted 7px by the pose, 3px more by the breath.
+    computedStyle('matrix(1, 0, 0, 1, 0, -10)', 'matrix(1, 0, 0, 1, 0, -7)');
+    rerender(<Panda pose="pending" alive={false} />);
+    expect(calls[1]?.keyframes[0]).toEqual({ transform: 'matrix(1, 0, 0, 1, 0, -3)' });
   });
 
-  it('starts a new breath once an ease-back still running has finished', () => {
-    const easeBack = {
-      currentTime: 100,
-      effect: { getComputedTiming: () => ({ duration: 380, delay: 0 }) },
-    } as unknown as Partial<Animation>;
-    const { calls } = recordAnimations([easeBack]);
-    computedStyle();
+  it('does not ease back from a breath at rest, or where transitions are off', () => {
+    const { calls } = recordAnimations();
+    const { rerender } = render(<Panda alive />);
+    computedStyle('none');
+    rerender(<Panda alive={false} />);
+    rerender(<Panda alive />);
+    computedStyle('matrix(1, 0, 0, 1, 0, -3)', 'none', 'none');
+    rerender(<Panda alive={false} />);
+    // Two breaths, no ease-back.
+    expect(calls).toHaveLength(2);
+  });
+
+  it('never breathes under reduced motion', () => {
+    const { calls } = recordAnimations();
+    // The page keeps one media query list (useReducedMotion), so answer for every list.
+    const lists = Object.getPrototypeOf(window.matchMedia('(prefers-reduced-motion: reduce)'));
+    vi.spyOn(lists, 'matches', 'get').mockReturnValue(true);
     render(<Panda alive />);
-    expect(calls[0]?.options.delay).toBe(280);
+    expect(calls).toHaveLength(0);
   });
 
   it('blinks now and then while alive, both eyes at once, and never otherwise', () => {
