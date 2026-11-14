@@ -86,15 +86,17 @@ test('a slow boot shows the loader, then hands over to the app', async ({ page }
 
 test('a boot that stalls offers a reload at the 8 s long wait', async ({ page }) => {
   await openWithoutScript(page);
+  const address = page.url();
   const reload = loader(page).getByRole('link', { name: 'Reload' });
   await expect(reload).toBeHidden();
-  await expect(loader(page).getByText('This is taking longer than usual.')).toBeVisible({
-    timeout: 15_000,
-  });
+  const offer = loader(page).getByRole('status');
+  await expect(offer).toHaveText('This is taking longer than usual. Reload', { timeout: 15_000 });
   await expect(reload).toBeVisible();
+  await expectNoAccessibilityViolations(page);
+
   const reloaded = page.waitForEvent('framenavigated');
   await reload.click();
-  expect((await reloaded).url()).toBe(page.url());
+  expect((await reloaded).url()).toBe(address);
 });
 
 test('the loader appears only once the shared 300 ms delay has passed', async ({ page }) => {
@@ -160,6 +162,14 @@ test.describe('without JavaScript', () => {
     const line = loader(page).locator('noscript p');
     await expect(line).toBeVisible();
     await expect(line).toHaveText('JobDeputy needs JavaScript. Turn it on, then reload.');
+    await expect(loader(page).getByText('Loading…')).toBeHidden();
+  });
+
+  test('nor offers a reload that cannot help', async ({ page }) => {
+    await page.goto('/');
+    // Taken out of the layout, so the 8 s reveal has nothing to show (no clock to wait on: the
+    // page runs no scripts).
+    await expect(loader(page).locator('p[role="status"]')).toHaveCSS('display', 'none');
   });
 });
 

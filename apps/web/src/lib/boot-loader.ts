@@ -31,7 +31,8 @@ function revealElapsed(loader: HTMLElement): number | null {
 /**
  * Ends the boot loader (index.html) once the app has rendered. Never seen: it is removed at once.
  * Seen: the app stays inert under it for the rest of its 500 ms, then the logo jumps to its
- * settled frame, the track fills, and it fades out (the app usable at once) with a polite "ready".
+ * settled frame, the track fills, and it fades out, inert (the app usable at once), with a polite
+ * "ready".
  * We never wait for the story to finish. Safe to call more than once.
  */
 export function finishBoot(): void {
@@ -49,7 +50,10 @@ export function finishBoot(): void {
   setTimeout(() => {
     if (root) root.inert = false;
     loader.dataset.state = 'done';
-    loader.setAttribute('aria-hidden', 'true');
+    // Inert while it fades: out of the accessibility tree, and its Reload link (shown after 8 s)
+    // gives up focus, which goes back to the page as on any fresh load.
+    if (loader.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
+    loader.inert = true;
     const status = document.getElementById('boot-status');
     if (status) status.textContent = copy.boot.ready;
     setTimeout(() => loader.remove(), BOOT_EXIT_MS);

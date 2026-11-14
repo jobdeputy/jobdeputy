@@ -11,7 +11,7 @@ describe('fillHtmlCopy', () => {
 
   it('escapes the text, so copy cannot break the markup', () => {
     const copy = { line: `Tom & Jerry's "<b>"` };
-    expect(fillHtmlCopy('<p title="{{copy.line}}">', copy)).toBe(
+    expect(fillHtmlCopy('<p title="{{copy.line}}">', 'test.html', copy)).toBe(
       '<p title="Tom &amp; Jerry&#39;s &quot;&lt;b&gt;&quot;">',
     );
   });
@@ -23,7 +23,9 @@ describe('fillHtmlCopy', () => {
   });
 
   it('fails the build for a slot that names no text', () => {
-    expect(() => fillHtmlCopy('{{copy.boot.missing}}')).toThrow('{{copy.boot.missing}}');
+    expect(() => fillHtmlCopy('{{copy.boot.missing}}', '/gallery.html')).toThrow(
+      '/gallery.html names {{copy.boot.missing}}',
+    );
     expect(() => fillHtmlCopy('{{copy.boot}}')).toThrow();
   });
 

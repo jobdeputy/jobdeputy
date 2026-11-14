@@ -14,6 +14,13 @@ const SCREENS = [
   { name: 'gallery', path: '/gallery.html', ready: '[data-pending]' },
   // The boot loader at the end of its story, held up by an app script that never arrives.
   { name: 'boot-loader', path: '/', ready: '#boot-loader', blockScript: true, storyEnd: true },
+  // The same boot, stalled past the 8 s long wait: the reload offer.
+  {
+    name: 'boot-loader-slow',
+    path: '/',
+    ready: '#boot-loader [role="status"] a',
+    blockScript: true,
+  },
 ];
 
 for (const screen of SCREENS) {
@@ -46,7 +53,24 @@ for (const screen of SCREENS) {
     await page.screenshot({
       path: join(SCREENSHOTS_DIR, `${screen.name}--${testInfo.project.name}.png`),
       fullPage: true,
-      animations: 'disabled',
+      // 'disabled' fast-forwards finite animations, which would show the loader's 8 s reload
+      // offer early; the loader's screens are captured as they stand.
+      animations: screen.blockScript ? 'allow' : 'disabled',
     });
   });
 }
+
+// The boot loader with scripts turned off: the noscript line, without a loading look.
+test.describe('without JavaScript', () => {
+  test.use({ javaScriptEnabled: false });
+
+  test('screenshot: boot-loader-no-js', async ({ page }, testInfo) => {
+    await page.goto('/');
+    await page.locator('#boot-loader noscript p').waitFor();
+    await page.screenshot({
+      path: join(SCREENSHOTS_DIR, `boot-loader-no-js--${testInfo.project.name}.png`),
+      fullPage: true,
+      animations: 'disabled',
+    });
+  });
+});

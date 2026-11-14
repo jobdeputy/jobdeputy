@@ -14,13 +14,13 @@ const ESCAPES: Record<string, string> = {
  * any script runs (the boot loader's) live with the rest of the copy. A slot naming no text fails
  * the build instead of shipping the slot.
  */
-export function fillHtmlCopy(html: string, copy: object = en): string {
+export function fillHtmlCopy(html: string, page = 'index.html', copy: object = en): string {
   return html.replace(/\{\{copy\.([\w.]+)\}\}/g, (_slot, path: string) => {
     const value = path
       .split('.')
       .reduce<unknown>((node, key) => (node as Record<string, unknown> | undefined)?.[key], copy);
     if (typeof value !== 'string') {
-      throw new Error(`index.html names {{copy.${path}}}, which is not a text in en.ts.`);
+      throw new Error(`${page} names {{copy.${path}}}, which is not a text in en.ts.`);
     }
     return value.replace(/[&<>"']/g, (character) => ESCAPES[character] ?? character);
   });
@@ -30,6 +30,9 @@ export function fillHtmlCopy(html: string, copy: object = en): string {
 export function htmlCopy(): Plugin {
   return {
     name: 'jobdeputy-html-copy',
-    transformIndexHtml: { order: 'pre', handler: (html) => fillHtmlCopy(html) },
+    transformIndexHtml: {
+      order: 'pre',
+      handler: (html, context) => fillHtmlCopy(html, context.path),
+    },
   };
 }

@@ -76,7 +76,6 @@ describe('finishBoot', () => {
   });
 
   it('removes the loader at once while its reveal has not started yet', () => {
-    revealAt(0);
     (loader() as HTMLElement).getAnimations = () =>
       [{ animationName: 'boot-reveal', startTime: null }] as unknown as Animation[];
     finishBoot();
@@ -97,13 +96,23 @@ describe('finishBoot', () => {
     vi.advanceTimersByTime(1);
     expect(root().inert).toBe(false);
     expect(loader()?.dataset.state).toBe('done');
-    expect(loader()?.getAttribute('aria-hidden')).toBe('true');
+    expect(loader()?.inert).toBe(true);
     expect(status()).toBe(en.boot.ready);
 
     vi.advanceTimersByTime(BOOT_EXIT_MS - 1);
     expect(loader()).not.toBeNull();
     vi.advanceTimersByTime(1);
     expect(loader()).toBeNull();
+  });
+
+  it('takes focus off its Reload link as it hands over', () => {
+    const reload = document.querySelector<HTMLAnchorElement>('#boot-loader a') as HTMLAnchorElement;
+    reload.focus();
+    expect(document.activeElement).toBe(reload);
+    revealAt(PENDING_DELAY_MS + PENDING_MIN_MS);
+    finishBoot();
+    vi.advanceTimersByTime(0);
+    expect(document.activeElement).not.toBe(reload);
   });
 
   it('ends a loader seen past its minimum without a hold, long after its reveal finished', () => {

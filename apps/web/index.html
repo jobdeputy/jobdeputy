@@ -42,7 +42,7 @@
             />
             <!-- The logo's own progress track, filled in step with the story. -->
             <span
-              class="absolute top-[93.63%] left-[40.49%] h-[max(3px,1.06%)] w-[19.02%] overflow-hidden rounded-full bg-ink/10"
+              class="absolute top-[93.63%] left-[40.49%] noscript:hidden h-[max(3px,1.06%)] w-[19.02%] overflow-hidden rounded-full bg-ink/10"
               aria-hidden="true"
             >
               <span
@@ -50,14 +50,25 @@
               ></span>
             </span>
           </div>
-          <p class="-mt-2 text-xs tracking-[0.02em] text-muted-foreground" aria-hidden="true">
+          <p
+            class="-mt-2 text-xs tracking-[0.02em] text-muted-foreground noscript:hidden"
+            aria-hidden="true"
+          >
             {{copy.boot.status}}
           </p>
-          <span class="sr-only" role="progressbar" aria-label="{{copy.boot.progressLabel}}"></span>
+          <span
+            class="sr-only noscript:hidden"
+            role="progressbar"
+            aria-label="{{copy.boot.progressLabel}}"
+          ></span>
           <!-- A boot this slow has likely stalled (a failed script, a dropped connection): offer
-               a way out after 8 s, without a script. An empty href reloads this page (the only
+               a way out after 8 s, without a script. A status, so screen readers hear it appear.
+               Not without scripts at all: a reload cannot help there; the noscript line says why. An empty href reloads this page (the only
                script-free way to keep its address, so biome.json lets this file have one). -->
-          <p class="mt-3 animate-boot-slow text-center text-sm text-muted-foreground">
+          <p
+            class="mt-3 animate-boot-slow text-center text-sm text-muted-foreground noscript:hidden"
+            role="status"
+          >
             {{copy.boot.slow}}
             <a
               class="rounded-xs font-medium text-green-ink underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ring focus-visible:outline-solid"
