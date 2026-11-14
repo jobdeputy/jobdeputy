@@ -167,6 +167,18 @@ describe('finishBoot', () => {
     await vi.waitFor(() => expect(loader()).toBeNull());
   });
 
+  it('goes at the latest at twice its fade, where an engine settles nothing (Linux WebKit)', () => {
+    const never = new Promise<void>(() => {});
+    const seen = { animationName: 'boot-reveal', startTime: performance.now() - 2000 };
+    (loader() as HTMLElement).getAnimations = () =>
+      [seen, { transitionProperty: 'opacity', finished: never }] as unknown as Animation[];
+    finishBoot();
+    vi.advanceTimersByTime(BOOT_EXIT_MS * 2 - 1);
+    expect(loader()).not.toBeNull();
+    vi.advanceTimersByTime(1);
+    expect(loader()).toBeNull();
+  });
+
   it('goes when its animations are cancelled too', async () => {
     const seen = { animationName: 'boot-reveal', startTime: performance.now() - 2000 };
     const cancelled = Promise.reject(new DOMException('cancelled', 'AbortError'));

@@ -92,7 +92,11 @@ function removeWhenSettled(loader: HTMLElement, root: HTMLElement | null) {
     loader.remove();
     return;
   }
-  void Promise.all(moving).then(() => loader.remove());
+  const remove = () => loader.remove();
+  void Promise.all(moving).then(remove);
+  // A backstop at twice the fade: Linux WebKit settles neither the promise nor the events for this
+  // fade. Only a start delayed past it (a long stall) could cut the rise short.
+  setTimeout(remove, BOOT_EXIT_MS * 2);
 }
 
 /**
