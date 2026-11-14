@@ -26,6 +26,7 @@ DEV_IAD_EMAIL=... ADMIN_USERNAME=... ./01-organization.sh
 ./02-guardrails.sh
 ALERT_EMAIL=... ./03-budget.sh
 ./04-access-analyzer.sh
+./05-delegate-web-zone.sh   # after the first deploy of jobdeputy-dev-web-dns
 ```
 
 Prod accounts (`jobdeputy-prod-iad`, `-bom`, `-lhr`) are created at launch by extending `01-organization.sh`. `02-guardrails.sh` already knows their Regions.
