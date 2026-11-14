@@ -17,8 +17,12 @@ export function StoryStage({ className }: { className?: string }) {
           <strong className="mb-0.5 block text-[10px] tracking-[0.08em] uppercase">
             {stage.setupCardTitle}
           </strong>
-          {stage.setupRows.map((row) => (
-            <span key={row} className="flex items-center gap-2.5 text-sm leading-tight font-[650]">
+          {stage.setupRows.map((row, index) => (
+            <span
+              // biome-ignore lint/suspicious/noArrayIndexKey: a fixed-length list; rows may repeat in a translation.
+              key={index}
+              className="flex items-center gap-2.5 text-sm leading-tight font-[650]"
+            >
               <span className="relative block size-[22px] shrink-0 rounded-full border-2 border-green bg-green-soft after:absolute after:top-[3px] after:left-[6px] after:h-[9px] after:w-[5px] after:rotate-45 after:border-r-[2.5px] after:border-b-[2.5px] after:border-green-ink" />
               {row}
             </span>

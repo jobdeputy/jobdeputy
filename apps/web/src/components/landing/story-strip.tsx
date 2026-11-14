@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { type Copy, copy } from '@/copy/index.ts';
+import { type Copy, copy, type OnePer } from '@/copy/index.ts';
 import { cn } from '@/lib/utils.ts';
 import { PencilShape } from './panda.tsx';
 
@@ -7,9 +7,6 @@ import { PencilShape } from './panda.tsx';
  * Each step's tool, as the deputy holds it: pencil, magnifier, approved page. Typed to the steps
  * in the copy, so a language with a different number of steps fails to compile.
  */
-/** One `V` per entry of the list `T`, same length (a generic, so tuples stay tuples). */
-type OnePer<T, V> = { readonly [K in keyof T]: V };
-
 const STEP_TOOLS: OnePer<Copy['landing']['steps']['items'], ReactNode> = [
   <PencilShape key="pencil" transform="translate(13.52 33.84) scale(0.63)" />,
   <g key="magnifier" transform="translate(8.11 42.36) scale(0.55)">
@@ -89,7 +86,8 @@ export function StoryStrip({ current, className }: { current: number; className?
         const isCurrent = index === current;
         return (
           <li
-            key={step.title}
+            // biome-ignore lint/suspicious/noArrayIndexKey: a fixed-length list; titles may repeat in a translation.
+            key={index}
             aria-current={isCurrent ? 'step' : undefined}
             className="relative grid grid-cols-[36px_minmax(0,1fr)] items-start gap-x-2.5 px-2 pt-2 pb-[17px] before:absolute before:inset-x-2 before:bottom-[5px] before:h-[3px] before:rounded-full before:bg-muted-foreground aria-[current=step]:after:absolute aria-[current=step]:after:inset-x-2 aria-[current=step]:after:bottom-1 aria-[current=step]:after:h-[5px] aria-[current=step]:after:rounded-full aria-[current=step]:after:bg-green-ink"
           >

@@ -27,7 +27,7 @@ export function AuthButton({
   ...props
 }: Omit<
   React.ComponentProps<typeof Button>,
-  'onClick' | 'aria-haspopup' | 'aria-expanded' | 'aria-controls'
+  'onClick' | 'asChild' | 'aria-haspopup' | 'aria-expanded' | 'aria-controls'
 > & { control: AuthControl; mode: AuthMode }) {
   // Every opener reports the same open state. That is safe: while the drawer is open, Radix
   // hides the rest of the page from assistive technology, so only the closed state is heard.
