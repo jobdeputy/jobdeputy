@@ -34,9 +34,12 @@ describe('StoryProps', () => {
     const { container, rerender } = render(<StoryProps scene="search" />);
     const checks = () => [...container.querySelectorAll('.size-\\[22px\\]')];
     expect(checks()).toHaveLength(3);
-    expect(checks().every((check) => !check.classList.contains('bg-green-soft'))).toBe(true);
+    const has = (name: string) => checks().every((check) => check.classList.contains(name));
+    // At rest: a grey ring, no fill, the tick unseen.
+    expect(has('border-ink/24') && has('after:scale-0')).toBe(true);
+    expect(checks().some((check) => check.classList.contains('bg-green-soft'))).toBe(false);
     rerender(<StoryProps scene="setup" />);
-    expect(checks().every((check) => check.classList.contains('bg-green-soft'))).toBe(true);
+    expect(has('bg-green-soft') && has('border-green') && has('after:scale-100')).toBe(true);
   });
 
   it('ticks the setup rows in turn', () => {
