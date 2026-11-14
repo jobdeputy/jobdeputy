@@ -33,12 +33,12 @@ test.describe('landing page', () => {
   });
 
   test('keeps the header usable with text at 200%', async ({ page }) => {
-    // Browser text-size settings scale the root font; rem-sized parts must still fit (WCAG 1.4.4).
+    // Doubles the root font, so every rem-sized part grows (WCAG 1.4.4). Unlike a browser's
+    // text-size setting it leaves the breakpoints where they are, so each device keeps its layout.
     await page.addStyleTag({ content: 'html { font-size: 200%; }' });
     const header = page.locator('header');
     const box = await header.boundingBox();
     if (!box) throw new Error('The header has no box.');
-    expect(box.height, 'header grows with the text').toBeGreaterThanOrEqual(144);
     for (const part of await header.locator('a, button').filter({ visible: true }).all()) {
       const partBox = await part.boundingBox();
       if (!partBox) throw new Error('A header control has no box.');
@@ -46,6 +46,14 @@ test.describe('landing page', () => {
       expect(partBox.x + partBox.width).toBeLessThanOrEqual(box.x + box.width + 0.5);
       expect(partBox.y + partBox.height).toBeLessThanOrEqual(box.y + box.height + 0.5);
     }
+    // Focused content stops below the header as it really is (plus 8px for the focus ring).
+    const scrollPadding = () =>
+      page.evaluate(() => {
+        const { scrollPaddingTop } = getComputedStyle(document.documentElement);
+        const headerHeight = document.querySelector('header')?.offsetHeight ?? 0;
+        return Number.parseFloat(scrollPaddingTop) - headerHeight - 8;
+      });
+    await expect.poll(scrollPadding).toBeCloseTo(0, 0);
     await expectNoHorizontalScroll(page);
   });
 

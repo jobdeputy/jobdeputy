@@ -12,8 +12,9 @@
     /* The sticky header's minimum height (72px at the default font size, in rem so it grows with
        enlarged text); the landing hero fills the screen below it. */
     --header-height: 4.5rem;
-    /* Focused or linked content stops below the sticky header, not under it (WCAG 2.4.11). */
-    scroll-padding-top: var(--header-height);
+    /* Focused or linked content stops below the sticky header, not under it; 8px clears the focus ring
+       (2px + 3px offset). WCAG 2.4.11. --header-offset is the header's real height (site-header.tsx). */
+    scroll-padding-top: calc(var(--header-offset, var(--header-height)) + 8px);
   }
 
   body {

@@ -82,10 +82,10 @@ export function AuthDrawer({
           <p className="mb-[7px] flex items-center gap-2 text-xs font-[750] tracking-[0.12em] uppercase before:block before:h-[3px] before:w-[13px] before:rounded-full before:bg-green">
             {text.kicker}
           </p>
-          <SheetTitle className="font-display text-[clamp(35px,10.5vw,42px)] leading-none font-medium tracking-[-0.05em] text-balance md:text-[clamp(40px,4vw,52px)]">
+          <SheetTitle className="font-display text-[clamp(2.1875rem,10.5vw,2.625rem)] leading-none font-medium tracking-[-0.05em] text-balance md:text-[clamp(2.5rem,4vw,3.25rem)]">
             {text.title}
           </SheetTitle>
-          <SheetDescription className="mt-1 max-w-[390px] text-[15px] leading-normal tracking-[-0.01em] text-muted-foreground md:mt-2">
+          <SheetDescription className="mt-1 max-w-[390px] text-[0.9375rem] leading-normal tracking-[-0.01em] text-muted-foreground md:mt-2">
             {text.subtitle}
           </SheetDescription>
         </div>

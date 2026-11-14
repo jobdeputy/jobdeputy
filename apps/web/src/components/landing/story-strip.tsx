@@ -115,7 +115,7 @@ export function StoryStrip({ current, className }: { current: number; className?
               </svg>
             </span>
             <span className="grid min-w-0 gap-0.5">
-              <span className="flex items-center gap-1.5 text-[15px] leading-[1.3] font-bold">
+              <span className="flex items-center gap-1.5 text-[0.9375rem] leading-[1.3] font-bold">
                 <span
                   className={cn(
                     'inline-grid size-5 shrink-0 place-items-center rounded-full text-xs leading-none font-[750] tabular-nums',
@@ -126,7 +126,7 @@ export function StoryStrip({ current, className }: { current: number; className?
                 </span>
                 {step.title}
               </span>
-              <span className="text-[13px] leading-[1.35] text-pretty text-muted-foreground">
+              <span className="text-[0.8125rem] leading-[1.35] text-pretty text-muted-foreground">
                 {step.line}
               </span>
             </span>
