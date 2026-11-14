@@ -10,8 +10,13 @@ const SCREENS = [
   { name: 'home', path: '/' },
   // The drawer, opened from the first visible "Sign in" button.
   { name: 'sign-in', path: '/', open: 'Sign in' },
-  // Every shared component state (#17); the pending buttons appear after the 300 ms delay.
-  { name: 'gallery', path: '/gallery.html', ready: '[data-pending]' },
+  // Every shared component state (#17); the pending buttons and the loading skeleton appear
+  // after the 300 ms delay.
+  {
+    name: 'gallery',
+    path: '/gallery.html',
+    ready: '[data-slot="query-region"][data-state="loading"]',
+  },
   // The boot loader at the end of its story, held up by an app script that never arrives.
   { name: 'boot-loader', path: '/', ready: '#boot-loader', blockScript: true, storyEnd: true },
   // The same boot, stalled past the 8 s long wait: the reload offer.
@@ -37,8 +42,8 @@ for (const screen of SCREENS) {
         .click();
       await page.getByRole('dialog').waitFor();
     }
-    if (screen.ready) {
-      await page.locator(screen.ready).first().waitFor();
+    for (const ready of [screen.ready ?? []].flat()) {
+      await page.locator(ready).first().waitFor();
     }
     if (screen.storyEnd) {
       // The logo's 2.605 s story runs from when its image arrives, so wait for that, not a clock.

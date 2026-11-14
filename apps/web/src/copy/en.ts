@@ -15,7 +15,7 @@ export const en = {
     eyebrow: 'Agentic job applications',
     /** The page title, in the two lines it breaks into. */
     titleLines: ['You set it up.', 'Your deputy applies.'],
-    body: 'AI already helps you at work. Now let it find your next job.',
+    body: 'AI already helps you at your job. Now let it find your next job.',
     getStarted: 'Get started free',
     signIn: 'Sign in',
     stage: {
@@ -48,6 +48,8 @@ export const en = {
     ready: 'JobDeputy is ready.',
   },
   loading: {
+    /** Beside data already on screen while a newer copy loads. */
+    refreshing: 'Updating…',
     /** Read out as a progress bar passes each quarter: "Uploading résumé, 50%". */
     progressMilestone: '{label}, {percent}',
   },
