@@ -99,12 +99,20 @@ function LiveButton() {
       >
         Try a save
       </Button>
+      {/* Two buttons, each available only in its own step, so a double-click cannot skip one. */}
       <Button
         variant="outline"
-        aria-disabled={state === 'idle' || undefined}
-        onClick={() => setState(state === 'pending' ? 'success' : 'idle')}
+        aria-disabled={state !== 'pending' || undefined}
+        onClick={() => setState('success')}
       >
-        {state === 'success' ? 'Start over' : 'Finish the save'}
+        Finish the save
+      </Button>
+      <Button
+        variant="outline"
+        aria-disabled={state !== 'success' || undefined}
+        onClick={() => setState('idle')}
+      >
+        Start over
       </Button>
       <p className="m-0 text-sm text-muted-foreground" data-testid="live-button-runs">
         Started {runs} {runs === 1 ? 'time' : 'times'}

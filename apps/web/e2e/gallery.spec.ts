@@ -42,7 +42,8 @@ test('a pending button keeps focus and starts its work only once', async ({ page
   // force: Playwright waits for an aria-disabled button to enable; this click must land now.
   await button.click({ force: true });
   await expect(page.getByTestId('live-button-runs')).toHaveText('Started 1 time');
-  await page.getByRole('button', { name: 'Finish the save' }).click();
+  // A double-click finishes once: the second press lands on a button that is no longer available.
+  await page.getByRole('button', { name: 'Finish the save' }).dblclick();
   await expect(button).toHaveAccessibleName('Saved');
   await page.getByRole('button', { name: 'Start over' }).click();
   await expect(button).toHaveAccessibleName('Try a save');
