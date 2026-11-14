@@ -38,6 +38,14 @@ Use synthetic data only — no real résumés, credentials, or personal data.
 
 </details>
 
+## UI screenshots
+
+<!-- Required if this PR changes anything a user sees in apps/web. Otherwise tick "Not applicable". -->
+
+- [ ] **Not applicable:** no screen changed.
+- [ ] Every changed screen is in `apps/web/e2e/screenshots.spec.ts`, and the **Post screenshots** comment shows it on phone, tablet, and desktop.
+- [ ] I checked the screenshots against the round 7 prototype; differences are listed under Reviewer notes.
+
 ## Error cases
 
 <!-- Which failure paths exist and how each is handled? Mark each one tested or not tested. -->

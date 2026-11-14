@@ -1,64 +1,68 @@
-/* JobDeputy design tokens, carried over unchanged from the approved prototype (round 7). */
-:root {
-  color-scheme: light;
-  --ink: #1b1a18;
-  --ink-soft: #2d2b27;
-  --muted: #706d66;
-  --quiet: #98948b;
-  --paper: #faf8f3;
-  --paper-deep: #f0ece3;
-  --surface: rgba(255, 255, 255, 0.82);
-  --surface-strong: rgba(255, 255, 255, 0.92);
-  --header-surface: rgba(250, 248, 243, 0.82);
-  --line: rgba(27, 26, 24, 0.12);
-  --line-soft: rgba(27, 26, 24, 0.08);
-  --line-strong: rgba(27, 26, 24, 0.24);
-  --green: #2f9e77;
-  --green-soft: #ccebdc;
-  --green-wash: rgba(204, 235, 220, 0.55);
-  --green-line: rgba(47, 158, 119, 0.36);
-  --green-ink: #23795b;
-  --orange: #f36b3f;
-  --orange-soft: #ffd5c6;
-  --danger-ink: #9c4028;
-  --blue: #526fe5;
-  --blue-soft: #d9def8;
-  --on-ink-muted: rgba(255, 255, 255, 0.68);
-  --shadow: 0 21px 55px rgba(55, 48, 36, 0.07);
+/*
+ * JobDeputy design tokens, carried over unchanged from the approved prototype (round 7).
+ * The values live in @theme, so Tailwind turns each one into utilities (bg-paper, text-ink,
+ * font-display, ease-settle, shadow-control). `static` emits every one as a CSS variable too,
+ * used or not, so keyframes and SVGs can rely on var(--color-orange) and the like.
+ * Tailwind's default palette is switched off: only these colours exist, so a page cannot
+ * drift to an off-brand grey.
+ */
+@theme static {
+  --color-*: initial;
+  --color-white: #fff;
+  --color-ink: #1b1a18;
+  --color-ink-soft: #2d2b27;
+  --color-quiet: #98948b;
+  --color-paper: #faf8f3;
+  --color-paper-deep: #f0ece3;
+  --color-surface: rgba(255, 255, 255, 0.82);
+  --color-surface-strong: rgba(255, 255, 255, 0.92);
+  --color-header-surface: rgba(250, 248, 243, 0.82);
+  --color-line: rgba(27, 26, 24, 0.12);
+  --color-line-soft: rgba(27, 26, 24, 0.08);
+  --color-line-strong: rgba(27, 26, 24, 0.24);
+  --color-green: #2f9e77;
+  --color-green-soft: #ccebdc;
+  --color-green-wash: rgba(204, 235, 220, 0.55);
+  --color-green-line: rgba(47, 158, 119, 0.36);
+  --color-green-ink: #23795b;
+  --color-orange: #f36b3f;
+  --color-orange-soft: #ffd5c6;
+  --color-danger-ink: #9c4028;
+  --color-blue: #526fe5;
+  --color-blue-soft: #d9def8;
+  --color-on-ink-muted: rgba(255, 255, 255, 0.68);
+
+  /* The prototype's text colour "--muted" is muted-foreground here: shadcn uses "muted" for a background. */
+  --color-muted-foreground: #706d66;
+
+  --shadow-panel: 0 21px 55px rgba(55, 48, 36, 0.07);
   --shadow-control: 0 10px 21px rgba(27, 26, 24, 0.15);
   --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
   --font-text:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
-  font-family: var(--font-text);
-  font-synthesis: none;
 }
 
-body {
-  margin: 0;
-  background: var(--paper);
-  color: var(--ink);
+/* The role names shadcn/ui components use, pointed at the brand tokens above. */
+@theme inline {
+  --color-background: var(--color-paper);
+  --color-foreground: var(--color-ink);
+  --color-primary: var(--color-ink);
+  --color-primary-foreground: var(--color-white);
+  --color-secondary: var(--color-surface-strong);
+  --color-secondary-foreground: var(--color-ink);
+  --color-muted: var(--color-paper-deep);
+  --color-border: var(--color-line);
+  --color-input: var(--color-line-strong);
+  --color-ring: var(--color-green);
+  --color-destructive: var(--color-danger-ink);
+  --color-destructive-foreground: var(--color-white);
+  --color-accent: var(--color-green-wash);
+  --color-accent-foreground: var(--color-green-ink);
+  --color-card: var(--color-surface-strong);
+  --color-card-foreground: var(--color-ink);
+  --color-popover: var(--color-paper);
+  --color-popover-foreground: var(--color-ink);
 }
-
-.shell {
-  display: grid;
-  min-height: 100vh;
-  place-content: center;
-  justify-items: center;
-  gap: 8px;
-  padding: 16px;
-  text-align: center;
-}
-
-.shell-title {
-  margin: 8px 0 0;
-  font: 400 clamp(40px, 8vw, 72px) / 1 var(--font-display);
-  letter-spacing: -0.02em;
-}
-
-.shell-note {
-  margin: 0;
-  color: var(--muted);
-  font-size: 18px;
-}
+/* There is no black: when a shadcn component brings bg-black (dialog overlays), change it to ink. */

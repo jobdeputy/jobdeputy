@@ -27,3 +27,8 @@ __pycache__/
 # CDK
 cdk.out/
 *.tsbuildinfo
+
+# Playwright
+playwright-report/
+test-results/
+apps/web/screenshots/

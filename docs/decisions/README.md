@@ -15,6 +15,7 @@ Short records of choices that shape the project. Agents and contributors treat a
 | [0009](0009-llm-architecture-and-own-keys.md) | LLM architecture: Strands agents, the user's own keys, and token usage | Accepted |
 | [0010](0010-platform-ai-model.md) | Platform AI model (Ministral 3 14B) and prompt-injection rules | Accepted |
 | [0011](0011-web-hosting.md) | Web app hosting: dev.jobdeputy.com on S3 and CloudFront, with a delegated zone | Accepted |
+| [0012](0012-web-ui-styling-and-testing.md) | Web UI: Tailwind + shadcn/ui, Playwright on seven devices, translation-ready copy | Accepted |
 
 ## Template
 
