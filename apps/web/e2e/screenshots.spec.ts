@@ -13,7 +13,7 @@ const SCREENS = [
   // Every shared component state (#17); the pending buttons appear after the 300 ms delay.
   { name: 'gallery', path: '/gallery.html', ready: '[data-pending]' },
   // The boot loader at the end of its story, held up by an app script that never arrives.
-  { name: 'boot-loader', path: '/', ready: '#boot-loader', blockScript: true, settleMs: 3000 },
+  { name: 'boot-loader', path: '/', ready: '#boot-loader', blockScript: true, storyEnd: true },
 ];
 
 for (const screen of SCREENS) {
@@ -33,8 +33,14 @@ for (const screen of SCREENS) {
     if (screen.ready) {
       await page.locator(screen.ready).first().waitFor();
     }
-    if (screen.settleMs) {
-      await page.waitForFunction((ms) => performance.now() > ms, screen.settleMs);
+    if (screen.storyEnd) {
+      // The logo's 2.605 s story runs from when its image arrives, so wait for that, not a clock.
+      await page.waitForFunction(() => {
+        const logo = (performance.getEntriesByType('resource') as PerformanceResourceTiming[]).find(
+          (entry) => entry.name.endsWith('/jobdeputy-animated.svg'),
+        );
+        return logo !== undefined && performance.now() > logo.responseEnd + 2705;
+      });
     }
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({

@@ -10,17 +10,30 @@ const APP_SCRIPT = '**/assets/*.js';
 const loader = (page: Page) => page.locator('#boot-loader');
 
 /**
- * Opens the page with the app's script never arriving: the loader stays, on a loaded page. Waits
- * for its words, which only show once the reveal has run (the loader's own box is there from the
- * first paint, so it cannot tell).
+ * Waits until the loader has really been revealed: its CSS reveal has run past the delay. Neither
+ * the loader's box (there from the first paint) nor its words (visible in the unstyled page, before
+ * the stylesheet applies) can tell.
  */
-async function openWithoutScript(page: Page) {
-  await page.route(APP_SCRIPT, (route) => route.abort());
-  await page.goto('/');
+async function waitForReveal(page: Page) {
+  await page.waitForFunction(() => {
+    const reveal = document
+      .getElementById('boot-loader')
+      ?.getAnimations({ subtree: true })
+      .find((animation) => (animation as CSSAnimation).animationName === 'boot-reveal');
+    return typeof reveal?.currentTime === 'number' && reveal.currentTime > 300;
+  });
   await expect(loader(page).getByText('Loading…')).toBeVisible();
 }
 
-test('a slow boot shows the loader, then hands over to the app', async ({ page }) => {
+/** Opens the page with the app's script never arriving: the loader stays, on a loaded page. */
+async function openWithoutScript(page: Page) {
+  await page.route(APP_SCRIPT, (route) => route.abort());
+  await page.goto('/');
+  await waitForReveal(page);
+}
+
+/** Opens the page with the app's script held back until the returned `release` is called. */
+async function openWithScriptHeld(page: Page) {
   let release = () => {};
   const held = new Promise<void>((resolve) => {
     release = resolve;
@@ -30,9 +43,34 @@ test('a slow boot shows the loader, then hands over to the app', async ({ page }
     await route.continue();
   });
   await page.goto('/', { waitUntil: 'commit' });
+  await waitForReveal(page);
+  return release;
+}
 
+/**
+ * How much of the track the fill covers (0 to 1) at the moment the loader hands over. Recorded in
+ * the page as the state flips, so the 618 ms fade cannot outrun the check.
+ */
+async function recordFillAtHandOver(page: Page) {
+  await page.evaluate(() => {
+    const loader = document.getElementById('boot-loader') as HTMLElement;
+    const fill = loader.querySelector('span[aria-hidden] > span') as HTMLElement;
+    new MutationObserver((_records, observer) => {
+      if (loader.dataset.state !== 'done') return;
+      observer.disconnect();
+      const share =
+        fill.getBoundingClientRect().width /
+        (fill.parentElement as HTMLElement).getBoundingClientRect().width;
+      document.documentElement.dataset.fillAtHandOver = share.toFixed(2);
+    }).observe(loader, { attributes: true });
+  });
+  return () => page.evaluate(() => document.documentElement.dataset.fillAtHandOver);
+}
+
+test('a slow boot shows the loader, then hands over to the app', async ({ page }) => {
+  const release = await openWithScriptHeld(page);
   await expect(page.getByRole('progressbar', { name: 'Loading JobDeputy' })).toBeVisible();
-  await expect(loader(page).getByText('Loading…')).toBeVisible();
+  const fillAtHandOver = await recordFillAtHandOver(page);
 
   release();
   await expect(loader(page)).toHaveCount(0);
@@ -40,9 +78,23 @@ test('a slow boot shows the loader, then hands over to the app', async ({ page }
   await expect(
     page.getByRole('heading', { level: 1, name: 'You set it up. Your deputy applies.' }),
   ).toBeVisible();
+  expect(await fillAtHandOver()).toBe('1.00');
   expect(await page.evaluate(() => document.getElementById('root')?.inert)).toBe(false);
   // The hand-over never moves focus.
   expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+});
+
+test('a boot that stalls offers a reload at the 8 s long wait', async ({ page }) => {
+  await openWithoutScript(page);
+  const reload = loader(page).getByRole('link', { name: 'Reload' });
+  await expect(reload).toBeHidden();
+  await expect(loader(page).getByText('This is taking longer than usual.')).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(reload).toBeVisible();
+  const reloaded = page.waitForEvent('framenavigated');
+  await reload.click();
+  expect((await reloaded).url()).toBe(page.url());
 });
 
 test('the loader appears only once the shared 300 ms delay has passed', async ({ page }) => {
@@ -88,6 +140,26 @@ test.describe('with reduced motion', () => {
     await expect(settled).toBeVisible();
     const fill = loader(page).locator('span[aria-hidden] > span');
     expect(await fill.evaluate((element) => getComputedStyle(element).animationName)).toBe('none');
+  });
+
+  test('the track still fills at the hand-over', async ({ page }) => {
+    const release = await openWithScriptHeld(page);
+    const fillAtHandOver = await recordFillAtHandOver(page);
+    release();
+    await expect(loader(page)).toHaveCount(0);
+    expect(await fillAtHandOver()).toBe('1.00');
+  });
+});
+
+test.describe('without JavaScript', () => {
+  test.use({ javaScriptEnabled: false });
+
+  test('the loader says the app needs it', async ({ page }) => {
+    await page.goto('/');
+    // Playwright's text search skips <noscript>, so find the line by its place.
+    const line = loader(page).locator('noscript p');
+    await expect(line).toBeVisible();
+    await expect(line).toHaveText('JobDeputy needs JavaScript. Turn it on, then reload.');
   });
 });
 

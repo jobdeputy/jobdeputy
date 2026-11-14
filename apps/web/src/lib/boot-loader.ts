@@ -15,13 +15,17 @@ export function bootHoldMs(revealElapsed: number | null): number | 'never-shown'
   return Math.max(0, PENDING_DELAY_MS + PENDING_MIN_MS - revealElapsed);
 }
 
-/** How far the loader's CSS reveal (`boot-reveal`, delay included) has run, or null. */
+/**
+ * How long ago the loader's CSS reveal (`boot-reveal`) started, delay included, or null. Measured
+ * from its start time, not its `currentTime`, which stops at the animation's end (680 ms).
+ */
 function revealElapsed(loader: HTMLElement): number | null {
   const reveal = loader
     .getAnimations?.({ subtree: true })
     .find((animation) => (animation as CSSAnimation).animationName === 'boot-reveal');
-  const time = reveal?.currentTime;
-  return typeof time === 'number' ? time : null;
+  const start = reveal?.startTime;
+  // The document timeline and performance.now() share the page's time origin.
+  return typeof start === 'number' ? performance.now() - start : null;
 }
 
 /**

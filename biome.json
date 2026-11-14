@@ -26,6 +26,16 @@
           }
         }
       }
+    },
+    {
+      "includes": ["apps/web/index.html"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "useValidAnchor": "off"
+          }
+        }
+      }
     }
   ]
 }

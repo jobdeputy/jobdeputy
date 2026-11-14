@@ -30,7 +30,8 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 
 | File | Role |
 |---|---|
-| `index.html` (in `apps/web/`) | the page: links the stylesheet (so it blocks the first paint, in dev too) and holds the boot loader's markup, which shows before any script runs; its words must match `copy.boot` |
+| `index.html` (in `apps/web/`) | the page: links the stylesheet (so it blocks the first paint, in dev too) and holds the boot loader's markup, which shows before any script runs (an 8 s reload offer and a no-JavaScript line included); its words are `{{copy.boot.*}}` slots |
+| `html-copy.ts` (in `apps/web/`) | the Vite plugin that fills an HTML page's `{{copy.<path>}}` slots from `en.ts`, escaped; an unknown slot fails the build |
 | `main.tsx` | mounts the app inside `StrictMode` and the TanStack Query client |
 | `App.tsx` | the app's root component (today: the landing page); owns the auth drawer's open state and returns focus to whichever button opened it |
 | `components/landing/` | the landing page: `site-header.tsx` (sticky bar), `hero.tsx` (copy, ways in, layout), `story-stage.tsx` + `panda.tsx` (the deputy in the "Set it up" pose, colours as token classes), `story-strip.tsx` (the three steps), `auth-drawer.tsx` (sign-in / sign-up drawer; forms come next) |
@@ -44,10 +45,10 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `styles/animations.css` | keyframes as `animate-*` utilities (the drawer's slide, the scrim's fade, the spinner's turn, the unknown-length progress sweep, the boot loader's reveal and track fill) |
 | `styles/story-stage.css` | the story stage's container-query layout: the deputy's size and place, the speech bubble's aim, the props' scale |
 | `styles/tokens.css` | the design tokens as Tailwind's theme (colours, shadows, easing, fonts), and shadcn's role names mapped onto them |
-| `vite.config.ts` | Vite build (React, Tailwind, the `@/` alias for `src/`; the gallery page only in `--mode e2e`) and the Vitest setup (happy-dom) |
+| `vite.config.ts` | Vite build (React, Tailwind, the `html-copy.ts` plugin, the `@/` alias for `src/`; the gallery page only in `--mode e2e`) and the Vitest setup (happy-dom) |
 | `playwright.config.ts` | browser tests on the built app across seven devices |
 | `e2e/landing.spec.ts` | the landing page in real browsers: content, tokens, no sideways scroll, axe, drawer open/close by mouse and keyboard, reduced motion |
-| `e2e/boot-loader.spec.ts` | the boot loader in real browsers, with the app's script held back: hand-over to the app, the 300 ms reveal, axe, no sideways scroll, reduced motion, forced colours |
+| `e2e/boot-loader.spec.ts` | the boot loader in real browsers, with the app's script held back: hand-over to the app (the track full), the 300 ms reveal, the 8 s reload offer, the no-JavaScript line, axe, no sideways scroll, reduced motion, forced colours |
 | `e2e/gallery.spec.ts` | the component gallery in real browsers: axe, no sideways scroll (also at 200% text), a pending button keeps focus and runs once, progress read-outs, reduced motion |
 | `e2e/checks.ts` | shared browser checks: no sideways scroll, no accessibility violations |
 | `e2e/screenshots.spec.ts` | the screens to screenshot on every device as PR proof (list each new screen here); `screenshots-dir.ts` and `global-setup.ts` put them in `apps/web/screenshots/` and clear old ones |

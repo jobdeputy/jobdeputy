@@ -15,10 +15,9 @@ export const en = {
     eyebrow: 'Agentic job applications',
     /** The page title, in the two lines it breaks into. */
     titleLines: ['You set it up.', 'Your deputy applies.'],
-    body: 'Agents already help you work. Now one finds roles, tailors your résumé, and applies for you, with your approval.',
+    body: 'AI already helps you at work. Now let it find your next job.',
     getStarted: 'Get started free',
     signIn: 'Sign in',
-    note: 'Nothing is sent until you approve it.',
     stage: {
       status: 'Setting up',
       speech: 'Tell me what you want.',
@@ -30,16 +29,21 @@ export const en = {
       items: [
         { title: 'Set it up', line: 'Your roles, résumé, and rules.' },
         { title: 'It finds', line: 'Roles that fit, from sites you choose.' },
-        { title: 'It applies', line: 'Tailored, and sent once you approve.' },
+        { title: 'It applies', line: 'Tailored, then applied once you approve.' },
       ],
     },
   },
-  /** The boot loader (index.html, which repeats the first two: test/boot-loader.test.ts). */
+  /** The boot loader (index.html, which reads these through `{{copy.boot.*}}` slots: html-copy.ts). */
   boot: {
     /** Under the logo while the app loads. */
     status: 'Loading…',
     /** The progress bar's name for screen readers. */
     progressLabel: 'Loading JobDeputy',
+    /** Shown once the wait passes 8 s, before the reload link. */
+    slow: 'This is taking longer than usual.',
+    reload: 'Reload',
+    /** Shown instead of loading when the browser runs no scripts. */
+    noScript: 'JobDeputy needs JavaScript. Turn it on, then reload.',
     /** Read out once the loader, if it was seen, gives way to the app. */
     ready: 'JobDeputy is ready.',
   },

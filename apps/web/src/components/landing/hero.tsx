@@ -59,9 +59,6 @@ export function Hero({ auth }: { auth: AuthControl }) {
             {landing.signIn}
           </AuthButton>
         </div>
-        <p className="mt-3 text-[0.8125rem] leading-[1.4] font-medium text-muted-foreground">
-          {landing.note}
-        </p>
       </div>
 
       <StoryStage className="w-full max-w-[690px] justify-self-center lg:h-full lg:max-h-[860px] lg:max-w-none lg:self-center" />

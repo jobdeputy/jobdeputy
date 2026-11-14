@@ -1,26 +1,34 @@
 import { readFileSync } from 'node:fs';
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fillHtmlCopy } from '../html-copy.ts';
 import { App } from '../src/App.tsx';
 import { en } from '../src/copy/en.ts';
 import { BOOT_EXIT_MS, bootHoldMs, finishBoot, useFinishBoot } from '../src/lib/boot-loader.ts';
 import { PENDING_DELAY_MS, PENDING_MIN_MS } from '../src/lib/use-delayed-pending.ts';
 
 // Read from disk (Vitest runs in apps/web): Vitest does not load CSS, and the page is not a module.
-const indexHtml = readFileSync('index.html', 'utf8');
+const indexHtml = fillHtmlCopy(readFileSync('index.html', 'utf8'));
 const animationsCss = readFileSync('src/styles/animations.css', 'utf8');
 
-/** The real page body (loader, status, root), without its script. */
+/** The real page body (loader, status, root) as built, without its script. */
 function mountIndexBody() {
   const body = /<body>([\s\S]*)<\/body>/.exec(indexHtml)?.[1] ?? '';
   document.body.innerHTML = body.replace(/<script[\s\S]*?<\/script>/g, '');
 }
 
-/** Makes the loader report its CSS reveal as `elapsed` ms in (delay included). */
+/**
+ * Makes the loader's CSS reveal report it started `elapsed` ms ago (delay included). Its
+ * currentTime is what a browser reports: stopped at the end (680 ms) once it has finished.
+ */
 function revealAt(elapsed: number) {
   const loader = document.getElementById('boot-loader') as HTMLElement;
-  loader.getAnimations = () =>
-    [{ animationName: 'boot-reveal', currentTime: elapsed }] as unknown as Animation[];
+  const reveal = {
+    animationName: 'boot-reveal',
+    startTime: performance.now() - elapsed,
+    currentTime: Math.min(elapsed, 680),
+  };
+  loader.getAnimations = () => [reveal] as unknown as Animation[];
 }
 
 const loader = () => document.getElementById('boot-loader');
@@ -67,6 +75,14 @@ describe('finishBoot', () => {
     expect(loader()).toBeNull();
   });
 
+  it('removes the loader at once while its reveal has not started yet', () => {
+    revealAt(0);
+    (loader() as HTMLElement).getAnimations = () =>
+      [{ animationName: 'boot-reveal', startTime: null }] as unknown as Animation[];
+    finishBoot();
+    expect(loader()).toBeNull();
+  });
+
   it('holds a seen loader for its minimum over an inert app, then settles, announces, and fades', () => {
     revealAt(PENDING_DELAY_MS + 100);
     finishBoot();
@@ -90,7 +106,7 @@ describe('finishBoot', () => {
     expect(loader()).toBeNull();
   });
 
-  it('ends a loader seen past its minimum without a hold', () => {
+  it('ends a loader seen past its minimum without a hold, long after its reveal finished', () => {
     revealAt(PENDING_DELAY_MS + PENDING_MIN_MS + 2000);
     finishBoot();
     vi.advanceTimersByTime(0);
@@ -132,11 +148,17 @@ describe('useFinishBoot', () => {
 
 describe('boot loader markup (index.html)', () => {
   it('says what en.ts says', () => {
-    mountIndexBody();
     expect(document.querySelector('[role="progressbar"]')?.getAttribute('aria-label')).toBe(
       en.boot.progressLabel,
     );
-    expect(document.querySelector('#boot-loader p')?.textContent?.trim()).toBe(en.boot.status);
+    // happy-dom parses <noscript> as markup; a browser running scripts does not show it.
+    const lines = [...document.querySelectorAll('#boot-loader p')]
+      .filter((line) => !line.closest('noscript'))
+      .map((line) => line.textContent?.replace(/\s+/g, ' ').trim());
+    expect(lines).toEqual([en.boot.status, `${en.boot.slow} ${en.boot.reload}`]);
+    expect(document.querySelector('#boot-loader noscript')?.textContent?.trim()).toBe(
+      en.boot.noScript,
+    );
   });
 
   it('fades out over BOOT_EXIT_MS', () => {
