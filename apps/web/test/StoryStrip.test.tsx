@@ -35,7 +35,7 @@ describe('StoryStrip progress', () => {
 
   it('holds the bar part-way on Pause, empties it while waiting, and shows it full otherwise', () => {
     const { rerender } = render(<Strip current={0} progress="held" />);
-    expect(bar()?.className).toContain('[animation-play-state:paused]');
+    expect(bar()?.style.animationPlayState).toBe('paused');
     rerender(<Strip current={0} progress="waiting" />);
     expect(bar()?.className).toContain('scale-x-0');
     rerender(<Strip current={0} progress="full" />);

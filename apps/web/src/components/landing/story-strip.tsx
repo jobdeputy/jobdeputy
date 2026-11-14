@@ -144,7 +144,12 @@ function StepBar({
     <span
       aria-hidden="true"
       data-bar={progress}
-      style={{ animationDuration: `${duration}ms` }}
+      // Inline, so only the play state changes between filling and held: the animation itself (its
+      // class) stays put. Swapping classes re-read the animation, and WebKit restarted it.
+      style={{
+        animationDuration: `${duration}ms`,
+        animationPlayState: progress === 'held' ? 'paused' : 'running',
+      }}
       onAnimationEnd={(event) => {
         if (event.target !== event.currentTarget) return;
         if (progress === 'filling') onFilled();
@@ -154,7 +159,6 @@ function StepBar({
         'absolute inset-x-2 bottom-1 h-[5px] origin-left rounded-full bg-green-ink',
         (progress === 'filling' || progress === 'held') &&
           'animate-strip-fill motion-reduce:animate-none',
-        progress === 'held' && '[animation-play-state:paused]',
         progress === 'waiting' && 'scale-x-0',
       )}
     />
