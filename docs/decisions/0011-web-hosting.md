@@ -30,7 +30,7 @@ The maintainer chose the delegated zone so that DNS and certificates live in cod
 
 ## Consequences
 
-- **First setup:** deploy `jobdeputy-dev-web-dns`, then run the delegation script, before the web stack is first deployed. Otherwise its certificate waits for DNS that does not resolve.
+- **First setup:** run `infra/bootstrap/07-stage-web.sh <stage>`, which deploys the zone and delegates it, before the web stack is first deployed. Otherwise its certificate waits for DNS that does not resolve.
 - **If the zone is ever re-created:** it gets new name servers, so the script must run again. This is why the zone is kept.
 - **CloudFront is global:** under [0004](0004-regional-cells-and-data-residency.md) it serves static app files only, and must never cache API responses or user data.
 - **Later:** the CSP's `connect-src` gains the API and Cognito origins in the task that first calls them. Prod's address (apex or `app.`) and one zone per prod account are decided at launch.
