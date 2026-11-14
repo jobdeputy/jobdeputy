@@ -96,7 +96,7 @@ export function Gallery() {
         </Demo>
         <Demo title="Refreshing (data stays)">
           <QueryRegion
-            query={{ ...SETTLED, data: MATCHES, isFetching: true }}
+            query={{ ...SETTLED, data: MATCHES, isPending: false, isFetching: true }}
             skeleton={{ kind: 'rows', rows: 2 }}
             label="Loading your matches"
             error={null}
@@ -129,12 +129,12 @@ function Demo({
 
 const MATCHES = ['Staff engineer, Lumen', 'Platform lead, Northwind'];
 
-/** A query at rest with no data: the demos change only what their state needs. */
+/** A query that has not run (disabled): pending, with no data. Demos change what they need. */
 const SETTLED: QueryState<string[]> = {
   data: undefined,
   isLoading: false,
   isFetching: false,
-  isPending: false,
+  isPending: true,
   isPaused: false,
   isError: false,
 };
@@ -165,7 +165,7 @@ function LiveQueryRegion() {
       <div className="flex flex-wrap gap-3">
         <Button
           variant="outline"
-          onClick={() => set({ ...SETTLED, isLoading: true, isFetching: true, isPending: true })}
+          onClick={() => set({ ...SETTLED, isLoading: true, isFetching: true })}
         >
           Load
         </Button>
@@ -177,7 +177,17 @@ function LiveQueryRegion() {
         >
           Data arrives
         </Button>
-        <Button variant="outline" onClick={() => set({ isFetching: true })}>
+        {/* As TanStack does: with data it refreshes; without, it goes back to a first load. */}
+        <Button
+          variant="outline"
+          onClick={() =>
+            setQuery((current) =>
+              current.data === undefined
+                ? { ...SETTLED, isLoading: true, isFetching: true }
+                : { ...current, isFetching: true, isError: false },
+            )
+          }
+        >
           Refetch
         </Button>
         <Button

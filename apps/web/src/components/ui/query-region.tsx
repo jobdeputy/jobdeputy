@@ -48,6 +48,8 @@ export function QueryRegion<T>({
   const updatingShown = useDelayedPending(refreshing);
   // The skeleton holds its 500 ms even when the data comes sooner, so it never flashes.
   const holding = loading || skeletonShown;
+  // "Updating…" only ever sits on data: never over a skeleton, an error, or nothing.
+  const updatingVisible = updatingShown && !holding && query.data !== undefined;
 
   let body: ReactNode = null;
   if (holding) {
@@ -61,9 +63,7 @@ export function QueryRegion<T>({
   return (
     <div
       data-slot="query-region"
-      data-state={
-        holding ? (skeletonShown ? 'loading' : undefined) : updatingShown ? 'refreshing' : undefined
-      }
+      data-state={skeletonShown ? 'loading' : updatingVisible ? 'refreshing' : undefined}
       className={cn('relative', className)}
     >
       {/* Mounted empty with the region, so the label is read when it arrives; outside the busy
@@ -71,7 +71,7 @@ export function QueryRegion<T>({
       <p role="status" className="sr-only">
         {skeletonShown ? label : ''}
       </p>
-      {updatingShown && !holding && query.data !== undefined && (
+      {updatingVisible && (
         <p
           aria-hidden="true"
           className="pointer-events-none absolute top-0 right-0 z-1 m-0 inline-flex items-center gap-1.5 rounded-full bg-surface-strong px-2 py-0.5 text-xs text-muted-foreground"
