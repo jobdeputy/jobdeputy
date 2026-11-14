@@ -43,6 +43,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  vi.restoreAllMocks();
   document.body.innerHTML = '';
 });
 
@@ -82,7 +83,7 @@ describe('finishBoot', () => {
     expect(loader()).toBeNull();
   });
 
-  it('holds a seen loader for its minimum over an inert app, then settles, announces, and fades', () => {
+  it('holds a seen loader for its minimum over an inert app, then settles, announces, and fades', async () => {
     revealAt(PENDING_DELAY_MS + 100);
     finishBoot();
     expect(root().inert).toBe(true);
@@ -93,16 +94,14 @@ describe('finishBoot', () => {
     expect(loader()?.dataset.state).toBe('ending');
     expect(status()).toBe('');
 
+    const element = loader() as HTMLElement;
     vi.advanceTimersByTime(1);
     expect(root().inert).toBe(false);
-    expect(loader()?.dataset.state).toBe('done');
-    expect(loader()?.inert).toBe(true);
+    expect(element.dataset.state).toBe('done');
+    expect(element.inert).toBe(true);
     expect(status()).toBe(en.boot.ready);
-
-    vi.advanceTimersByTime(BOOT_EXIT_MS - 1);
-    expect(loader()).not.toBeNull();
-    vi.advanceTimersByTime(1);
-    expect(loader()).toBeNull();
+    // Its only animation (the stubbed reveal) has settled: it goes.
+    await vi.waitFor(() => expect(loader()).toBeNull());
   });
 
   it('takes focus off its Reload link as it hands over', () => {
@@ -122,7 +121,41 @@ describe('finishBoot', () => {
     expect(loader()?.dataset.state).toBe('done');
   });
 
-  it('runs once, however often it is called', () => {
+  it("goes once its fade and the page's rise have both settled", async () => {
+    const settle = { fade: () => {}, rise: () => {} };
+    const fade = new Promise<void>((resolve) => {
+      settle.fade = resolve;
+    });
+    const rise = new Promise<void>((resolve) => {
+      settle.rise = resolve;
+    });
+    // The loader's reveal (seen long enough) and its fade, both reported by getAnimations.
+    const seen = { animationName: 'boot-reveal', startTime: performance.now() - 2000 };
+    (loader() as HTMLElement).getAnimations = () =>
+      [{ ...seen, finished: fade }] as unknown as Animation[];
+    root().getAnimations = () => [{ finished: rise }] as unknown as Animation[];
+    finishBoot();
+    vi.advanceTimersByTime(0);
+    settle.fade();
+    // Every pending promise run: the fade alone has settled, the rise has not.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(loader()).not.toBeNull();
+    settle.rise();
+    await vi.waitFor(() => expect(loader()).toBeNull());
+  });
+
+  it('goes when its animations are cancelled too', async () => {
+    const seen = { animationName: 'boot-reveal', startTime: performance.now() - 2000 };
+    const cancelled = Promise.reject(new DOMException('cancelled', 'AbortError'));
+    cancelled.catch(() => {});
+    (loader() as HTMLElement).getAnimations = () =>
+      [{ ...seen, finished: cancelled }] as unknown as Animation[];
+    finishBoot();
+    vi.advanceTimersByTime(0);
+    await vi.waitFor(() => expect(loader()).toBeNull());
+  });
+
+  it('runs once, however often it is called', async () => {
     revealAt(PENDING_DELAY_MS + 100);
     finishBoot();
     vi.advanceTimersByTime(PENDING_MIN_MS);
@@ -130,8 +163,7 @@ describe('finishBoot', () => {
     revealAt(PENDING_DELAY_MS);
     finishBoot();
     expect(root().inert).toBe(false);
-    vi.advanceTimersByTime(BOOT_EXIT_MS);
-    expect(loader()).toBeNull();
+    await vi.waitFor(() => expect(loader()).toBeNull());
     expect(() => finishBoot()).not.toThrow();
   });
 });
@@ -168,6 +200,12 @@ describe('boot loader markup (index.html)', () => {
     expect(document.querySelector('#boot-loader noscript')?.textContent?.trim()).toBe(
       en.boot.noScript,
     );
+  });
+
+  it('rises the page in as it fades, on its timing, unless motion is reduced', () => {
+    expect(loader()?.classList.contains('peer')).toBe(true);
+    expect(root().className).toBe('peer-data-[state=done]:motion-safe:animate-boot-rise');
+    expect(animationsCss).toContain(`--animate-boot-rise: boot-rise ${BOOT_EXIT_MS}ms`);
   });
 
   it('fades out over BOOT_EXIT_MS', () => {

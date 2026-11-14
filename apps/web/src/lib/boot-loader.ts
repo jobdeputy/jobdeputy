@@ -47,7 +47,7 @@ function revealElapsed(loader: HTMLElement): number | null {
  * Ends the boot loader (index.html) once the app has rendered. Never seen: it is removed at once.
  * Seen: the app stays inert under it for the rest of its 500 ms, then the logo jumps to its
  * settled frame, the track fills, and it fades out, inert (the app usable at once), with a polite
- * "ready".
+ * "ready", while the page rises in under it on the same timing.
  * We never wait for the story to finish. Safe to call more than once.
  */
 export function finishBoot(): void {
@@ -64,6 +64,7 @@ export function finishBoot(): void {
   const root = document.getElementById('root');
   if (root) root.inert = true;
   setTimeout(() => {
+    // Usable at once, as the page rises in under the fade (index.html's #root, a CSS animation).
     if (root) root.inert = false;
     loader.dataset.state = 'done';
     window.dispatchEvent(new Event(REVEALED));
@@ -73,8 +74,25 @@ export function finishBoot(): void {
     loader.inert = true;
     const status = document.getElementById('boot-status');
     if (status) status.textContent = copy.boot.ready;
-    setTimeout(() => loader.remove(), BOOT_EXIT_MS);
+    removeWhenSettled(loader, root);
   }, hold);
+}
+
+/**
+ * Removes the loader once its fade and the page's rise (keyed to the loader, so removing it would
+ * cut the rise short) have both finished or been cancelled; at once when there are none (reduced
+ * motion). getAnimations() settles styles first, so both exist the moment the fade starts. No
+ * timer: in a hidden tab they wait and run when it is back, and a cancelled one settles too.
+ */
+function removeWhenSettled(loader: HTMLElement, root: HTMLElement | null) {
+  const moving = [...(loader.getAnimations?.() ?? []), ...(root?.getAnimations?.() ?? [])];
+  if (moving.length === 0) {
+    loader.remove();
+    return;
+  }
+  void Promise.allSettled(moving.map((animation) => animation.finished)).then(() =>
+    loader.remove(),
+  );
 }
 
 /** Whether the page can be seen yet: what starts motion the visitor should watch (the story). */
