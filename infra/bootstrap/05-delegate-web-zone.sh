@@ -21,7 +21,7 @@ zone_id() {
 child=$(zone_id "$workload" "$domain")
 if [ "$child" = "None" ] || [ -z "$child" ]; then
   echo "No $domain zone in $workload. Deploy its web DNS stack first:" >&2
-  echo "  cd infra && pnpm cdk deploy jobdeputy-dev-web-dns -c stage=dev" >&2
+  echo "  ./07-stage-web.sh <stage>   (deploys the zone, then runs this script)" >&2
   exit 1
 fi
 parent_id=$(zone_id "$mgmt" "$parent")
