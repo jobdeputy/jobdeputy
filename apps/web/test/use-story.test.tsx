@@ -139,6 +139,8 @@ describe('useStory', () => {
     const { result } = renderHook(() => useStory());
     act(() => vi.advanceTimersByTime(3000));
     setHidden(true);
+    // Nobody can watch: the deputy holds still too.
+    expect(result.current.animating).toBe(false);
     act(() => vi.advanceTimersByTime(20_000));
     expect(result.current.index).toBe(0);
     setHidden(false);
@@ -167,11 +169,11 @@ describe('useStory', () => {
 
   it('holds the flourish only when paused by the Pause button', () => {
     const { result } = renderHook(() => useStory());
-    expect(result.current).toMatchObject({ playing: true, held: false });
+    expect(result.current).toMatchObject({ animating: true, held: false });
     act(() => result.current.toggle());
-    expect(result.current).toMatchObject({ playing: false, held: true });
+    expect(result.current).toMatchObject({ animating: false, held: true });
     act(() => result.current.toggle());
-    expect(result.current).toMatchObject({ playing: true, held: false });
+    expect(result.current).toMatchObject({ animating: true, held: false });
     act(() => result.current.toggle());
     act(() => result.current.goTo(2));
     expect(result.current.held).toBe(false);

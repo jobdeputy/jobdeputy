@@ -25,9 +25,10 @@ export function StoryStage({
   className,
 }: {
   index: number;
-  /** The story is playing: the deputy breathes and blinks. */
+  /** The story is playing where someone can see it: the deputy breathes and blinks. */
   playing?: boolean;
-  /** Paused by the Pause button: every flourish on the stage holds where it is. */
+  /** Paused by the Pause button: every flourish on the stage holds where it is (the breath, which
+   *  stops with the story, eases back to the pose). */
   held?: boolean;
   controls?: ReactNode;
   className?: string;
@@ -36,7 +37,13 @@ export function StoryStage({
   const step = steps.items[index] ?? steps.items[0];
   const scene = SCENES[index] ?? 'setup';
   return (
-    <div className={cn('story-stage', className)} data-scene={scene} data-held={held || undefined}>
+    <div
+      // Held by Pause: every flourish stops where it is. The variant (class and attribute) beats
+      // the animate-* utilities that would set them running.
+      className={cn('story-stage data-held:**:[animation-play-state:paused]', className)}
+      data-scene={scene}
+      data-held={held || undefined}
+    >
       <div className="story-stage-halo" aria-hidden="true" />
       <div className="story-stage-props" aria-hidden="true">
         <StoryProps scene={scene} />

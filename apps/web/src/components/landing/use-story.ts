@@ -114,5 +114,7 @@ export function useStory() {
     }
   }, [mode, index, reducedMotion, goTo]);
 
-  return { index, mode, playing: mode === 'pause', held, announcement, toggle, goTo };
+  // Moving while someone can watch: the deputy breathes and blinks only then.
+  const animating = playing && revealed && !hidden;
+  return { index, mode, animating, held, announcement, toggle, goTo };
 }

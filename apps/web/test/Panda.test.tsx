@@ -2,7 +2,12 @@ import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Panda, type PandaPose } from '../src/components/deputy/panda.tsx';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  // Even when a test fails part-way: real timers and an unmocked Math.random for the next.
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 /** Each prop's first path, which tells it apart. */
 const PROP_MARKS = {
@@ -122,7 +127,5 @@ describe('Panda, alive', () => {
     expect(eyes(container)).toBe(0);
     act(() => vi.advanceTimersByTime(20_000));
     expect(eyes(container)).toBe(0);
-    vi.restoreAllMocks();
-    vi.useRealTimers();
   });
 });
