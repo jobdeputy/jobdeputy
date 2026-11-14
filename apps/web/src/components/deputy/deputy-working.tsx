@@ -80,10 +80,12 @@ export function DeputyWorking({
       data-slot="deputy-working"
       data-shown={shown || undefined}
       data-long={longLine ? true : undefined}
-      className={cn('flex items-center gap-4', className)}
+      className={cn('flex flex-wrap items-center gap-4', className)}
     >
       {shown && <Panda pose="pending" className="size-28 shrink-0" />}
-      <div className="grid min-w-0 justify-items-start gap-2">
+      {/* Beside the panda while there is room (12rem); below it on a narrow screen or with large
+          text, rather than squeezed into a sliver that pushes the page sideways. */}
+      <div className="grid min-w-0 flex-1 basis-48 justify-items-start gap-2">
         {shown && <DeputySpeech className="px-3 py-2 text-sm">{speech}</DeputySpeech>}
         <div role="status">
           {shown && (

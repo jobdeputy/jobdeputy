@@ -88,7 +88,7 @@ export function QueryRegion<T>({
       {longLoad && (
         <p
           aria-hidden="true"
-          className="pointer-events-none absolute top-1/2 left-1/2 m-0 -translate-1/2 rounded-full bg-surface-strong px-3 py-1 text-sm whitespace-nowrap text-muted-foreground shadow-panel"
+          className="pointer-events-none absolute top-1/2 left-1/2 m-0 w-max max-w-[calc(100%-1rem)] -translate-1/2 rounded-[13px] bg-surface-strong px-3 py-1 text-center text-sm text-muted-foreground shadow-panel"
         >
           {copy.loading.stillWorking}
         </p>
