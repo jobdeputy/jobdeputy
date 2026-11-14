@@ -62,8 +62,7 @@ function useHeaderOffset(header: React.RefObject<HTMLElement | null>) {
     // The observed border box, unrounded; written only when the height changes (a width-only
     // resize leaves the page's styles alone).
     const observer = new ResizeObserver(([entry]) => {
-      // borderBoxSize is missing before Safari 15.4: then the CSS minimum stays in use.
-      const height = entry?.borderBoxSize?.[0]?.blockSize;
+      const height = entry?.borderBoxSize[0]?.blockSize;
       if (height === undefined || height === published) return;
       published = height;
       root.style.setProperty('--header-offset', `${height}px`);

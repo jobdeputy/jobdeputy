@@ -8,12 +8,22 @@ function visibleButton(page: Page, name: string) {
   return page.getByRole('button', { name, exact: true }).filter({ visible: true }).first();
 }
 
-/** The header and the hero together reach at least the bottom of the screen. */
+/**
+ * The hero starts under the header and fills the rest of the screen: exactly on laptops and
+ * desktops (lg, 1024px+), where its content fits; at least on phones and tablets, where its
+ * content can be taller than the screen.
+ */
 async function expectHeroFillsScreen(page: Page) {
+  const header = await page.locator('header').boundingBox();
   const hero = await page.locator('main > section').boundingBox();
   const viewport = page.viewportSize();
-  if (!hero || !viewport) throw new Error('No hero or viewport size.');
-  expect(hero.y + hero.height).toBeGreaterThanOrEqual(viewport.height - 0.5);
+  if (!header || !hero || !viewport) throw new Error('No header, hero, or viewport size.');
+  expect(hero.y).toBeCloseTo(header.y + header.height, 0);
+  if (viewport.width >= 1024) {
+    expect(hero.y + hero.height).toBeCloseTo(viewport.height, 0);
+  } else {
+    expect(hero.y + hero.height).toBeGreaterThanOrEqual(viewport.height - 0.5);
+  }
 }
 
 test.describe('landing page', () => {
@@ -59,10 +69,6 @@ test.describe('landing page', () => {
       4.5 * minimum.root,
       0,
     );
-    expect(box.height, 'the header reaches its minimum').toBeGreaterThanOrEqual(
-      minimum.header - 0.5,
-    );
-    await expectHeroFillsScreen(page);
     for (const part of await header.locator('a, button').filter({ visible: true }).all()) {
       const partBox = await part.boundingBox();
       if (!partBox) throw new Error('A header control has no box.');
