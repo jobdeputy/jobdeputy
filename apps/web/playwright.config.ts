@@ -5,7 +5,8 @@ const port = 4319;
 
 /**
  * End-to-end tests run against the production build (vite preview) on every device class we
- * support. See docs/testing.md and decision 0012.
+ * support. `--mode e2e` builds the same production bundle and adds the component gallery
+ * (gallery.html), which the shipped build leaves out. See docs/testing.md and decision 0012.
  */
 export default defineConfig({
   testDir: './e2e',
@@ -30,7 +31,7 @@ export default defineConfig({
     { name: 'small-phone', use: { ...devices['Pixel 7'], viewport: { width: 320, height: 640 } } },
   ],
   webServer: {
-    command: `vite build && vite preview --host 127.0.0.1 --port ${port} --strictPort`,
+    command: `vite build --mode e2e && vite preview --host 127.0.0.1 --port ${port} --strictPort`,
     url: `http://127.0.0.1:${port}`,
     // Always build and serve fresh: reusing a server could test stale code.
     reuseExistingServer: false,

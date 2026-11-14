@@ -10,6 +10,8 @@ const SCREENS = [
   { name: 'home', path: '/' },
   // The drawer, opened from the first visible "Sign in" button.
   { name: 'sign-in', path: '/', open: 'Sign in' },
+  // Every shared component state (#17); the pending buttons appear after the 300 ms delay.
+  { name: 'gallery', path: '/gallery.html', ready: '[data-pending]' },
 ];
 
 for (const screen of SCREENS) {
@@ -22,6 +24,9 @@ for (const screen of SCREENS) {
         .first()
         .click();
       await page.getByRole('dialog').waitFor();
+    }
+    if (screen.ready) {
+      await page.locator(screen.ready).first().waitFor();
     }
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({

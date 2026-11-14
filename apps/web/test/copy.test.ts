@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type Copy, copy } from '../src/copy/index.ts';
+import { type Copy, copy, fill } from '../src/copy/index.ts';
 
 /** The leaves of a copy tree that are pinned to one exact text instead of any string. */
 type PinnedText<T> = T extends string
@@ -33,5 +33,18 @@ describe('copy', () => {
     };
     expect(noPinnedText).toBe(true);
     expect(leaves(shell).length).toBe(leaves(copy.shell).length);
+  });
+});
+
+describe('fill', () => {
+  it('puts values into their slots, in the order the template sets', () => {
+    expect(fill('{label}, {percent}', { label: 'Uploading', percent: '50%' })).toBe(
+      'Uploading, 50%',
+    );
+    expect(fill('{percent} : {label}', { label: 'Envoi', percent: '50 %' })).toBe('50 % : Envoi');
+  });
+
+  it('leaves a slot with no value as written', () => {
+    expect(fill('{label}, {percent}', { label: 'Uploading' })).toBe('Uploading, {percent}');
   });
 });

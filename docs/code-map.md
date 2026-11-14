@@ -34,15 +34,18 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `App.tsx` | the app's root component (today: the landing page); owns the auth drawer's open state and returns focus to whichever button opened it |
 | `components/landing/` | the landing page: `site-header.tsx` (sticky bar), `hero.tsx` (copy, ways in, layout), `story-stage.tsx` + `panda.tsx` (the deputy in the "Set it up" pose, colours as token classes), `story-strip.tsx` (the three steps), `auth-drawer.tsx` (sign-in / sign-up drawer; forms come next) |
 | `copy/index.ts`, `copy/en.ts` | every word the UI shows, plus `OnePer` (`index.ts`) for data paired one-to-one with a copy list, such as each step's icon; `Copy` keeps lists fixed-length, so a mismatch fails typecheck. Components import `copy` from `@/copy/index.ts` (Biome blocks importing `en.ts` directly); `en.ts` holds the English, and a future language adds a sibling typed as `Copy` |
-| `components/ui/` | shadcn/ui components, restyled to the prototype (`button.tsx`: the pill buttons; `sheet.tsx`: the right-hand drawer). Add more with `pnpm dlx shadcn@4.23.0 add <name>` from `apps/web`, then match them to the prototype |
+| `components/ui/` | shadcn/ui components, restyled to the prototype (`button.tsx`: the pill buttons, with `pending` and `success` states; `sheet.tsx`: the right-hand drawer; `spinner.tsx`: the small turning ring; `progress.tsx`: a labelled progress bar, known or unknown length, reading out each quarter). Loading states (#17) live here: screens never hand-roll a spinner. Add more with `pnpm dlx shadcn@4.23.0 add <name>` from `apps/web`, then match them to the prototype |
+| `lib/use-delayed-pending.ts` | `useDelayedPending`: the timing every loading state shares (nothing for the first 300 ms, then at least 500 ms) |
+| `gallery/gallery.tsx`, `gallery/main.tsx`, `gallery.html` | the component gallery: every shared component in every state, for review and PR screenshots. Built for tests (`--mode e2e`) and served by `dev` at `/gallery.html`; never in the production build |
 | `lib/utils.ts` | `cn()`: joins class names, a later Tailwind class wins. Lists the theme's shadow and easing names; `test/utils.test.ts` fails if tokens.css adds one it lacks |
 | `styles/index.css` | the only stylesheet the app loads: imports Tailwind, the tokens, and the files below; sets base page styles |
-| `styles/animations.css` | keyframes as `animate-*` utilities (the drawer's slide and the scrim's fade) |
+| `styles/animations.css` | keyframes as `animate-*` utilities (the drawer's slide, the scrim's fade, the spinner's turn, the unknown-length progress sweep) |
 | `styles/story-stage.css` | the story stage's container-query layout: the deputy's size and place, the speech bubble's aim, the props' scale |
 | `styles/tokens.css` | the design tokens as Tailwind's theme (colours, shadows, easing, fonts), and shadcn's role names mapped onto them |
-| `vite.config.ts` | Vite build (React, Tailwind, the `@/` alias for `src/`) and the Vitest setup (happy-dom) |
+| `vite.config.ts` | Vite build (React, Tailwind, the `@/` alias for `src/`; the gallery page in every mode but production) and the Vitest setup (happy-dom) |
 | `playwright.config.ts` | browser tests on the built app across seven devices |
 | `e2e/landing.spec.ts` | the landing page in real browsers: content, tokens, no sideways scroll, axe, drawer open/close by mouse and keyboard, reduced motion |
+| `e2e/gallery.spec.ts` | the component gallery in real browsers: axe, no sideways scroll (also at 200% text), a pending button keeps focus and runs once, progress read-outs, reduced motion |
 | `e2e/checks.ts` | shared browser checks: no sideways scroll, no accessibility violations |
 | `e2e/screenshots.spec.ts` | the screens to screenshot on every device as PR proof (list each new screen here); `screenshots-dir.ts` and `global-setup.ts` put them in `apps/web/screenshots/` and clear old ones |
 
