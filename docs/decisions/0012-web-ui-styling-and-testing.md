@@ -35,6 +35,6 @@ The prototype is a custom design, so a kit with its own look would fight it; Tai
 ## Consequences
 
 - Off-brand colours cannot be used by accident; a new colour needs a token, and token changes need approval (CLAUDE.md).
-- **Screenshot proof on every UI PR:** CI screenshots each screen in `e2e/screenshots.spec.ts` on all seven devices and posts them as one PR comment. The images live on the `ui-screenshots` branch, rewritten as a single commit that keeps only open PRs, so it stays small; the URLs carry the commit, so a browser never shows stale shots.
+- **Screenshot proof on every UI PR:** CI screenshots each screen in `e2e/screenshots.spec.ts` on all seven devices and posts them as one PR comment. The images live on the `ui-screenshots` branch, rewritten as a single commit holding each PR's last 3 pushes, kept until 30 days after the PR closes, so it stays small. The URLs carry the push, so a browser never shows stale shots. Shots are posted only when the browser tests pass. The posting job has a write token, so it never installs or runs dependency code, and it is skipped for forks and Dependabot.
 - Automatic screenshot *comparison* (failing on visual change) is not set up yet. Font rendering differs between macOS and Linux, so baselines must come from CI's Linux browsers; it arrives with the landing page (#14, part B).
 - Every UI change gets a senior UI review against the prototype before handover (spacing, tokens, breakpoints, accessibility), and any inconsistencies are fixed in the same PR.

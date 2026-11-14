@@ -1,74 +1,104 @@
 #!/usr/bin/env bash
 # #14: posts a PR's UI screenshots (apps/web/e2e/screenshots.spec.ts) as one PR comment.
-# The images live on the `ui-screenshots` branch, which holds only open PRs' latest shots
-# and is rewritten as a single commit each time, so it never grows. Run by
-# .github/workflows/web.yml with GH_TOKEN and GITHUB_REPOSITORY set.
+# The images live on the `ui-screenshots` branch, rewritten as a single commit each time so it
+# never grows. It keeps each PR's last 3 pushes, while the PR is open and for 30 days after it
+# closes. Run by .github/workflows/web.yml with GH_TOKEN and GITHUB_REPOSITORY set.
 #
 #   publish-ui-screenshots.sh <pr-number> <commit-sha> <dir-of-pngs>
 set -euo pipefail
 
 BRANCH=ui-screenshots
 MARKER='<!-- ui-screenshots -->'
+KEEP_DAYS=30
+KEEP_PUSHES=3
+ATTEMPTS=3
 # Phones and tablet in one row, desktops in the next; names match playwright.config.ts.
 SMALL=(small-phone iphone pixel ipad)
 LARGE=(desktop-chrome desktop-firefox desktop-safari)
 
 pr="$1"
 sha="${2:0:7}"
-src="$3"
+src="$(cd "$3" && pwd)"
 repo="$GITHUB_REPOSITORY"
 [[ "$pr" =~ ^[0-9]+$ ]] || { echo "Not a PR number: $pr"; exit 1; }
 compgen -G "$src/*.png" >/dev/null || { echo "No screenshots in $src"; exit 1; }
+# Folder names start with the time, so the newest pushes sort last.
+push_dir="$(date -u +%Y%m%d%H%M%S)-$sha"
 
-work="$(mktemp -d)"
+# PRs whose shots are kept: open, or closed within KEEP_DAYS.
+keep_prs="$(gh pr list -R "$repo" --state all --limit 1000 --json number,state,closedAt \
+  --jq ".[] | select(.state == \"OPEN\" or (.closedAt | fromdateiso8601) > now - $KEEP_DAYS * 86400) | .number")"
+
 gh auth setup-git
-git -C "$work" init -q
-git -C "$work" remote add origin "https://github.com/$repo.git"
-if git -C "$work" fetch -q --depth 1 origin "$BRANCH"; then
-  git -C "$work" checkout -q FETCH_HEAD
-fi
+# Runs as an `if` condition, where bash ignores `set -e`, so every step ends in `|| return 1`.
+publish() {
+  local work lease=""
+  work="$(mktemp -d)" || return 1
+  git -C "$work" init -q || return 1
+  git -C "$work" remote add origin "${UI_SCREENSHOTS_REMOTE:-https://github.com/$repo.git}" || return 1
+  # Exit code 2 means the branch does not exist yet; any other failure stops the run, so a
+  # network error never replaces everyone's screenshots with only this PR's.
+  local code=0
+  git -C "$work" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null || code=$?
+  if [[ $code -eq 0 ]]; then
+    git -C "$work" fetch -q --depth 1 origin "$BRANCH" || return 1
+    git -C "$work" checkout -q FETCH_HEAD || return 1
+    lease="$(git -C "$work" rev-parse HEAD)" || return 1
+  elif [[ $code -ne 2 ]]; then
+    echo "Could not read $BRANCH (git exit $code)"
+    return 1
+  fi
 
-# Drop the shots of PRs that are no longer open, then replace this PR's.
-open_prs="$(gh pr list -R "$repo" --state open --limit 500 --json number --jq '.[].number')"
-for dir in "$work"/pr-*; do
-  [[ -d "$dir" ]] || continue
-  grep -qx "${dir##*/pr-}" <<<"$open_prs" || rm -rf "$dir"
+  local dir
+  for dir in "$work"/pr-*; do
+    [[ -d "$dir" ]] || continue
+    grep -qx "${dir##*/pr-}" <<<"$keep_prs" || rm -rf "$dir" || return 1
+  done
+  mkdir -p "$work/pr-$pr/$push_dir" || return 1
+  cp "$src"/*.png "$work/pr-$pr/$push_dir/" || return 1
+  # Older pushes stay a while, so a comment being updated never points at deleted files.
+  find "$work/pr-$pr" -mindepth 1 -maxdepth 1 -type d | sort |
+    awk -v keep="$KEEP_PUSHES" '{ dirs[NR] = $0 } END { for (i = 1; i <= NR - keep; i++) print dirs[i] }' |
+    xargs rm -rf || return 1
+
+  git -C "$work" checkout -q --orphan next || return 1
+  git -C "$work" add -A || return 1
+  git -C "$work" -c user.name='github-actions[bot]' \
+    -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+    commit -q -m "UI screenshots of open and recent PRs" || return 1
+  # The lease fails if another PR's run pushed after our read; then read again and retry.
+  git -C "$work" push -q --force-with-lease="refs/heads/$BRANCH:$lease" origin \
+    "HEAD:refs/heads/$BRANCH" || return 1
+}
+for attempt in $(seq 1 "$ATTEMPTS"); do
+  if publish; then break; fi
+  [[ $attempt -lt $ATTEMPTS ]] || { echo "Could not publish after $ATTEMPTS attempts"; exit 1; }
+  echo "Another run published first; retrying ($attempt/$ATTEMPTS)"
 done
-rm -rf "$work/pr-$pr"
-mkdir -p "$work/pr-$pr/$sha"
-cp "$src"/*.png "$work/pr-$pr/$sha/"
 
-git -C "$work" checkout -q --orphan next
-git -C "$work" add -A
-git -C "$work" -c user.name='github-actions[bot]' \
-  -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-  commit -q -m "UI screenshots of open PRs"
-git -C "$work" push -q -f origin "HEAD:refs/heads/$BRANCH"
-
-# One table per screen: the image URL carries the commit, so a browser never shows a stale copy.
+# One table per screen: the image URL carries the push, so a browser never shows a stale copy.
 row() {
-  local screen="$1"; shift
-  local cells="" device file
+  local screen="$1" width="$2" cells="" device file
+  shift 2
   for device in "$@"; do
     file="$screen--$device.png"
     [[ -f "$src/$file" ]] || continue
-    cells+="<td align=\"center\"><b>$device</b><br><img src=\"https://github.com/$repo/blob/$BRANCH/pr-$pr/$sha/$file?raw=true\" width=\"$WIDTH\"></td>"
+    cells+="<td align=\"center\"><b>$device</b><br><img src=\"https://github.com/$repo/blob/$BRANCH/pr-$pr/$push_dir/$file?raw=true\" width=\"$width\"></td>"
   done
-  [[ -n "$cells" ]] && echo "<tr>$cells</tr>"
+  [[ -z "$cells" ]] || echo "<tr>$cells</tr>"
 }
 body="$MARKER
 ### UI screenshots for $sha
 
-Every screen on every device that the browser tests cover. Updated on each push."
+Every screen on every device that the browser tests cover. Updated on each push whose browser
+tests pass; kept for $KEEP_DAYS days after the PR closes."
 for screen in $(find "$src" -name '*.png' -exec basename {} \; | sed 's/--.*//' | sort -u); do
-  small="$(WIDTH=180 row "$screen" "${SMALL[@]}" || true)"
-  large="$(WIDTH=300 row "$screen" "${LARGE[@]}" || true)"
   body+="
 
 #### $screen
 
-<table>$small</table>
-<table>$large</table>"
+<table>$(row "$screen" 180 "${SMALL[@]}")</table>
+<table>$(row "$screen" 300 "${LARGE[@]}")</table>"
 done
 
 comment_id="$(gh api "repos/$repo/issues/$pr/comments" --paginate \

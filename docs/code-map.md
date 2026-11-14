@@ -32,15 +32,15 @@ An empty shell for now; screens come one at a time. Runs with `pnpm --filter @jo
 |---|---|
 | `main.tsx` | mounts the app inside `StrictMode` and the TanStack Query client |
 | `App.tsx` | the app's root component (today: the brand mark and name) |
-| `copy/index.ts`, `copy/en.ts` | every word the UI shows. Components import `copy` from `@/copy/index.ts`; `en.ts` holds the English, and a future language adds a sibling typed as `Copy` |
+| `copy/index.ts`, `copy/en.ts` | every word the UI shows. Components import `copy` from `@/copy/index.ts` (Biome blocks importing `en.ts` directly); `en.ts` holds the English, and a future language adds a sibling typed as `Copy` |
 | `components/ui/` | shadcn/ui components, restyled to the prototype (`button.tsx`: the pill buttons). Add more with `pnpm dlx shadcn@4.23.0 add <name>` from `apps/web`, then match them to the prototype |
-| `lib/utils.ts` | `cn()`: joins class names, a later Tailwind class wins |
+| `lib/utils.ts` | `cn()`: joins class names, a later Tailwind class wins. Lists the theme's shadow and easing names; `test/utils.test.ts` fails if tokens.css adds one it lacks |
 | `styles/index.css` | the only stylesheet: imports Tailwind and the tokens, sets base page styles |
 | `styles/tokens.css` | the design tokens as Tailwind's theme (colours, shadows, easing, fonts), and shadcn's role names mapped onto them |
 | `vite.config.ts` | Vite build (React, Tailwind, the `@/` alias for `src/`) and the Vitest setup (happy-dom) |
 | `playwright.config.ts` | browser tests on the built app across seven devices |
 | `e2e/checks.ts` | shared browser checks: no sideways scroll, no accessibility violations |
-| `e2e/screenshots.spec.ts` | the screens to screenshot on every device as PR proof (list each new screen here) |
+| `e2e/screenshots.spec.ts` | the screens to screenshot on every device as PR proof (list each new screen here); `screenshots-dir.ts` and `global-setup.ts` put them in `apps/web/screenshots/` and clear old ones |
 
 ## apps/api/src: one Lambda per feature (API Gateway HTTP API)
 
@@ -135,4 +135,4 @@ An empty shell for now; screens come one at a time. Runs with `pnpm --filter @jo
 | `scripts/request-account-deletion.sh` | the only way to delete an account by hand |
 | `scripts/cleanup-log-groups.sh`, `scripts/cloud-setup.sh` | orphaned log groups; cloud dev environment |
 | `scripts/delete-pr-stack.sh` | deletes a PR stack, retrying AWS internal delete failures (#61) |
-| `scripts/publish-ui-screenshots.sh` | posts a PR's UI screenshots as one comment; images on the `ui-screenshots` branch, which keeps only open PRs (#14) |
+| `scripts/publish-ui-screenshots.sh` | posts a PR's UI screenshots as one comment; images on the `ui-screenshots` branch (one commit: each PR's last 3 pushes, kept 30 days after close; retries when two PRs publish at once) (#14) |
