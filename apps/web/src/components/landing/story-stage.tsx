@@ -1,6 +1,7 @@
+import { DeputySpeech, DeputyStatus } from '@/components/deputy/deputy-speech.tsx';
+import { Panda } from '@/components/deputy/panda.tsx';
 import { copy } from '@/copy/index.ts';
 import { cn } from '@/lib/utils.ts';
-import { Panda } from './panda.tsx';
 
 /**
  * The deputy at work on the first step, "Set it up": the panda with his pencil, the setup card he
@@ -30,12 +31,10 @@ export function StoryStage({ className }: { className?: string }) {
         </div>
       </div>
       <Panda className="story-stage-art" />
-      <p className="story-stage-speech rounded-[18px_18px_18px_5px] border border-line bg-white/88 px-2.5 py-2 text-center font-display text-xs leading-[1.3] text-balance italic shadow-[0_15px_38px_color-mix(in_oklab,var(--color-ink)_10%,transparent)] backdrop-blur-[13px] md:px-3.5 md:py-3 md:text-[clamp(0.875rem,1.1vw,1rem)]">
+      <DeputySpeech className="story-stage-speech px-2.5 py-2 text-center text-xs md:px-3.5 md:py-3 md:text-[clamp(0.875rem,1.1vw,1rem)]">
         {stage.speech}
-      </p>
-      <p className="absolute top-2 right-0 z-9 inline-flex min-h-7 items-center gap-[7px] rounded-full border border-line-soft bg-surface px-[11px] text-xs font-[650] tracking-[0.03em] whitespace-nowrap text-muted-foreground shadow-panel backdrop-blur-[13px] before:size-[7px] before:rounded-full before:bg-green before:shadow-[0_0_0_4px_var(--color-green-wash)]">
-        {stage.status}
-      </p>
+      </DeputySpeech>
+      <DeputyStatus className="absolute top-2 right-0 z-9">{stage.status}</DeputyStatus>
     </div>
   );
 }

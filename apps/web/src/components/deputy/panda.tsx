@@ -1,16 +1,26 @@
 import { type SVGProps, useId } from 'react';
 
+/** The poses the deputy can hold. The story animation (#14) adds the rest. */
+export type PandaPose = 'setup' | 'pending';
+
 /**
- * The deputy: the brand panda from the round 7 prototype, in the "Set it up" pose (pencil in the
- * right paw). The story animation adds the other poses and props. Colours are brand tokens
- * (Tailwind fill-/stroke- classes), so nothing here is an off-brand hex.
+ * The deputy: the brand panda from the round 7 prototype. Poses (the prototype's
+ * `data-deputy-state`):
+ * - `setup`: "Set it up", the pencil raised in the right paw.
+ * - `pending` (#17): working on something that takes a while; the hourglass in the right paw and
+ *   eyes up. The prototype also lifts the head and body 3–7px, which waits for the story
+ *   animation's head and body groups.
+ * Colours are brand tokens (Tailwind fill-/stroke- classes), so nothing here is an off-brand hex.
  */
-export function Panda({ className }: { className?: string }) {
+export function Panda({ className, pose = 'setup' }: { className?: string; pose?: PandaPose }) {
   // Unique per instance: a second panda on the page must not borrow this one's clip paths.
   const id = useId();
   const eyeLeft = `${id}-eye-l`;
   const eyeRight = `${id}-eye-r`;
   const earFelt = `${id}-ear-felt`;
+  const pending = pose === 'pending';
+  // Pending looks up, 3px (the prototype's --deputy-look-y).
+  const look = pending ? 'translate(0 -3)' : undefined;
   return (
     <svg className={className} viewBox="0 0 420 420" aria-hidden="true" focusable="false">
       <defs>
@@ -98,17 +108,21 @@ export function Panda({ className }: { className?: string }) {
       <ellipse className="fill-paper" cx="167" cy="162" rx="13.6" ry="14.4" />
       <g clipPath={`url(#${eyeLeft})`}>
         <ellipse className="fill-paper-deep" cx="167" cy="141.12" rx="21.76" ry="9.5" />
-        <circle className="fill-ink" cx="167" cy="162" r="7.2" />
-        <circle className="fill-paper" cx="164.3" cy="158.9" r="3.1" />
-        <circle className="fill-paper" cx="170.4" cy="165.6" r="1.3" />
+        <g transform={look}>
+          <circle className="fill-ink" cx="167" cy="162" r="7.2" />
+          <circle className="fill-paper" cx="164.3" cy="158.9" r="3.1" />
+          <circle className="fill-paper" cx="170.4" cy="165.6" r="1.3" />
+        </g>
         <ellipse className="fill-ink" cx="167" cy="179.6" rx="17.5" ry="8.8" />
       </g>
       <ellipse className="fill-paper" cx="253" cy="162" rx="13.6" ry="14.4" />
       <g clipPath={`url(#${eyeRight})`}>
         <ellipse className="fill-paper-deep" cx="253" cy="141.12" rx="21.76" ry="9.5" />
-        <circle className="fill-ink" cx="253" cy="162" r="7.2" />
-        <circle className="fill-paper" cx="250.3" cy="158.9" r="3.1" />
-        <circle className="fill-paper" cx="256.4" cy="165.6" r="1.3" />
+        <g transform={look}>
+          <circle className="fill-ink" cx="253" cy="162" r="7.2" />
+          <circle className="fill-paper" cx="250.3" cy="158.9" r="3.1" />
+          <circle className="fill-paper" cx="256.4" cy="165.6" r="1.3" />
+        </g>
         <ellipse className="fill-ink" cx="253" cy="179.6" rx="17.5" ry="8.8" />
       </g>
       <path
@@ -140,7 +154,7 @@ export function Panda({ className }: { className?: string }) {
         strokeWidth="2.6"
         strokeLinecap="round"
       />
-      {/* Arms in the "Set it up" pose: the left one relaxed, the right one raised with the pencil. */}
+      {/* The left arm rests in every pose; the right one holds the pose's prop. */}
       <g transform="rotate(14 162.7 261.16)">
         <ellipse
           className="fill-ink"
@@ -152,7 +166,7 @@ export function Panda({ className }: { className?: string }) {
         />
         <ellipse className="fill-ink" cx="141" cy="330" rx="25" ry="23" />
       </g>
-      <g transform="rotate(-48.5 257.3 261.16)">
+      <g transform={pending ? 'rotate(-34 257.3 261.16)' : 'rotate(-48.5 257.3 261.16)'}>
         <ellipse
           className="fill-ink"
           cx="267"
@@ -162,7 +176,11 @@ export function Panda({ className }: { className?: string }) {
           transform="rotate(-16 267 295)"
         />
         <ellipse className="fill-ink" cx="279" cy="330" rx="25" ry="23" />
-        <PencilShape transform="rotate(6 281 326) translate(281 326)" />
+        {pending ? (
+          <HourglassShape transform="translate(281 326) rotate(30) scale(1.15)" />
+        ) : (
+          <PencilShape transform="rotate(6 281 326) translate(281 326)" />
+        )}
         <ellipse className="fill-ink" cx="281" cy="326" rx="15" ry="12.88" />
       </g>
     </svg>
@@ -202,6 +220,34 @@ export function PencilShape(props: SVGProps<SVGGElement>) {
         strokeWidth="2.4"
         strokeLinejoin="round"
       />
+    </g>
+  );
+}
+
+/**
+ * The deputy's hourglass, for the pending pose, drawn around its grip point (0, 0) like the pencil:
+ * paper glass, orange sand running down, ink caps (the prototype's `deputy-hourglass`).
+ */
+export function HourglassShape(props: SVGProps<SVGGElement>) {
+  return (
+    <g {...props}>
+      <path
+        className="fill-paper stroke-line-strong"
+        d="M2 -84H46Q46 -62 30 -47Q46 -32 46 -10H2Q2 -32 18 -47Q2 -62 2 -84Z"
+        strokeWidth="2.5"
+        strokeLinejoin="round"
+      />
+      <path className="fill-orange-soft" d="M11 -76H37Q35 -64 24 -56Q13 -64 11 -76Z" />
+      <path
+        className="stroke-orange"
+        d="M24 -55V-28"
+        fill="none"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      />
+      <path className="fill-orange" d="M7 -12Q10 -25 24 -28Q38 -25 41 -12Z" />
+      <rect className="fill-ink-soft" x="-4" y="-94" width="56" height="10" rx="5" />
+      <rect className="fill-ink-soft" x="-4" y="-10" width="56" height="10" rx="5" />
     </g>
   );
 }

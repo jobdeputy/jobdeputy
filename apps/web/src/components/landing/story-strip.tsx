@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
+import { PencilShape } from '@/components/deputy/panda.tsx';
 import { type Copy, copy, type OnePer } from '@/copy/index.ts';
 import { cn } from '@/lib/utils.ts';
-import { PencilShape } from './panda.tsx';
 
 /**
  * Each step's tool, as the deputy holds it: pencil, magnifier, approved page. Typed to the steps

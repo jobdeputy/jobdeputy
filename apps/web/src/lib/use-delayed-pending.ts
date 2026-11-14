@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 export const PENDING_DELAY_MS = 300;
 /** Once a loader shows, it stays at least this long, so it never flashes on and off. */
 export const PENDING_MIN_MS = 500;
+/** A wait this long is a long wait: loading states add "Still working…". */
+export const LONG_WAIT_MS = 8000;
 
 /**
  * Whether a wait should show its loading state yet (#17). It turns true only once `isPending` has
@@ -43,4 +45,21 @@ export function useDelayedPending(
   }, [isPending, shown, delay, minDuration, hideNow]);
 
   return shown && !hideNow;
+}
+
+/**
+ * Whether a wait has run long (#17): true once `active` has lasted `after` ms (8 s), false again
+ * as soon as it ends. Loading states use it to add "Still working…".
+ */
+export function useLongWait(active: boolean, after = LONG_WAIT_MS): boolean {
+  const [long, setLong] = useState(false);
+  useEffect(() => {
+    if (!active) {
+      setLong(false);
+      return;
+    }
+    const timer = setTimeout(() => setLong(true), after);
+    return () => clearTimeout(timer);
+  }, [active, after]);
+  return long && active;
 }
