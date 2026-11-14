@@ -7,9 +7,12 @@ import { SCREENSHOTS_DIR } from './screenshots-dir.ts';
  * them on the PR (.github/workflows/web.yml). Add each new screen here.
  */
 const SCREENS = [
-  { name: 'home', path: '/' },
-  // The drawer, opened from the first visible "Sign in" button.
-  { name: 'sign-in', path: '/', open: 'Sign in' },
+  // The landing page, its story paused on the first step (chosen in the strip), so every device
+  // and run shows the same frame.
+  { name: 'home', path: '/', firstStep: true },
+  // The drawer, opened from the first visible "Sign in" button; the story behind it held still
+  // (reduced motion), so every run shows the same.
+  { name: 'sign-in', path: '/', open: 'Sign in', still: true },
   // Every shared component state (#17); the pending buttons and the loading skeleton appear
   // after the 300 ms delay.
   {
@@ -30,10 +33,22 @@ const SCREENS = [
 
 for (const screen of SCREENS) {
   test(`screenshot: ${screen.name}`, async ({ page }, testInfo) => {
+    if (screen.still) {
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+    }
     if (screen.blockScript) {
       await page.route('**/assets/*.js', (route) => route.abort());
     }
     await page.goto(screen.path);
+    if (screen.firstStep) {
+      await page
+        .getByRole('list', { name: 'How your deputy works' })
+        .getByRole('button')
+        .first()
+        .click();
+      // Off the step again, so it is not caught hovered.
+      await page.mouse.move(0, 0);
+    }
     if (screen.open) {
       await page
         .getByRole('button', { name: screen.open, exact: true })

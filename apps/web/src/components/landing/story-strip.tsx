@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { PencilShape } from '@/components/deputy/panda.tsx';
+import { ApprovalShape, MagnifierShape, PencilShape } from '@/components/deputy/panda.tsx';
 import { type Copy, copy, type OnePer } from '@/copy/index.ts';
 import { cn } from '@/lib/utils.ts';
 
@@ -9,73 +9,25 @@ import { cn } from '@/lib/utils.ts';
  */
 const STEP_TOOLS: OnePer<Copy['landing']['steps']['items'], ReactNode> = [
   <PencilShape key="pencil" transform="translate(13.52 33.84) scale(0.63)" />,
-  <g key="magnifier" transform="translate(8.11 42.36) scale(0.55)">
-    <path
-      className="stroke-blue"
-      d="M3 -4L20 -26"
-      fill="none"
-      strokeWidth="11"
-      strokeLinecap="round"
-    />
-    <circle
-      className="fill-blue-soft stroke-blue"
-      cx="34"
-      cy="-43"
-      r="22"
-      fillOpacity="0.52"
-      strokeWidth="8"
-    />
-    <path
-      className="stroke-paper"
-      d="M23 -48Q31 -57 41 -51"
-      fill="none"
-      strokeWidth="4"
-      strokeLinecap="round"
-      opacity="0.85"
-    />
-  </g>,
-  <g key="approval" transform="translate(13.43 45.89) scale(0.38)">
-    <rect
-      className="fill-paper stroke-line-strong"
-      x="-12"
-      y="-110"
-      width="80"
-      height="104"
-      rx="13"
-      strokeWidth="2.5"
-    />
-    <path
-      className="stroke-ink-soft"
-      d="M2 -92H36"
-      fill="none"
-      strokeWidth="6"
-      strokeLinecap="round"
-    />
-    <path
-      className="stroke-quiet"
-      d="M2 -78H52M2 -66H34"
-      fill="none"
-      strokeWidth="4.5"
-      strokeLinecap="round"
-      strokeOpacity="0.7"
-    />
-    <circle className="fill-green-soft stroke-green" cx="28" cy="-34" r="17" strokeWidth="4" />
-    <path
-      className="stroke-green-ink"
-      d="M19.5 -34.5L25.5 -28.5L37 -40"
-      fill="none"
-      strokeWidth="4.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </g>,
+  <MagnifierShape key="magnifier" transform="translate(8.11 42.36) scale(0.55)" />,
+  <ApprovalShape key="approval" transform="translate(13.43 45.89) scale(0.38)" />,
 ];
 
 /**
- * The three steps under the deputy: "1 Set it up › 2 It finds › 3 It applies". The step the
- * stage shows is current (filled bar, green number). One column on phones, a row from tablets up.
+ * The three steps under the deputy: "1 Set it up › 2 It finds › 3 It applies", the story's
+ * chapters. The step the stage shows is current (filled bar, green number, `aria-current`). Each
+ * is a button (a Tab stop, named by its number, title and line) that shows its chapter. One column
+ * on phones, a row from tablets up.
  */
-export function StoryStrip({ current, className }: { current: number; className?: string }) {
+export function StoryStrip({
+  current,
+  onSelect,
+  className,
+}: {
+  current: number;
+  onSelect: (index: number) => void;
+  className?: string;
+}) {
   const { steps } = copy.landing;
   return (
     <ol
@@ -88,48 +40,54 @@ export function StoryStrip({ current, className }: { current: number; className?
           <li
             // biome-ignore lint/suspicious/noArrayIndexKey: a fixed-length list; titles may repeat in a translation.
             key={index}
-            aria-current={isCurrent ? 'step' : undefined}
-            className="relative grid grid-cols-[36px_minmax(0,1fr)] items-start gap-x-2.5 px-2 pt-2 pb-[17px] before:absolute before:inset-x-2 before:bottom-[5px] before:h-[3px] before:rounded-full before:bg-muted-foreground aria-[current=step]:after:absolute aria-[current=step]:after:inset-x-2 aria-[current=step]:after:bottom-1 aria-[current=step]:after:h-[5px] aria-[current=step]:after:rounded-full aria-[current=step]:after:bg-green-ink"
+            className="relative"
           >
-            {index > 0 && (
-              <span
-                aria-hidden="true"
-                className="absolute -start-[15px] top-4 hidden text-lg leading-none text-muted-foreground md:block"
-              >
-                ›
-              </span>
-            )}
-            <span
-              className={cn(
-                'grid size-9 place-items-center rounded-full border',
-                isCurrent ? 'border-green bg-green-soft' : 'border-line bg-surface-strong',
-              )}
+            <button
+              type="button"
+              aria-current={isCurrent ? 'step' : undefined}
+              onClick={() => onSelect(index)}
+              className="relative grid w-full cursor-pointer rounded-[13px] text-start transition-colors duration-[180ms] hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring focus-visible:outline-solid motion-reduce:transition-none grid-cols-[36px_minmax(0,1fr)] items-start gap-x-2.5 px-2 pt-2 pb-[17px] before:absolute before:inset-x-2 before:bottom-[5px] before:h-[3px] before:rounded-full before:bg-muted-foreground aria-[current=step]:after:absolute aria-[current=step]:after:inset-x-2 aria-[current=step]:after:bottom-1 aria-[current=step]:after:h-[5px] aria-[current=step]:after:rounded-full aria-[current=step]:after:bg-green-ink"
             >
-              <svg
-                viewBox="0 0 48 48"
-                className="block size-[26px]"
-                aria-hidden="true"
-                focusable="false"
-              >
-                {STEP_TOOLS[index]}
-              </svg>
-            </span>
-            <span className="grid min-w-0 gap-0.5">
-              <span className="flex items-center gap-1.5 text-[0.9375rem] leading-[1.3] font-bold">
+              {index > 0 && (
                 <span
-                  className={cn(
-                    'inline-grid size-5 shrink-0 place-items-center rounded-full text-xs leading-none font-[750] tabular-nums',
-                    isCurrent ? 'bg-green-ink text-white' : 'bg-paper-deep text-ink-soft',
-                  )}
+                  aria-hidden="true"
+                  className="absolute -start-[15px] top-4 hidden text-lg leading-none text-muted-foreground md:block"
                 >
-                  {index + 1}
+                  ›
                 </span>
-                {step.title}
+              )}
+              <span
+                className={cn(
+                  'grid size-9 place-items-center rounded-full border',
+                  isCurrent ? 'border-green bg-green-soft' : 'border-line bg-surface-strong',
+                )}
+              >
+                <svg
+                  viewBox="0 0 48 48"
+                  className="block size-[26px]"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  {STEP_TOOLS[index]}
+                </svg>
               </span>
-              <span className="text-[0.8125rem] leading-[1.35] text-pretty text-muted-foreground">
-                {step.line}
+              <span className="grid min-w-0 gap-0.5">
+                <span className="flex items-center gap-1.5 text-[0.9375rem] leading-[1.3] font-bold">
+                  <span
+                    className={cn(
+                      'inline-grid size-5 shrink-0 place-items-center rounded-full text-xs leading-none font-[750] tabular-nums',
+                      isCurrent ? 'bg-green-ink text-white' : 'bg-paper-deep text-ink-soft',
+                    )}
+                  >
+                    {index + 1}
+                  </span>
+                  {step.title}
+                </span>
+                <span className="text-[0.8125rem] leading-[1.35] text-pretty text-muted-foreground">
+                  {step.line}
+                </span>
               </span>
-            </span>
+            </button>
           </li>
         );
       })}
