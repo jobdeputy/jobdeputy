@@ -212,6 +212,9 @@ test.describe('the story, on the page clock', () => {
       'aria-disabled',
       'true',
     );
+    // axe waits on timers, which a frozen clock never fires: let time run again (the story is
+    // paused, so it stays where it is).
+    await page.clock.resume();
     await expectNoAccessibilityViolations(page);
   });
 
