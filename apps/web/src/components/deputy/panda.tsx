@@ -371,6 +371,8 @@ function useBreath(alive: boolean, body: RefObject<SVGGElement | null>) {
       iterations: Number.POSITIVE_INFINITY,
       easing: 'ease-in-out',
     });
+    // Cancelling an animation rejects its `finished`; that is expected here, not an error.
+    breath.finished?.catch(() => {});
     return () => {
       // Where the breath has the body now, then back to its pose on its own transition.
       const from = getComputedStyle(element).transform;
@@ -379,10 +381,12 @@ function useBreath(alive: boolean, body: RefObject<SVGGElement | null>) {
       const rest = element.style.transform || 'none';
       const duration = Number.parseFloat(transitionDuration) * 1000;
       if (from && from !== 'none' && duration > 0) {
-        element.animate([{ transform: from }, { transform: rest }], {
-          duration,
-          easing: transitionTimingFunction,
-        });
+        element
+          .animate([{ transform: from }, { transform: rest }], {
+            duration,
+            easing: transitionTimingFunction,
+          })
+          .finished?.catch(() => {});
       }
     };
   }, [alive, body]);
