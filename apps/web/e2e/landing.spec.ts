@@ -128,6 +128,12 @@ test.describe('landing page', () => {
   });
 });
 
+/** Stops the page's installed clock where it is; after this only fastForward moves time. */
+async function freezeClock(page: Page) {
+  const now = await page.evaluate(() => Date.now());
+  await page.clock.pauseAt(now + 1);
+}
+
 /** The strip's step buttons, in order. */
 function stripSteps(page: Page) {
   return page.getByRole('list', { name: 'How your deputy works' }).getByRole('button');
@@ -171,8 +177,8 @@ test.describe('the story', () => {
 });
 
 test.describe('the story, on the page clock', () => {
-  // The clock moves only after a test has put the story where it wants it (a chosen step pauses
-  // it), so nothing races real time.
+  // Each test first chooses a step (which pauses the story), then freezes the page's clock there,
+  // so from then on only fastForward moves time: nothing races real time.
   test.beforeEach(async ({ page }) => {
     await page.clock.install();
     await page.goto('/');
@@ -181,6 +187,7 @@ test.describe('the story, on the page clock', () => {
   test('holds a step chosen in the strip', async ({ page }) => {
     // The middle step: the last one would hold by itself.
     await stripSteps(page).nth(1).click();
+    await freezeClock(page);
     await page.clock.fastForward(20_000);
     await expect(stripSteps(page).nth(1)).toHaveAttribute('aria-current', 'step');
     await stripSteps(page).nth(2).click();
@@ -194,6 +201,7 @@ test.describe('the story, on the page clock', () => {
 
   test('pauses on Pause story, and plays on from there on Play story', async ({ page }) => {
     await stripSteps(page).nth(0).click();
+    await freezeClock(page);
     await page.getByRole('button', { name: 'Play story' }).click();
     await page.getByRole('button', { name: 'Pause story' }).click();
     await page.clock.fastForward(20_000);
