@@ -188,6 +188,18 @@ test.describe('the story, on the page clock', () => {
     await page.goto('/');
   });
 
+  test("shows each step's props, with its flourish", async ({ page }) => {
+    await stripSteps(page).nth(1).click();
+    const pulse = page.locator('.animate-search-sweep');
+    await expect(pulse).toHaveCSS('animation-name', 'search-sweep');
+    await expect(page.locator('[data-shown]')).toHaveCount(1);
+    await stripSteps(page).nth(2).click();
+    await expect(page.locator('.animate-send-application')).toHaveCSS(
+      'animation-name',
+      'send-application',
+    );
+  });
+
   test('holds a step chosen in the strip', async ({ page }) => {
     // The middle step: the last one would hold by itself.
     await stripSteps(page).nth(1).click();
@@ -200,6 +212,9 @@ test.describe('the story, on the page clock', () => {
       'aria-disabled',
       'true',
     );
+    // axe waits on timers, which a frozen clock never fires: let time run again (the story is
+    // paused, so it stays where it is).
+    await page.clock.resume();
     await expectNoAccessibilityViolations(page);
   });
 
@@ -228,6 +243,8 @@ test.describe('with reduced motion', () => {
     await expect(stripSteps(page).nth(0)).toHaveAttribute('aria-current', 'step');
     await page.getByRole('button', { name: 'Advance story' }).click();
     await expect(stripSteps(page).nth(1)).toHaveAttribute('aria-current', 'step');
+    // The step's flourish holds still too.
+    await expect(page.locator('.animate-search-sweep')).toHaveCSS('animation-name', 'none');
   });
 
   test('the drawer appears without sliding', async ({ page }) => {

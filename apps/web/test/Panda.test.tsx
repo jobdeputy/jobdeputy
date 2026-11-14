@@ -57,3 +57,22 @@ describe('Panda', () => {
     expect(head()).toBe('translate(2px, -2px) rotate(5deg)');
   });
 });
+
+describe('Panda flourishes', () => {
+  it('writes with the pencil to set up, scans with the magnifier to find, and holds otherwise', () => {
+    const { container, rerender } = render(<Panda pose="setup" />);
+    expect(container.querySelector('.animate-tailor-paw')).not.toBeNull();
+    expect(container.querySelector('.animate-tailor-pencil')).not.toBeNull();
+    rerender(<Panda pose="search" />);
+    expect(container.querySelector('.animate-tailor-paw')).toBeNull();
+    expect(container.querySelector('.animate-magnifier-scan')).not.toBeNull();
+    for (const pose of ['apply', 'pending'] as const) {
+      rerender(<Panda pose={pose} />);
+      expect(
+        container.querySelector(
+          '.animate-tailor-paw, .animate-tailor-pencil, .animate-magnifier-scan',
+        ),
+      ).toBeNull();
+    }
+  });
+});

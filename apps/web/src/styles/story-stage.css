@@ -210,7 +210,8 @@
     transform: rotate(45deg);
   }
 
-  /* The props of the current step (the setup card for "Set it up"), scaled down on small stages. */
+  /* The story's props (StoryProps: the setup card, the search map, the apply rig; the current
+     step's set shows), scaled down on small stages. */
   .story-stage-props {
     position: absolute;
     z-index: 5;
