@@ -117,6 +117,10 @@ test('the deputy works with his hourglass, and says a long job carries on', asyn
       exact: true,
     }),
   ).toBeVisible();
+  // Read out, in a status region, with what keeps going.
+  await expect(working.nth(1).getByRole('status').filter({ hasText: 'background' })).toContainText(
+    'Tailoring. This keeps going in the background. You can leave this page.',
+  );
 });
 
 test('a failed first load hands over to its error', async ({ page }) => {

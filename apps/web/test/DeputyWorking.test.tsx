@@ -117,10 +117,36 @@ describe('DeputyWorking', () => {
     // React applies each timer's update as its act ends: show first, then run on.
     act(() => vi.advanceTimersByTime(300));
     act(() => vi.advanceTimersByTime(LONG_WAIT_MS));
+    const longBefore = longRegion();
     rerender(<Working active step="Reading page 2 of 12" />);
     // Its own region: the pill and the long-wait line are not read again with it.
     expect(stepRegion()).toBe('Reading page 2 of 12');
     expect(pill()).toBe('Searching');
+    expect(longRegion()).toBe(longBefore);
+  });
+
+  it('reads a new status once, by the pill, during a long wait', () => {
+    const { rerender } = render(<DeputyWorking active status="Searching" speech="On it." />);
+    act(() => vi.advanceTimersByTime(300));
+    act(() => vi.advanceTimersByTime(LONG_WAIT_MS));
+    const longBefore = longRegion();
+    rerender(<DeputyWorking active status="Ranking" speech="On it." />);
+    expect(pill()).toBe('Ranking');
+    expect(longRegion()).toBe(longBefore);
+  });
+
+  it('paces its regions again each time it shows', () => {
+    const { rerender } = render(<Working active step="Reading page 1 of 12" />);
+    act(() => vi.advanceTimersByTime(300));
+    act(() => vi.advanceTimersByTime(200));
+    rerender(<Working active={false} step="Reading page 1 of 12" />);
+    act(() => vi.advanceTimersByTime(500));
+    rerender(<Working active step="Reading page 1 of 12" />);
+    act(() => vi.advanceTimersByTime(300));
+    // Shown again: the pill first, the step a beat later, as the first time.
+    expect([pill(), stepRegion()]).toEqual(['Searching', '']);
+    act(() => vi.advanceTimersByTime(100));
+    expect(stepRegion()).toBe('Reading page 1 of 12');
   });
 
   it('adds "Still working…" after 8 s', () => {

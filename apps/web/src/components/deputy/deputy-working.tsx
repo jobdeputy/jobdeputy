@@ -54,11 +54,11 @@ export function DeputyWorking({
       setBeats(0);
       return;
     }
-    const step = setTimeout(() => setBeats(1), LIVE_REGION_BEAT_MS);
-    const long = setTimeout(() => setBeats(2), 2 * LIVE_REGION_BEAT_MS);
+    const stepTimer = setTimeout(() => setBeats(1), LIVE_REGION_BEAT_MS);
+    const longTimer = setTimeout(() => setBeats(2), 2 * LIVE_REGION_BEAT_MS);
     return () => {
-      clearTimeout(step);
-      clearTimeout(long);
+      clearTimeout(stepTimer);
+      clearTimeout(longTimer);
     };
   }, [shown]);
 
@@ -73,11 +73,22 @@ export function DeputyWorking({
         : copy.loading.stillWorking
       : '';
   const stepLine = shown && step && beats >= 1 ? step : '';
+  // The long-wait line is read with the status it appeared under, kept from then on: a new status
+  // is read by the pill alone, not twice. (Adjusting state while rendering: React's pattern for
+  // remembering something from an earlier render.)
+  const [longLabel, setLongLabel] = useState<string | null>(null);
+  if (longLine && longLabel === null) setLongLabel(status);
+  if (!longLine && longLabel !== null) setLongLabel(null);
+  const longRead = !longLine
+    ? ''
+    : background
+      ? fill(copy.loading.longWaitRead, { label: longLabel ?? status, line: longLine })
+      : fill(copy.loading.stillLoading, { label: longLabel ?? status });
   return (
     <div
       data-slot="deputy-working"
       data-shown={shown || undefined}
-      data-long={(shown && long) || undefined}
+      data-long={longLine ? true : undefined}
       className={cn('flex items-center gap-4', className)}
     >
       {shown && <Panda pose="pending" className="size-28 shrink-0" />}
@@ -104,9 +115,7 @@ export function DeputyWorking({
               seen without it, the pill being right above. */}
           {longLine && (
             <>
-              <span className="sr-only">
-                {fill(copy.loading.longWaitRead, { label: status, line: longLine })}
-              </span>
+              <span className="sr-only">{longRead}</span>
               <span aria-hidden="true">{longLine}</span>
             </>
           )}
