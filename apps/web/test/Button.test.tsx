@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import type * as React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Button } from '../src/components/ui/button.tsx';
 
@@ -157,6 +158,44 @@ describe('Button', () => {
       expect(button.getAttribute('aria-disabled')).toBe('true');
       expect(button.hasAttribute('data-unavailable')).toBe(true);
       expect(button.hasAttribute('disabled')).toBe(false);
+    });
+
+    it('keeps a blocked press from its other handlers and from a clickable parent', () => {
+      const onPointerDown = vi.fn();
+      const onKeyDown = vi.fn();
+      const onParentClick = vi.fn();
+      render(
+        // biome-ignore lint/a11y/noStaticElementInteractions: a stand-in for a clickable row.
+        // biome-ignore lint/a11y/useKeyWithClickEvents: the test only needs the click.
+        <div onClick={onParentClick}>
+          <Button pending onPointerDown={onPointerDown} onKeyDown={onKeyDown}>
+            Open menu
+          </Button>
+        </div>,
+      );
+      const button = screen.getByRole('button');
+      fireEvent.pointerDown(button);
+      fireEvent.keyDown(button, { key: 'Enter' });
+      fireEvent.click(button);
+      expect(onPointerDown).not.toHaveBeenCalled();
+      expect(onKeyDown).not.toHaveBeenCalled();
+      expect(onParentClick).not.toHaveBeenCalled();
+    });
+
+    it('passes a rendered child its own aria-disabled, without taking over its presses', () => {
+      const onClick = vi.fn((event: React.MouseEvent) => event.preventDefault());
+      render(
+        <Button asChild aria-disabled>
+          <a href="/x" onClick={onClick}>
+            Docs
+          </a>
+        </Button>,
+      );
+      const link = screen.getByRole('link');
+      expect(link.getAttribute('aria-disabled')).toBe('true');
+      expect(link.hasAttribute('data-unavailable')).toBe(false);
+      fireEvent.click(link);
+      expect(onClick).toHaveBeenCalledOnce();
     });
 
     it('keeps its label when no pending label is given', () => {

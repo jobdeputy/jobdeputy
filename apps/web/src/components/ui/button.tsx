@@ -1,7 +1,6 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import { Slot } from 'radix-ui';
 import type * as React from 'react';
-import { useState } from 'react';
 import { Spinner } from '@/components/ui/spinner.tsx';
 import { useDelayedPending } from '@/lib/use-delayed-pending.ts';
 import { cn } from '@/lib/utils.ts';
@@ -79,22 +78,27 @@ function Button({
   success = false,
   successLabel,
   onClick,
+  onPointerDown,
+  onKeyDown,
   children,
   'aria-disabled': ariaDisabled,
   ...props
 }: ButtonProps) {
-  const delayedPending = useDelayedPending(pending);
-  // Once the work has succeeded, the pending look stays gone through the spinner's minimum hold,
-  // even if the caller clears `success` first; new work brings it back.
-  const [succeeded, setSucceeded] = useState(false);
-  if (success && !succeeded) setSucceeded(true);
-  if (pending && !success && succeeded) setSucceeded(false);
-  const showPending = delayedPending && !success && !succeeded;
-  const unavailable = ariaDisabled === true || ariaDisabled === 'true';
+  // Success replaces the pending look at once, so it never comes back for the rest of the hold.
+  const showPending = useDelayedPending(pending, { hideNow: success });
+  // A rendered child (asChild) owns its own behaviour: its aria-disabled passes through untouched.
+  const unavailable = !asChild && (ariaDisabled === true || ariaDisabled === 'true');
   // Presses are ignored from the first moment of the work until its success state is gone, and
   // while the caller marks the button unavailable. Not during the spinner's minimum hold after the
   // work ends: a failed sign-in must take a retry at once.
   const blocked = pending || success || unavailable;
+  // Like a disabled button: no press reaches the caller's handlers (a menu trigger opens on
+  // pointerdown or keydown) or bubbles to a clickable row around it. Focus and Tab still work.
+  const unlessBlocked =
+    <E extends React.SyntheticEvent>(handler?: (event: E) => void) =>
+    (event: E) => {
+      if (!blocked) handler?.(event);
+    };
   const Comp = asChild ? Slot.Root : 'button';
 
   let content = children;
@@ -132,16 +136,19 @@ function Button({
       data-success={success || undefined}
       data-unavailable={unavailable || undefined}
       aria-busy={showPending || undefined}
-      aria-disabled={blocked || undefined}
+      aria-disabled={asChild ? ariaDisabled : blocked || undefined}
       className={cn(buttonVariants({ variant, size, className }))}
       onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
         // Also stops a submit button's form submitting (Enter in a field clicks it too).
         if (blocked) {
           event.preventDefault();
+          event.stopPropagation();
           return;
         }
         onClick?.(event);
       }}
+      onPointerDown={unlessBlocked(onPointerDown)}
+      onKeyDown={unlessBlocked(onKeyDown)}
       {...props}
     >
       {content}

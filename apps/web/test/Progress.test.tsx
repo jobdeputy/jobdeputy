@@ -1,4 +1,5 @@
 import { cleanup, render, screen } from '@testing-library/react';
+import { renderToString } from 'react-dom/server';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Progress } from '../src/components/ui/progress.tsx';
 
@@ -16,6 +17,22 @@ describe('Progress', () => {
   it('holds an out-of-range value to the track', () => {
     render(<Progress label="Uploading" value={104} />);
     expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('100');
+  });
+
+  it('reads out a quarter it first appears past, after its status region exists', () => {
+    // The first render (before effects run) holds an empty status region.
+    expect(renderToString(<Progress label="Uploading résumé" value={30} />)).toMatch(
+      /role="status"[^>]*><\/p>/,
+    );
+    render(<Progress label="Uploading résumé" value={30} />);
+    expect(screen.getByRole('status').textContent).toBe('Uploading résumé, 25%');
+  });
+
+  it('starts a new fill when the length becomes known', () => {
+    const { rerender } = render(<Progress label="Uploading" value={null} />);
+    const sweep = screen.getByRole('progressbar').firstElementChild;
+    rerender(<Progress label="Uploading" value={10} />);
+    expect(screen.getByRole('progressbar').firstElementChild).not.toBe(sweep);
   });
 
   it('reads 100% only when the work is done', () => {

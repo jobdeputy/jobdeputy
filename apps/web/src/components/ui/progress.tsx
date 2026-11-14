@@ -1,5 +1,5 @@
 import { Progress as ProgressPrimitive } from 'radix-ui';
-import { useId } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { copy, fill } from '@/copy/index.ts';
 import { cn } from '@/lib/utils.ts';
 
@@ -46,7 +46,11 @@ function Progress({
   // (an upload whose total size is unknown divides by 0) means the length is unknown.
   const current =
     value === null || !Number.isFinite(value) ? null : Math.min(100, Math.max(0, value));
-  const announcement = milestoneAnnouncement(label, current);
+  // The status region mounts empty and takes its text a moment later: screen readers skip text a
+  // live region is born with, so a bar that first appears at 30% would never say 25%.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const announcement = mounted ? milestoneAnnouncement(label, current) : '';
 
   return (
     <div
@@ -74,6 +78,9 @@ function Progress({
         className="relative block h-2 min-w-14 flex-[1_0_100%] overflow-hidden rounded-full bg-paper-deep inset-ring inset-ring-line forced-colors:border forced-colors:border-[CanvasText]"
       >
         <ProgressPrimitive.Indicator
+          // A new element when the length becomes known (or unknown): otherwise the fill would ease
+          // from wherever the sweep was, sliding in from the side.
+          key={current === null ? 'unknown' : 'known'}
           className={cn(
             // green-ink, not green: 4.5:1 on the track (WCAG 1.4.11 asks 3:1), close to the
             // prototype's darker meter green.
