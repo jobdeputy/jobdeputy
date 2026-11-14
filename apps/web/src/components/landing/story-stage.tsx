@@ -19,10 +19,16 @@ const SCENES: OnePer<Copy['landing']['steps']['items'], PandaPose> = ['setup', '
  */
 export function StoryStage({
   index,
+  playing = false,
+  held = false,
   controls,
   className,
 }: {
   index: number;
+  /** The story is playing: the deputy breathes and blinks. */
+  playing?: boolean;
+  /** Paused by the Pause button: every flourish on the stage holds where it is. */
+  held?: boolean;
   controls?: ReactNode;
   className?: string;
 }) {
@@ -30,12 +36,12 @@ export function StoryStage({
   const step = steps.items[index] ?? steps.items[0];
   const scene = SCENES[index] ?? 'setup';
   return (
-    <div className={cn('story-stage', className)} data-scene={scene}>
+    <div className={cn('story-stage', className)} data-scene={scene} data-held={held || undefined}>
       <div className="story-stage-halo" aria-hidden="true" />
       <div className="story-stage-props" aria-hidden="true">
         <StoryProps scene={scene} />
       </div>
-      <Panda className="story-stage-art" pose={scene} />
+      <Panda className="story-stage-art" pose={scene} alive={playing} />
       <DeputySpeech
         aria-hidden="true"
         className="story-stage-speech px-2.5 py-2 text-center text-xs md:px-3.5 md:py-3 md:text-[clamp(0.875rem,1.1vw,1rem)]"

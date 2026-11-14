@@ -223,6 +223,9 @@ test.describe('the story, on the page clock', () => {
     await freezeClock(page);
     await page.getByRole('button', { name: 'Play story' }).click();
     await page.getByRole('button', { name: 'Pause story' }).click();
+    // Paused by its button, the step's flourish holds where it is.
+    await expect(page.locator('.story-stage')).toHaveAttribute('data-held', 'true');
+    await expect(page.locator('.animate-tailor-paw')).toHaveCSS('animation-play-state', 'paused');
     await page.clock.fastForward(20_000);
     await expect(stripSteps(page).nth(0)).toHaveAttribute('aria-current', 'step');
     await page.getByRole('button', { name: 'Play story' }).click();
@@ -243,8 +246,9 @@ test.describe('with reduced motion', () => {
     await expect(stripSteps(page).nth(0)).toHaveAttribute('aria-current', 'step');
     await page.getByRole('button', { name: 'Advance story' }).click();
     await expect(stripSteps(page).nth(1)).toHaveAttribute('aria-current', 'step');
-    // The step's flourish holds still too.
+    // The step's flourish holds still too, and the deputy does not breathe.
     await expect(page.locator('.animate-search-sweep')).toHaveCSS('animation-name', 'none');
+    await expect(page.locator('g.animate-panda-breathe')).toHaveCount(0);
   });
 
   test('the drawer appears without sliding', async ({ page }) => {

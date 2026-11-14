@@ -164,6 +164,18 @@ describe('useStory', () => {
     act(() => vi.advanceTimersByTime(1));
     expect(result.current.index).toBe(1);
   });
+
+  it('holds the flourish only when paused by the Pause button', () => {
+    const { result } = renderHook(() => useStory());
+    expect(result.current).toMatchObject({ playing: true, held: false });
+    act(() => result.current.toggle());
+    expect(result.current).toMatchObject({ playing: false, held: true });
+    act(() => result.current.toggle());
+    expect(result.current).toMatchObject({ playing: true, held: false });
+    act(() => result.current.toggle());
+    act(() => result.current.goTo(2));
+    expect(result.current.held).toBe(false);
+  });
 });
 
 function setHidden(hidden: boolean) {

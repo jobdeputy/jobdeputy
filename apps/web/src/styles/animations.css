@@ -18,6 +18,31 @@
      rows tick in turn. It finds: the magnifier scans, a pulse sweeps the sources. It applies: the
      application flies to the portal. */
   --animate-tailor-paw: tailor-paw 1.2s ease-in-out 640ms 1;
+  /* While the story plays the deputy breathes (one breath every 5.236s) and blinks (180ms). */
+  --animate-panda-breathe: panda-breathe 5.236s ease-in-out infinite;
+  --animate-panda-blink: panda-blink 180ms linear 1;
+
+  @keyframes panda-breathe {
+    0%,
+    100% {
+      transform: translate(0, 0) rotate(0deg);
+    }
+    50% {
+      transform: translate(0, -4px) rotate(-0.5deg);
+    }
+  }
+
+  @keyframes panda-blink {
+    0%,
+    100% {
+      transform: scaleY(1);
+    }
+    20%,
+    80% {
+      transform: scaleY(0.1);
+    }
+  }
+
   --animate-tailor-pencil: tailor-pencil 1.2s ease-in-out 640ms 1;
   --animate-setup-tick: setup-tick 380ms var(--ease-spring) 640ms 1 both;
   --animate-magnifier-scan: magnifier-scan 1.8s ease-in-out 640ms 1;

@@ -275,4 +275,10 @@
       display: none;
     }
   }
+
+  /* Paused by the Pause button: every flourish and the breath hold where they are; Play resumes
+     them (a chosen step clears the hold, so its flourish plays to the end). */
+  .story-stage[data-held] * {
+    animation-play-state: paused;
+  }
 }
