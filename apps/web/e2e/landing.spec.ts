@@ -41,7 +41,8 @@ test.describe('landing page', () => {
     await expect(visibleButton(page, 'Sign in')).toBeVisible();
     const steps = page.getByRole('list', { name: 'How your deputy works' }).getByRole('button');
     await expect(steps).toHaveText([/Set it up/, /It finds/, /It applies/]);
-    await expect(steps.first()).toHaveAttribute('aria-current', 'step');
+    // The story plays on its own, so whichever step it is on: exactly one is current.
+    await expect(steps.and(page.locator('[aria-current="step"]'))).toHaveCount(1);
   });
 
   test('uses the brand tokens from the Tailwind theme', async ({ page }) => {
@@ -127,6 +128,8 @@ test.describe('landing page', () => {
   });
 });
 
+const CLOCK_START = new Date('2026-01-05T09:00:00Z');
+
 /** The strip's step buttons, in order. */
 function stripSteps(page: Page) {
   return page.getByRole('list', { name: 'How your deputy works' }).getByRole('button');
@@ -134,14 +137,17 @@ function stripSteps(page: Page) {
 
 test.describe('the story', () => {
   test.beforeEach(async ({ page }) => {
-    // The page's clock, so the story's 4 s steps can be fast-forwarded instead of waited for.
-    await page.clock.install();
+    // The page's clock, paused 2 s in, so nothing races real time and each 4 s step is
+    // fast-forwarded instead of waited for. The story starts once the page shows (within the
+    // boot loader's 0.8 s at most).
+    await page.clock.install({ time: CLOCK_START });
     await page.goto('/');
+    await page.clock.pauseAt(new Date(CLOCK_START.getTime() + 2000));
   });
 
   test('plays each step once by itself, then offers Replay', async ({ page }) => {
     await expect(stripSteps(page).nth(0)).toHaveAttribute('aria-current', 'step');
-    await page.clock.fastForward(4100);
+    await page.clock.fastForward(3000);
     await expect(stripSteps(page).nth(1)).toHaveAttribute('aria-current', 'step');
     await page.clock.fastForward(4400);
     await expect(stripSteps(page).nth(2)).toHaveAttribute('aria-current', 'step');

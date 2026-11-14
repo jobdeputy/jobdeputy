@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { copy, fill } from '@/copy/index.ts';
+import { useRevealed } from '@/lib/boot-loader.ts';
 import { useReducedMotion } from '@/lib/use-reduced-motion.ts';
 
 const STEPS = copy.landing.steps.items;
@@ -17,27 +18,36 @@ export function stepDuration(step: { title: string; line: string; speech: string
 /** What the play button does now, and so what it says. */
 export type StoryMode = 'pause' | 'play' | 'replay' | 'advance';
 
+function onVisibility(onChange: () => void) {
+  document.addEventListener('visibilitychange', onChange);
+  return () => document.removeEventListener('visibilitychange', onChange);
+}
+
 /**
  * The landing story (#14, the prototype's story controller): the deputy works through the steps
  * by himself, once, then holds the last one; nothing loops. Pause stops the timer, Play goes on,
  * Replay starts over. Choosing a step (the arrows or the strip) shows it and pauses. Under
  * reduced motion it never plays by itself: the play button becomes "Advance story", one step a
  * press. `announcement` says where a person moved to ("Step 2 of 3: It finds"); autoplay says
- * nothing.
+ * nothing, and clears it. It waits while no one can watch: until the page shows from under the
+ * boot loader, and while the tab is hidden (a step then starts over when the tab comes back).
  */
 export function useStory() {
   const reducedMotion = useReducedMotion();
   const [index, setIndex] = useState(0);
-  const [playing, setPlaying] = useState(!reducedMotion);
+  const [playing, setPlaying] = useState(true);
   const [announcement, setAnnouncement] = useState('');
+  const revealed = useRevealed();
+  const hidden = useSyncExternalStore(
+    onVisibility,
+    () => document.hidden,
+    () => false,
+  );
+  // Reduced motion never plays by itself, even if it is turned on mid-story.
+  const autoplay = playing && !reducedMotion;
 
-  // Reduced motion turned on mid-story stops it where it is.
   useEffect(() => {
-    if (reducedMotion) setPlaying(false);
-  }, [reducedMotion]);
-
-  useEffect(() => {
-    if (!playing) return;
+    if (!autoplay || !revealed || hidden) return;
     if (index >= LAST) {
       // The last step plays to its end and holds; the button offers Replay.
       setPlaying(false);
@@ -45,9 +55,12 @@ export function useStory() {
     }
     const step = STEPS[index];
     if (!step) return;
-    const timer = setTimeout(() => setIndex(index + 1), stepDuration(step));
+    const timer = setTimeout(() => {
+      setIndex(index + 1);
+      setAnnouncement('');
+    }, stepDuration(step));
     return () => clearTimeout(timer);
-  }, [playing, index]);
+  }, [autoplay, revealed, hidden, index]);
 
   const goTo = useCallback((target: number) => {
     const next = Math.max(0, Math.min(LAST, target));
@@ -67,7 +80,7 @@ export function useStory() {
     ? atEnd
       ? 'replay'
       : 'advance'
-    : playing
+    : autoplay
       ? 'pause'
       : atEnd
         ? 'replay'
@@ -84,9 +97,11 @@ export function useStory() {
       } else {
         setIndex(0);
         setPlaying(true);
+        setAnnouncement('');
       }
     } else {
       setPlaying(true);
+      setAnnouncement('');
     }
   }, [mode, index, reducedMotion, goTo]);
 

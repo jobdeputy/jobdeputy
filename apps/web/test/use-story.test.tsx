@@ -1,14 +1,18 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stepDuration, useStory } from '../src/components/landing/use-story.ts';
+import { finishBoot } from '../src/lib/boot-loader.ts';
 
 let reduced = false;
 
 beforeEach(() => {
   vi.useFakeTimers();
   reduced = false;
+  // Read live: the hook keeps one media query list for the page.
   vi.stubGlobal('matchMedia', (query: string) => ({
-    matches: query.includes('reduce') && reduced,
+    get matches() {
+      return query.includes('reduce') && reduced;
+    },
     addEventListener: () => {},
     removeEventListener: () => {},
   }));
@@ -109,4 +113,50 @@ describe('useStory', () => {
     act(() => vi.advanceTimersByTime(20_000));
     expect(result.current.index).toBe(0);
   });
+
+  it('clears what it said once the story plays on', () => {
+    const { result } = renderHook(() => useStory());
+    act(() => result.current.goTo(0));
+    expect(result.current.announcement).toBe('Step 1 of 3: Set it up');
+    act(() => result.current.toggle());
+    expect(result.current.announcement).toBe('');
+  });
+
+  it('waits while the tab is hidden, and plays the step from its start when it is back', () => {
+    const { result } = renderHook(() => useStory());
+    act(() => vi.advanceTimersByTime(3000));
+    setHidden(true);
+    act(() => vi.advanceTimersByTime(20_000));
+    expect(result.current.index).toBe(0);
+    setHidden(false);
+    act(() => vi.advanceTimersByTime(4099));
+    expect(result.current.index).toBe(0);
+    act(() => vi.advanceTimersByTime(1));
+    expect(result.current.index).toBe(1);
+  });
+
+  it('waits for the page to show from under the boot loader', () => {
+    document.body.innerHTML = '<div id="boot-loader"></div><div id="root"></div>';
+    const loader = document.getElementById('boot-loader') as HTMLElement;
+    const reveal = { animationName: 'boot-reveal', startTime: performance.now() - 2000 };
+    loader.getAnimations = () => [reveal] as unknown as Animation[];
+    const { result } = renderHook(() => useStory());
+    act(() => vi.advanceTimersByTime(20_000));
+    expect(result.current.index).toBe(0);
+    act(() => finishBoot());
+    // The loader was up past its minimum: it hands over on the next tick.
+    act(() => vi.advanceTimersByTime(0));
+    act(() => vi.advanceTimersByTime(4099));
+    expect(result.current.index).toBe(0);
+    act(() => vi.advanceTimersByTime(1));
+    expect(result.current.index).toBe(1);
+    document.body.innerHTML = '';
+  });
 });
+
+function setHidden(hidden: boolean) {
+  act(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+}

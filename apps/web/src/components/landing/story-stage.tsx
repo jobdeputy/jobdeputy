@@ -1,11 +1,14 @@
 import type { ReactNode } from 'react';
 import { DeputySpeech, DeputyStatus } from '@/components/deputy/deputy-speech.tsx';
 import { Panda, type PandaPose } from '@/components/deputy/panda.tsx';
-import { copy } from '@/copy/index.ts';
+import { type Copy, copy, type OnePer } from '@/copy/index.ts';
 import { cn } from '@/lib/utils.ts';
 
-/** The pose for each step of the story, in order. */
-const SCENES: readonly PandaPose[] = ['setup', 'search', 'apply'];
+/**
+ * The pose for each step of the story, in order. Typed to the steps in the copy, so a language
+ * with a different number of steps fails to compile.
+ */
+const SCENES: OnePer<Copy['landing']['steps']['items'], PandaPose> = ['setup', 'search', 'apply'];
 
 /**
  * The deputy at work on the story's current step (`index`): his pose and tool, his line, his

@@ -1,9 +1,24 @@
-import { useEffect } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import { copy } from '@/copy';
 import { PENDING_DELAY_MS, PENDING_MIN_MS } from '@/lib/use-delayed-pending.ts';
 
 /** The loader's fade-out: the prototype's 618 ms secondary motion (index.html's duration-[618ms]). */
 export const BOOT_EXIT_MS = 618;
+
+/** Fired on window when the page shows from under the boot loader (or at once, if it never did). */
+const REVEALED = 'jobdeputy:revealed';
+
+/** Whether the page can be seen: no boot loader over it, or one already fading. */
+export function isRevealed(): boolean {
+  const loader = document.getElementById('boot-loader');
+  return !loader || loader.dataset.state === 'done';
+}
+
+/** Calls `onChange` when the page is revealed; returns the unsubscribe (useSyncExternalStore). */
+export function onRevealed(onChange: () => void): () => void {
+  window.addEventListener(REVEALED, onChange);
+  return () => window.removeEventListener(REVEALED, onChange);
+}
 
 /**
  * How long the boot loader must stay before it ends, given how far its reveal animation has run
@@ -43,6 +58,7 @@ export function finishBoot(): void {
   const hold = bootHoldMs(revealElapsed(loader));
   if (hold === 'never-shown') {
     loader.remove();
+    window.dispatchEvent(new Event(REVEALED));
     return;
   }
   const root = document.getElementById('root');
@@ -50,6 +66,7 @@ export function finishBoot(): void {
   setTimeout(() => {
     if (root) root.inert = false;
     loader.dataset.state = 'done';
+    window.dispatchEvent(new Event(REVEALED));
     // Inert while it fades: out of the accessibility tree, and its Reload link (shown after 8 s)
     // gives up focus, which goes back to the page as on any fresh load.
     if (loader.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
@@ -58,6 +75,11 @@ export function finishBoot(): void {
     if (status) status.textContent = copy.boot.ready;
     setTimeout(() => loader.remove(), BOOT_EXIT_MS);
   }, hold);
+}
+
+/** Whether the page can be seen yet: what starts motion the visitor should watch (the story). */
+export function useRevealed(): boolean {
+  return useSyncExternalStore(onRevealed, isRevealed, () => true);
 }
 
 /** Ends the boot loader once `ready` (the app's first screen can show). Today: on first render. */

@@ -69,16 +69,11 @@ export function StoryControls({
   );
 }
 
-/** Pause: two bars. Play and Advance: a triangle. Replay: a turning arrow. */
+/**
+ * Pause: two bars. Play and Advance: a triangle. Replay: a turning arrow. Drawn as SVG filled with
+ * the text colour, so forced colours keep their shapes (CanvasText there).
+ */
 function ToggleGlyph({ mode }: { mode: StoryMode }) {
-  if (mode === 'pause') {
-    return (
-      <span
-        aria-hidden="true"
-        className="h-2.5 w-2 border-x-[3px] border-current forced-colors:border-[CanvasText]"
-      />
-    );
-  }
   if (mode === 'replay') {
     return (
       <span aria-hidden="true" className="text-lg leading-none">
@@ -87,9 +82,17 @@ function ToggleGlyph({ mode }: { mode: StoryMode }) {
     );
   }
   return (
-    <span
+    <svg
       aria-hidden="true"
-      className="size-0 border-y-[6px] border-l-[9px] border-y-transparent border-l-current forced-colors:border-l-[CanvasText]"
-    />
+      focusable="false"
+      viewBox="0 0 12 12"
+      className="size-3 fill-current forced-colors:fill-[CanvasText]"
+    >
+      {mode === 'pause' ? (
+        <path d="M2 1h3v10H2zM7 1h3v10H7z" />
+      ) : (
+        <path d="M2.5 0.5 11 6l-8.5 5.5z" />
+      )}
+    </svg>
   );
 }
