@@ -47,7 +47,7 @@ function revealElapsed(loader: HTMLElement): number | null {
  * Ends the boot loader (index.html) once the app has rendered. Never seen: it is removed at once.
  * Seen: the app stays inert under it for the rest of its 500 ms, then the logo jumps to its
  * settled frame, the track fills, and it fades out, inert (the app usable at once), with a polite
- * "ready".
+ * "ready", while the page rises in under it on the same timing.
  * We never wait for the story to finish. Safe to call more than once.
  */
 export function finishBoot(): void {
@@ -64,6 +64,7 @@ export function finishBoot(): void {
   const root = document.getElementById('root');
   if (root) root.inert = true;
   setTimeout(() => {
+    // Usable at once, as the page rises in under the fade (index.html's #root, a CSS animation).
     if (root) root.inert = false;
     loader.dataset.state = 'done';
     window.dispatchEvent(new Event(REVEALED));
@@ -73,8 +74,62 @@ export function finishBoot(): void {
     loader.inert = true;
     const status = document.getElementById('boot-status');
     if (status) status.textContent = copy.boot.ready;
-    setTimeout(() => loader.remove(), BOOT_EXIT_MS);
+    removeWhenSettled(loader, root);
   }, hold);
+}
+
+/**
+ * Removes the loader once its fade and the page's rise (keyed to the loader, so removing it would
+ * cut the rise short) have both ended or been cancelled; at once when there are none (reduced
+ * motion). getAnimations() settles styles first, so both exist the moment the fade starts. No
+ * timer: in a hidden tab they wait and run when it is back, and a cancelled one settles too.
+ */
+function removeWhenSettled(loader: HTMLElement, root: HTMLElement | null) {
+  const moving = [loader, ...(root ? [root] : [])].flatMap((element) =>
+    (element.getAnimations?.() ?? []).map((animation) => settled(animation, element)),
+  );
+  if (moving.length === 0) {
+    loader.remove();
+    return;
+  }
+  const remove = () => loader.remove();
+  void Promise.all(moving).then(remove);
+  // A backstop at twice the fade: Linux WebKit settles neither the promise nor the events for this
+  // fade. Only a start delayed past it (a long stall) could cut the rise short.
+  setTimeout(remove, BOOT_EXIT_MS * 2);
+}
+
+/**
+ * When an animation on `element` has ended or been cancelled: its `finished` promise, or the
+ * element's own end or cancel event for that same transition or animation, whichever comes first
+ * (WebKit does not always settle `finished`; the events it does fire).
+ */
+function settled(animation: Animation, element: HTMLElement): Promise<void> {
+  // No promise to wait on (a stub, an old engine): nothing to wait for.
+  if (!animation.finished) return Promise.resolve();
+  // A CSS transition names its property; a CSS animation, its keyframes.
+  const property = (animation as Partial<CSSTransition>).transitionProperty;
+  const name = (animation as Partial<CSSAnimation>).animationName;
+  const kind = property ? 'transition' : 'animation';
+  return new Promise((resolve) => {
+    const done = (event?: Event) => {
+      if (event) {
+        if (event.target !== element) return;
+        const ended =
+          (event as TransitionEvent).propertyName ?? (event as AnimationEvent).animationName;
+        if ((property ?? name) && ended && ended !== (property ?? name)) return;
+      }
+      element.removeEventListener(`${kind}end`, done);
+      element.removeEventListener(`${kind}cancel`, done);
+      resolve();
+    };
+    element.addEventListener(`${kind}end`, done);
+    element.addEventListener(`${kind}cancel`, done);
+    animation.finished.then(
+      () => done(),
+      () => done(),
+    );
+  });
 }
 
 /** Whether the page can be seen yet: what starts motion the visitor should watch (the story). */

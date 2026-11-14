@@ -17,7 +17,7 @@
          into the {{copy.*}} slots at build time (html-copy.ts). -->
     <div
       id="boot-loader"
-      class="group fixed inset-0 z-100 transition-opacity duration-[618ms] ease-settle data-[state=done]:pointer-events-none data-[state=done]:opacity-0 motion-reduce:transition-none"
+      class="group peer fixed inset-0 z-100 transition-opacity duration-[618ms] ease-settle data-[state=done]:pointer-events-none data-[state=done]:opacity-0 motion-reduce:transition-none"
     >
       <div
         class="grid size-full animate-boot-reveal place-items-center bg-paper bg-radial-[circle_at_50%_44%] from-white from-0% via-surface via-28% to-transparent to-62% p-8 motion-reduce:animate-boot-reveal-still"
@@ -84,7 +84,9 @@
     </div>
     <!-- Says the app is ready, once the loader has been seen. Outside the loader, which is removed. -->
     <p id="boot-status" class="sr-only" role="status"></p>
-    <div id="root"></div>
+    <!-- As the loader fades, the page rises the 13px the story's props rise, on the same 618 ms
+         settle (the loader's own fade reveals it); not under reduced motion. -->
+    <div id="root" class="peer-data-[state=done]:motion-safe:animate-boot-rise"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

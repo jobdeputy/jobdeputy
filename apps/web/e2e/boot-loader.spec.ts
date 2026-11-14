@@ -32,6 +32,14 @@ async function openWithoutScript(page: Page) {
   await waitForReveal(page);
 }
 
+/** The page's animation once the (held) loader is set to hand over, as the CSS gives it. */
+function riseAtDone(page: Page) {
+  return page.evaluate(() => {
+    (document.getElementById('boot-loader') as HTMLElement).dataset.state = 'done';
+    return getComputedStyle(document.getElementById('root') as HTMLElement).animationName;
+  });
+}
+
 /** Opens the page with the app's script held back until the returned `release` is called. */
 async function openWithScriptHeld(page: Page) {
   let release = () => {};
@@ -62,6 +70,12 @@ async function recordFillAtHandOver(page: Page) {
         fill.getBoundingClientRect().width /
         (fill.parentElement as HTMLElement).getBoundingClientRect().width;
       document.documentElement.dataset.fillAtHandOver = share.toFixed(2);
+      // The page rises in under the fading loader, on its timing.
+      const rise = document.getElementById('root')?.getAnimations()[0];
+      const start = (rise?.effect as KeyframeEffect | undefined)?.getKeyframes()[0]?.transform;
+      document.documentElement.dataset.riseAtHandOver = rise
+        ? `${rise.effect?.getTiming().duration} from ${start}`
+        : 'undefined';
     }).observe(loader, { attributes: true });
   });
   return () => page.evaluate(() => document.documentElement.dataset.fillAtHandOver);
@@ -79,6 +93,9 @@ test('a slow boot shows the loader, then hands over to the app', async ({ page }
     page.getByRole('heading', { level: 1, name: 'You set it up. Your deputy applies.' }),
   ).toBeVisible();
   expect(await fillAtHandOver()).toBe('1.00');
+  expect(await page.evaluate(() => document.documentElement.dataset.riseAtHandOver)).toBe(
+    '618 from translateY(13px)',
+  );
   expect(await page.evaluate(() => document.getElementById('root')?.inert)).toBe(false);
   // The hand-over never moves focus.
   expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
@@ -97,6 +114,11 @@ test('a boot that stalls offers a reload at the 8 s long wait', async ({ page })
   const reloaded = page.waitForEvent('framenavigated');
   await reload.click();
   expect((await reloaded).url()).toBe(address);
+});
+
+test('the page rises as the loader hands over', async ({ page }) => {
+  await openWithoutScript(page);
+  expect(await riseAtDone(page)).toBe('boot-rise');
 });
 
 test('the loader appears only once the shared 300 ms delay has passed', async ({ page }) => {
@@ -144,12 +166,10 @@ test.describe('with reduced motion', () => {
     expect(await fill.evaluate((element) => getComputedStyle(element).animationName)).toBe('none');
   });
 
-  test('the track still fills at the hand-over', async ({ page }) => {
-    const release = await openWithScriptHeld(page);
-    const fillAtHandOver = await recordFillAtHandOver(page);
-    release();
-    await expect(loader(page)).toHaveCount(0);
-    expect(await fillAtHandOver()).toBe('1.00');
+  test('the page does not rise as the loader hands over', async ({ page }) => {
+    await openWithoutScript(page);
+    // The loader's hand-over state, set by hand: the CSS that would rise the page.
+    expect(await riseAtDone(page)).toBe('none');
   });
 });
 

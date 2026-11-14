@@ -113,6 +113,8 @@
   --animate-boot-reveal: boot-reveal 380ms var(--ease-settle) 300ms both;
   --animate-boot-reveal-still: boot-reveal 1ms 300ms both;
   --animate-boot-fill: boot-fill 2605ms linear both;
+  /* The page rising in under the fading loader (index.html's #root), on the loader's 618 ms. */
+  --animate-boot-rise: boot-rise 618ms var(--ease-settle);
   /* Its reload offer appears at the 8 s long wait, at once (its own keyframes, so lib/boot-loader.ts
      finds the reveal by name). */
   --animate-boot-slow: boot-slow 1ms 8000ms both;
@@ -144,6 +146,12 @@
     }
     to {
       visibility: visible;
+    }
+  }
+
+  @keyframes boot-rise {
+    from {
+      transform: translateY(13px);
     }
   }
 
