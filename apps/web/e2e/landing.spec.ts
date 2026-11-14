@@ -8,6 +8,14 @@ function visibleButton(page: Page, name: string) {
   return page.getByRole('button', { name, exact: true }).filter({ visible: true }).first();
 }
 
+/** The header and the hero together reach at least the bottom of the screen. */
+async function expectHeroFillsScreen(page: Page) {
+  const hero = await page.locator('main > section').boundingBox();
+  const viewport = page.viewportSize();
+  if (!hero || !viewport) throw new Error('No hero or viewport size.');
+  expect(hero.y + hero.height).toBeGreaterThanOrEqual(viewport.height - 0.5);
+}
+
 test.describe('landing page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
@@ -32,6 +40,10 @@ test.describe('landing page', () => {
     await expectNoHorizontalScroll(page);
   });
 
+  test('fills the screen under the header', async ({ page }) => {
+    await expectHeroFillsScreen(page);
+  });
+
   test('keeps the header usable with text at 200%', async ({ page }) => {
     // Doubles the root font, so every rem-sized part grows (WCAG 1.4.4). Unlike a browser's
     // text-size setting it leaves the breakpoints where they are, so each device keeps its layout.
@@ -47,6 +59,10 @@ test.describe('landing page', () => {
       4.5 * minimum.root,
       0,
     );
+    expect(box.height, 'the header reaches its minimum').toBeGreaterThanOrEqual(
+      minimum.header - 0.5,
+    );
+    await expectHeroFillsScreen(page);
     for (const part of await header.locator('a, button').filter({ visible: true }).all()) {
       const partBox = await part.boundingBox();
       if (!partBox) throw new Error('A header control has no box.');

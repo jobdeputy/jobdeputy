@@ -18,6 +18,8 @@
   }
 
   body {
-    @apply bg-background font-text text-foreground antialiased;
+    /* A word wider than its line (very large text on a small phone) breaks instead of pushing
+       the page sideways. */
+    @apply bg-background font-text text-foreground antialiased wrap-anywhere;
   }
 }

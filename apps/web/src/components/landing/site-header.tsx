@@ -24,7 +24,7 @@ export function SiteHeader({ auth }: { auth: AuthControl }) {
           alt=""
           width="62"
           height="45"
-          className="block w-[62px] shrink-0 transition-transform duration-180 group-hover:-translate-y-px group-active:scale-98 motion-reduce:transition-none"
+          className="block w-[62px] min-w-0 shrink transition-transform duration-180 group-hover:-translate-y-px group-active:scale-98 motion-reduce:transition-none"
         />
         <span className="grid min-w-0 gap-[3px] leading-none">
           <span className="text-[1.1875rem] tracking-[-0.05em]">
@@ -62,7 +62,8 @@ function useHeaderOffset(header: React.RefObject<HTMLElement | null>) {
     // The observed border box, unrounded; written only when the height changes (a width-only
     // resize leaves the page's styles alone).
     const observer = new ResizeObserver(([entry]) => {
-      const height = entry?.borderBoxSize[0]?.blockSize;
+      // borderBoxSize is missing before Safari 15.4: then the CSS minimum stays in use.
+      const height = entry?.borderBoxSize?.[0]?.blockSize;
       if (height === undefined || height === published) return;
       published = height;
       root.style.setProperty('--header-offset', `${height}px`);

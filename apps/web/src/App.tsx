@@ -21,10 +21,12 @@ export function App() {
 
   return (
     <>
-      {/* The header takes its height; the main area (and the hero in it) fills the rest. */}
-      <div className="grid min-h-dvh grid-rows-[auto_1fr]">
+      {/* The header takes its height; the main area (and the hero in it) fills the rest. Page
+          content (a footer too) goes inside this wrapper: it bounds where the header sticks.
+          minmax(0,1fr) columns keep wide content from widening the page. */}
+      <div className="grid min-h-dvh grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr]">
         <SiteHeader auth={auth} />
-        <main className="grid">
+        <main className="grid grid-cols-[minmax(0,1fr)]">
           <Hero auth={auth} />
         </main>
       </div>
