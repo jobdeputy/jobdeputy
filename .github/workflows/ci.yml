@@ -33,6 +33,29 @@ jobs:
       - name: Synthesize all cells (dev and prod)
         run: pnpm synth
 
+  browser-tests:
+    name: Browser tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install the browsers and their system libraries
+        run: pnpm --filter @jobdeputy/web exec playwright install --with-deps chromium firefox webkit
+      - name: Playwright on every device (desktop, tablet, phones)
+        run: pnpm --filter @jobdeputy/web test:e2e
+      - name: Keep the report and traces of a failed run
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7
+
   docs-lint:
     name: Markdown lint
     runs-on: ubuntu-24.04

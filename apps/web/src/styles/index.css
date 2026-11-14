@@ -1,0 +1,14 @@
+/* The only stylesheet the app loads. Pages style themselves with Tailwind classes, not CSS. */
+@import "tailwindcss";
+@import "./tokens.css";
+
+@layer base {
+  :root {
+    color-scheme: light;
+    font-synthesis: none;
+  }
+
+  body {
+    @apply bg-background font-text text-foreground antialiased;
+  }
+}
