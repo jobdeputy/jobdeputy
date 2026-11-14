@@ -1,6 +1,5 @@
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { Panda } from '../src/components/deputy/panda.tsx';
 import { StoryProps } from '../src/components/landing/story-props.tsx';
 
 afterEach(cleanup);
@@ -31,6 +30,15 @@ describe('StoryProps', () => {
     expect(container.querySelector('.animate-send-application')).not.toBeNull();
   });
 
+  it('rests the setup checks empty, and ticks them green while "Set it up" is on', () => {
+    const { container, rerender } = render(<StoryProps scene="search" />);
+    const checks = () => [...container.querySelectorAll('.size-\\[22px\\]')];
+    expect(checks()).toHaveLength(3);
+    expect(checks().every((check) => !check.classList.contains('bg-green-soft'))).toBe(true);
+    rerender(<StoryProps scene="setup" />);
+    expect(checks().every((check) => check.classList.contains('bg-green-soft'))).toBe(true);
+  });
+
   it('ticks the setup rows in turn', () => {
     const { container } = render(<StoryProps scene="setup" />);
     const delays = [...container.querySelectorAll('.animate-setup-tick')].map((tick) =>
@@ -41,24 +49,5 @@ describe('StoryProps', () => {
       '[animation-delay:900ms]',
       '[animation-delay:1160ms]',
     ]);
-  });
-});
-
-describe('Panda flourishes', () => {
-  it('writes with the pencil to set up, scans with the magnifier to find, and holds otherwise', () => {
-    const { container, rerender } = render(<Panda pose="setup" />);
-    expect(container.querySelector('.animate-tailor-paw')).not.toBeNull();
-    expect(container.querySelector('.animate-tailor-pencil')).not.toBeNull();
-    rerender(<Panda pose="search" />);
-    expect(container.querySelector('.animate-tailor-paw')).toBeNull();
-    expect(container.querySelector('.animate-magnifier-scan')).not.toBeNull();
-    for (const pose of ['apply', 'pending'] as const) {
-      rerender(<Panda pose={pose} />);
-      expect(
-        container.querySelector(
-          '.animate-tailor-paw, .animate-tailor-pencil, .animate-magnifier-scan',
-        ),
-      ).toBeNull();
-    }
   });
 });

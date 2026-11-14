@@ -20,8 +20,9 @@ const POSES: Record<
     propTurn: number;
     propScale: number;
     look: [number, number];
-    /** The landing story's flourish, played once as the pose comes on: arm, then prop. */
-    flourish?: [arm: string, prop: string];
+    /** The landing story's flourishes, each played once as the pose comes on. */
+    armFlourish?: string;
+    propFlourish?: string;
   }
 > = {
   setup: {
@@ -31,7 +32,8 @@ const POSES: Record<
     propTurn: 6,
     propScale: 1,
     look: [-5, 3],
-    flourish: ['animate-tailor-paw', 'animate-tailor-pencil'],
+    armFlourish: 'animate-tailor-paw',
+    propFlourish: 'animate-tailor-pencil',
   },
   search: {
     head: 'translate(-5px, -1px) rotate(-7deg)',
@@ -40,7 +42,7 @@ const POSES: Record<
     propTurn: 94.2,
     propScale: 1,
     look: [-5, -1],
-    flourish: ['', 'animate-magnifier-scan'],
+    propFlourish: 'animate-magnifier-scan',
   },
   apply: {
     head: 'translate(2px, -2px) rotate(5deg)',
@@ -242,7 +244,7 @@ export function Panda({ className, pose = 'setup' }: { className?: string; pose?
         className={cn(
           MOVES,
           'origin-[257.3px_261.16px] motion-reduce:animate-none',
-          current.flourish?.[0],
+          current.armFlourish,
         )}
         style={{ transform: `rotate(${current.arm}deg)` }}
       >
@@ -288,7 +290,7 @@ function PropInPaw({
         active
           ? cn(
               'opacity-100 [transition-delay:380ms,0ms] motion-reduce:animate-none',
-              pose.flourish?.[1],
+              pose.propFlourish,
             )
           : 'opacity-0',
       )}

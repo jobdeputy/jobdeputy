@@ -47,7 +47,9 @@ function Rig({
     <div
       data-shown={shown || undefined}
       className={cn(
-        'absolute transition-[opacity,transform] duration-[260ms,618ms] ease-settle motion-reduce:transition-none',
+        // The fade over 260ms (ease), the rise and growth over 618ms (settle). Tailwind's
+        // translate-y and scale set their own properties, so those are what transition.
+        'absolute transition-[opacity,translate,scale] duration-[260ms,618ms,618ms] [transition-timing-function:ease,var(--ease-settle),var(--ease-settle)] motion-reduce:transition-none',
         shown ? 'opacity-100' : 'translate-y-[13px] scale-[0.88] opacity-0',
         className,
       )}
@@ -80,8 +82,10 @@ function SetupCard({ ticking }: { ticking: boolean }) {
         >
           <span
             className={cn(
-              'relative block size-[22px] shrink-0 rounded-full border-2 border-green bg-green-soft after:absolute after:top-[3px] after:left-[6px] after:h-[9px] after:w-[5px] after:rotate-45 after:border-r-[2.5px] after:border-b-[2.5px] after:border-green-ink',
-              ticking && 'animate-setup-tick motion-reduce:animate-none',
+              // Empty and grey at rest; green and ticked while "Set it up" is on.
+              'relative block size-[22px] shrink-0 rounded-full border-2 border-ink/24 transition-colors duration-[180ms] after:absolute after:top-[3px] after:left-[6px] after:h-[9px] after:w-[5px] after:rotate-45 after:scale-0 after:border-r-[2.5px] after:border-b-[2.5px] after:border-green-ink motion-reduce:transition-none',
+              ticking &&
+                'animate-setup-tick border-green bg-green-soft after:scale-100 motion-reduce:animate-none',
               ticking && delays[index],
             )}
           />
@@ -120,6 +124,8 @@ function SourceNode({ className }: { className: string }) {
         />
         <path d="M5 7h14M5 12h9" stroke="currentColor" strokeWidth="2" />
       </svg>
+      {/* Two small dots above the page, in the source's colour. */}
+      <span className="absolute top-[11px] left-[14px] size-[3px] rounded-full bg-current opacity-72 shadow-[5px_0_currentColor]" />
     </span>
   );
 }
@@ -152,10 +158,9 @@ function ApplyRig({ sending }: { sending: boolean }) {
           'absolute top-12 left-2 grid h-[60px] w-[82px] place-items-center rounded-[12px] border-2 border-green/55 bg-white/92',
           CARD_SHADOW,
           // At rest it has gone into the portal (unseen); the flight animates `transform` from the
-          // start of the route. Under reduced motion it waits, seen, at the start.
+          // start of the route. Under reduced motion it stays there, as in the prototype.
           'opacity-0 [transform:translateX(144px)_rotate(4deg)_scale(0.65)]',
-          sending &&
-            'animate-send-application motion-reduce:animate-none motion-reduce:opacity-100 motion-reduce:[transform:rotate(-3deg)]',
+          sending && 'animate-send-application motion-reduce:animate-none',
         )}
       >
         {/* An envelope with a green tick on its corner. */}
@@ -171,7 +176,7 @@ function ApplyRig({ sending }: { sending: boolean }) {
           />
           <path d="M2 3l19 13 19-13" className="fill-none stroke-green" strokeWidth="2" />
         </svg>
-        <span className="absolute -top-2.5 -right-2.5 grid size-6 place-items-center rounded-full border-[3px] border-white bg-green text-xs leading-none font-extrabold text-white">
+        <span className="absolute -top-2.5 -right-2.5 grid size-6 place-items-center rounded-full border-[3px] border-white bg-green text-xs leading-none font-extrabold text-white shadow-[0_6px_14px_color-mix(in_oklab,var(--color-green)_22%,transparent)]">
           ✓
         </span>
       </span>
@@ -179,7 +184,7 @@ function ApplyRig({ sending }: { sending: boolean }) {
       <span
         className={cn(
           'absolute top-[17px] right-0 grid h-[118px] w-[76px] place-items-center rounded-[17px] border border-ink/12 bg-white/90',
-          CARD_SHADOW,
+          'shadow-[0_13px_27px_color-mix(in_oklab,var(--color-ink)_10%,transparent)]',
         )}
       >
         <span className="grid size-[41px] place-items-center rounded-full bg-green text-[1.1875rem] leading-none font-[780] text-white">
