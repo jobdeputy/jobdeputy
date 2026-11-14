@@ -233,10 +233,10 @@ test.describe('the story, on the page clock', () => {
     await stripSteps(page).nth(0).click();
     await freezeClock(page);
     await page.getByRole('button', { name: 'Play story' }).click();
-    expect(await breathing(page)).toBe(true);
+    await expect.poll(() => breathing(page)).toBe(true);
     await page.getByRole('button', { name: 'Pause story' }).click();
     // Paused, the deputy stops breathing (easing back to his pose)…
-    expect(await breathing(page)).toBe(false);
+    await expect.poll(() => breathing(page)).toBe(false);
     // …and, paused by its button, the step's flourish holds where it is.
     await expect(page.locator('.story-stage')).toHaveAttribute('data-held', 'true');
     await expect(page.locator('.animate-tailor-paw')).toHaveCSS('animation-play-state', 'paused');
@@ -260,7 +260,8 @@ test.describe('with reduced motion', () => {
     await expect(stripSteps(page).nth(0)).toHaveAttribute('aria-current', 'step');
     await page.getByRole('button', { name: 'Advance story' }).click();
     await expect(stripSteps(page).nth(1)).toHaveAttribute('aria-current', 'step');
-    // The step's flourish holds still too, and the deputy does not breathe.
+    // The step's flourish holds still too, and the deputy does not breathe (the story would
+    // have him breathing by now if it did).
     await expect(page.locator('.animate-search-sweep')).toHaveCSS('animation-name', 'none');
     expect(await breathing(page)).toBe(false);
   });

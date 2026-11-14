@@ -99,27 +99,42 @@ describe('Panda, alive', () => {
     expect(body(container).style.transform).toBe('');
   });
 
-  it('breathes only while alive, and eases back to the pose when the breath stops', () => {
-    // happy-dom runs no animations: record what the panda asks for.
+  /** Records what the panda asks the Web Animations API for (happy-dom runs no animations). */
+  function recordAnimations(running: Partial<Animation>[] = []) {
     const calls: { keyframes: Keyframe[]; options: KeyframeAnimationOptions }[] = [];
     const cancel = vi.fn();
-    Object.assign(SVGElement.prototype, {
-      animate(keyframes: Keyframe[], options: KeyframeAnimationOptions) {
-        calls.push({ keyframes, options });
-        return { cancel };
-      },
-      getAnimations: () => [],
-    });
+    vi.spyOn(Element.prototype, 'animate').mockImplementation(((
+      keyframes: Keyframe[],
+      options: KeyframeAnimationOptions,
+    ) => {
+      calls.push({ keyframes, options });
+      return { cancel } as unknown as Animation;
+    }) as Element['animate']);
+    vi.spyOn(Element.prototype, 'getAnimations').mockReturnValue(running as Animation[]);
+    return { calls, cancel };
+  }
+
+  function computedStyle(transitionProperty = 'transform') {
     vi.spyOn(window, 'getComputedStyle').mockReturnValue({
       transform: 'matrix(1, 0, 0, 1, 0, -3)',
       transitionDuration: '0.38s',
       transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+      transitionProperty,
     } as CSSStyleDeclaration);
+  }
+
+  it('breathes only while alive, on top of the pose, and eases back when the breath stops', () => {
+    const { calls, cancel } = recordAnimations();
+    computedStyle();
     const { rerender } = render(<Panda />);
     expect(calls).toHaveLength(0);
     rerender(<Panda alive />);
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.options.iterations).toBe(Number.POSITIVE_INFINITY);
+    expect(calls[0]?.options).toMatchObject({
+      iterations: Number.POSITIVE_INFINITY,
+      composite: 'add',
+      delay: 0,
+    });
     rerender(<Panda alive={false} />);
     expect(cancel).toHaveBeenCalled();
     // Back from where the breath had it, on the body's own transition.
@@ -131,8 +146,25 @@ describe('Panda, alive', () => {
       duration: 380,
       easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
     });
-    Reflect.deleteProperty(SVGElement.prototype, 'animate');
-    Reflect.deleteProperty(SVGElement.prototype, 'getAnimations');
+  });
+
+  it('does not ease back where transitions are off (reduced motion)', () => {
+    const { calls } = recordAnimations();
+    computedStyle('none');
+    const { rerender } = render(<Panda alive />);
+    rerender(<Panda alive={false} />);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('starts a new breath once an ease-back still running has finished', () => {
+    const easeBack = {
+      currentTime: 100,
+      effect: { getComputedTiming: () => ({ duration: 380, delay: 0 }) },
+    } as unknown as Partial<Animation>;
+    const { calls } = recordAnimations([easeBack]);
+    computedStyle();
+    render(<Panda alive />);
+    expect(calls[0]?.options.delay).toBe(280);
   });
 
   it('blinks now and then while alive, both eyes at once, and never otherwise', () => {

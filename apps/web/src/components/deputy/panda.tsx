@@ -109,7 +109,7 @@ export function Panda({
   const art = useRef<SVGSVGElement>(null);
   const body = useRef<SVGGElement>(null);
   useBlink(alive && !reducedMotion, art);
-  useBreath(alive && !reducedMotion, body);
+  useBreath(alive, reducedMotion, body);
   // A blink closes each eye to a tenth of its height, about its centre, for 180ms.
   const eyeClass = 'origin-center [transform-box:fill-box]';
   const look: CSSProperties = {
@@ -348,7 +348,10 @@ function useBlink(alive: boolean, art: RefObject<SVGSVGElement | null>) {
   }, [alive, art]);
 }
 
-/** One breath: the body rises 4px and tips half a degree, every golden 5.236s (the prototype's). */
+/**
+ * One breath: the body rises 4px and tips half a degree, every golden 5.236s (the prototype's).
+ * Added on top of the pose's own transform (`composite: 'add'`), so a lifted pose breathes too.
+ */
 const BREATH: Keyframe[] = [
   { transform: 'translate(0, 0) rotate(0deg)' },
   { transform: 'translate(0, -4px) rotate(-0.5deg)' },
@@ -358,38 +361,52 @@ const BREATH: Keyframe[] = [
 /**
  * Breathes the body while `alive`. When the breath stops (the story pauses or ends), the body
  * eases back from wherever the breath had it, over its own transform transition (380ms, the
- * settle curve), as the prototype does, instead of snapping. A breath that starts again cancels
- * any ease-back still running. All in effects, through the Web Animations API.
+ * settle curve), as the prototype does, instead of snapping; not under reduced motion. A breath
+ * that starts again waits for any ease-back or pose change still running, so nothing jumps. All in
+ * effects, through the Web Animations API.
  */
-function useBreath(alive: boolean, body: RefObject<SVGGElement | null>) {
+function useBreath(alive: boolean, reducedMotion: boolean, body: RefObject<SVGGElement | null>) {
   useEffect(() => {
     const element = body.current;
-    if (!alive || !element?.animate) return;
-    for (const animation of element.getAnimations()) animation.cancel();
+    if (!alive || reducedMotion || !element?.animate) return;
+    // Let a running ease-back (or pose change) finish first.
+    const settling = Math.max(
+      0,
+      ...element.getAnimations().map((animation) => {
+        const { duration, delay } = animation.effect?.getComputedTiming() ?? {};
+        const elapsed = Number(animation.currentTime ?? 0);
+        return Number(duration ?? 0) + Number(delay ?? 0) - elapsed;
+      }),
+    );
     const breath = element.animate(BREATH, {
       duration: 5236,
+      delay: settling,
       iterations: Number.POSITIVE_INFINITY,
       easing: 'ease-in-out',
+      composite: 'add',
     });
     // Cancelling an animation rejects its `finished`; that is expected here, not an error.
     breath.finished?.catch(() => {});
     return () => {
       // Where the breath has the body now, then back to its pose on its own transition.
-      const from = getComputedStyle(element).transform;
+      const {
+        transform: from,
+        transitionDuration,
+        transitionTimingFunction,
+        transitionProperty,
+      } = getComputedStyle(element);
       breath.cancel();
-      const { transitionDuration, transitionTimingFunction } = getComputedStyle(element);
-      const rest = element.style.transform || 'none';
       const duration = Number.parseFloat(transitionDuration) * 1000;
-      if (from && from !== 'none' && duration > 0) {
-        element
-          .animate([{ transform: from }, { transform: rest }], {
-            duration,
-            easing: transitionTimingFunction,
-          })
-          .finished?.catch(() => {});
-      }
+      const rest = element.style.transform || 'none';
+      if (!from || from === 'none' || transitionProperty === 'none' || !(duration > 0)) return;
+      element
+        .animate([{ transform: from }, { transform: rest }], {
+          duration,
+          easing: transitionTimingFunction,
+        })
+        .finished?.catch(() => {});
     };
-  }, [alive, body]);
+  }, [alive, reducedMotion, body]);
 }
 
 /**
