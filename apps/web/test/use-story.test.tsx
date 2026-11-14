@@ -41,51 +41,56 @@ describe('stepDuration', () => {
 });
 
 describe('useStory', () => {
-  it('plays each step once, then holds the last with Replay', () => {
+  it('plays each step as its bar fills, then holds the last with Replay', () => {
     const { result } = renderHook(() => useStory());
-    expect(result.current).toMatchObject({ index: 0, mode: 'pause' });
-    act(() => vi.advanceTimersByTime(4099));
-    expect(result.current.index).toBe(0);
-    act(() => vi.advanceTimersByTime(1));
-    expect(result.current.index).toBe(1);
-    act(() => vi.advanceTimersByTime(4400));
-    expect(result.current).toMatchObject({ index: 2, mode: 'replay' });
-    act(() => vi.advanceTimersByTime(60_000));
-    expect(result.current.index).toBe(2);
+    expect(result.current).toMatchObject({ index: 0, mode: 'pause', progress: 'filling' });
+    expect(result.current.duration).toBe(4100);
+    act(() => result.current.onStepEnd());
+    expect(result.current).toMatchObject({ index: 1, duration: 4400, progress: 'filling' });
+    act(() => result.current.onStepEnd());
+    // The last step plays its time out too, then the story offers Replay.
+    expect(result.current).toMatchObject({ index: 2, mode: 'pause', progress: 'filling' });
+    act(() => result.current.onStepEnd());
+    expect(result.current).toMatchObject({ index: 2, mode: 'replay', progress: 'full' });
     // Autoplay says nothing.
     expect(result.current.announcement).toBe('');
   });
 
-  it('pauses and plays on from where it was', () => {
+  it('pauses with the bar held part-way, and plays on from there', () => {
     const { result } = renderHook(() => useStory());
     act(() => result.current.toggle());
-    expect(result.current.mode).toBe('play');
-    act(() => vi.advanceTimersByTime(20_000));
-    expect(result.current.index).toBe(0);
+    expect(result.current).toMatchObject({ mode: 'play', progress: 'held', held: true });
     act(() => result.current.toggle());
-    expect(result.current.mode).toBe('pause');
-    act(() => vi.advanceTimersByTime(4100));
-    expect(result.current.index).toBe(1);
+    expect(result.current).toMatchObject({ mode: 'pause', progress: 'filling', held: false });
+  });
+
+  it('offers Play, not Replay, when the last step is paused part-way', () => {
+    const { result } = renderHook(() => useStory());
+    act(() => result.current.onStepEnd());
+    act(() => result.current.onStepEnd());
+    act(() => result.current.toggle());
+    expect(result.current).toMatchObject({ index: 2, mode: 'play', progress: 'held' });
+    act(() => result.current.toggle());
+    expect(result.current).toMatchObject({ index: 2, mode: 'pause', progress: 'filling' });
   });
 
   it('replays from the start', () => {
     const { result } = renderHook(() => useStory());
-    act(() => vi.advanceTimersByTime(4100));
-    act(() => vi.advanceTimersByTime(4400));
+    for (const _ of [0, 1, 2]) act(() => result.current.onStepEnd());
     act(() => result.current.toggle());
-    expect(result.current).toMatchObject({ index: 0, mode: 'pause' });
+    expect(result.current).toMatchObject({ index: 0, mode: 'pause', progress: 'filling' });
   });
 
-  it('shows a chosen step, pauses, and says where it is', () => {
+  it('shows a chosen step with its bar full, pauses, and says where it is', () => {
     const { result } = renderHook(() => useStory());
     act(() => result.current.goTo(1));
     expect(result.current).toMatchObject({
       index: 1,
       mode: 'play',
+      progress: 'full',
+      held: false,
       announcement: 'Step 2 of 3: It finds',
     });
-    act(() => vi.advanceTimersByTime(20_000));
-    expect(result.current.index).toBe(1);
   });
 
   it('keeps a chosen step on the story', () => {
@@ -99,9 +104,7 @@ describe('useStory', () => {
   it('never plays by itself under reduced motion: the button advances a step', () => {
     reduced = true;
     const { result } = renderHook(() => useStory());
-    expect(result.current.mode).toBe('advance');
-    act(() => vi.advanceTimersByTime(20_000));
-    expect(result.current.index).toBe(0);
+    expect(result.current).toMatchObject({ mode: 'advance', progress: 'full', animating: false });
     act(() => result.current.toggle());
     expect(result.current).toMatchObject({ index: 1, announcement: 'Step 2 of 3: It finds' });
     act(() => result.current.toggle());
@@ -110,11 +113,9 @@ describe('useStory', () => {
     expect(result.current).toMatchObject({
       index: 0,
       mode: 'advance',
+      progress: 'full',
       announcement: 'Step 1 of 3: Set it up',
     });
-    // Replay under reduced motion goes back to the start; it still never plays by itself.
-    act(() => vi.advanceTimersByTime(20_000));
-    expect(result.current.index).toBe(0);
   });
 
   it('stays still for good once reduced motion is turned on, even if turned off again', () => {
@@ -123,8 +124,7 @@ describe('useStory', () => {
     rerender();
     reduced = false;
     rerender();
-    act(() => vi.advanceTimersByTime(20_000));
-    expect(result.current).toMatchObject({ index: 0, mode: 'play' });
+    expect(result.current).toMatchObject({ index: 0, mode: 'play', progress: 'full' });
   });
 
   it('clears what it said once the story plays on', () => {
@@ -135,19 +135,31 @@ describe('useStory', () => {
     expect(result.current.announcement).toBe('');
   });
 
-  it('waits while the tab is hidden, and plays the step from its start when it is back', () => {
+  it('waits, its bar empty, while the tab is hidden, and starts the bar over when it is back', () => {
     const { result } = renderHook(() => useStory());
-    act(() => vi.advanceTimersByTime(3000));
+    const { run } = result.current;
     setHidden(true);
-    // Nobody can watch: the deputy holds still too.
-    expect(result.current.animating).toBe(false);
-    act(() => vi.advanceTimersByTime(20_000));
-    expect(result.current.index).toBe(0);
+    // Nobody can watch: the deputy and the bar hold still.
+    expect(result.current).toMatchObject({ animating: false, progress: 'waiting' });
     setHidden(false);
-    act(() => vi.advanceTimersByTime(4099));
-    expect(result.current.index).toBe(0);
-    act(() => vi.advanceTimersByTime(1));
-    expect(result.current.index).toBe(1);
+    expect(result.current).toMatchObject({ animating: true, progress: 'filling', run: run + 1 });
+  });
+
+  it('keeps the run across a Pause, so the bar goes on from where it stopped', () => {
+    const { result } = renderHook(() => useStory());
+    const { run } = result.current;
+    act(() => result.current.toggle());
+    act(() => result.current.toggle());
+    expect(result.current).toMatchObject({ progress: 'filling', run });
+  });
+
+  it('lets go of a hold when reduced motion comes on', () => {
+    const { result, rerender } = renderHook(() => useStory());
+    act(() => result.current.toggle());
+    expect(result.current.progress).toBe('held');
+    reduced = true;
+    rerender();
+    expect(result.current).toMatchObject({ held: false, progress: 'full' });
   });
 
   it('waits for the page to show from under the boot loader', () => {
@@ -156,15 +168,11 @@ describe('useStory', () => {
     const reveal = { animationName: 'boot-reveal', startTime: performance.now() - 2000 };
     loader.getAnimations = () => [reveal] as unknown as Animation[];
     const { result } = renderHook(() => useStory());
-    act(() => vi.advanceTimersByTime(20_000));
-    expect(result.current.index).toBe(0);
+    expect(result.current.progress).toBe('waiting');
     act(() => finishBoot());
     // The loader was up past its minimum: it hands over on the next tick.
     act(() => vi.advanceTimersByTime(0));
-    act(() => vi.advanceTimersByTime(4099));
-    expect(result.current.index).toBe(0);
-    act(() => vi.advanceTimersByTime(1));
-    expect(result.current.index).toBe(1);
+    expect(result.current.progress).toBe('filling');
   });
 
   it('holds the flourish only when paused by the Pause button', () => {

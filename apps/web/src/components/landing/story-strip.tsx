@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect, useRef } from 'react';
 import { ApprovalShape, MagnifierShape, PencilShape } from '@/components/deputy/panda.tsx';
 import { type Copy, copy, type OnePer } from '@/copy/index.ts';
 import { cn } from '@/lib/utils.ts';
+import type { StepProgress } from './use-story.ts';
 
 /**
  * Each step's tool, as the deputy holds it: pencil, magnifier, approved page. Typed to the steps
@@ -21,11 +22,22 @@ const STEP_TOOLS: OnePer<Copy['landing']['steps']['items'], ReactNode> = [
  */
 export function StoryStrip({
   current,
+  progress,
+  duration,
+  run,
   onSelect,
+  onStepEnd,
   className,
 }: {
   current: number;
+  /** The current step's bar: filling over `duration` ms as it plays, held, waiting, or full. */
+  progress: StepProgress;
+  duration: number;
+  /** Changes when the bar must start over (the story resumed after waiting). */
+  run: number;
   onSelect: (index: number) => void;
+  /** The current step's bar has filled: the story's clock (useStory). */
+  onStepEnd: () => void;
   className?: string;
 }) {
   const { steps } = copy.landing;
@@ -45,8 +57,9 @@ export function StoryStrip({
             <button
               type="button"
               aria-current={isCurrent ? 'step' : undefined}
+              data-progress={isCurrent ? progress : undefined}
               onClick={() => onSelect(index)}
-              className="relative grid w-full cursor-pointer rounded-[13px] text-start transition-colors duration-[180ms] hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring focus-visible:outline-solid motion-reduce:transition-none grid-cols-[36px_minmax(0,1fr)] items-start gap-x-2.5 px-2 pt-2 pb-[17px] before:absolute before:inset-x-2 before:bottom-[5px] before:h-[3px] before:rounded-full before:bg-muted-foreground aria-[current=step]:after:absolute aria-[current=step]:after:inset-x-2 aria-[current=step]:after:bottom-1 aria-[current=step]:after:h-[5px] aria-[current=step]:after:rounded-full aria-[current=step]:after:bg-green-ink"
+              className="relative grid w-full cursor-pointer rounded-[13px] text-start transition-colors duration-[180ms] hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring focus-visible:outline-solid motion-reduce:transition-none grid-cols-[36px_minmax(0,1fr)] items-start gap-x-2.5 px-2 pt-2 pb-[17px] before:absolute before:inset-x-2 before:bottom-[5px] before:h-[3px] before:rounded-full before:bg-muted-foreground"
             >
               {index > 0 && (
                 <span
@@ -87,10 +100,63 @@ export function StoryStrip({
                   {step.line}
                 </span>
               </span>
+              {isCurrent && (
+                <StepBar
+                  // A new run (after waiting for someone to watch) starts the bar over.
+                  key={run}
+                  progress={progress}
+                  duration={duration}
+                  onFilled={onStepEnd}
+                />
+              )}
             </button>
           </li>
         );
       })}
     </ol>
+  );
+}
+
+/**
+ * The current step's bar: it fills over the step's time while the story plays, stops part-way on
+ * Pause (Play goes on from there), waits empty while nobody can watch, and shows full otherwise.
+ * When it has filled while playing it tells the story, which moves on: it is the story's clock.
+ */
+function StepBar({
+  progress,
+  duration,
+  onFilled,
+}: {
+  progress: StepProgress;
+  duration: number;
+  onFilled: () => void;
+}) {
+  // Filled just as the story was paused (the end landed a frame after Pause): it cannot fill
+  // again, so Play moves the story on at once instead.
+  const filledWhileHeld = useRef(false);
+  useEffect(() => {
+    if (progress === 'held' || !filledWhileHeld.current) return;
+    // Only straight from that hold to Play; a hold that ended any other way forgets it.
+    filledWhileHeld.current = false;
+    if (progress === 'filling') onFilled();
+  }, [progress, onFilled]);
+  return (
+    <span
+      aria-hidden="true"
+      data-bar={progress}
+      style={{ animationDuration: `${duration}ms` }}
+      onAnimationEnd={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (progress === 'filling') onFilled();
+        else if (progress === 'held') filledWhileHeld.current = true;
+      }}
+      className={cn(
+        'absolute inset-x-2 bottom-1 h-[5px] origin-left rounded-full bg-green-ink',
+        (progress === 'filling' || progress === 'held') &&
+          'animate-strip-fill motion-reduce:animate-none',
+        progress === 'held' && '[animation-play-state:paused]',
+        progress === 'waiting' && 'scale-x-0',
+      )}
+    />
   );
 }

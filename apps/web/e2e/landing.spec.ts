@@ -128,14 +128,19 @@ test.describe('landing page', () => {
   });
 });
 
-/**
- * Stops the page's installed clock a minute on; after this only fastForward moves time. The clock
- * runs on until the pause lands, and a target already in the past throws, so the target is far
- * ahead of any stall. Call it once the story is paused: the jump then changes nothing it shows.
- */
-async function freezeClock(page: Page) {
-  const now = await page.evaluate(() => Date.now());
-  await page.clock.pauseAt(now + 60_000);
+/** The current step's bar: how long it takes to fill, and whether it is filling now. */
+function stepBar(page: Page) {
+  return page.locator('[data-bar]').evaluate((bar) => {
+    const style = getComputedStyle(bar);
+    return [style.animationDuration, style.animationPlayState];
+  });
+}
+
+/** How far the current step's bar has got, in ms. */
+function barTime(page: Page) {
+  return page
+    .locator('[data-bar]')
+    .evaluate((bar) => Number(bar.getAnimations()[0]?.currentTime ?? -1));
 }
 
 /** Whether the deputy is breathing: an endless animation on his body. */
@@ -169,7 +174,10 @@ test.describe('the story', () => {
     await expect(stripSteps(page).nth(2)).toHaveAttribute('aria-current', 'step', {
       timeout: 15_000,
     });
-    await expect(page.getByRole('button', { name: 'Replay story' })).toBeVisible();
+    // The last step plays its 4.1 s out first.
+    await expect(page.getByRole('button', { name: 'Replay story' })).toBeVisible({
+      timeout: 15_000,
+    });
   });
 
   test('steps back and forth by its arrows', async ({ page }) => {
@@ -191,11 +199,10 @@ test.describe('the story', () => {
   });
 });
 
-test.describe('the story, on the page clock', () => {
-  // Each test first chooses a step (which pauses the story), then freezes the page's clock there,
-  // so from then on only fastForward moves time: nothing races real time.
+test.describe('the story, step by step', () => {
+  // The story's clock is the current step's bar (a CSS animation), so these wait on facts in
+  // real time rather than on the page's clock, which does not drive CSS.
   test.beforeEach(async ({ page }) => {
-    await page.clock.install();
     await page.goto('/');
   });
 
@@ -212,40 +219,43 @@ test.describe('the story, on the page clock', () => {
   });
 
   test('holds a step chosen in the strip', async ({ page }) => {
-    // The middle step: the last one would hold by itself.
+    // The middle step: its bar shows full, with nothing filling it, so the story stays.
     await stripSteps(page).nth(1).click();
-    await freezeClock(page);
-    await page.clock.fastForward(20_000);
-    await expect(stripSteps(page).nth(1)).toHaveAttribute('aria-current', 'step');
+    await expect(stripSteps(page).nth(1)).toHaveAttribute('data-progress', 'full');
+    expect(
+      await page.locator('[data-bar]').evaluate((bar) => getComputedStyle(bar).animationName),
+    ).toBe('none');
     await stripSteps(page).nth(2).click();
     // The last step: no step after it, and its state passes axe too.
     await expect(page.getByRole('button', { name: 'Next step' })).toHaveAttribute(
       'aria-disabled',
       'true',
     );
-    // axe waits on timers, which a frozen clock never fires: let time run again (the story is
-    // paused, so it stays where it is).
-    await page.clock.resume();
     await expectNoAccessibilityViolations(page);
   });
 
   test('pauses on Pause story, and plays on from there on Play story', async ({ page }) => {
     await stripSteps(page).nth(0).click();
-    await freezeClock(page);
     await page.getByRole('button', { name: 'Play story' }).click();
     await expect.poll(() => breathing(page)).toBe(true);
     await page.getByRole('button', { name: 'Pause story' }).click();
     // Paused, the deputy stops breathing (easing back to his pose)…
     await expect.poll(() => breathing(page)).toBe(false);
+    // …the step's bar stops part-way (it fills over the step's 4.1 s)…
+    await expect(stripSteps(page).nth(0)).toHaveAttribute('data-progress', 'held');
+    expect(await stepBar(page)).toEqual(['4.1s', 'paused']);
+    const stopped = await barTime(page);
+    expect(stopped).toBeGreaterThan(0);
     // …and, paused by its button, the step's flourish holds where it is.
     await expect(page.locator('.story-stage')).toHaveAttribute('data-held', 'true');
     await expect(page.locator('.animate-tailor-paw')).toHaveCSS('animation-play-state', 'paused');
-    await page.clock.fastForward(20_000);
-    await expect(stripSteps(page).nth(0)).toHaveAttribute('aria-current', 'step');
     await page.getByRole('button', { name: 'Play story' }).click();
-    // Past step 1 (4.1 s in English), short of steps 1 and 2 together (8.5 s).
-    await page.clock.fastForward(6000);
-    await expect(stripSteps(page).nth(1)).toHaveAttribute('aria-current', 'step');
+    // Its bar goes on from where it stopped (not from empty), fills the rest of the way, and the
+    // next step comes on.
+    expect(await barTime(page)).toBeGreaterThanOrEqual(stopped);
+    await expect(stripSteps(page).nth(1)).toHaveAttribute('aria-current', 'step', {
+      timeout: 15_000,
+    });
   });
 });
 

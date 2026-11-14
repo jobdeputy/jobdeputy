@@ -17,6 +17,19 @@
      its step comes on, then the step's pose holds. Set it up: the paw and pencil write, the card's
      rows tick in turn. It finds: the magnifier scans, a pulse sweeps the sources. It applies: the
      application flies to the portal. */
+  /* The strip's current step: its bar fills over the time the step plays. The duration here is a
+     placeholder: the bar sets its own from the step. */
+  --animate-strip-fill: strip-fill 1s linear both;
+
+  @keyframes strip-fill {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
+    }
+  }
+
   --animate-tailor-paw: tailor-paw 1.2s ease-in-out 640ms 1;
   /* While the story plays the deputy blinks (180ms; panda.tsx, which also breathes him). */
   --animate-panda-blink: panda-blink 180ms linear 1;
