@@ -13,6 +13,84 @@
      bar's segment crossing the track once every 1618ms. */
   --animate-spinner: spinner 987ms linear infinite;
   --animate-progress-sweep: progress-sweep 1618ms ease-in-out infinite;
+  /* The landing story's chapter flourishes (#14, the prototype's keyframes): each plays once as
+     its step comes on, then the step's pose holds. Set it up: the paw and pencil write, the card's
+     rows tick in turn. It finds: the magnifier scans, a pulse sweeps the sources. It applies: the
+     application flies to the portal. */
+  --animate-tailor-paw: tailor-paw 1.2s ease-in-out 640ms 1;
+  --animate-tailor-pencil: tailor-pencil 1.2s ease-in-out 640ms 1;
+  --animate-setup-tick: setup-tick 380ms var(--ease-spring) 640ms 1 both;
+  --animate-magnifier-scan: magnifier-scan 1.8s ease-in-out 640ms 1;
+  --animate-search-sweep: search-sweep 1.8s ease-in-out 1 both;
+  --animate-send-application: send-application 1.9s var(--ease-settle) 1 both;
+
+  @keyframes tailor-paw {
+    30% {
+      transform: rotate(-38.5deg);
+    }
+    60% {
+      transform: rotate(-50deg);
+    }
+    85% {
+      transform: rotate(-42deg);
+    }
+  }
+
+  @keyframes tailor-pencil {
+    30% {
+      transform: rotate(-6deg) scale(1);
+    }
+    60% {
+      transform: rotate(8deg) scale(1);
+    }
+    85% {
+      transform: rotate(-2deg) scale(1);
+    }
+  }
+
+  @keyframes setup-tick {
+    from {
+      opacity: 0.35;
+      transform: scale(0.5);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes magnifier-scan {
+    30% {
+      transform: rotate(80.2deg) scale(0.96);
+    }
+    65% {
+      transform: rotate(102.2deg) scale(1);
+    }
+  }
+
+  @keyframes search-sweep {
+    0% {
+      opacity: 0.35;
+      transform: translate(-18px, 18px) scale(0.72);
+    }
+    72% {
+      opacity: 1;
+      transform: translate(24px, -13px) scale(1);
+    }
+  }
+
+  @keyframes send-application {
+    0%,
+    28% {
+      opacity: 1;
+      transform: translateX(0) rotate(-3deg) scale(1);
+    }
+    72% {
+      opacity: 1;
+      transform: translateX(134px) rotate(4deg) scale(0.82);
+    }
+  }
+
   /* A skeleton's highlight, crossing it once every 1618ms (the prototype's jd-skeleton-sweep). */
   --animate-skeleton-sweep: skeleton-sweep 1618ms ease-in-out infinite;
   /* The boot loader (index.html): it appears only once the wait passes 300 ms (useDelayedPending's

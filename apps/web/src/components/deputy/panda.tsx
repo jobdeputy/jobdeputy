@@ -20,6 +20,8 @@ const POSES: Record<
     propTurn: number;
     propScale: number;
     look: [number, number];
+    /** The landing story's flourish, played once as the pose comes on: arm, then prop. */
+    flourish?: [arm: string, prop: string];
   }
 > = {
   setup: {
@@ -29,6 +31,7 @@ const POSES: Record<
     propTurn: 6,
     propScale: 1,
     look: [-5, 3],
+    flourish: ['animate-tailor-paw', 'animate-tailor-pencil'],
   },
   search: {
     head: 'translate(-5px, -1px) rotate(-7deg)',
@@ -37,6 +40,7 @@ const POSES: Record<
     propTurn: 94.2,
     propScale: 1,
     look: [-5, -1],
+    flourish: ['', 'animate-magnifier-scan'],
   },
   apply: {
     head: 'translate(2px, -2px) rotate(5deg)',
@@ -66,7 +70,8 @@ const MOVES =
  *   the approved page in the right paw.
  * - `pending` (#17): working on something that takes a while; the hourglass, eyes up.
  * A change of pose moves the head, the arm and the eyes there over 618ms, and the new prop fades
- * in as the arm arrives. (The prototype also lifts the body 7px when pending; not drawn yet.)
+ * in as the arm arrives; the story's poses then play their flourish once (the pencil writes, the
+ * magnifier scans). (The prototype also lifts the body 7px when pending; not drawn yet.)
  * Colours are brand tokens (Tailwind fill-/stroke- classes), so nothing here is an off-brand hex.
  */
 export function Panda({ className, pose = 'setup' }: { className?: string; pose?: PandaPose }) {
@@ -234,7 +239,11 @@ export function Panda({ className, pose = 'setup' }: { className?: string; pose?
         <ellipse className="fill-ink" cx="141" cy="330" rx="25" ry="23" />
       </g>
       <g
-        className={cn(MOVES, 'origin-[257.3px_261.16px]')}
+        className={cn(
+          MOVES,
+          'origin-[257.3px_261.16px] motion-reduce:animate-none',
+          current.flourish?.[0],
+        )}
         style={{ transform: `rotate(${current.arm}deg)` }}
       >
         <ellipse
@@ -276,7 +285,12 @@ function PropInPaw({
       className={cn(
         // Opacity over 180ms, the hold over 618ms; a prop coming in waits 380ms to appear.
         'origin-[281px_326px] transition-[opacity,transform] duration-[180ms,618ms] ease-settle [transform-box:view-box] motion-reduce:transition-none',
-        active ? 'opacity-100 [transition-delay:380ms,0ms]' : 'opacity-0',
+        active
+          ? cn(
+              'opacity-100 [transition-delay:380ms,0ms] motion-reduce:animate-none',
+              pose.flourish?.[1],
+            )
+          : 'opacity-0',
       )}
       style={{
         transform: active
