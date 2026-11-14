@@ -7,8 +7,8 @@ import { SCREENSHOTS_DIR } from './screenshots-dir.ts';
  * them on the PR (.github/workflows/web.yml). Add each new screen here.
  */
 const SCREENS = [
-  // The landing page as most people see it, its story held on the first step (chosen in the
-  // strip), so every device and run shows the same frame.
+  // The landing page, its story paused on the first step (chosen in the strip), so every device
+  // and run shows the same frame.
   { name: 'home', path: '/', firstStep: true },
   // The drawer, opened from the first visible "Sign in" button; the story behind it held still
   // (reduced motion), so every run shows the same.
@@ -46,6 +46,8 @@ for (const screen of SCREENS) {
         .getByRole('button')
         .first()
         .click();
+      // Off the step again, so it is not caught hovered.
+      await page.mouse.move(0, 0);
     }
     if (screen.open) {
       await page

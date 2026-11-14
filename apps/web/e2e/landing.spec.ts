@@ -171,16 +171,19 @@ test.describe('the story', () => {
 });
 
 test.describe('the story, on the page clock', () => {
-  // Each test pauses the story before it moves the clock, so nothing races real time.
+  // The clock moves only after a test has put the story where it wants it (a chosen step pauses
+  // it), so nothing races real time.
   test.beforeEach(async ({ page }) => {
     await page.clock.install();
     await page.goto('/');
   });
 
   test('holds a step chosen in the strip', async ({ page }) => {
-    await stripSteps(page).nth(2).click();
+    // The middle step: the last one would hold by itself.
+    await stripSteps(page).nth(1).click();
     await page.clock.fastForward(20_000);
-    await expect(stripSteps(page).nth(2)).toHaveAttribute('aria-current', 'step');
+    await expect(stripSteps(page).nth(1)).toHaveAttribute('aria-current', 'step');
+    await stripSteps(page).nth(2).click();
     // The last step: no step after it, and its state passes axe too.
     await expect(page.getByRole('button', { name: 'Next step' })).toHaveAttribute(
       'aria-disabled',
@@ -196,7 +199,8 @@ test.describe('the story, on the page clock', () => {
     await page.clock.fastForward(20_000);
     await expect(stripSteps(page).nth(0)).toHaveAttribute('aria-current', 'step');
     await page.getByRole('button', { name: 'Play story' }).click();
-    await page.clock.fastForward(4100);
+    // Past step 1 (4.1 s in English), short of steps 1 and 2 together (8.5 s).
+    await page.clock.fastForward(6000);
     await expect(stripSteps(page).nth(1)).toHaveAttribute('aria-current', 'step');
   });
 });
