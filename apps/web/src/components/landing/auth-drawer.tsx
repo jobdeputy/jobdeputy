@@ -1,3 +1,4 @@
+import type * as React from 'react';
 import { Button } from '@/components/ui/button.tsx';
 import {
   Sheet,
@@ -9,6 +10,32 @@ import {
 import { copy } from '@/copy/index.ts';
 
 export type AuthMode = 'sign-in' | 'sign-up';
+
+const DRAWER_ID = 'auth-drawer';
+
+/** What a button that opens the drawer needs: whether it is open, and how to open it. */
+export type AuthControl = {
+  open: boolean;
+  /** `opener` gets focus back on close (Safari and Firefox do not focus a clicked button). */
+  openAuth: (mode: AuthMode, opener: HTMLElement) => void;
+};
+
+/** A button that opens the drawer in one mode, announced as a dialog trigger. */
+export function AuthButton({
+  control,
+  mode,
+  ...props
+}: React.ComponentProps<typeof Button> & { control: AuthControl; mode: AuthMode }) {
+  return (
+    <Button
+      {...props}
+      aria-haspopup="dialog"
+      aria-expanded={control.open}
+      aria-controls={control.open ? DRAWER_ID : undefined}
+      onClick={(event) => control.openAuth(mode, event.currentTarget)}
+    />
+  );
+}
 
 const intro = { 'sign-in': copy.auth.signIn, 'sign-up': copy.auth.signUp } as const;
 
@@ -32,6 +59,7 @@ export function AuthDrawer({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
+        id={DRAWER_ID}
         className="px-[18px] pt-[60px] pb-8 md:px-10 md:pt-16 md:pb-10"
         onCloseAutoFocus={onCloseAutoFocus}
       >

@@ -1,12 +1,11 @@
-import { Button } from '@/components/ui/button.tsx';
 import { copy } from '@/copy/index.ts';
-import type { AuthMode } from './auth-drawer.tsx';
+import { AuthButton, type AuthControl } from './auth-drawer.tsx';
 
 /**
  * The sticky top bar: the brand on the left, sign-in and sign-up on the right. Phones keep only
  * "Sign in" here; the hero right below offers "Get started free".
  */
-export function SiteHeader({ onOpenAuth }: { onOpenAuth: (mode: AuthMode) => void }) {
+export function SiteHeader({ auth }: { auth: AuthControl }) {
   return (
     <header className="sticky top-0 z-20 flex h-18 items-center justify-between gap-3 border-b border-line-soft bg-header-surface px-[17px] backdrop-blur-[20px] backdrop-saturate-180 sm:px-[clamp(21px,4vw,55px)]">
       <a
@@ -22,25 +21,21 @@ export function SiteHeader({ onOpenAuth }: { onOpenAuth: (mode: AuthMode) => voi
         />
         <span className="grid min-w-0 gap-[3px] leading-none">
           <span className="text-[19px] tracking-[-0.05em]">
-            <span className="font-[620]">Job</span>
-            <span className="font-[720]">Deputy</span>
+            <span className="font-[620]">{copy.shell.wordmark[0]}</span>
+            <span className="font-[720]">{copy.shell.wordmark[1]}</span>
           </span>
           <span className="hidden text-[8.5px] font-[680] tracking-[0.075em] text-muted-foreground uppercase md:block">
-            {copy.shell.taglineShort}
+            {copy.shell.tagline}
           </span>
         </span>
       </a>
       <div className="flex items-center gap-2 md:gap-3.5">
-        <Button variant="outline" aria-haspopup="dialog" onClick={() => onOpenAuth('sign-in')}>
+        <AuthButton control={auth} mode="sign-in" variant="outline">
           {copy.landing.signIn}
-        </Button>
-        <Button
-          className="hidden md:inline-flex"
-          aria-haspopup="dialog"
-          onClick={() => onOpenAuth('sign-up')}
-        >
+        </AuthButton>
+        <AuthButton control={auth} mode="sign-up" className="hidden md:inline-flex">
           {copy.landing.getStarted}
-        </Button>
+        </AuthButton>
       </div>
     </header>
   );

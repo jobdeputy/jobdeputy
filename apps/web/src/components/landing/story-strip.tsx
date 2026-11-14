@@ -1,37 +1,14 @@
 import type { ReactNode } from 'react';
 import { copy } from '@/copy/index.ts';
 import { cn } from '@/lib/utils.ts';
+import { PencilShape } from './panda.tsx';
 
-/** Each step's tool, as the deputy holds it: pencil, magnifier, approved page. */
-const TOOLS: ReactNode[] = [
-  <g key="pencil" transform="translate(13.52 33.84) scale(0.63)">
-    <path
-      className="stroke-orange"
-      d="M-8 9L34 -33"
-      fill="none"
-      strokeWidth="10"
-      strokeLinecap="round"
-    />
-    <path
-      className="stroke-orange-soft"
-      d="M-8 9L-12 13"
-      fill="none"
-      strokeWidth="10"
-      strokeLinecap="round"
-    />
-    <path
-      className="fill-paper-deep stroke-paper-deep"
-      d="M30.5 -37.5L46 -45L38.5 -29.5Z"
-      strokeWidth="2"
-      strokeLinejoin="round"
-    />
-    <path
-      className="fill-ink stroke-ink"
-      d="M42 -43L46 -45L44 -41Z"
-      strokeWidth="2.4"
-      strokeLinejoin="round"
-    />
-  </g>,
+/**
+ * Each step's tool, as the deputy holds it: pencil, magnifier, approved page. One per entry in
+ * copy.landing.steps.items, in order (test/StoryStrip.test.tsx checks the counts match).
+ */
+export const STEP_TOOLS: readonly ReactNode[] = [
+  <PencilShape key="pencil" transform="translate(13.52 33.84) scale(0.63)" />,
   <g key="magnifier" transform="translate(8.11 42.36) scale(0.55)">
     <path
       className="stroke-blue"
@@ -133,7 +110,7 @@ export function StoryStrip({ current, className }: { current: number; className?
                 aria-hidden="true"
                 focusable="false"
               >
-                {TOOLS[index]}
+                {STEP_TOOLS[index]}
               </svg>
             </span>
             <span className="grid min-w-0 gap-0.5">

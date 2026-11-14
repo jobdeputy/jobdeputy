@@ -1,19 +1,26 @@
+import { type SVGProps, useId } from 'react';
+
 /**
  * The deputy: the brand panda from the round 7 prototype, in the "Set it up" pose (pencil in the
  * right paw). The story animation adds the other poses and props. Colours are brand tokens
  * (Tailwind fill-/stroke- classes), so nothing here is an off-brand hex.
  */
 export function Panda({ className }: { className?: string }) {
+  // Unique per instance: a second panda on the page must not borrow this one's clip paths.
+  const id = useId();
+  const eyeLeft = `${id}-eye-l`;
+  const eyeRight = `${id}-eye-r`;
+  const earFelt = `${id}-ear-felt`;
   return (
     <svg className={className} viewBox="0 0 420 420" aria-hidden="true" focusable="false">
       <defs>
-        <clipPath id="panda-eye-l">
+        <clipPath id={eyeLeft}>
           <ellipse cx="167" cy="162" rx="13.6" ry="14.4" />
         </clipPath>
-        <clipPath id="panda-eye-r">
+        <clipPath id={eyeRight}>
           <ellipse cx="253" cy="162" rx="13.6" ry="14.4" />
         </clipPath>
-        <radialGradient id="panda-ear-felt" cx="0.38" cy="0.3" r="0.62">
+        <radialGradient id={earFelt} cx="0.38" cy="0.3" r="0.62">
           <stop offset="0" stopColor="var(--color-ink-soft)" stopOpacity="1" />
           <stop offset="0.55" stopColor="var(--color-ink-soft)" stopOpacity="0.45" />
           <stop offset="1" stopColor="var(--color-ink-soft)" stopOpacity="0" />
@@ -57,10 +64,10 @@ export function Panda({ className }: { className?: string }) {
       </g>
       <circle className="fill-ink" cx="139" cy="96.5" r="33.22" />
       <circle className="fill-ink-soft" cx="136.23" cy="100.19" r="18.6" />
-      <circle cx="139" cy="96.5" r="33.22" fill="url(#panda-ear-felt)" />
+      <circle cx="139" cy="96.5" r="33.22" fill={`url(#${earFelt})`} />
       <circle className="fill-ink" cx="281" cy="96.5" r="33.22" />
       <circle className="fill-ink-soft" cx="283.77" cy="100.19" r="18.6" />
-      <circle cx="281" cy="96.5" r="33.22" fill="url(#panda-ear-felt)" />
+      <circle cx="281" cy="96.5" r="33.22" fill={`url(#${earFelt})`} />
       <path
         className="fill-paper stroke-line-strong"
         d="M210 72C266 72 310 103.16 310 154C310 208 267 244 210 244C153 244 110 208 110 154C110 103.16 154 72 210 72Z"
@@ -89,7 +96,7 @@ export function Panda({ className }: { className?: string }) {
       <ellipse className="fill-orange-soft" cx="141.5" cy="199" rx="14.5" ry="8.6" />
       <ellipse className="fill-orange-soft" cx="278.5" cy="199" rx="14.5" ry="8.6" />
       <ellipse className="fill-paper" cx="167" cy="162" rx="13.6" ry="14.4" />
-      <g clipPath="url(#panda-eye-l)">
+      <g clipPath={`url(#${eyeLeft})`}>
         <ellipse className="fill-paper-deep" cx="167" cy="141.12" rx="21.76" ry="9.5" />
         <circle className="fill-ink" cx="167" cy="162" r="7.2" />
         <circle className="fill-paper" cx="164.3" cy="158.9" r="3.1" />
@@ -97,7 +104,7 @@ export function Panda({ className }: { className?: string }) {
         <ellipse className="fill-ink" cx="167" cy="179.6" rx="17.5" ry="8.8" />
       </g>
       <ellipse className="fill-paper" cx="253" cy="162" rx="13.6" ry="14.4" />
-      <g clipPath="url(#panda-eye-r)">
+      <g clipPath={`url(#${eyeRight})`}>
         <ellipse className="fill-paper-deep" cx="253" cy="141.12" rx="21.76" ry="9.5" />
         <circle className="fill-ink" cx="253" cy="162" r="7.2" />
         <circle className="fill-paper" cx="250.3" cy="158.9" r="3.1" />
@@ -155,36 +162,46 @@ export function Panda({ className }: { className?: string }) {
           transform="rotate(-16 267 295)"
         />
         <ellipse className="fill-ink" cx="279" cy="330" rx="25" ry="23" />
-        <g transform="rotate(6 281 326) translate(281 326)">
-          <path
-            className="stroke-orange"
-            d="M-8 9L34 -33"
-            fill="none"
-            strokeWidth="10"
-            strokeLinecap="round"
-          />
-          <path
-            className="stroke-orange-soft"
-            d="M-8 9L-12 13"
-            fill="none"
-            strokeWidth="10"
-            strokeLinecap="round"
-          />
-          <path
-            className="fill-paper-deep stroke-paper-deep"
-            d="M30.5 -37.5L46 -45L38.5 -29.5Z"
-            strokeWidth="2"
-            strokeLinejoin="round"
-          />
-          <path
-            className="fill-ink stroke-ink"
-            d="M42 -43L46 -45L44 -41Z"
-            strokeWidth="2.4"
-            strokeLinejoin="round"
-          />
-        </g>
+        <PencilShape transform="rotate(6 281 326) translate(281 326)" />
         <ellipse className="fill-ink" cx="281" cy="326" rx="15" ry="12.88" />
       </g>
     </svg>
+  );
+}
+
+/**
+ * The deputy's pencil, drawn around its grip point (0, 0): the panda holds it in his paw, and the
+ * step strip shows it as the "Set it up" tool. Position it with `transform`.
+ */
+export function PencilShape(props: SVGProps<SVGGElement>) {
+  return (
+    <g {...props}>
+      <path
+        className="stroke-orange"
+        d="M-8 9L34 -33"
+        fill="none"
+        strokeWidth="10"
+        strokeLinecap="round"
+      />
+      <path
+        className="stroke-orange-soft"
+        d="M-8 9L-12 13"
+        fill="none"
+        strokeWidth="10"
+        strokeLinecap="round"
+      />
+      <path
+        className="fill-paper-deep stroke-paper-deep"
+        d="M30.5 -37.5L46 -45L38.5 -29.5Z"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <path
+        className="fill-ink stroke-ink"
+        d="M42 -43L46 -45L44 -41Z"
+        strokeWidth="2.4"
+        strokeLinejoin="round"
+      />
+    </g>
   );
 }

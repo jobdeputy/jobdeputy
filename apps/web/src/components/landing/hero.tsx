@@ -1,20 +1,21 @@
-import { Button } from '@/components/ui/button.tsx';
+import { Fragment } from 'react';
 import { copy } from '@/copy/index.ts';
-import type { AuthMode } from './auth-drawer.tsx';
+import { AuthButton, type AuthControl } from './auth-drawer.tsx';
 import { StoryStage } from './story-stage.tsx';
 import { StoryStrip } from './story-strip.tsx';
 
 /**
  * The landing hero (round 7 `.story-panel`): the promise and the two ways in, the deputy at
  * work, and the three steps. One column up to laptops; from `lg` the copy and the stage sit side
- * by side and the hero fills the screen under the header.
+ * by side and the hero fills the screen under the header (`--spacing(18)` is the header's h-18);
+ * it grows rather than clips when text is enlarged.
  */
-export function Hero({ onOpenAuth }: { onOpenAuth: (mode: AuthMode) => void }) {
+export function Hero({ auth }: { auth: AuthControl }) {
   const { landing } = copy;
   return (
     <section
       aria-labelledby="hero-title"
-      className="relative isolate grid min-h-[calc(100dvh-72px)] grid-rows-[auto_250px_auto] overflow-clip bg-[radial-gradient(circle_at_50%_45%,var(--color-surface-strong),transparent_58%),linear-gradient(145deg,var(--color-paper),var(--color-paper-deep))] p-[21px] sm:grid-rows-[auto_320px_auto] sm:content-center sm:px-[34px] sm:pt-[34px] md:grid-rows-[auto_400px_auto] lg:h-[calc(100dvh-72px)] lg:min-h-[600px] lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)_auto] lg:content-normal lg:gap-x-[clamp(32px,4vw,72px)] lg:px-[max(48px,calc((100vw-1280px)/2))] lg:pt-[clamp(28px,4vh,56px)] lg:pb-[clamp(20px,3vh,34px)] 2xl:px-[max(48px,calc((100vw-1480px)/2))]"
+      className="relative isolate grid min-h-[calc(100dvh-(--spacing(18)))] grid-rows-[auto_250px_auto] overflow-clip bg-[radial-gradient(circle_at_50%_45%,var(--color-surface-strong),transparent_58%),linear-gradient(145deg,var(--color-paper),var(--color-paper-deep))] p-[21px] sm:grid-rows-[auto_320px_auto] sm:content-center sm:px-[34px] sm:pt-[34px] md:grid-rows-[auto_400px_auto] lg:min-h-[max(600px,calc(100dvh-(--spacing(18))))] lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)_auto] lg:content-normal lg:gap-x-[clamp(32px,4vw,72px)] lg:px-[max(48px,calc((100vw-1280px)/2))] lg:pt-[clamp(28px,4vh,56px)] lg:pb-[clamp(20px,3vh,34px)] 2xl:px-[max(48px,calc((100vw-1480px)/2))]"
     >
       {/* Still, organic colour fields behind everything. */}
       <div
@@ -38,28 +39,24 @@ export function Hero({ onOpenAuth }: { onOpenAuth: (mode: AuthMode) => void }) {
           id="hero-title"
           className="font-display text-[clamp(36px,9.4vw,40px)] leading-[0.98] font-medium tracking-[-0.055em] text-balance sm:text-[clamp(40px,7.5vw,58px)] lg:text-[clamp(48px,4.4vw,80px)]"
         >
+          {/* Each line stays whole; the space between them is where the title may break. */}
           {landing.titleLines.map((line, index) => (
-            <span key={line} className="inline-block">
+            <Fragment key={line}>
               {index > 0 && ' '}
-              {line}
-            </span>
+              <span className="inline-block">{line}</span>
+            </Fragment>
           ))}
         </h1>
         <p className="mt-2 text-[15px] leading-[1.4] tracking-[-0.02em] text-pretty text-muted-foreground sm:mt-[13px] sm:text-base lg:mt-[21px] lg:max-w-[34ch] lg:text-[clamp(18px,1.35vw,21px)] lg:leading-normal">
           {landing.body}
         </p>
         <div className="mt-[26px] flex flex-wrap gap-3">
-          <Button size="lg" aria-haspopup="dialog" onClick={() => onOpenAuth('sign-up')}>
+          <AuthButton control={auth} mode="sign-up" size="lg">
             {landing.getStarted}
-          </Button>
-          <Button
-            size="lg"
-            variant="outline"
-            aria-haspopup="dialog"
-            onClick={() => onOpenAuth('sign-in')}
-          >
+          </AuthButton>
+          <AuthButton control={auth} mode="sign-in" size="lg" variant="outline">
             {landing.signIn}
-          </Button>
+          </AuthButton>
         </div>
         <p className="mt-3 text-[13px] leading-[1.4] font-medium text-muted-foreground">
           {landing.note}

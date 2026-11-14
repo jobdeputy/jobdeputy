@@ -4,10 +4,10 @@
  */
 export const en = {
   shell: {
-    productName: 'JobDeputy',
-    tagline: 'Your job search partner.',
-    /** The tagline as the small label under the header wordmark (no full stop). */
-    taglineShort: 'Your job search partner',
+    /** The product name as the header's wordmark sets it: two weights, no space between. */
+    wordmark: ['Job', 'Deputy'],
+    /** The label under the wordmark (no full stop: it is a label, not a sentence). */
+    tagline: 'Your job search partner',
   },
   landing: {
     eyebrow: 'Agentic job applications',

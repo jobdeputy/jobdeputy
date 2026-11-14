@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { AuthDrawer, type AuthMode } from '@/components/landing/auth-drawer.tsx';
+import { type AuthControl, AuthDrawer, type AuthMode } from '@/components/landing/auth-drawer.tsx';
 import { Hero } from '@/components/landing/hero.tsx';
 import { SiteHeader } from '@/components/landing/site-header.tsx';
 
@@ -10,17 +10,20 @@ export function App() {
   // Four buttons open the drawer; focus returns to whichever one did.
   const opener = useRef<HTMLElement | null>(null);
 
-  function openAuth(mode: AuthMode) {
-    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setAuthMode(mode);
-    setAuthOpen(true);
-  }
+  const auth: AuthControl = {
+    open: authOpen,
+    openAuth(mode, button) {
+      opener.current = button;
+      setAuthMode(mode);
+      setAuthOpen(true);
+    },
+  };
 
   return (
     <>
-      <SiteHeader onOpenAuth={openAuth} />
+      <SiteHeader auth={auth} />
       <main>
-        <Hero onOpenAuth={openAuth} />
+        <Hero auth={auth} />
       </main>
       <AuthDrawer
         mode={authMode}
