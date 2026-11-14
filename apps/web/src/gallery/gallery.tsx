@@ -77,16 +77,11 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 /**
  * The whole cycle, live: "Try a save" starts fake work that runs until "Finish the save" ends it
- * (no timer, so tests decide when it ends), then shows success for 1.5s.
+ * in success, which stays until "Start over". No timers, so a test decides when each step ends.
  */
 function LiveButton() {
   const [state, setState] = useState<'idle' | 'pending' | 'success'>('idle');
   const [runs, setRuns] = useState(0);
-  useEffect(() => {
-    if (state !== 'success') return;
-    const timer = setTimeout(() => setState('idle'), 1500);
-    return () => clearTimeout(timer);
-  }, [state]);
 
   return (
     <div className="flex flex-wrap items-center gap-3">
@@ -106,12 +101,10 @@ function LiveButton() {
       </Button>
       <Button
         variant="outline"
-        aria-disabled={state !== 'pending' || undefined}
-        onClick={() => {
-          if (state === 'pending') setState('success');
-        }}
+        aria-disabled={state === 'idle' || undefined}
+        onClick={() => setState(state === 'pending' ? 'success' : 'idle')}
       >
-        Finish the save
+        {state === 'success' ? 'Start over' : 'Finish the save'}
       </Button>
       <p className="m-0 text-sm text-muted-foreground" data-testid="live-button-runs">
         Started {runs} {runs === 1 ? 'time' : 'times'}

@@ -44,6 +44,7 @@ test('a pending button keeps focus and starts its work only once', async ({ page
   await expect(page.getByTestId('live-button-runs')).toHaveText('Started 1 time');
   await page.getByRole('button', { name: 'Finish the save' }).click();
   await expect(button).toHaveAccessibleName('Saved');
+  await page.getByRole('button', { name: 'Start over' }).click();
   await expect(button).toHaveAccessibleName('Try a save');
   await expect(page.getByTestId('live-button-runs')).toHaveText('Started 1 time');
 });
