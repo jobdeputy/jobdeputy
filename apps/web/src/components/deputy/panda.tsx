@@ -404,7 +404,10 @@ function breathOffset(pose: string, withBreath: string): string | null {
   const toMatrix = (transform: string) =>
     new DOMMatrix(!transform || transform === 'none' ? undefined : transform);
   const offset = toMatrix(pose).inverse().multiply(toMatrix(withBreath));
-  return offset.isIdentity ? null : offset.toString();
+  // Within rounding of no change: nothing to undo (inverse-times-multiply is rarely exact).
+  const { a, b, c, d, e, f } = offset;
+  const still = [a - 1, b, c, d - 1, e, f].every((part) => Math.abs(part) < 1e-6);
+  return still ? null : offset.toString();
 }
 
 /**

@@ -100,7 +100,7 @@ describe('Panda, alive', () => {
   });
 
   /** Records what the panda asks the Web Animations API for (happy-dom runs no animations). */
-  function recordAnimations(running: Partial<Animation>[] = []) {
+  function recordAnimations() {
     const calls: { keyframes: Keyframe[]; options: KeyframeAnimationOptions }[] = [];
     const cancel = vi.fn();
     vi.spyOn(Element.prototype, 'animate').mockImplementation(((
@@ -110,7 +110,6 @@ describe('Panda, alive', () => {
       calls.push({ keyframes, options });
       return { cancel } as unknown as Animation;
     }) as Element['animate']);
-    vi.spyOn(Element.prototype, 'getAnimations').mockReturnValue(running as Animation[]);
     return { calls, cancel };
   }
 
@@ -166,7 +165,8 @@ describe('Panda, alive', () => {
   it('does not ease back from a breath at rest, or where transitions are off', () => {
     const { calls } = recordAnimations();
     const { rerender } = render(<Panda alive />);
-    computedStyle('none');
+    // At rest over a lifted pose, give or take rounding.
+    computedStyle('matrix(1, 0, 0, 1, 0, -7.0000000001)', 'matrix(1, 0, 0, 1, 0, -7)');
     rerender(<Panda alive={false} />);
     rerender(<Panda alive />);
     computedStyle('matrix(1, 0, 0, 1, 0, -3)', 'none', 'none');
