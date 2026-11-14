@@ -36,7 +36,7 @@ export function SiteHeader({ auth }: { auth: AuthControl }) {
           </span>
         </span>
       </a>
-      <div className="ms-auto flex items-center gap-2 md:gap-3.5">
+      <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-2 md:gap-3.5">
         <AuthButton control={auth} mode="sign-in" variant="outline">
           {copy.landing.signIn}
         </AuthButton>
@@ -58,10 +58,11 @@ function useHeaderOffset(header: React.RefObject<HTMLElement | null>) {
     const element = header.current;
     if (!element || typeof ResizeObserver === 'undefined') return;
     const root = document.documentElement;
+    // The border box, unrounded: the header's exact height at any text size.
     const observer = new ResizeObserver(() => {
-      root.style.setProperty('--header-offset', `${element.offsetHeight}px`);
+      root.style.setProperty('--header-offset', `${element.getBoundingClientRect().height}px`);
     });
-    observer.observe(element);
+    observer.observe(element, { box: 'border-box' });
     return () => {
       observer.disconnect();
       root.style.removeProperty('--header-offset');

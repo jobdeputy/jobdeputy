@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils.ts';
  * are minimums and labels may wrap, so enlarged text grows a button instead of overflowing it.
  */
 const buttonVariants = cva(
-  'inline-flex max-w-full shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-full text-center font-semibold leading-tight transition-[translate,background-color] duration-180 ease-settle outline-none hover:-translate-y-px focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-3 disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:hover:translate-y-0 [&_svg]:pointer-events-none [&_svg]:shrink-0',
+  'inline-flex max-w-full cursor-pointer items-center justify-center gap-1.5 rounded-full text-center font-semibold transition-[translate,background-color] duration-180 ease-settle outline-none hover:-translate-y-px focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-3 disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:hover:translate-y-0 [&_svg]:pointer-events-none [&_svg]:shrink-0',
   {
     variants: {
       variant: {
@@ -17,10 +17,10 @@ const buttonVariants = cva(
         outline: 'border border-input bg-secondary text-secondary-foreground',
       },
       size: {
-        default: 'min-h-10 px-4 py-2 text-sm',
-        lg: 'min-h-12 px-6 py-2.5 text-base',
+        default: 'min-h-10 px-4 py-2 text-sm/tight',
+        lg: 'min-h-12 px-6 py-2.5 text-base/tight',
         /** A round 40px button holding one glyph, such as a dialog's close button. */
-        icon: 'size-10 text-[22px] font-normal',
+        icon: 'size-10 shrink-0 text-[22px] font-normal',
       },
     },
     defaultVariants: {

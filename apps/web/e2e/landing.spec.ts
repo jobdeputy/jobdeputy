@@ -39,6 +39,12 @@ test.describe('landing page', () => {
     const header = page.locator('header');
     const box = await header.boundingBox();
     if (!box) throw new Error('The header has no box.');
+    const rootFontSize = await page.evaluate(() =>
+      Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
+    );
+    expect(box.height, 'the minimum height scales with the text').toBeGreaterThanOrEqual(
+      4.5 * rootFontSize - 0.5,
+    );
     for (const part of await header.locator('a, button').filter({ visible: true }).all()) {
       const partBox = await part.boundingBox();
       if (!partBox) throw new Error('A header control has no box.');
@@ -46,14 +52,20 @@ test.describe('landing page', () => {
       expect(partBox.x + partBox.width).toBeLessThanOrEqual(box.x + box.width + 0.5);
       expect(partBox.y + partBox.height).toBeLessThanOrEqual(box.y + box.height + 0.5);
     }
-    // Focused content stops below the header as it really is (plus 8px for the focus ring).
-    const scrollPadding = () =>
+    // The header publishes its measured height, and focused content stops below it (plus 8px
+    // for the focus ring). Checking the published value itself: the CSS fallback would match a
+    // one-row header even if the measuring hook were broken.
+    const offsets = () =>
       page.evaluate(() => {
-        const { scrollPaddingTop } = getComputedStyle(document.documentElement);
-        const headerHeight = document.querySelector('header')?.offsetHeight ?? 0;
-        return Number.parseFloat(scrollPaddingTop) - headerHeight - 8;
+        const root = getComputedStyle(document.documentElement);
+        const headerHeight = document.querySelector('header')?.getBoundingClientRect().height ?? 0;
+        return {
+          published: Number.parseFloat(root.getPropertyValue('--header-offset')) - headerHeight,
+          scrollPadding: Number.parseFloat(root.scrollPaddingTop) - headerHeight - 8,
+        };
       });
-    await expect.poll(scrollPadding).toBeCloseTo(0, 0);
+    await expect.poll(async () => (await offsets()).published).toBeCloseTo(0, 1);
+    expect((await offsets()).scrollPadding).toBeCloseTo(0, 0);
     await expectNoHorizontalScroll(page);
   });
 
