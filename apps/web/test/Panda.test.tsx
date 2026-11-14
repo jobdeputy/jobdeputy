@@ -99,11 +99,40 @@ describe('Panda, alive', () => {
     expect(body(container).style.transform).toBe('');
   });
 
-  it('breathes only while alive', () => {
-    const { container, rerender } = render(<Panda />);
-    expect(body(container).classList.contains('animate-panda-breathe')).toBe(false);
+  it('breathes only while alive, and eases back to the pose when the breath stops', () => {
+    // happy-dom runs no animations: record what the panda asks for.
+    const calls: { keyframes: Keyframe[]; options: KeyframeAnimationOptions }[] = [];
+    const cancel = vi.fn();
+    Object.assign(SVGElement.prototype, {
+      animate(keyframes: Keyframe[], options: KeyframeAnimationOptions) {
+        calls.push({ keyframes, options });
+        return { cancel };
+      },
+      getAnimations: () => [],
+    });
+    vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+      transform: 'matrix(1, 0, 0, 1, 0, -3)',
+      transitionDuration: '0.38s',
+      transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    } as CSSStyleDeclaration);
+    const { rerender } = render(<Panda />);
+    expect(calls).toHaveLength(0);
     rerender(<Panda alive />);
-    expect(body(container).classList.contains('animate-panda-breathe')).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.options.iterations).toBe(Number.POSITIVE_INFINITY);
+    rerender(<Panda alive={false} />);
+    expect(cancel).toHaveBeenCalled();
+    // Back from where the breath had it, on the body's own transition.
+    expect(calls[1]?.keyframes).toEqual([
+      { transform: 'matrix(1, 0, 0, 1, 0, -3)' },
+      { transform: 'none' },
+    ]);
+    expect(calls[1]?.options).toEqual({
+      duration: 380,
+      easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    });
+    Reflect.deleteProperty(SVGElement.prototype, 'animate');
+    Reflect.deleteProperty(SVGElement.prototype, 'getAnimations');
   });
 
   it('blinks now and then while alive, both eyes at once, and never otherwise', () => {

@@ -138,6 +138,17 @@ async function freezeClock(page: Page) {
   await page.clock.pauseAt(now + 60_000);
 }
 
+/** Whether the deputy is breathing: an endless animation on his body. */
+function breathing(page: Page) {
+  return page
+    .locator('.story-stage svg g.origin-\\[210px_391px\\]')
+    .evaluate((body) =>
+      body
+        .getAnimations()
+        .some((animation) => animation.effect?.getTiming().iterations === Infinity),
+    );
+}
+
 /** The strip's step buttons, in order. */
 function stripSteps(page: Page) {
   return page.getByRole('list', { name: 'How your deputy works' }).getByRole('button');
@@ -222,8 +233,11 @@ test.describe('the story, on the page clock', () => {
     await stripSteps(page).nth(0).click();
     await freezeClock(page);
     await page.getByRole('button', { name: 'Play story' }).click();
+    expect(await breathing(page)).toBe(true);
     await page.getByRole('button', { name: 'Pause story' }).click();
-    // Paused by its button, the step's flourish holds where it is.
+    // Paused, the deputy stops breathing (easing back to his pose)…
+    expect(await breathing(page)).toBe(false);
+    // …and, paused by its button, the step's flourish holds where it is.
     await expect(page.locator('.story-stage')).toHaveAttribute('data-held', 'true');
     await expect(page.locator('.animate-tailor-paw')).toHaveCSS('animation-play-state', 'paused');
     await page.clock.fastForward(20_000);
@@ -248,7 +262,7 @@ test.describe('with reduced motion', () => {
     await expect(stripSteps(page).nth(1)).toHaveAttribute('aria-current', 'step');
     // The step's flourish holds still too, and the deputy does not breathe.
     await expect(page.locator('.animate-search-sweep')).toHaveCSS('animation-name', 'none');
-    await expect(page.locator('g.animate-panda-breathe')).toHaveCount(0);
+    expect(await breathing(page)).toBe(false);
   });
 
   test('the drawer appears without sliding', async ({ page }) => {

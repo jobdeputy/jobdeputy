@@ -66,7 +66,7 @@ export function Hero({ auth }: { auth: AuthControl }) {
 
       <StoryStage
         index={story.index}
-        playing={story.animating}
+        alive={story.animating}
         held={story.held}
         controls={
           <StoryControls

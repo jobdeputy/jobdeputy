@@ -19,14 +19,14 @@ const SCENES: OnePer<Copy['landing']['steps']['items'], PandaPose> = ['setup', '
  */
 export function StoryStage({
   index,
-  playing = false,
+  alive = false,
   held = false,
   controls,
   className,
 }: {
   index: number;
   /** The story is playing where someone can see it: the deputy breathes and blinks. */
-  playing?: boolean;
+  alive?: boolean;
   /** Paused by the Pause button: every flourish on the stage holds where it is (the breath, which
    *  stops with the story, eases back to the pose). */
   held?: boolean;
@@ -48,7 +48,7 @@ export function StoryStage({
       <div className="story-stage-props" aria-hidden="true">
         <StoryProps scene={scene} />
       </div>
-      <Panda className="story-stage-art" pose={scene} alive={playing} />
+      <Panda className="story-stage-art" pose={scene} alive={alive} />
       <DeputySpeech
         aria-hidden="true"
         className="story-stage-speech px-2.5 py-2 text-center text-xs md:px-3.5 md:py-3 md:text-[clamp(0.875rem,1.1vw,1rem)]"

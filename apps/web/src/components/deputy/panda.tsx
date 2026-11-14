@@ -5,9 +5,9 @@ import {
   type SVGProps,
   useEffect,
   useId,
-  useLayoutEffect,
   useRef,
 } from 'react';
+import { useReducedMotion } from '@/lib/use-reduced-motion.ts';
 import { cn } from '@/lib/utils.ts';
 
 /** The poses the deputy can hold: the landing story's three chapters, and pending work (#17). */
@@ -105,21 +105,18 @@ export function Panda({
   const eyeRight = `${id}-eye-r`;
   const earFelt = `${id}-ear-felt`;
   const current = POSES[pose];
-  // The eyes' groups: blinks toggle their class directly, without re-rendering the panda.
-  const eyes = useRef<SVGGElement[]>([]);
-  useBlink(alive, eyes);
+  const reducedMotion = useReducedMotion();
+  const art = useRef<SVGSVGElement>(null);
   const body = useRef<SVGGElement>(null);
-  useSettleBreath(alive, body, current.body);
+  useBlink(alive && !reducedMotion, art);
+  useBreath(alive && !reducedMotion, body);
   // A blink closes each eye to a tenth of its height, about its centre, for 180ms.
-  const eyeClass = 'origin-center [transform-box:fill-box] motion-reduce:[animation:none]';
-  const eyeRef = (index: number) => (element: SVGGElement | null) => {
-    if (element) eyes.current[index] = element;
-  };
+  const eyeClass = 'origin-center [transform-box:fill-box]';
   const look: CSSProperties = {
     transform: `translate(${current.look[0]}px, ${current.look[1]}px)`,
   };
   return (
-    <svg className={className} viewBox="0 0 420 420" aria-hidden="true" focusable="false">
+    <svg ref={art} className={className} viewBox="0 0 420 420" aria-hidden="true" focusable="false">
       <defs>
         <clipPath id={eyeLeft}>
           <ellipse cx="167" cy="162" rx="13.6" ry="14.4" />
@@ -164,10 +161,7 @@ export function Panda({
           story plays, about the base of the body (210,391). */}
       <g
         ref={body}
-        className={cn(
-          'origin-[210px_391px] transition-transform duration-[380ms] ease-settle [transform-box:view-box] motion-reduce:transition-none',
-          alive && 'animate-panda-breathe motion-reduce:animate-none',
-        )}
+        className="origin-[210px_391px] transition-transform duration-[380ms] ease-settle [transform-box:view-box] motion-reduce:transition-none"
         style={{ transform: current.body }}
       >
         <ellipse className="fill-ink-soft" cx="210" cy="304" rx="80" ry="84" />
@@ -214,7 +208,7 @@ export function Panda({
           />
           <ellipse className="fill-orange-soft" cx="141.5" cy="199" rx="14.5" ry="8.6" />
           <ellipse className="fill-orange-soft" cx="278.5" cy="199" rx="14.5" ry="8.6" />
-          <g ref={eyeRef(0)} className={eyeClass}>
+          <g data-eye className={eyeClass}>
             <ellipse className="fill-paper" cx="167" cy="162" rx="13.6" ry="14.4" />
             <g clipPath={`url(#${eyeLeft})`}>
               <ellipse className="fill-paper-deep" cx="167" cy="141.12" rx="21.76" ry="9.5" />
@@ -229,7 +223,7 @@ export function Panda({
               <ellipse className="fill-ink" cx="167" cy="179.6" rx="17.5" ry="8.8" />
             </g>
           </g>
-          <g ref={eyeRef(1)} className={eyeClass}>
+          <g data-eye className={eyeClass}>
             <ellipse className="fill-paper" cx="253" cy="162" rx="13.6" ry="14.4" />
             <g clipPath={`url(#${eyeRight})`}>
               <ellipse className="fill-paper-deep" cx="253" cy="141.12" rx="21.76" ry="9.5" />
@@ -322,15 +316,16 @@ const BLINK_EVERY_MS = [4200, 7800] as const;
 const BLINK = 'animate-panda-blink';
 
 /**
- * Blinks the eyes now and then while `alive`, never otherwise. It toggles the class on the eye
- * groups itself, so a blink does not re-render the panda; stopping opens the eyes at once.
+ * Blinks the eyes (`[data-eye]` in `art`) now and then while `alive`, never otherwise. It toggles
+ * their class itself, so a blink does not re-render the panda; stopping opens the eyes at once.
  */
-function useBlink(alive: boolean, eyes: RefObject<SVGGElement[]>) {
+function useBlink(alive: boolean, art: RefObject<SVGSVGElement | null>) {
   useEffect(() => {
-    if (!alive) return;
+    const eyes = art.current?.querySelectorAll('[data-eye]');
+    if (!alive || !eyes) return;
     let timer: ReturnType<typeof setTimeout>;
     const set = (closed: boolean) => {
-      for (const eye of eyes.current) eye.classList.toggle(BLINK, closed);
+      for (const eye of eyes) eye.classList.toggle(BLINK, closed);
     };
     const next = () => {
       const [least, most] = BLINK_EVERY_MS;
@@ -350,36 +345,47 @@ function useBlink(alive: boolean, eyes: RefObject<SVGGElement[]>) {
       clearTimeout(timer);
       set(false);
     };
-  }, [alive, eyes]);
+  }, [alive, art]);
 }
 
+/** One breath: the body rises 4px and tips half a degree, every golden 5.236s (the prototype's). */
+const BREATH: Keyframe[] = [
+  { transform: 'translate(0, 0) rotate(0deg)' },
+  { transform: 'translate(0, -4px) rotate(-0.5deg)' },
+  { transform: 'translate(0, 0) rotate(0deg)' },
+];
+
 /**
- * When the breath stops (the story pauses or ends), eases the body back from wherever the breath
- * had it to its pose over 380ms, as the prototype does: removing an animation would otherwise
- * snap it there, since that starts no transition.
+ * Breathes the body while `alive`. When the breath stops (the story pauses or ends), the body
+ * eases back from wherever the breath had it, over its own transform transition (380ms, the
+ * settle curve), as the prototype does, instead of snapping. A breath that starts again cancels
+ * any ease-back still running. All in effects, through the Web Animations API.
  */
-function useSettleBreath(
-  alive: boolean,
-  body: RefObject<SVGGElement | null>,
-  rest: string | undefined,
-) {
-  const breathing = useRef(alive);
-  // Before the class goes: where the breath has the body now.
-  const from = useRef('');
-  if (breathing.current && !alive && body.current?.getAnimations) {
-    from.current = getComputedStyle(body.current).transform;
-  }
-  useLayoutEffect(() => {
-    const was = breathing.current;
-    breathing.current = alive;
+function useBreath(alive: boolean, body: RefObject<SVGGElement | null>) {
+  useEffect(() => {
     const element = body.current;
-    if (!was || alive || !element?.animate || !from.current || from.current === 'none') return;
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    element.animate([{ transform: from.current }, { transform: rest ?? 'none' }], {
-      duration: 380,
-      easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    if (!alive || !element?.animate) return;
+    for (const animation of element.getAnimations()) animation.cancel();
+    const breath = element.animate(BREATH, {
+      duration: 5236,
+      iterations: Number.POSITIVE_INFINITY,
+      easing: 'ease-in-out',
     });
-  }, [alive, body, rest]);
+    return () => {
+      // Where the breath has the body now, then back to its pose on its own transition.
+      const from = getComputedStyle(element).transform;
+      breath.cancel();
+      const { transitionDuration, transitionTimingFunction } = getComputedStyle(element);
+      const rest = element.style.transform || 'none';
+      const duration = Number.parseFloat(transitionDuration) * 1000;
+      if (from && from !== 'none' && duration > 0) {
+        element.animate([{ transform: from }, { transform: rest }], {
+          duration,
+          easing: transitionTimingFunction,
+        });
+      }
+    };
+  }, [alive, body]);
 }
 
 /**
