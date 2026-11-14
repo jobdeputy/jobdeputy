@@ -7,9 +7,10 @@ import { SCREENSHOTS_DIR } from './screenshots-dir.ts';
  * them on the PR (.github/workflows/web.yml). Add each new screen here.
  */
 const SCREENS = [
-  // The landing story holds still on its first step (reduced motion), so every run shows the same.
-  { name: 'home', path: '/', still: true },
-  // The drawer, opened from the first visible "Sign in" button.
+  // The landing page as most people see it, the story playing its first step.
+  { name: 'home', path: '/' },
+  // The drawer, opened from the first visible "Sign in" button; the story behind it held still
+  // (reduced motion), so every run shows the same.
   { name: 'sign-in', path: '/', open: 'Sign in', still: true },
   // Every shared component state (#17); the pending buttons and the loading skeleton appear
   // after the 300 ms delay.

@@ -21,6 +21,9 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  // Leave the page as found, even when a test fails part-way.
+  document.body.innerHTML = '';
+  Reflect.deleteProperty(document, 'hidden');
 });
 
 describe('stepDuration', () => {
@@ -114,6 +117,16 @@ describe('useStory', () => {
     expect(result.current.index).toBe(0);
   });
 
+  it('stays still for good once reduced motion is turned on, even if turned off again', () => {
+    const { result, rerender } = renderHook(() => useStory());
+    reduced = true;
+    rerender();
+    reduced = false;
+    rerender();
+    act(() => vi.advanceTimersByTime(20_000));
+    expect(result.current).toMatchObject({ index: 0, mode: 'play' });
+  });
+
   it('clears what it said once the story plays on', () => {
     const { result } = renderHook(() => useStory());
     act(() => result.current.goTo(0));
@@ -150,7 +163,6 @@ describe('useStory', () => {
     expect(result.current.index).toBe(0);
     act(() => vi.advanceTimersByTime(1));
     expect(result.current.index).toBe(1);
-    document.body.innerHTML = '';
   });
 });
 

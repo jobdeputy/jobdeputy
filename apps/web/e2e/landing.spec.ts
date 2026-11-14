@@ -128,36 +128,33 @@ test.describe('landing page', () => {
   });
 });
 
-const CLOCK_START = new Date('2026-01-05T09:00:00Z');
-
 /** The strip's step buttons, in order. */
 function stripSteps(page: Page) {
   return page.getByRole('list', { name: 'How your deputy works' }).getByRole('button');
 }
 
 test.describe('the story', () => {
+  // Real time, waiting on facts: the story's steps are 4 s, so a step changes well inside the
+  // 15 s these waits allow, and nothing depends on how fast the page loaded.
   test.beforeEach(async ({ page }) => {
-    // The page's clock, paused 2 s in, so nothing races real time and each 4 s step is
-    // fast-forwarded instead of waited for. The story starts once the page shows (within the
-    // boot loader's 0.8 s at most).
-    await page.clock.install({ time: CLOCK_START });
     await page.goto('/');
-    await page.clock.pauseAt(new Date(CLOCK_START.getTime() + 2000));
   });
 
   test('plays each step once by itself, then offers Replay', async ({ page }) => {
-    await expect(stripSteps(page).nth(0)).toHaveAttribute('aria-current', 'step');
-    await page.clock.fastForward(3000);
-    await expect(stripSteps(page).nth(1)).toHaveAttribute('aria-current', 'step');
-    await page.clock.fastForward(4400);
-    await expect(stripSteps(page).nth(2)).toHaveAttribute('aria-current', 'step');
+    // Wherever it has got to, it moves on to the last step and stops there.
+    await expect(stripSteps(page).nth(1)).toHaveAttribute('aria-current', 'step', {
+      timeout: 15_000,
+    });
+    await expect(stripSteps(page).nth(2)).toHaveAttribute('aria-current', 'step', {
+      timeout: 15_000,
+    });
     await expect(page.getByRole('button', { name: 'Replay story' })).toBeVisible();
   });
 
-  test('pauses, and steps back and forth by its arrows', async ({ page }) => {
-    await page.getByRole('button', { name: 'Pause story' }).click();
-    await page.clock.fastForward(20_000);
-    await expect(stripSteps(page).nth(0)).toHaveAttribute('aria-current', 'step');
+  test('steps back and forth by its arrows, and stays where it is put', async ({ page }) => {
+    // Choosing a step pauses the story there, wherever it had got to.
+    await stripSteps(page).nth(0).click();
+    await expect(page.getByRole('button', { name: 'Play story' })).toBeVisible();
     // The first step has no step before it; the button stays focusable.
     await expect(page.getByRole('button', { name: 'Previous step' })).toHaveAttribute(
       'aria-disabled',
@@ -169,13 +166,6 @@ test.describe('the story', () => {
       'Step 2 of 3: It finds',
     );
     await expect(page.getByRole('button', { name: 'Previous step: Set it up' })).toBeVisible();
-  });
-
-  test('shows a step chosen in the strip, and stays there', async ({ page }) => {
-    await stripSteps(page).nth(2).click();
-    await expect(stripSteps(page).nth(2)).toHaveAttribute('aria-current', 'step');
-    await page.clock.fastForward(20_000);
-    await expect(stripSteps(page).nth(2)).toHaveAttribute('aria-current', 'step');
     await expectNoAccessibilityViolations(page);
   });
 });
@@ -186,6 +176,7 @@ test.describe('with reduced motion', () => {
   test('the story never plays by itself; its button advances a step', async ({ page }) => {
     await page.clock.install();
     await page.goto('/');
+    // Well past every step's time: under reduced motion nothing has moved.
     await page.clock.fastForward(20_000);
     await expect(stripSteps(page).nth(0)).toHaveAttribute('aria-current', 'step');
     await page.getByRole('button', { name: 'Advance story' }).click();

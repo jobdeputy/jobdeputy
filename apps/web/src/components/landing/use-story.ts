@@ -35,7 +35,7 @@ function onVisibility(onChange: () => void) {
 export function useStory() {
   const reducedMotion = useReducedMotion();
   const [index, setIndex] = useState(0);
-  const [playing, setPlaying] = useState(true);
+  const [playing, setPlaying] = useState(!reducedMotion);
   const [announcement, setAnnouncement] = useState('');
   const revealed = useRevealed();
   const hidden = useSyncExternalStore(
@@ -43,7 +43,9 @@ export function useStory() {
     () => document.hidden,
     () => false,
   );
-  // Reduced motion never plays by itself, even if it is turned on mid-story.
+  // Reduced motion turned on mid-story stops it for good: turning it off again later does not
+  // restart it unasked. (Adjusting state while rendering: React's pattern for this.)
+  if (reducedMotion && playing) setPlaying(false);
   const autoplay = playing && !reducedMotion;
 
   useEffect(() => {

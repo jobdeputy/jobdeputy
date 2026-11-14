@@ -71,7 +71,7 @@ export function StoryControls({
 
 /**
  * Pause: two bars. Play and Advance: a triangle. Replay: a turning arrow. Drawn as SVG filled with
- * the text colour, so forced colours keep their shapes (CanvasText there).
+ * the text colour, so forced colours keep their shapes, in the button's text colour.
  */
 function ToggleGlyph({ mode }: { mode: StoryMode }) {
   if (mode === 'replay') {
@@ -82,12 +82,7 @@ function ToggleGlyph({ mode }: { mode: StoryMode }) {
     );
   }
   return (
-    <svg
-      aria-hidden="true"
-      focusable="false"
-      viewBox="0 0 12 12"
-      className="size-3 fill-current forced-colors:fill-[CanvasText]"
-    >
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 12 12" className="size-3 fill-current">
       {mode === 'pause' ? (
         <path d="M2 1h3v10H2zM7 1h3v10H7z" />
       ) : (
