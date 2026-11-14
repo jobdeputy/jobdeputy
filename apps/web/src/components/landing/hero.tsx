@@ -1,8 +1,10 @@
 import { Fragment } from 'react';
 import { copy } from '@/copy/index.ts';
 import { AuthButton, type AuthControl } from './auth-drawer.tsx';
+import { StoryControls } from './story-controls.tsx';
 import { StoryStage } from './story-stage.tsx';
 import { StoryStrip } from './story-strip.tsx';
+import { useStory } from './use-story.ts';
 
 /**
  * The landing hero (round 7 `.story-panel`): the promise and the two ways in, the deputy at
@@ -12,6 +14,7 @@ import { StoryStrip } from './story-strip.tsx';
  */
 export function Hero({ auth }: { auth: AuthControl }) {
   const { landing } = copy;
+  const story = useStory();
   return (
     <section
       aria-labelledby="hero-title"
@@ -61,10 +64,23 @@ export function Hero({ auth }: { auth: AuthControl }) {
         </div>
       </div>
 
-      <StoryStage className="w-full max-w-[690px] justify-self-center lg:h-full lg:max-h-[860px] lg:max-w-none lg:self-center" />
+      <StoryStage
+        index={story.index}
+        controls={
+          <StoryControls
+            index={story.index}
+            mode={story.mode}
+            announcement={story.announcement}
+            onToggle={story.toggle}
+            onGoTo={story.goTo}
+          />
+        }
+        className="w-full max-w-[690px] justify-self-center lg:h-full lg:max-h-[860px] lg:max-w-none lg:self-center"
+      />
 
       <StoryStrip
-        current={0}
+        current={story.index}
+        onSelect={story.goTo}
         className="mt-[13px] w-full max-w-[690px] justify-self-center lg:col-span-2 lg:mt-[18px] lg:max-w-[1100px]"
       />
     </section>

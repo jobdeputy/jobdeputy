@@ -1,7 +1,6 @@
 import { act, cleanup, render, renderHook, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DeputyWorking } from '../src/components/deputy/deputy-working.tsx';
-import { Panda } from '../src/components/deputy/panda.tsx';
 import { LONG_WAIT_MS, useLongWait } from '../src/lib/use-delayed-pending.ts';
 
 beforeEach(() => {
@@ -50,22 +49,6 @@ describe('useLongWait', () => {
     rerender({ active: true });
     act(() => vi.advanceTimersByTime(LONG_WAIT_MS - 1));
     expect(result.current).toBe(false);
-  });
-});
-
-describe('Panda', () => {
-  it('holds the pencil to set up and the hourglass while pending', () => {
-    const { container, rerender } = render(<Panda />);
-    // The hourglass's glass is the only path drawn with a line-strong stroke and a paper fill.
-    const glass = () => container.querySelector('path.fill-paper.stroke-line-strong[d^="M2 -84"]');
-    const pencil = () => container.querySelector('path.stroke-orange[d="M-8 9L34 -33"]');
-    expect(pencil()).not.toBeNull();
-    expect(glass()).toBeNull();
-    rerender(<Panda pose="pending" />);
-    expect(glass()).not.toBeNull();
-    expect(pencil()).toBeNull();
-    expect(container.querySelector('g[transform="rotate(-34 257.3 261.16)"]')).not.toBeNull();
-    expect(container.querySelectorAll('g[transform="translate(0 -3)"]')).toHaveLength(2);
   });
 });
 

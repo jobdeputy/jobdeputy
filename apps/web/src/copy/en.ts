@@ -19,18 +19,51 @@ export const en = {
     getStarted: 'Get started free',
     signIn: 'Sign in',
     stage: {
-      status: 'Setting up',
-      speech: 'Tell me what you want.',
       setupCardTitle: 'Your setup',
       setupRows: ['Roles', 'Résumé', 'Rules'],
     },
+    /**
+     * The story's chapters: each step's title and line (the strip under the deputy), what he says
+     * in it, and his status. Each plays for 1 s plus 240 ms a word of its title, line and speech
+     * (at least 3.4 s), so a longer translation plays longer.
+     */
     steps: {
       label: 'How your deputy works',
       items: [
-        { title: 'Set it up', line: 'Your roles, résumé, and rules.' },
-        { title: 'It finds', line: 'Roles that fit, from sites you choose.' },
-        { title: 'It applies', line: 'Tailored, then applied once you approve.' },
+        {
+          title: 'Set it up',
+          line: 'Your roles, résumé, and rules.',
+          speech: 'Tell me what you want.',
+          status: 'Setting up',
+        },
+        {
+          title: 'It finds',
+          line: 'Roles that fit, from sites you choose.',
+          speech: 'I search where you choose.',
+          status: 'Finding roles',
+        },
+        {
+          title: 'It applies',
+          line: 'Tailored, then applied once you approve.',
+          speech: 'I apply once you approve.',
+          status: 'Applying',
+        },
       ],
+    },
+    /** The story's controls (a fieldset under the deputy). */
+    story: {
+      controls: 'Story controls',
+      play: 'Play story',
+      pause: 'Pause story',
+      replay: 'Replay story',
+      /** Under reduced motion the story never plays itself; the same button moves one step. */
+      advance: 'Advance story',
+      previous: 'Previous step',
+      next: 'Next step',
+      previousTo: 'Previous step: {title}',
+      nextTo: 'Next step: {title}',
+      /** Read out when someone moves to a step: "Step 2 of 3: It finds". */
+      position: 'Step {number} of {total}: {title}',
     },
   },
   /** The boot loader (index.html, which reads these through `{{copy.boot.*}}` slots: html-copy.ts). */

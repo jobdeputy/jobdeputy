@@ -39,7 +39,7 @@ test.describe('landing page', () => {
     await expect(page.getByRole('link', { name: /^JobDeputy/ })).toBeVisible();
     await expect(visibleButton(page, 'Get started free')).toBeVisible();
     await expect(visibleButton(page, 'Sign in')).toBeVisible();
-    const steps = page.getByRole('list', { name: 'How your deputy works' }).getByRole('listitem');
+    const steps = page.getByRole('list', { name: 'How your deputy works' }).getByRole('button');
     await expect(steps).toHaveText([/Set it up/, /It finds/, /It applies/]);
     await expect(steps.first()).toHaveAttribute('aria-current', 'step');
   });
@@ -127,8 +127,64 @@ test.describe('landing page', () => {
   });
 });
 
+/** The strip's step buttons, in order. */
+function stripSteps(page: Page) {
+  return page.getByRole('list', { name: 'How your deputy works' }).getByRole('button');
+}
+
+test.describe('the story', () => {
+  test.beforeEach(async ({ page }) => {
+    // The page's clock, so the story's 4 s steps can be fast-forwarded instead of waited for.
+    await page.clock.install();
+    await page.goto('/');
+  });
+
+  test('plays each step once by itself, then offers Replay', async ({ page }) => {
+    await expect(stripSteps(page).nth(0)).toHaveAttribute('aria-current', 'step');
+    await page.clock.fastForward(4100);
+    await expect(stripSteps(page).nth(1)).toHaveAttribute('aria-current', 'step');
+    await page.clock.fastForward(4400);
+    await expect(stripSteps(page).nth(2)).toHaveAttribute('aria-current', 'step');
+    await expect(page.getByRole('button', { name: 'Replay story' })).toBeVisible();
+  });
+
+  test('pauses, and steps back and forth by its arrows', async ({ page }) => {
+    await page.getByRole('button', { name: 'Pause story' }).click();
+    await page.clock.fastForward(20_000);
+    await expect(stripSteps(page).nth(0)).toHaveAttribute('aria-current', 'step');
+    // The first step has no step before it; the button stays focusable.
+    await expect(page.getByRole('button', { name: 'Previous step' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    await page.getByRole('button', { name: 'Next step: It finds' }).click();
+    await expect(stripSteps(page).nth(1)).toHaveAttribute('aria-current', 'step');
+    await expect(page.getByRole('status').filter({ hasText: 'Step 2 of 3' })).toHaveText(
+      'Step 2 of 3: It finds',
+    );
+    await expect(page.getByRole('button', { name: 'Previous step: Set it up' })).toBeVisible();
+  });
+
+  test('shows a step chosen in the strip, and stays there', async ({ page }) => {
+    await stripSteps(page).nth(2).click();
+    await expect(stripSteps(page).nth(2)).toHaveAttribute('aria-current', 'step');
+    await page.clock.fastForward(20_000);
+    await expect(stripSteps(page).nth(2)).toHaveAttribute('aria-current', 'step');
+    await expectNoAccessibilityViolations(page);
+  });
+});
+
 test.describe('with reduced motion', () => {
   test.use({ reducedMotion: 'reduce' });
+
+  test('the story never plays by itself; its button advances a step', async ({ page }) => {
+    await page.clock.install();
+    await page.goto('/');
+    await page.clock.fastForward(20_000);
+    await expect(stripSteps(page).nth(0)).toHaveAttribute('aria-current', 'step');
+    await page.getByRole('button', { name: 'Advance story' }).click();
+    await expect(stripSteps(page).nth(1)).toHaveAttribute('aria-current', 'step');
+  });
 
   test('the drawer appears without sliding', async ({ page }) => {
     await page.goto('/');
