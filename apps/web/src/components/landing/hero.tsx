@@ -7,15 +7,15 @@ import { StoryStrip } from './story-strip.tsx';
 /**
  * The landing hero (round 7 `.story-panel`): the promise and the two ways in, the deputy at
  * work, and the three steps. One column up to laptops; from `lg` the copy and the stage sit side
- * by side and the hero fills the screen under the header (`--header-space`, index.css);
- * it grows rather than clips when text is enlarged.
+ * by side. The page shell (App.tsx) makes the hero fill the screen under the header, whatever the
+ * header's height; the hero grows rather than clips when text is enlarged.
  */
 export function Hero({ auth }: { auth: AuthControl }) {
   const { landing } = copy;
   return (
     <section
       aria-labelledby="hero-title"
-      className="relative isolate grid grid-cols-[minmax(0,1fr)] min-h-[calc(100dvh-var(--header-space))] grid-rows-[auto_250px_auto] overflow-clip bg-[radial-gradient(circle_at_50%_45%,var(--color-surface-strong),transparent_58%),linear-gradient(145deg,var(--color-paper),var(--color-paper-deep))] p-[21px] sm:grid-rows-[auto_320px_auto] sm:content-center sm:px-[34px] sm:pt-[34px] md:grid-rows-[auto_400px_auto] lg:min-h-[max(600px,calc(100dvh-var(--header-space)))] lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)_auto] lg:content-normal lg:gap-x-[clamp(32px,4vw,72px)] lg:px-[max(48px,calc((100vw-1280px)/2))] lg:pt-[clamp(28px,4vh,56px)] lg:pb-[clamp(20px,3vh,34px)] 2xl:px-[max(48px,calc((100vw-1480px)/2))]"
+      className="relative isolate grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_250px_auto] overflow-clip bg-[radial-gradient(circle_at_50%_45%,var(--color-surface-strong),transparent_58%),linear-gradient(145deg,var(--color-paper),var(--color-paper-deep))] p-[21px] sm:grid-rows-[auto_320px_auto] sm:content-center sm:px-[34px] sm:pt-[34px] md:grid-rows-[auto_400px_auto] lg:min-h-[600px] lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)_auto] lg:content-normal lg:gap-x-[clamp(32px,4vw,72px)] lg:px-[max(48px,calc((100vw-1280px)/2))] lg:pt-[clamp(28px,4vh,56px)] lg:pb-[clamp(20px,3vh,34px)] 2xl:px-[max(48px,calc((100vw-1480px)/2))]"
     >
       {/* Still, organic colour fields behind everything. */}
       <div

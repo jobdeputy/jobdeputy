@@ -21,10 +21,13 @@ export function App() {
 
   return (
     <>
-      <SiteHeader auth={auth} />
-      <main>
-        <Hero auth={auth} />
-      </main>
+      {/* The header takes its height; the main area (and the hero in it) fills the rest. */}
+      <div className="grid min-h-dvh grid-rows-[auto_1fr]">
+        <SiteHeader auth={auth} />
+        <main className="grid">
+          <Hero auth={auth} />
+        </main>
+      </div>
       <AuthDrawer
         mode={authMode}
         open={authOpen}

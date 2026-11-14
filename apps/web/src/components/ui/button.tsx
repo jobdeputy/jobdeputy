@@ -6,10 +6,12 @@ import { cn } from '@/lib/utils.ts';
 /**
  * shadcn/ui's Button, tuned to the prototype's pill buttons (round 7 `.header-cta`, `.hero-cta`,
  * `.header-signin`). Every size is at least 40px tall so it stays easy to tap on a phone. Heights
- * are minimums and labels may wrap, so enlarged text grows a button instead of overflowing it.
+ * are minimums and labels may wrap, so enlarged text grows a button instead of overflowing it. Each
+ * size sets its line height with its text size (`text-sm/tight`); a caller that overrides the text
+ * size sets the line height too (`text-lg/tight`), because tailwind-merge drops a separate one.
  */
 const buttonVariants = cva(
-  'inline-flex max-w-full cursor-pointer items-center justify-center gap-1.5 rounded-full text-center font-semibold transition-[translate,background-color] duration-180 ease-settle outline-none hover:-translate-y-px focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-3 disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:hover:translate-y-0 [&_svg]:pointer-events-none [&_svg]:shrink-0',
+  'inline-flex max-w-full shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-full text-center font-semibold transition-[translate,background-color] duration-180 ease-settle outline-none hover:-translate-y-px focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-3 disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:hover:translate-y-0 [&_svg]:pointer-events-none [&_svg]:shrink-0',
   {
     variants: {
       variant: {
@@ -20,7 +22,7 @@ const buttonVariants = cva(
         default: 'min-h-10 px-4 py-2 text-sm/tight',
         lg: 'min-h-12 px-6 py-2.5 text-base/tight',
         /** A round 40px button holding one glyph, such as a dialog's close button. */
-        icon: 'size-10 shrink-0 text-[22px] font-normal',
+        icon: 'size-10 text-[1.375rem] font-normal',
       },
     },
     defaultVariants: {

@@ -39,11 +39,13 @@ test.describe('landing page', () => {
     const header = page.locator('header');
     const box = await header.boundingBox();
     if (!box) throw new Error('The header has no box.');
-    const rootFontSize = await page.evaluate(() =>
-      Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
-    );
-    expect(box.height, 'the minimum height scales with the text').toBeGreaterThanOrEqual(
-      4.5 * rootFontSize - 0.5,
+    const minimum = await header.evaluate((element) => ({
+      header: Number.parseFloat(getComputedStyle(element).minHeight),
+      root: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
+    }));
+    expect(minimum.header, 'the minimum height scales with the text').toBeCloseTo(
+      4.5 * minimum.root,
+      0,
     );
     for (const part of await header.locator('a, button').filter({ visible: true }).all()) {
       const partBox = await part.boundingBox();
@@ -59,13 +61,15 @@ test.describe('landing page', () => {
       page.evaluate(() => {
         const root = getComputedStyle(document.documentElement);
         const headerHeight = document.querySelector('header')?.getBoundingClientRect().height ?? 0;
-        return {
-          published: Number.parseFloat(root.getPropertyValue('--header-offset')) - headerHeight,
-          scrollPadding: Number.parseFloat(root.scrollPaddingTop) - headerHeight - 8,
-        };
+        // How far each is off, to 0.01px.
+        const off = (value: number) => Math.round(Math.abs(value) * 100) / 100;
+        return [
+          off(Number.parseFloat(root.getPropertyValue('--header-offset')) - headerHeight),
+          off(Number.parseFloat(root.scrollPaddingTop) - headerHeight - 8),
+        ];
       });
-    await expect.poll(async () => (await offsets()).published).toBeCloseTo(0, 1);
-    expect((await offsets()).scrollPadding).toBeCloseTo(0, 0);
+    // One read for both, polled together, so a late relayout cannot split them.
+    await expect.poll(offsets).toEqual([0, 0]);
     await expectNoHorizontalScroll(page);
   });
 

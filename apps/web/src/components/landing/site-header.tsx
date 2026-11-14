@@ -36,7 +36,7 @@ export function SiteHeader({ auth }: { auth: AuthControl }) {
           </span>
         </span>
       </a>
-      <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-2 md:gap-3.5">
+      <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end-safe gap-2 md:gap-3.5">
         <AuthButton control={auth} mode="sign-in" variant="outline">
           {copy.landing.signIn}
         </AuthButton>
@@ -50,17 +50,22 @@ export function SiteHeader({ auth }: { auth: AuthControl }) {
 
 /**
  * Publishes the header's real height as `--header-offset` on the page root, so the scroll padding
- * and the hero's height follow it when enlarged text makes the header grow or wrap. CSS falls back
- * to `--header-height`, the minimum, before this runs.
+ * follows it when enlarged text makes the header grow or wrap. CSS falls back to
+ * `--header-height`, the minimum, before this runs.
  */
 function useHeaderOffset(header: React.RefObject<HTMLElement | null>) {
   useLayoutEffect(() => {
     const element = header.current;
     if (!element || typeof ResizeObserver === 'undefined') return;
     const root = document.documentElement;
-    // The border box, unrounded: the header's exact height at any text size.
-    const observer = new ResizeObserver(() => {
-      root.style.setProperty('--header-offset', `${element.getBoundingClientRect().height}px`);
+    let published = -1;
+    // The observed border box, unrounded; written only when the height changes (a width-only
+    // resize leaves the page's styles alone).
+    const observer = new ResizeObserver(([entry]) => {
+      const height = entry?.borderBoxSize[0]?.blockSize;
+      if (height === undefined || height === published) return;
+      published = height;
+      root.style.setProperty('--header-offset', `${height}px`);
     });
     observer.observe(element, { box: 'border-box' });
     return () => {
