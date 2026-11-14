@@ -8,11 +8,12 @@ import { cn } from '@/lib/utils.ts';
  * one turn every 987ms. It takes `currentColor`, so it matches whatever text it sits beside. The
  * track is the text colour at 24% (the alpha of `line-strong`): the prototype's 68% only works as
  * white on ink, so the ink Button sets that itself. It is decorative (`aria-hidden`): the words next to it say
- * what is happening. Reduced motion holds it still. Forced colours drop the head, so the gap still
- * shows where the head would be.
+ * what is happening. Reduced motion holds it still. Forced colours would repaint every border,
+ * even a transparent one, in one colour; so there it opts out and draws a CanvasText ring with a
+ * gap where the head would be.
  */
 const spinnerVariants = cva(
-  'inline-block shrink-0 animate-spinner rounded-full border-2 border-current/24 border-t-current motion-reduce:animate-none forced-colors:border-t-transparent',
+  'inline-block shrink-0 animate-spinner rounded-full border-2 border-current/24 border-t-current motion-reduce:animate-none forced-colors:forced-color-adjust-none forced-colors:border-[CanvasText] forced-colors:border-t-transparent',
   {
     variants: {
       size: {

@@ -57,6 +57,19 @@ test('a progress bar reads out its quarters', async ({ page }) => {
   ).toBeAttached();
 });
 
+test.describe('in forced colours', () => {
+  test.use({ forcedColors: 'active' });
+
+  test('spinners keep a visible gap', async ({ page }) => {
+    const spinner = page.locator('[data-slot="spinner"]').first();
+    const [top, right] = await spinner.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return [style.borderTopColor, style.borderRightColor];
+    });
+    expect(top).not.toBe(right);
+  });
+});
+
 test.describe('with reduced motion', () => {
   test.use({ reducedMotion: 'reduce' });
 

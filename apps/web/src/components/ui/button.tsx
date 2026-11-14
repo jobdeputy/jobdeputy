@@ -93,10 +93,11 @@ function Button({
   // work ends: a failed sign-in must take a retry at once.
   const blocked = pending || success || unavailable;
   // Like a disabled button: no press reaches the caller's handlers (a menu trigger opens on
-  // pointerdown or keydown) or bubbles to a clickable row around it. Only presses stop bubbling:
-  // Tab and Escape still reach a dialog's focus trap and its close.
+  // pointerdown or keydown), and a click, Enter, or Space does not bubble to a clickable row
+  // around it. Tab and Escape still reach a dialog's focus trap and its close, and pointerdown
+  // still reaches the document, so an open popover closes as it would for a disabled button.
   const unlessBlocked =
-    <E extends React.SyntheticEvent>(handler?: (event: E) => void, isPress = (_: E) => true) =>
+    <E extends React.SyntheticEvent>(handler?: (event: E) => void, isPress = (_: E) => false) =>
     (event: E) => {
       if (!blocked) {
         handler?.(event);
@@ -106,6 +107,9 @@ function Button({
     };
   const Comp = asChild ? Slot.Root : 'button';
 
+  // A round icon button has room for one glyph: the spinner or ✓ takes its place. Name it with
+  // aria-label, which stays the same.
+  const iconOnly = size === 'icon';
   let content = children;
   if (success) {
     content = (
@@ -116,7 +120,7 @@ function Button({
         >
           ✓
         </span>
-        {successLabel ?? children}
+        {!iconOnly && (successLabel ?? children)}
       </>
     );
   } else if (showPending) {
@@ -126,7 +130,7 @@ function Button({
         <Spinner
           className={variant === 'outline' ? undefined : 'border-on-ink-muted border-t-current'}
         />
-        {pendingLabel ?? children}
+        {!iconOnly && (pendingLabel ?? children)}
       </>
     );
   }

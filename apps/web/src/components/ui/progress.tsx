@@ -82,7 +82,7 @@ function Progress({
         data-slot="progress"
         aria-labelledby={labelId}
         value={current}
-        getValueLabel={(current) => formatPercent(current)}
+        getValueLabel={formatPercent}
         className="relative block h-2 min-w-14 flex-[1_0_100%] overflow-hidden rounded-full bg-paper-deep inset-ring inset-ring-line forced-colors:border forced-colors:border-[CanvasText]"
       >
         <ProgressPrimitive.Indicator

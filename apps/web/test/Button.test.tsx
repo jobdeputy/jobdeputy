@@ -195,7 +195,8 @@ describe('Button', () => {
       for (const key of ['Enter', ' ', 'Tab', 'Escape']) fireEvent.keyDown(button, { key });
       fireEvent.pointerDown(button);
       expect(parentKeys).toEqual(['Tab', 'Escape']);
-      expect(onParentPointerDown).not.toHaveBeenCalled();
+      // Reaches the document, so an open popover still closes.
+      expect(onParentPointerDown).toHaveBeenCalledOnce();
     });
 
     it('passes a rendered child its own aria-disabled, without taking over its presses', () => {
@@ -212,6 +213,25 @@ describe('Button', () => {
       expect(link.hasAttribute('data-unavailable')).toBe(false);
       fireEvent.click(link);
       expect(onClick).toHaveBeenCalledOnce();
+    });
+
+    it('shows only the spinner, then only the ✓, on a round icon button', () => {
+      vi.useFakeTimers();
+      const { rerender } = render(
+        <Button size="icon" aria-label="Close" pending>
+          ×
+        </Button>,
+      );
+      act(() => vi.advanceTimersByTime(300));
+      const button = screen.getByRole('button', { name: 'Close' });
+      expect(button.textContent).toBe('');
+      expect(button.querySelector('[data-slot="spinner"]')).not.toBeNull();
+      rerender(
+        <Button size="icon" aria-label="Close" success>
+          ×
+        </Button>,
+      );
+      expect(button.textContent).toBe('✓');
     });
 
     it('keeps its label when no pending label is given', () => {
