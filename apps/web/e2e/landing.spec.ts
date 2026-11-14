@@ -9,9 +9,9 @@ function visibleButton(page: Page, name: string) {
 }
 
 /**
- * The hero starts under the header and fills the rest of the screen: exactly on laptops and
- * desktops (lg, 1024px+), where its content fits; at least on phones and tablets, where its
- * content can be taller than the screen.
+ * The hero starts under the header and fills the rest of the screen: exactly from `lg` up when
+ * the screen leaves it at least its 600px minimum (its content fits there); at least, otherwise,
+ * where its content or minimum can be taller than the screen.
  */
 async function expectHeroFillsScreen(page: Page) {
   const header = await page.locator('header').boundingBox();
@@ -19,7 +19,10 @@ async function expectHeroFillsScreen(page: Page) {
   const viewport = page.viewportSize();
   if (!header || !hero || !viewport) throw new Error('No header, hero, or viewport size.');
   expect(hero.y).toBeCloseTo(header.y + header.height, 0);
-  if (viewport.width >= 1024) {
+  // Asks the page, so the check follows the theme's lg breakpoint.
+  const isLarge = await page.evaluate(() => matchMedia('(width >= 64rem)').matches);
+  const roomForMinimum = viewport.height - (header.y + header.height) >= 600;
+  if (isLarge && roomForMinimum) {
     expect(hero.y + hero.height).toBeCloseTo(viewport.height, 0);
   } else {
     expect(hero.y + hero.height).toBeGreaterThanOrEqual(viewport.height - 0.5);
