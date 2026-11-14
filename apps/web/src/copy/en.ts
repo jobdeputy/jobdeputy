@@ -3,6 +3,8 @@
  * between languages. Components read copy through `@/copy`, never from this file directly.
  */
 export const en = {
+  /** The locale numbers and dates are formatted in (BCP 47). */
+  locale: 'en-US',
   shell: {
     /** The product name as the header's wordmark sets it: two weights, no space between. */
     wordmark: ['Job', 'Deputy'],
@@ -31,6 +33,10 @@ export const en = {
         { title: 'It applies', line: 'Tailored, and sent once you approve.' },
       ],
     },
+  },
+  loading: {
+    /** Read out as a progress bar passes each quarter: "Uploading résumé, 50%". */
+    progressMilestone: '{label}, {percent}',
   },
   auth: {
     close: 'Close',

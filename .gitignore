@@ -9,6 +9,7 @@ secrets/
 # Dependencies and builds
 node_modules/
 dist/
+dist-e2e/
 build/
 coverage/
 .venv/

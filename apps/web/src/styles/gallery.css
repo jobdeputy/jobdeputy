@@ -1,0 +1,3 @@
+/* The gallery's stylesheet: the app's (styles/index.css), with the gallery's own classes too. */
+@import "tailwindcss";
+@import "./base.css";
