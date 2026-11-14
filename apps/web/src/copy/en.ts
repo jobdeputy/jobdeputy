@@ -34,6 +34,15 @@ export const en = {
       ],
     },
   },
+  /** The boot loader (index.html, which repeats the first two: test/boot-loader.test.ts). */
+  boot: {
+    /** Under the logo while the app loads. */
+    status: 'Loading…',
+    /** The progress bar's name for screen readers. */
+    progressLabel: 'Loading JobDeputy',
+    /** Read out once the loader, if it was seen, gives way to the app. */
+    ready: 'JobDeputy is ready.',
+  },
   loading: {
     /** Read out as a progress bar passes each quarter: "Uploading résumé, 50%". */
     progressMilestone: '{label}, {percent}',

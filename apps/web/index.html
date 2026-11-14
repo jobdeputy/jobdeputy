@@ -6,8 +6,59 @@
     <meta name="description" content="JobDeputy finds roles, tailors your résumé, and applies for you, with your approval." />
     <link rel="icon" href="/jobdeputy-mark.svg" type="image/svg+xml" />
     <title>JobDeputy</title>
+    <!-- Linked here, not imported by main.tsx, so it blocks the first paint in dev as in the build:
+         the boot loader below must be styled before the app's script even loads. -->
+    <link rel="stylesheet" href="/src/styles/index.css" />
   </head>
   <body>
+    <!-- The boot loader (#17): the first visit's wait for the app. Plain markup, so it shows before
+         any script runs: CSS reveals it after 300 ms, and lib/boot-loader.ts ends it once the app
+         has rendered (a quick boot never shows it). Its words must match copy.boot in en.ts
+         (test/boot-loader.test.ts). -->
+    <div
+      id="boot-loader"
+      class="group fixed inset-0 z-100 transition-opacity duration-[618ms] ease-settle data-[state=done]:pointer-events-none data-[state=done]:opacity-0 motion-reduce:transition-none"
+    >
+      <div
+        class="grid size-full animate-boot-reveal place-items-center bg-paper bg-radial-[circle_at_50%_44%] from-white from-0% via-surface via-28% to-transparent to-62% p-8 motion-reduce:animate-boot-reveal-still"
+      >
+        <div class="grid w-full max-w-[520px] justify-items-center">
+          <div class="relative aspect-[610/377] w-full">
+            <!-- The story plays once; at the end the settled frame (the story's last frame) takes
+                 its place, as it does at once under reduced motion. -->
+            <img
+              class="size-full group-data-[state=done]:invisible motion-reduce:invisible"
+              src="/jobdeputy-animated.svg"
+              alt=""
+              width="610"
+              height="377"
+            />
+            <img
+              class="invisible absolute inset-0 size-full group-data-[state=done]:visible motion-reduce:visible"
+              src="/jobdeputy-animated.svg#settled"
+              alt=""
+              width="610"
+              height="377"
+            />
+            <!-- The logo's own progress track, filled in step with the story. -->
+            <span
+              class="absolute top-[93.63%] left-[40.49%] h-[max(3px,1.06%)] w-[19.02%] overflow-hidden rounded-full bg-ink/10"
+              aria-hidden="true"
+            >
+              <span
+                class="block size-full origin-left animate-boot-fill rounded-[inherit] bg-green forced-color-adjust-none forced-colors:bg-[Highlight] group-data-[state=done]:scale-x-100 group-data-[state=done]:animate-none motion-reduce:scale-x-0 motion-reduce:animate-none"
+              ></span>
+            </span>
+          </div>
+          <p class="-mt-2 text-xs tracking-[0.02em] text-muted-foreground" aria-hidden="true">
+            Loading…
+          </p>
+          <span class="sr-only" role="progressbar" aria-label="Loading JobDeputy"></span>
+        </div>
+      </div>
+    </div>
+    <!-- Says the app is ready, once the loader has been seen. Outside the loader, which is removed. -->
+    <p id="boot-status" class="sr-only" role="status"></p>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

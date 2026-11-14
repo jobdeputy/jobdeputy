@@ -1,6 +1,7 @@
-/* The only stylesheet the app loads. Pages style themselves with Tailwind classes; the files
-   base.css imports hold what classes cannot express (decision 0012). Tailwind scans the source
-   for classes, skipping the dev-only gallery, so its classes never reach production CSS. */
+/* The only stylesheet the app loads (index.html links it). Pages style themselves with Tailwind
+   classes; the files base.css imports hold what classes cannot express (decision 0012). Tailwind
+   scans the source for classes (index.html too), skipping the dev-only gallery, so its classes
+   never reach production CSS. */
 @import "tailwindcss";
 @import "./base.css";
 @source not "../gallery";
