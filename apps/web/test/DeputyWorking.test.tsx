@@ -83,10 +83,6 @@ describe('DeputyWorking', () => {
   const pill = () => regions()[0]?.textContent;
   const stepRegion = () => regions()[1]?.textContent;
   const longRegion = () => regions()[2]?.textContent;
-  /** What the long-wait region reads out (its visible line is aria-hidden). */
-  const longRead = () => regions()[2]?.querySelector('.sr-only')?.textContent ?? '';
-  /** What the long-wait region shows. */
-  const longSeen = () => regions()[2]?.querySelector('[aria-hidden="true"]')?.textContent ?? '';
 
   it('shows nothing for 300 ms, with its live regions already there and empty', () => {
     render(<Working active />);
@@ -107,7 +103,7 @@ describe('DeputyWorking', () => {
     act(() => vi.advanceTimersByTime(100));
     expect([stepRegion(), longRegion()]).toEqual(['Reading page 1 of 12', '']);
     act(() => vi.advanceTimersByTime(100));
-    expect(longRead()).toBe('Searching. Still working…');
+    expect(longRegion()).toBe('Still working…');
     expect(screen.getByText('On it.')).toBeTruthy();
     expect(document.querySelector('svg')).not.toBeNull();
   });
@@ -155,9 +151,7 @@ describe('DeputyWorking', () => {
     act(() => vi.advanceTimersByTime(LONG_WAIT_MS - 301));
     expect(longRegion()).toBe('');
     act(() => vi.advanceTimersByTime(1));
-    expect(longSeen()).toBe('Still working…');
-    // Read with what is still working, not as a bare "Still working…".
-    expect(longRead()).toBe('Searching. Still working…');
+    expect(longRegion()).toBe('Still working…');
     expect(regions()[2]?.className).not.toContain('sr-only');
   });
 
@@ -165,10 +159,7 @@ describe('DeputyWorking', () => {
     render(<Working active background />);
     act(() => vi.advanceTimersByTime(300));
     act(() => vi.advanceTimersByTime(LONG_WAIT_MS));
-    expect(longSeen()).toBe('This keeps going in the background. You can leave this page.');
-    expect(longRead()).toBe(
-      'Searching. This keeps going in the background. You can leave this page.',
-    );
+    expect(longRegion()).toBe('This keeps going in the background. You can leave this page.');
   });
 
   it('stays its 500 ms once shown, then goes when the job ends', () => {

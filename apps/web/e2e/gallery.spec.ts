@@ -112,14 +112,11 @@ test('the deputy works with his hourglass, and says a long job carries on', asyn
     'Reading page 3 of 12',
   );
   await expect(working.first().locator('svg path[d^="M2 -84"]')).toBeVisible();
-  await expect(
-    working.nth(1).getByText('This keeps going in the background. You can leave this page.', {
-      exact: true,
-    }),
-  ).toBeVisible();
-  // Read out, in a status region, with what keeps going.
-  await expect(working.nth(1).getByRole('status').filter({ hasText: 'background' })).toContainText(
-    'Tailoring. This keeps going in the background. You can leave this page.',
+  // Shown and read out, in its own status region.
+  const backgroundLine = working.nth(1).getByRole('status').filter({ hasText: 'background' });
+  await expect(backgroundLine).toBeVisible();
+  await expect(backgroundLine).toHaveText(
+    'This keeps going in the background. You can leave this page.',
   );
 });
 

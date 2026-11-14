@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { DeputySpeech, DeputyStatus } from '@/components/deputy/deputy-speech.tsx';
 import { Panda } from '@/components/deputy/panda.tsx';
 import { Spinner } from '@/components/ui/spinner.tsx';
-import { copy, fill } from '@/copy/index.ts';
+import { copy } from '@/copy/index.ts';
 import { useDelayedPending, useLongWait } from '@/lib/use-delayed-pending.ts';
 import { cn } from '@/lib/utils.ts';
 
@@ -65,7 +65,9 @@ export function DeputyWorking({
   // The live regions are always there, empty until their line comes: screen readers skip the
   // text a live region is born with, and one that is display:none is not there at all, so an
   // empty one is visually hidden (sr-only), never hidden outright. One region per line, so a new
-  // step is read on its own, not with the pill and the long-wait sentence again.
+  // step is read on its own, not with the pill and the long-wait sentence again. Each line stands
+  // on its own: the long-wait line does not repeat the status, which the pill right above it
+  // says (repeating it would read a new status twice, or an old one).
   const longLine =
     shown && long && beats >= 2
       ? background
@@ -73,17 +75,6 @@ export function DeputyWorking({
         : copy.loading.stillWorking
       : '';
   const stepLine = shown && step && beats >= 1 ? step : '';
-  // The long-wait line is read with the status it appeared under, kept from then on: a new status
-  // is read by the pill alone, not twice. (Adjusting state while rendering: React's pattern for
-  // remembering something from an earlier render.)
-  const [longLabel, setLongLabel] = useState<string | null>(null);
-  if (longLine && longLabel === null) setLongLabel(status);
-  if (!longLine && longLabel !== null) setLongLabel(null);
-  const longRead = !longLine
-    ? ''
-    : background
-      ? fill(copy.loading.longWaitRead, { label: longLabel ?? status, line: longLine })
-      : fill(copy.loading.stillLoading, { label: longLabel ?? status });
   return (
     <div
       data-slot="deputy-working"
@@ -111,14 +102,7 @@ export function DeputyWorking({
           role="status"
           className={cn('m-0 text-sm text-muted-foreground', !longLine && 'sr-only')}
         >
-          {/* Read as one sentence with what is still working ("Searching. Still working…");
-              seen without it, the pill being right above. */}
-          {longLine && (
-            <>
-              <span className="sr-only">{longRead}</span>
-              <span aria-hidden="true">{longLine}</span>
-            </>
-          )}
+          {longLine}
         </p>
       </div>
     </div>
