@@ -112,9 +112,11 @@ test('the deputy works with his hourglass, and says a long job carries on', asyn
     'Reading page 3 of 12',
   );
   await expect(working.first().locator('svg path[d^="M2 -84"]')).toBeVisible();
-  await expect(working.nth(1).getByRole('status').filter({ hasText: 'background' })).toHaveText(
-    'This keeps going in the background. You can leave this page.',
-  );
+  await expect(
+    working.nth(1).getByText('This keeps going in the background. You can leave this page.', {
+      exact: true,
+    }),
+  ).toBeVisible();
 });
 
 test('a failed first load hands over to its error', async ({ page }) => {

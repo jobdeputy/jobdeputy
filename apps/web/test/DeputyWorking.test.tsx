@@ -70,7 +70,12 @@ describe('Panda', () => {
 });
 
 describe('DeputyWorking', () => {
-  function Working(props: { active: boolean; background?: boolean; step?: string }) {
+  function Working(props: {
+    active: boolean;
+    background?: boolean;
+    step?: string;
+    longWaitAfter?: number;
+  }) {
     return <DeputyWorking status="Searching" speech="On it." {...props} />;
   }
   /** The three live regions, in order: the pill, the step, the long-wait line. */
@@ -78,22 +83,39 @@ describe('DeputyWorking', () => {
   const pill = () => regions()[0]?.textContent;
   const stepRegion = () => regions()[1]?.textContent;
   const longRegion = () => regions()[2]?.textContent;
+  /** What the long-wait region reads out (its visible line is aria-hidden). */
+  const longRead = () => regions()[2]?.querySelector('.sr-only')?.textContent ?? '';
+  /** What the long-wait region shows. */
+  const longSeen = () => regions()[2]?.querySelector('[aria-hidden="true"]')?.textContent ?? '';
 
   it('shows nothing for 300 ms, with its live regions already there and empty', () => {
     render(<Working active />);
     expect(regions()).toHaveLength(3);
     expect(regions().map((region) => region.textContent)).toEqual(['', '', '']);
     // Empty regions stay in the accessibility tree: visually hidden, never display:none.
+    expect(regions()[1]?.className).toContain('sr-only');
     expect(regions()[2]?.className).toContain('sr-only');
     expect(document.querySelector('svg')).toBeNull();
     act(() => vi.advanceTimersByTime(300));
     expect(pill()).toBe('Searching');
+  });
+
+  it('fills its regions a beat apart when it shows, so each is read', () => {
+    render(<Working active step="Reading page 1 of 12" longWaitAfter={0} />);
+    act(() => vi.advanceTimersByTime(300));
+    expect([pill(), stepRegion(), longRegion()]).toEqual(['Searching', '', '']);
+    act(() => vi.advanceTimersByTime(100));
+    expect([stepRegion(), longRegion()]).toEqual(['Reading page 1 of 12', '']);
+    act(() => vi.advanceTimersByTime(100));
+    expect(longRead()).toBe('Searching. Still working…');
     expect(screen.getByText('On it.')).toBeTruthy();
     expect(document.querySelector('svg')).not.toBeNull();
   });
 
   it('reads out the step the job reports, on its own', () => {
     const { rerender } = render(<Working active step="Reading page 1 of 12" />);
+    // React applies each timer's update as its act ends: show first, then run on.
+    act(() => vi.advanceTimersByTime(300));
     act(() => vi.advanceTimersByTime(LONG_WAIT_MS));
     rerender(<Working active step="Reading page 2 of 12" />);
     // Its own region: the pill and the long-wait line are not read again with it.
@@ -103,17 +125,24 @@ describe('DeputyWorking', () => {
 
   it('adds "Still working…" after 8 s', () => {
     render(<Working active />);
-    act(() => vi.advanceTimersByTime(LONG_WAIT_MS - 1));
+    act(() => vi.advanceTimersByTime(300));
+    act(() => vi.advanceTimersByTime(LONG_WAIT_MS - 301));
     expect(longRegion()).toBe('');
     act(() => vi.advanceTimersByTime(1));
-    expect(longRegion()).toBe('Still working…');
+    expect(longSeen()).toBe('Still working…');
+    // Read with what is still working, not as a bare "Still working…".
+    expect(longRead()).toBe('Searching. Still working…');
     expect(regions()[2]?.className).not.toContain('sr-only');
   });
 
   it('says a background job carries on if the user leaves', () => {
     render(<Working active background />);
+    act(() => vi.advanceTimersByTime(300));
     act(() => vi.advanceTimersByTime(LONG_WAIT_MS));
-    expect(longRegion()).toBe('This keeps going in the background. You can leave this page.');
+    expect(longSeen()).toBe('This keeps going in the background. You can leave this page.');
+    expect(longRead()).toBe(
+      'Searching. This keeps going in the background. You can leave this page.',
+    );
   });
 
   it('stays its 500 ms once shown, then goes when the job ends', () => {

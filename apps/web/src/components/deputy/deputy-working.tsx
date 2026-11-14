@@ -1,9 +1,13 @@
+import { useEffect, useState } from 'react';
 import { DeputySpeech, DeputyStatus } from '@/components/deputy/deputy-speech.tsx';
 import { Panda } from '@/components/deputy/panda.tsx';
 import { Spinner } from '@/components/ui/spinner.tsx';
-import { copy } from '@/copy/index.ts';
+import { copy, fill } from '@/copy/index.ts';
 import { useDelayedPending, useLongWait } from '@/lib/use-delayed-pending.ts';
 import { cn } from '@/lib/utils.ts';
+
+/** How far apart the deputy's live regions first fill, so each is read on its own. */
+const LIVE_REGION_BEAT_MS = 100;
 
 /**
  * The deputy at work on something long (#17): a crawl, a relevance run, a tailoring. The panda
@@ -41,14 +45,34 @@ export function DeputyWorking({
 }) {
   const shown = useDelayedPending(active);
   const long = useLongWait(active, longWaitAfter);
+  // Live regions that change in the same moment can be read as one or not at all (VoiceOver), so
+  // when the deputy shows, the step follows the pill a beat later and the long-wait line a beat
+  // after that.
+  const [beats, setBeats] = useState(0);
+  useEffect(() => {
+    if (!shown) {
+      setBeats(0);
+      return;
+    }
+    const step = setTimeout(() => setBeats(1), LIVE_REGION_BEAT_MS);
+    const long = setTimeout(() => setBeats(2), 2 * LIVE_REGION_BEAT_MS);
+    return () => {
+      clearTimeout(step);
+      clearTimeout(long);
+    };
+  }, [shown]);
 
   // The live regions are always there, empty until their line comes: screen readers skip the
   // text a live region is born with, and one that is display:none is not there at all, so an
   // empty one is visually hidden (sr-only), never hidden outright. One region per line, so a new
   // step is read on its own, not with the pill and the long-wait sentence again.
   const longLine =
-    shown && long ? (background ? copy.loading.background : copy.loading.stillWorking) : '';
-  const stepLine = shown && step ? step : '';
+    shown && long && beats >= 2
+      ? background
+        ? copy.loading.background
+        : copy.loading.stillWorking
+      : '';
+  const stepLine = shown && step && beats >= 1 ? step : '';
   return (
     <div
       data-slot="deputy-working"
@@ -76,7 +100,16 @@ export function DeputyWorking({
           role="status"
           className={cn('m-0 text-sm text-muted-foreground', !longLine && 'sr-only')}
         >
-          {longLine}
+          {/* Read as one sentence with what is still working ("Searching. Still working…");
+              seen without it, the pill being right above. */}
+          {longLine && (
+            <>
+              <span className="sr-only">
+                {fill(copy.loading.longWaitRead, { label: status, line: longLine })}
+              </span>
+              <span aria-hidden="true">{longLine}</span>
+            </>
+          )}
         </p>
       </div>
     </div>

@@ -50,7 +50,8 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `playwright.config.ts` | browser tests on the built app across seven devices |
 | `e2e/landing.spec.ts` | the landing page in real browsers: content, tokens, no sideways scroll, axe, drawer open/close by mouse and keyboard, reduced motion |
 | `e2e/boot-loader.spec.ts` | the boot loader in real browsers, with the app's script held back: hand-over to the app (the track full), the 300 ms reveal, the 8 s reload offer, the no-JavaScript line, axe, no sideways scroll, reduced motion, forced colours |
-| `e2e/gallery.spec.ts` | the component gallery in real browsers: axe, no sideways scroll (also at 200% text), a pending button keeps focus and runs once, progress read-outs, skeleton shapes and shimmer, a query region from skeleton to data to refresh and to error, reduced motion |
+| `e2e/gallery-long-wait.spec.ts` | the gallery's 8 s long wait on the page's clock (installed before the page loads, then fast-forwarded): "Still working…" read and shown, axe, no sideways scroll (also at 200% text) |
+| `e2e/gallery.spec.ts` | the component gallery in real browsers: axe, no sideways scroll (also at 200% text), a pending button keeps focus and runs once, progress read-outs, skeleton shapes and shimmer, a query region from skeleton to data to refresh and to error, the deputy working with his hourglass and the background line, reduced motion |
 | `e2e/checks.ts` | shared browser checks: no sideways scroll, no accessibility violations |
 | `e2e/screenshots.spec.ts` | the screens to screenshot on every device as PR proof (list each new screen here); `screenshots-dir.ts` and `global-setup.ts` put them in `apps/web/screenshots/` and clear old ones |
 
