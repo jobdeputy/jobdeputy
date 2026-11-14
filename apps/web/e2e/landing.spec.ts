@@ -32,6 +32,23 @@ test.describe('landing page', () => {
     await expectNoHorizontalScroll(page);
   });
 
+  test('keeps the header usable with text at 200%', async ({ page }) => {
+    // Browser text-size settings scale the root font; rem-sized parts must still fit (WCAG 1.4.4).
+    await page.addStyleTag({ content: 'html { font-size: 200%; }' });
+    const header = page.locator('header');
+    const box = await header.boundingBox();
+    if (!box) throw new Error('The header has no box.');
+    expect(box.height, 'header grows with the text').toBeGreaterThanOrEqual(144);
+    for (const part of await header.locator('a, button').filter({ visible: true }).all()) {
+      const partBox = await part.boundingBox();
+      if (!partBox) throw new Error('A header control has no box.');
+      expect(partBox.x).toBeGreaterThanOrEqual(box.x);
+      expect(partBox.x + partBox.width).toBeLessThanOrEqual(box.x + box.width + 0.5);
+      expect(partBox.y + partBox.height).toBeLessThanOrEqual(box.y + box.height + 0.5);
+    }
+    await expectNoHorizontalScroll(page);
+  });
+
   test('has no detectable accessibility violations', async ({ page }) => {
     await expectNoAccessibilityViolations(page);
   });

@@ -10,7 +10,8 @@ export const copy: Copy = en;
 
 /**
  * One `V` per entry of the copy list `T`, with the same length, for data paired with copy (such as
- * each step's icon): a language with a different count fails to compile. Generic, so tuples stay
- * tuples.
+ * each step's icon). Generic, so tuples stay tuples. The length check itself comes from `Copy`:
+ * `Widen` (en.ts) keeps every list a fixed-length tuple, so a language with a different count fails
+ * to compile. Over a plain array, OnePer would accept any length.
  */
 export type OnePer<T, V> = { readonly [K in keyof T]: V };
