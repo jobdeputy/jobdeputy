@@ -16,7 +16,8 @@ import { cn } from '@/lib/utils.ts';
  * `pending` and `success` are the prototype's submit states (round 7 `.is-submitting`,
  * `.is-success`; #17). A pending button ignores presses at once, so work never starts twice, but
  * it shows the spinner and `pendingLabel` only after the shared delay (useDelayedPending). It uses
- * `aria-disabled`, not `disabled`, so focus stays on it. The caller announces the change through a
+ * `aria-disabled`, not `disabled`, so focus stays on it. Once the work ends the button takes presses
+ * again, even while the spinner finishes its minimum time on screen. The caller announces the change through a
  * status region; a button's own name change is not reliably read out.
  */
 const buttonVariants = cva(
@@ -81,8 +82,9 @@ function Button({
   ...props
 }: ButtonProps) {
   const showPending = useDelayedPending(pending);
-  // Presses are ignored from the first moment of the work until its success state is gone.
-  const blocked = pending || showPending || success;
+  // Presses are ignored from the first moment of the work until its success state is gone. Not
+  // during the spinner's minimum hold after the work ends: a failed sign-in must take a retry at once.
+  const blocked = pending || success;
   const Comp = asChild ? Slot.Root : 'button';
 
   let content = children;

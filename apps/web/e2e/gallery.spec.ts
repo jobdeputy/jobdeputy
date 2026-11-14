@@ -37,9 +37,12 @@ test('a pending button keeps focus and starts its work only once', async ({ page
   await expect(button).toHaveAttribute('data-pending');
   await expect(button).toBeFocused();
   await expect(button).toHaveAccessibleName('Saving…');
+  // The work runs until "Finish the save", so these presses land while it is pending.
   await page.keyboard.press('Enter');
   // force: Playwright waits for an aria-disabled button to enable; this click must land now.
   await button.click({ force: true });
+  await expect(page.getByTestId('live-button-runs')).toHaveText('Started 1 time');
+  await page.getByRole('button', { name: 'Finish the save' }).click();
   await expect(button).toHaveAccessibleName('Saved');
   await expect(button).toHaveAccessibleName('Try a save');
   await expect(page.getByTestId('live-button-runs')).toHaveText('Started 1 time');

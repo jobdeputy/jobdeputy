@@ -102,11 +102,16 @@ describe('Button', () => {
       expect(onSubmit).not.toHaveBeenCalled();
     });
 
-    it('presses normally again once the work ends', () => {
+    it('takes presses again as soon as the work ends, while the spinner finishes its hold', () => {
+      vi.useFakeTimers();
       const onClick = vi.fn();
       const { rerender } = render(pendingButton({ pending: true, onClick }));
+      act(() => vi.advanceTimersByTime(350));
       rerender(pendingButton({ onClick }));
-      fireEvent.click(screen.getByRole('button'));
+      const button = screen.getByRole('button');
+      expect(button.hasAttribute('data-pending')).toBe(true);
+      expect(button.hasAttribute('aria-disabled')).toBe(false);
+      fireEvent.click(button);
       expect(onClick).toHaveBeenCalledOnce();
     });
 

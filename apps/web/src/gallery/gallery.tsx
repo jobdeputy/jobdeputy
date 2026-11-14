@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button.tsx';
 import { Progress } from '@/components/ui/progress.tsx';
 import { Spinner } from '@/components/ui/spinner.tsx';
@@ -6,7 +6,8 @@ import { Spinner } from '@/components/ui/spinner.tsx';
 /**
  * Every shared component in every state, on one page, for review and for the screenshots CI posts
  * on UI pull requests (#17). Dev and test builds only: the production build leaves gallery.html
- * out (vite.config.ts). Its words are for developers, so they stay here rather than in en.ts.
+ * out (vite.config.ts). Its words are for developers and never ship, so they stay here: en.ts is
+ * part of the production bundle, and the copy rule (decision 0012) covers words users see.
  */
 export function Gallery() {
   return (
@@ -74,13 +75,16 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-/** A button whose fake work takes 1.5s, then shows success for 1.5s: the whole cycle, live. */
+/**
+ * The whole cycle, live: "Try a save" starts fake work that runs until "Finish the save" ends it
+ * (no timer, so tests decide when it ends), then shows success for 1.5s.
+ */
 function LiveButton() {
   const [state, setState] = useState<'idle' | 'pending' | 'success'>('idle');
   const [runs, setRuns] = useState(0);
   useEffect(() => {
-    if (state === 'idle') return;
-    const timer = setTimeout(() => setState(state === 'pending' ? 'success' : 'idle'), 1500);
+    if (state !== 'success') return;
+    const timer = setTimeout(() => setState('idle'), 1500);
     return () => clearTimeout(timer);
   }, [state]);
 
@@ -100,6 +104,15 @@ function LiveButton() {
       >
         Try a save
       </Button>
+      <Button
+        variant="outline"
+        aria-disabled={state !== 'pending' || undefined}
+        onClick={() => {
+          if (state === 'pending') setState('success');
+        }}
+      >
+        Finish the save
+      </Button>
       <p className="m-0 text-sm text-muted-foreground" data-testid="live-button-runs">
         Started {runs} {runs === 1 ? 'time' : 'times'}
       </p>
@@ -110,26 +123,16 @@ function LiveButton() {
 /** A bar that fills over 4s, for watching the easing and the quarter announcements. */
 function LiveProgress() {
   const [value, setValue] = useState<number | null>(null);
-  const timer = useRef<ReturnType<typeof setInterval>>(undefined);
-  useEffect(() => () => clearInterval(timer.current), []);
+  const running = value !== null && value < 100;
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => setValue((v) => Math.min(100, (v ?? 0) + 5)), 200);
+    return () => clearInterval(timer);
+  }, [running]);
 
   return (
     <div className="grid gap-3">
-      <Button
-        variant="outline"
-        className="justify-self-start"
-        onClick={() => {
-          clearInterval(timer.current);
-          setValue(0);
-          timer.current = setInterval(() => {
-            setValue((v) => {
-              const next = Math.min(100, (v ?? 0) + 5);
-              if (next === 100) clearInterval(timer.current);
-              return next;
-            });
-          }, 200);
-        }}
-      >
+      <Button variant="outline" className="justify-self-start" onClick={() => setValue(0)}>
         Run an upload
       </Button>
       {value !== null && <Progress label="Uploading cover letter" value={value} />}

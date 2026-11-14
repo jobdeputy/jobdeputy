@@ -8,9 +8,12 @@ const percentFormat = new Intl.NumberFormat(copy.locale, {
   maximumFractionDigits: 0,
 });
 
-/** The value as a percentage in the copy's locale ("40%"). */
+/**
+ * The value as a whole percentage in the copy's locale ("40%"). Rounded down, so 99.6 reads 99%:
+ * "100%" only when the work is done.
+ */
 function formatPercent(value: number) {
-  return percentFormat.format(value / 100);
+  return percentFormat.format(Math.floor(value) / 100);
 }
 
 /** The last quarter a value (0–100) has reached: 0, 25, 50, 75, or 100. */
@@ -39,8 +42,10 @@ function Progress({
   className?: string;
 }) {
   const labelId = useId();
-  // Out-of-range values (a rounding overshoot) are held to the track.
-  const current = value === null ? null : Math.min(100, Math.max(0, value));
+  // Out-of-range values (a rounding overshoot) are held to the track. A value that is not a number
+  // (an upload whose total size is unknown divides by 0) means the length is unknown.
+  const current =
+    value === null || !Number.isFinite(value) ? null : Math.min(100, Math.max(0, value));
   const announcement = milestoneAnnouncement(label, current);
 
   return (

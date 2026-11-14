@@ -18,6 +18,19 @@ describe('Progress', () => {
     expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('100');
   });
 
+  it('reads 100% only when the work is done', () => {
+    render(<Progress label="Uploading" value={99.6} />);
+    expect(screen.getByText('99%')).toBeTruthy();
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuetext')).toBe('99%');
+  });
+
+  it('treats a value that is not a number as unknown length', () => {
+    render(<Progress label="Uploading" value={Number.NaN} />);
+    expect(screen.getByRole('progressbar').hasAttribute('aria-valuenow')).toBe(false);
+    expect(screen.queryByText(/%/)).toBeNull();
+    expect(screen.getByRole('status').textContent).toBe('');
+  });
+
   it('has no value and no percentage while the length is unknown', () => {
     render(<Progress label="Preparing your desk" value={null} />);
     const bar = screen.getByRole('progressbar', { name: 'Preparing your desk' });

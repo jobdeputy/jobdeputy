@@ -46,5 +46,6 @@ describe('fill', () => {
 
   it('leaves a slot with no value as written', () => {
     expect(fill('{label}, {percent}', { label: 'Uploading' })).toBe('Uploading, {percent}');
+    expect(fill('{constructor}', {})).toBe('{constructor}');
   });
 });

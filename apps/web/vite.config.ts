@@ -10,15 +10,17 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     rolldownOptions: {
-      // The component gallery (src/gallery/) is built for tests (`--mode e2e`) and served by the
-      // dev server, but never shipped: the production build has the app's page only.
+      // The component gallery (src/gallery/) is built only for tests (`--mode e2e`, allowed by
+      // name so any other mode leaves it out) and served by the dev server. It never ships.
       input: {
         app: fileURLToPath(new URL('./index.html', import.meta.url)),
-        ...(mode === 'production'
-          ? {}
-          : { gallery: fileURLToPath(new URL('./gallery.html', import.meta.url)) }),
+        ...(mode === 'e2e'
+          ? { gallery: fileURLToPath(new URL('./gallery.html', import.meta.url)) }
+          : {}),
       },
     },
+    // The test build has its own folder, so a deploy (which uploads dist/) can never pick it up.
+    ...(mode === 'e2e' ? { outDir: 'dist-e2e' } : {}),
   },
   test: {
     environment: 'happy-dom',

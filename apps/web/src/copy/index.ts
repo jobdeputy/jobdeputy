@@ -22,5 +22,7 @@ export type OnePer<T, V> = { readonly [K in keyof T]: V };
  * A slot with no value stays as written, so a missing value shows up instead of vanishing.
  */
 export function fill(template: string, values: Record<string, string>): string {
-  return template.replace(/\{(\w+)\}/g, (slot, name: string) => values[name] ?? slot);
+  // A Map, so a slot such as {constructor} cannot find a property every object inherits.
+  const byName = new Map(Object.entries(values));
+  return template.replace(/\{(\w+)\}/g, (slot, name: string) => byName.get(name) ?? slot);
 }
