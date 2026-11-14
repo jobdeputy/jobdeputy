@@ -1,0 +1,277 @@
+/*
+ * The story stage on the landing page: where the deputy stands, how big he is, and where his
+ * speech bubble points. Ported from the round 7 prototype (`.panda-stage`). It stays CSS because
+ * the layout is container-query arithmetic on the stage's own size, which Tailwind classes cannot
+ * express readably (decision 0012 keeps such CSS in src/styles/).
+ *
+ * The stage is a size container. Each part reads:
+ *   --art-x      the panda's centre line;  --art-size  his rendered width;
+ *   --art-lift   how far his feet sit above the stage's bottom (room for the story controls);
+ *   --speech-*   the bubble's width and where its tail aims: above his head on narrow stages,
+ *                beside his ear when the stage is at least 480px wide.
+ * The head and ear positions are fractions of the 420×420 artwork. Breakpoints are Tailwind's
+ * sm (40rem), md (48rem), lg (64rem), and 2xl (96rem), so the stage changes with the rest of the page.
+ */
+
+/* In the components layer, so a Tailwind class on the same element still wins. */
+@layer components {
+  .story-stage {
+    --stage-nav: 16px;
+    --stage-band: 47px;
+    --art-x: 72cqw;
+    --art-max: 160px;
+    --art-feet: 0.061;
+    --art-crown: 0.849;
+    --head-crown-x: 0.124;
+    --head-crown-y: 0.88;
+    --head-ear-x: 0.255;
+    --head-ear-y: 0.64;
+    --speech-w: min(190px, 60cqw);
+    --speech-max-h: 49px;
+    position: relative;
+    z-index: 4;
+    container-type: size;
+  }
+
+  @media (width >= 40rem) {
+    .story-stage {
+      --stage-nav: 52px;
+      --art-x: 68cqw;
+      --art-max: 225px;
+      --speech-w: min(150px, 34cqw);
+      --speech-max-h: 65px;
+    }
+  }
+
+  @media (width >= 48rem) {
+    .story-stage {
+      --art-x: 50cqw;
+      --art-max: 320px;
+      --speech-w: min(220px, 34cqw);
+    }
+  }
+
+  @media (width >= 64rem) {
+    .story-stage {
+      --art-x: 34cqw;
+      --art-max: 560px;
+      --speech-w: min(240px, 34cqw);
+      --speech-max-h: 88px;
+    }
+  }
+
+  @media (width >= 96rem) {
+    .story-stage {
+      --art-max: 640px;
+    }
+  }
+
+  .story-stage > * {
+    --speech-beside: 0;
+    --speech-aim-x: calc(
+      var(--head-crown-x) +
+      (var(--head-ear-x) - var(--head-crown-x)) *
+      var(--speech-beside)
+    );
+    --speech-aim-y: calc(
+      var(--head-crown-y) +
+      (var(--head-ear-y) - var(--head-crown-y)) *
+      var(--speech-beside)
+    );
+    --art-fit-above: calc(
+      (100cqh - var(--stage-band) - var(--speech-max-h) - var(--stage-nav) - 13px) /
+      (var(--head-crown-y) - var(--art-feet))
+    );
+    --art-fit-beside: min(
+      calc(
+        (100cqh - var(--stage-band) - var(--stage-nav) - 4px) /
+        (var(--art-crown) - var(--art-feet))
+      ),
+      calc(
+        (100cqh - var(--stage-band) - var(--stage-nav) + 18px - var(--speech-max-h)) /
+        (var(--head-ear-y) - var(--art-feet))
+      )
+    );
+    --art-size: min(
+      var(--art-max),
+      56cqw,
+      var(--art-fit-above) *
+      (1 - var(--speech-beside)) +
+      var(--art-fit-beside) *
+      var(--speech-beside)
+    );
+    --art-lift: calc(var(--stage-nav) + 4px - var(--art-size) * var(--art-feet));
+    --speech-tip: calc(var(--art-x) + var(--art-size) * var(--speech-aim-x));
+  }
+
+  @container (width >= 480px) {
+    .story-stage > * {
+      --speech-beside: 1;
+    }
+  }
+
+  /* A faint orbit behind the deputy. */
+  .story-stage::before {
+    position: absolute;
+    z-index: 1;
+    bottom: -145px;
+    left: 50%;
+    width: 400px;
+    height: 280px;
+    border: 1px solid --alpha(var(--color-blue) / 12%);
+    border-radius: 50%;
+    pointer-events: none;
+    content: "";
+    transform: translateX(-50%) rotate(-7deg);
+  }
+
+  @media (width >= 40rem) {
+    .story-stage::before {
+      bottom: -120px;
+      width: 480px;
+    }
+  }
+
+  @media (width >= 64rem) {
+    .story-stage::before {
+      bottom: -72px;
+      width: 610px;
+    }
+  }
+
+  .story-stage-halo {
+    position: absolute;
+    bottom: calc(var(--art-lift) + var(--art-size) * 0.24);
+    left: var(--art-x);
+    width: calc(var(--art-size) * 0.92);
+    aspect-ratio: 1;
+    border: 1px solid --alpha(var(--color-white) / 82%);
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at 45% 38%, --alpha(var(--color-white) / 72%), transparent 58%),
+      --alpha(var(--color-white) / 24%);
+    box-shadow:
+      0 0 0 21px --alpha(var(--color-white) / 7%),
+      0 0 0 55px --alpha(var(--color-white) / 3.5%),
+      inset 0 0 55px --alpha(var(--color-white) / 42%);
+    transform: translateX(-50%);
+    backdrop-filter: blur(6px);
+  }
+
+  .story-stage-art {
+    position: absolute;
+    z-index: 4;
+    bottom: var(--art-lift);
+    left: var(--art-x);
+    width: var(--art-size);
+    overflow: visible;
+    transform: translateX(-50%);
+    filter: drop-shadow(0 24px 22px --alpha(var(--color-ink) / 16%));
+  }
+
+  .story-stage-speech {
+    --speech-left: calc(
+      clamp(0px, var(--speech-tip) - 28px, 100cqw - var(--speech-w)) *
+      (1 - var(--speech-beside)) +
+      (var(--speech-tip) + 9px) *
+      var(--speech-beside)
+    );
+    position: absolute;
+    z-index: 7;
+    bottom: calc(
+      var(--art-lift) +
+      var(--art-size) *
+      var(--speech-aim-y) +
+      9px -
+      31px *
+      var(--speech-beside)
+    );
+    left: var(--speech-left);
+    width: min(var(--speech-w), 100cqw - var(--speech-left));
+  }
+
+  /* The bubble's tail: under it when the bubble sits above his head, on its left when beside. */
+  .story-stage-speech::after {
+    position: absolute;
+    bottom: calc(-7px + 22.5px * var(--speech-beside));
+    left: calc(
+      clamp(13px, var(--speech-tip) - var(--speech-left) - 7.5px, var(--speech-w) - 28px) *
+      (1 - var(--speech-beside)) -
+      7px *
+      var(--speech-beside)
+    );
+    width: 13px;
+    height: 13px;
+    border-right: calc(1px - 1px * var(--speech-beside)) solid var(--color-line);
+    border-bottom: 1px solid var(--color-line);
+    border-left: calc(1px * var(--speech-beside)) solid var(--color-line);
+    background: --alpha(var(--color-white) / 88%);
+    content: "";
+    transform: rotate(45deg);
+  }
+
+  /* The props of the current step (the setup card for "Set it up"), scaled down on small stages. */
+  .story-stage-props {
+    position: absolute;
+    z-index: 5;
+    inset: var(--stage-band) 0 calc(var(--stage-nav) + 64px) -3px;
+    pointer-events: none;
+    transform: scale(0.5);
+    transform-origin: left top;
+  }
+
+  @media (width >= 40rem) {
+    .story-stage-props {
+      inset: var(--stage-band) 0 var(--stage-nav);
+      transform: scale(0.72);
+      transform-origin: left center;
+    }
+  }
+
+  @media (width >= 64rem) {
+    .story-stage-props {
+      inset: 16% 0 28px;
+      transform: none;
+      translate: 0 max(-22px - var(--art-lift), -16cqh);
+      transform-origin: left center;
+    }
+
+    /* A short or narrow stage shrinks the props from the left, away from the deputy's head. */
+    @container (height <= 340px) {
+      .story-stage-props {
+        scale: 0.78;
+      }
+    }
+
+    @container (width <= 620px) {
+      .story-stage-props {
+        scale: 0.82;
+      }
+    }
+
+    @container (width <= 620px) and (height <= 340px) {
+      .story-stage-props {
+        scale: 0.74;
+      }
+    }
+
+    @container (width <= 540px) {
+      .story-stage-props {
+        scale: 0.72;
+      }
+    }
+
+    @container (width < 480px) {
+      .story-stage-props {
+        scale: 0.6;
+      }
+    }
+  }
+
+  @media (forced-colors: active) {
+    .story-stage::before,
+    .story-stage-halo {
+      display: none;
+    }
+  }
+}

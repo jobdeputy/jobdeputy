@@ -22,10 +22,10 @@ describe('Button', () => {
   });
 
   it('lets a caller class override a variant class', () => {
-    render(<Button className="h-14">Wide</Button>);
+    render(<Button className="min-h-14">Wide</Button>);
     const button = screen.getByRole('button', { name: 'Wide' });
-    expect(button.className).toContain('h-14');
-    expect(button.className).not.toContain('h-10');
+    expect(button.className).toContain('min-h-14');
+    expect(button.className).not.toContain('min-h-10');
   });
 
   it('does not submit a form unless it is the submit button', () => {

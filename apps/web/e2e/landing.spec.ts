@@ -1,0 +1,139 @@
+import { expect, type Page, test } from '@playwright/test';
+import { expectNoAccessibilityViolations, expectNoHorizontalScroll } from './checks.ts';
+
+const TITLE = 'You set it up. Your deputy applies.';
+
+/** The visible button with this name: phones hide the header's "Get started free". */
+function visibleButton(page: Page, name: string) {
+  return page.getByRole('button', { name, exact: true }).filter({ visible: true }).first();
+}
+
+/**
+ * The hero starts under the header and fills the rest of the screen: exactly from `lg` up when
+ * the screen leaves it at least its 600px minimum (its content fits there); at least, otherwise,
+ * where its content or minimum can be taller than the screen.
+ */
+async function expectHeroFillsScreen(page: Page) {
+  const header = await page.locator('header').boundingBox();
+  const hero = await page.locator('main > section').boundingBox();
+  const viewport = page.viewportSize();
+  if (!header || !hero || !viewport) throw new Error('No header, hero, or viewport size.');
+  expect(hero.y).toBeCloseTo(header.y + header.height, 0);
+  // Tailwind's lg is 64rem (not overridden in the theme); 600px is the hero's lg:min-h.
+  const isLarge = await page.evaluate(() => matchMedia('(width >= 64rem)').matches);
+  const roomForMinimum = viewport.height - (header.y + header.height) >= 600;
+  if (isLarge && roomForMinimum) {
+    expect(hero.y + hero.height).toBeCloseTo(viewport.height, 0);
+  } else {
+    expect(hero.y + hero.height).toBeGreaterThanOrEqual(viewport.height - 0.5);
+  }
+}
+
+test.describe('landing page', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+  });
+
+  test('shows the promise, the two ways in, and the three steps', async ({ page }) => {
+    await expect(page.getByRole('heading', { level: 1, name: TITLE })).toBeVisible();
+    await expect(page.getByRole('link', { name: /^JobDeputy/ })).toBeVisible();
+    await expect(visibleButton(page, 'Get started free')).toBeVisible();
+    await expect(visibleButton(page, 'Sign in')).toBeVisible();
+    const steps = page.getByRole('list', { name: 'How your deputy works' }).getByRole('listitem');
+    await expect(steps).toHaveText([/Set it up/, /It finds/, /It applies/]);
+    await expect(steps.first()).toHaveAttribute('aria-current', 'step');
+  });
+
+  test('uses the brand tokens from the Tailwind theme', async ({ page }) => {
+    await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(250, 248, 243)');
+    await expect(page.locator('body')).toHaveCSS('color', 'rgb(27, 26, 24)');
+  });
+
+  test('fits the screen without sideways scrolling', async ({ page }) => {
+    await expectNoHorizontalScroll(page);
+  });
+
+  test('fills the screen under the header', async ({ page }) => {
+    await expectHeroFillsScreen(page);
+  });
+
+  test('keeps the header usable with text at 200%', async ({ page }) => {
+    // Doubles the root font, so every rem-sized part grows (WCAG 1.4.4). Unlike a browser's
+    // text-size setting it leaves the breakpoints where they are, so each device keeps its layout.
+    await page.addStyleTag({ content: 'html { font-size: 200%; }' });
+    const header = page.locator('header');
+    const box = await header.boundingBox();
+    if (!box) throw new Error('The header has no box.');
+    const minimum = await header.evaluate((element) => ({
+      header: Number.parseFloat(getComputedStyle(element).minHeight),
+      root: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
+    }));
+    expect(minimum.header, 'the minimum height scales with the text').toBeCloseTo(
+      4.5 * minimum.root,
+      0,
+    );
+    for (const part of await header.locator('a, button').filter({ visible: true }).all()) {
+      const partBox = await part.boundingBox();
+      if (!partBox) throw new Error('A header control has no box.');
+      expect(partBox.x).toBeGreaterThanOrEqual(box.x);
+      expect(partBox.x + partBox.width).toBeLessThanOrEqual(box.x + box.width + 0.5);
+      expect(partBox.y + partBox.height).toBeLessThanOrEqual(box.y + box.height + 0.5);
+    }
+    // The header publishes its measured height, and focused content stops below it (plus 8px
+    // for the focus ring). Checking the published value itself: the CSS fallback would match a
+    // one-row header even if the measuring hook were broken.
+    const offsets = () =>
+      page.evaluate(() => {
+        const root = getComputedStyle(document.documentElement);
+        const headerHeight = document.querySelector('header')?.getBoundingClientRect().height ?? 0;
+        // How far each is off, to 0.01px.
+        const off = (value: number) => Math.round(Math.abs(value) * 100) / 100;
+        return [
+          off(Number.parseFloat(root.getPropertyValue('--header-offset')) - headerHeight),
+          off(Number.parseFloat(root.scrollPaddingTop) - headerHeight - 8),
+        ];
+      });
+    // One read for both, polled together, so a late relayout cannot split them.
+    await expect.poll(offsets).toEqual([0, 0]);
+    await expectNoHorizontalScroll(page);
+  });
+
+  test('has no detectable accessibility violations', async ({ page }) => {
+    await expectNoAccessibilityViolations(page);
+  });
+
+  test('"Get started free" opens the sign-up drawer', async ({ page }) => {
+    await visibleButton(page, 'Get started free').click();
+    const drawer = page.getByRole('dialog', { name: 'Set up your search desk.' });
+    await expect(drawer).toBeVisible();
+    await expectNoAccessibilityViolations(page);
+    await drawer.getByRole('button', { name: 'Close' }).click();
+    await expect(drawer).toBeHidden();
+  });
+
+  test('"Sign in" opens the sign-in drawer; Escape closes it and focus goes back', async ({
+    page,
+  }) => {
+    const signIn = visibleButton(page, 'Sign in');
+    await signIn.focus();
+    await page.keyboard.press('Enter');
+    const drawer = page.getByRole('dialog', { name: 'Welcome back.' });
+    await expect(drawer).toBeVisible();
+    await expect(drawer).toBeInViewport({ ratio: 1 });
+    await expectNoHorizontalScroll(page);
+    await page.keyboard.press('Escape');
+    await expect(drawer).toBeHidden();
+    await expect(signIn).toBeFocused();
+  });
+});
+
+test.describe('with reduced motion', () => {
+  test.use({ reducedMotion: 'reduce' });
+
+  test('the drawer appears without sliding', async ({ page }) => {
+    await page.goto('/');
+    await visibleButton(page, 'Sign in').click();
+    const drawer = page.getByRole('dialog', { name: 'Welcome back.' });
+    await expect(drawer).toHaveCSS('animation-name', 'none');
+  });
+});

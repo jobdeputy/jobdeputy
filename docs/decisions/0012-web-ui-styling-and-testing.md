@@ -21,7 +21,7 @@ For tests:
 
 ## Decision
 
-- **Styling:** Tailwind CSS v4 through `@tailwindcss/vite`, with components from shadcn/ui on Radix (`apps/web/components.json`). Pages use Tailwind classes. Hand-written CSS is limited to `src/styles/` (tokens, base styles, and later keyframes Tailwind cannot express).
+- **Styling:** Tailwind CSS v4 through `@tailwindcss/vite`, with components from shadcn/ui on Radix (`apps/web/components.json`). Pages use Tailwind classes. Hand-written CSS is limited to `src/styles/` (tokens, base styles, keyframes, and container-query layout arithmetic such as the landing page's story stage, which Tailwind cannot express readably).
 - **Tokens:** the prototype's values sit in Tailwind's `@theme` (`src/styles/tokens.css`), and Tailwind's default palette is switched off, so only brand colours exist. shadcn's role names (`primary`, `muted`, `ring`, …) point at the brand tokens. Values are unchanged from round 7. Variable names gain Tailwind's namespace (`--ink` → `--color-ink`, `--shadow` → `--shadow-panel`); the prototype's `--muted` text colour is `muted-foreground`, because shadcn uses `muted` for a background.
 - **Focus ring:** one ring for every control, 2px solid `green` with a 3px offset (the `ring` role). The prototype mixed this with a 3px `green-line` ring, which is about 1.5:1 against paper and fails WCAG's 3:1 for focus indicators.
 - **Breakpoints:** Tailwind's defaults (`sm` 640, `md` 768, `lg` 1024, `xl` 1280), mobile first. The prototype's own breakpoints (540, 720, 880, 1050) are not copied.

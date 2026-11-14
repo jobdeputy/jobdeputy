@@ -1,0 +1,35 @@
+/*
+ * Keyframes Tailwind does not ship, exposed as animate-* utilities. Radix keeps a closing
+ * dialog mounted until its exit animation ends, so open and close each need one.
+ * Timings are the prototype's (round 7 landing drawer: 420ms slide, 300ms scrim fade).
+ */
+@theme {
+  --animate-drawer-in: drawer-in 420ms var(--ease-settle);
+  --animate-drawer-out: drawer-out 420ms var(--ease-settle);
+  --animate-fade-in: fade-in 300ms ease;
+  --animate-fade-out: fade-out 300ms ease;
+
+  @keyframes drawer-in {
+    from {
+      transform: translateX(104%);
+    }
+  }
+
+  @keyframes drawer-out {
+    to {
+      transform: translateX(104%);
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes fade-out {
+    to {
+      opacity: 0;
+    }
+  }
+}
