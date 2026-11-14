@@ -5,8 +5,9 @@ import { expectNoAccessibilityViolations, expectNoHorizontalScroll } from './che
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/gallery.html');
-  // The pending buttons appear after the shared 300 ms delay.
+  // The pending buttons and the loading skeleton appear after the shared 300 ms delay.
   await expect(page.locator('[data-pending]')).toHaveCount(2);
+  await expect(page.locator('[data-slot="query-region"][data-state="loading"]')).toHaveCount(1);
 });
 
 test('has no accessibility violations', async ({ page }) => {
@@ -59,8 +60,59 @@ test('a progress bar reads out its quarters', async ({ page }) => {
   ).toBeAttached();
 });
 
+test('skeletons shimmer, each in its shape', async ({ page }) => {
+  const skeletons = page.locator('[data-slot="skeleton"]');
+  for (const kind of ['block', 'lines', 'rows', 'cards', 'chart']) {
+    const skeleton = skeletons.and(page.locator(`[data-kind="${kind}"]`)).first();
+    await expect(skeleton).toBeVisible();
+    expect(await skeleton.evaluate((el) => getComputedStyle(el, '::after').animationName)).toBe(
+      'skeleton-sweep',
+    );
+  }
+  // The shape keeps its rows' size: three 55px rows, 8px apart.
+  const rows = skeletons.and(page.locator('[data-kind="rows"]')).first();
+  expect(await rows.evaluate((el) => el.getBoundingClientRect().height)).toBe(181);
+});
+
+test('a query region goes from skeleton to data, and keeps its data while it refreshes', async ({
+  page,
+}) => {
+  const live = page.getByTestId('live-region');
+  const region = live.locator('[data-slot="query-region"]');
+  const content = region.locator('[data-slot="query-region-content"]');
+  await live.getByRole('button', { name: 'Load' }).click();
+  await expect(content).toHaveAttribute('aria-busy', 'true');
+  await expect(region).toHaveAttribute('data-state', 'loading');
+  await expect(region.getByRole('status')).toHaveText('Loading your matches');
+  await expect(region.locator('[data-slot="skeleton"]')).toBeVisible();
+
+  await live.getByRole('button', { name: 'Data arrives' }).click();
+  await expect(region.getByText('Staff engineer, Lumen')).toBeVisible();
+  await expect(content).not.toHaveAttribute('aria-busy');
+
+  await live.getByRole('button', { name: 'Refetch' }).click();
+  await expect(region).toHaveAttribute('data-state', 'refreshing');
+  await expect(region.getByText('Updating…')).toBeVisible();
+  await expect(region.getByText('Staff engineer, Lumen')).toBeVisible();
+  await expectNoAccessibilityViolations(page);
+});
+
+test('a failed first load hands over to its error', async ({ page }) => {
+  const live = page.getByTestId('live-region');
+  await live.getByRole('button', { name: 'Load' }).click();
+  await live.getByRole('button', { name: 'Fail' }).click();
+  await expect(live.getByText('Could not load your matches.')).toBeVisible();
+  await expect(live.locator('[data-slot="query-region-content"]')).not.toHaveAttribute('aria-busy');
+});
+
 test.describe('in forced colours', () => {
   test.use({ forcedColors: 'active' });
+
+  test('skeletons keep a dashed outline', async ({ page }) => {
+    const skeleton = page.locator('[data-slot="skeleton"]').first();
+    await expect(skeleton).toHaveCSS('border-top-style', 'dashed');
+    expect(await skeleton.evaluate((el) => getComputedStyle(el, '::after').display)).toBe('none');
+  });
 
   test('spinners keep a visible gap', async ({ page }) => {
     const spinner = page.locator('[data-slot="spinner"]').first();
@@ -84,6 +136,13 @@ test.describe('with reduced motion', () => {
     await expect(sweep).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     expect(await sweep.evaluate((el) => el.clientWidth)).toBe(
       await sweep.evaluate((el) => el.parentElement?.clientWidth),
+    );
+  });
+
+  test('skeletons hold still', async ({ page }) => {
+    const skeleton = page.locator('[data-slot="skeleton"]').first();
+    expect(await skeleton.evaluate((el) => getComputedStyle(el, '::after').animationName)).toBe(
+      'none',
     );
   });
 });

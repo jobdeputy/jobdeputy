@@ -13,6 +13,8 @@
      bar's segment crossing the track once every 1618ms. */
   --animate-spinner: spinner 987ms linear infinite;
   --animate-progress-sweep: progress-sweep 1618ms ease-in-out infinite;
+  /* A skeleton's highlight, crossing it once every 1618ms (the prototype's jd-skeleton-sweep). */
+  --animate-skeleton-sweep: skeleton-sweep 1618ms ease-in-out infinite;
   /* The boot loader (index.html): it appears only once the wait passes 300 ms (useDelayedPending's
      delay), fading in with the prototype's 380ms detail-in; at once under reduced motion. Its
      track fills to 92% over the logo's 2.605s story; the last 8% waits for the app. */
@@ -32,6 +34,15 @@
     to {
       opacity: 1;
       visibility: visible;
+    }
+  }
+
+  @keyframes skeleton-sweep {
+    from {
+      background-position: 150% 0;
+    }
+    to {
+      background-position: -50% 0;
     }
   }
 

@@ -48,6 +48,8 @@ export const en = {
     ready: 'JobDeputy is ready.',
   },
   loading: {
+    /** Beside data already on screen while a newer copy loads. */
+    refreshing: 'Updating…',
     /** Read out as a progress bar passes each quarter: "Uploading résumé, 50%". */
     progressMilestone: '{label}, {percent}',
   },

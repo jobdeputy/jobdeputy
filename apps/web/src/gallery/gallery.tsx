@@ -1,6 +1,8 @@
 import { type ReactNode, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button.tsx';
 import { Progress } from '@/components/ui/progress.tsx';
+import { QueryRegion, type QueryState } from '@/components/ui/query-region.tsx';
+import { Skeleton } from '@/components/ui/skeleton.tsx';
 import { Spinner } from '@/components/ui/spinner.tsx';
 
 /**
@@ -62,7 +64,132 @@ export function Gallery() {
         <Progress label="Preparing your desk" value={null} />
         <LiveProgress />
       </Section>
+
+      <Section title="Skeleton">
+        <Demo title="block">
+          <Skeleton rows={2} />
+        </Demo>
+        <Demo title="lines">
+          <Skeleton kind="lines" rows={4} />
+        </Demo>
+        <Demo title="rows">
+          <Skeleton kind="rows" rows={3} />
+        </Demo>
+        <Demo title="cards">
+          <Skeleton kind="cards" rows={1} />
+        </Demo>
+        <Demo title="chart">
+          <Skeleton kind="chart" />
+        </Demo>
+      </Section>
+
+      <Section title="Query region">
+        <Demo title="First load (skeleton after 300 ms)">
+          <QueryRegion
+            query={{ data: undefined, isLoading: true, isFetching: true, isError: false }}
+            skeleton={{ kind: 'rows', rows: 2 }}
+            label="Loading your matches"
+          >
+            {() => null}
+          </QueryRegion>
+        </Demo>
+        <Demo title="Refreshing (data stays)">
+          <QueryRegion
+            query={{ data: MATCHES, isLoading: false, isFetching: true, isError: false }}
+            skeleton={{ kind: 'rows', rows: 2 }}
+            label="Loading your matches"
+          >
+            {(matches) => <MatchList matches={matches} />}
+          </QueryRegion>
+        </Demo>
+        <LiveQueryRegion />
+      </Section>
     </main>
+  );
+}
+
+function Demo({
+  title,
+  testId,
+  children,
+}: {
+  title: string;
+  testId?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="grid gap-2" data-testid={testId}>
+      <h3 className="m-0 text-sm font-medium text-muted-foreground">{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+const MATCHES = ['Staff engineer, Lumen', 'Platform lead, Northwind'];
+
+function MatchList({ matches }: { matches: string[] }) {
+  return (
+    <ul className="m-0 grid list-none gap-2 p-0">
+      {matches.map((match) => (
+        <li key={match} className="rounded-[11px] bg-card px-4 py-4 text-sm shadow-control">
+          {match}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * A query's life, by hand: "Load" starts a first load, "Data arrives" ends it, "Refetch" starts a
+ * background refresh, "Fail" ends a load with an error. No timers, so a test decides each step.
+ */
+function LiveQueryRegion() {
+  const [query, setQuery] = useState<QueryState<string[]>>({
+    data: undefined,
+    isLoading: false,
+    isFetching: false,
+    isError: false,
+  });
+  const set = (next: Partial<QueryState<string[]>>) =>
+    setQuery((current) => ({ ...current, ...next }));
+
+  return (
+    <Demo title="Live" testId="live-region">
+      <div className="flex flex-wrap gap-3">
+        <Button
+          variant="outline"
+          onClick={() =>
+            set({ data: undefined, isLoading: true, isFetching: true, isError: false })
+          }
+        >
+          Load
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => set({ data: MATCHES, isLoading: false, isFetching: false })}
+        >
+          Data arrives
+        </Button>
+        <Button variant="outline" onClick={() => set({ isFetching: true })}>
+          Refetch
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => set({ isLoading: false, isFetching: false, isError: true })}
+        >
+          Fail
+        </Button>
+      </div>
+      <QueryRegion
+        className="min-h-[118px]"
+        query={query}
+        skeleton={{ kind: 'rows', rows: 2 }}
+        label="Loading your matches"
+        error={<p className="m-0 text-sm">Could not load your matches.</p>}
+      >
+        {(matches) => <MatchList matches={matches} />}
+      </QueryRegion>
+    </Demo>
   );
 }
 
