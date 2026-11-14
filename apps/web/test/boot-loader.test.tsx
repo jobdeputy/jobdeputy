@@ -147,18 +147,23 @@ describe('finishBoot', () => {
   it("goes on the elements' own end events when an engine never settles `finished`", async () => {
     const never = new Promise<void>(() => {});
     const seen = { animationName: 'boot-reveal', startTime: performance.now() - 2000 };
+    // The reveal (seen long enough, already over) and the fade, a transition of opacity.
     (loader() as HTMLElement).getAnimations = () =>
-      [{ ...seen, finished: never }] as unknown as Animation[];
-    root().getAnimations = () => [{ finished: never }] as unknown as Animation[];
+      [seen, { transitionProperty: 'opacity', finished: never }] as unknown as Animation[];
+    root().getAnimations = () =>
+      [{ animationName: 'boot-rise', finished: never }] as unknown as Animation[];
     finishBoot();
     vi.advanceTimersByTime(0);
-    root().dispatchEvent(new Event('animationend'));
-    // An end event from inside the loader is not its fade: it stays.
+    root().dispatchEvent(Object.assign(new Event('animationend'), { animationName: 'boot-rise' }));
+    // An end event from inside the loader, or for another property, is not its fade: it stays.
     const inner = loader()?.querySelector('p');
     inner?.dispatchEvent(new Event('transitionend', { bubbles: true }));
+    loader()?.dispatchEvent(
+      Object.assign(new Event('transitionend'), { propertyName: 'transform' }),
+    );
     await vi.advanceTimersByTimeAsync(0);
     expect(loader()).not.toBeNull();
-    loader()?.dispatchEvent(new Event('transitionend'));
+    loader()?.dispatchEvent(Object.assign(new Event('transitionend'), { propertyName: 'opacity' }));
     await vi.waitFor(() => expect(loader()).toBeNull());
   });
 

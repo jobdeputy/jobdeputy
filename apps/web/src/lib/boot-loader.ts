@@ -85,12 +85,9 @@ export function finishBoot(): void {
  * timer: in a hidden tab they wait and run when it is back, and a cancelled one settles too.
  */
 function removeWhenSettled(loader: HTMLElement, root: HTMLElement | null) {
-  const moving = [
-    ...(loader.getAnimations?.() ?? []).map((animation) =>
-      settled(animation, loader, 'transition'),
-    ),
-    ...(root ? (root.getAnimations?.() ?? []).map((a) => settled(a, root, 'animation')) : []),
-  ];
+  const moving = [loader, ...(root ? [root] : [])].flatMap((element) =>
+    (element.getAnimations?.() ?? []).map((animation) => settled(animation, element)),
+  );
   if (moving.length === 0) {
     loader.remove();
     return;
@@ -100,26 +97,31 @@ function removeWhenSettled(loader: HTMLElement, root: HTMLElement | null) {
 
 /**
  * When an animation on `element` has ended or been cancelled: its `finished` promise, or the
- * element's own end or cancel event, whichever comes first (WebKit does not always settle
- * `finished`; the events it does fire).
+ * element's own end or cancel event for that same transition or animation, whichever comes first
+ * (WebKit does not always settle `finished`; the events it does fire).
  */
-function settled(
-  animation: Animation,
-  element: HTMLElement,
-  kind: 'transition' | 'animation',
-): Promise<void> {
+function settled(animation: Animation, element: HTMLElement): Promise<void> {
   // No promise to wait on (a stub, an old engine): nothing to wait for.
   if (!animation.finished) return Promise.resolve();
+  // A CSS transition names its property; a CSS animation, its keyframes.
+  const property = (animation as Partial<CSSTransition>).transitionProperty;
+  const name = (animation as Partial<CSSAnimation>).animationName;
+  const kind = property ? 'transition' : 'animation';
   return new Promise((resolve) => {
     const done = (event?: Event) => {
-      if (event && event.target !== element) return;
+      if (event) {
+        if (event.target !== element) return;
+        const ended =
+          (event as TransitionEvent).propertyName ?? (event as AnimationEvent).animationName;
+        if ((property ?? name) && ended && ended !== (property ?? name)) return;
+      }
       element.removeEventListener(`${kind}end`, done);
       element.removeEventListener(`${kind}cancel`, done);
       resolve();
     };
     element.addEventListener(`${kind}end`, done);
     element.addEventListener(`${kind}cancel`, done);
-    animation.finished?.then(
+    animation.finished.then(
       () => done(),
       () => done(),
     );
