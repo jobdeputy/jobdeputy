@@ -126,6 +126,39 @@ describe('Button', () => {
       expect(onClick).not.toHaveBeenCalled();
     });
 
+    it('does not go back to pending when success clears during the spinner hold', () => {
+      vi.useFakeTimers();
+      const { rerender } = render(pendingButton({ pending: true }));
+      act(() => vi.advanceTimersByTime(350));
+      rerender(pendingButton({ success: true }));
+      rerender(pendingButton({}));
+      const button = screen.getByRole('button');
+      expect(button.textContent).toBe('Sign in');
+      expect(button.hasAttribute('data-pending')).toBe(false);
+      expect(button.hasAttribute('aria-busy')).toBe(false);
+      // New work after that shows pending again.
+      rerender(pendingButton({ pending: true }));
+      act(() => vi.advanceTimersByTime(300));
+      expect(button.textContent).toBe('Signing in…');
+    });
+
+    it('ignores presses and dims while the caller marks it unavailable', () => {
+      const onSubmit = vi.fn((event: SubmitEvent) => event.preventDefault());
+      render(
+        <form onSubmit={(event) => onSubmit(event.nativeEvent as SubmitEvent)}>
+          <Button type="submit" aria-disabled>
+            Save
+          </Button>
+        </form>,
+      );
+      const button = screen.getByRole('button', { name: 'Save' });
+      fireEvent.click(button);
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      expect(button.hasAttribute('data-unavailable')).toBe(true);
+      expect(button.hasAttribute('disabled')).toBe(false);
+    });
+
     it('keeps its label when no pending label is given', () => {
       vi.useFakeTimers();
       render(<Button pending>Save</Button>);

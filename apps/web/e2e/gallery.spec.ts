@@ -64,5 +64,11 @@ test.describe('with reduced motion', () => {
     await expect(page.locator('[data-slot="spinner"]').first()).toHaveCSS('animation-name', 'none');
     const sweep = page.getByRole('progressbar', { name: 'Preparing your desk' }).locator('div');
     await expect(sweep).toHaveCSS('animation-name', 'none');
+    // Still stripes across the whole track: working, neither empty nor full.
+    await expect(sweep).toHaveCSS('background-image', /repeating-linear-gradient/);
+    await expect(sweep).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    expect(await sweep.evaluate((el) => el.clientWidth)).toBe(
+      await sweep.evaluate((el) => el.parentElement?.clientWidth),
+    );
   });
 });

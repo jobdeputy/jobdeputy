@@ -28,7 +28,7 @@ function milestone(value: number) {
  * eases to each new value in 618ms. Radix gives it role="progressbar" and its aria-value*
  * attributes. As the value passes each quarter, a polite status line reads out the label and
  * percentage; the bar never takes focus. Without a value, a segment sweeps the track, or under
- * reduced motion the whole track tints instead.
+ * reduced motion still stripes fill it.
  */
 function Progress({
   label,
@@ -75,10 +75,14 @@ function Progress({
       >
         <ProgressPrimitive.Indicator
           className={cn(
-            'block h-full rounded-full bg-green forced-color-adjust-none forced-colors:bg-[Highlight]',
+            // green-ink, not green: 4.5:1 on the track (WCAG 1.4.11 asks 3:1), close to the
+            // prototype's darker meter green.
+            'block h-full rounded-full bg-green-ink forced-color-adjust-none forced-colors:bg-[Highlight]',
             current !== null
               ? 'w-full transition-transform duration-618 ease-settle motion-reduce:transition-none'
-              : 'w-1/3 animate-progress-sweep motion-reduce:w-full motion-reduce:animate-none motion-reduce:bg-green-soft',
+              : // Unknown length under reduced motion: still diagonal stripes across the track, so
+                // it reads as working, neither empty nor full.
+                'w-1/3 animate-progress-sweep motion-reduce:w-full motion-reduce:animate-none motion-reduce:bg-transparent motion-reduce:bg-[repeating-linear-gradient(-45deg,var(--color-green-ink)_0_0.25rem,transparent_0.25rem_0.5rem)] motion-reduce:forced-colors:bg-transparent motion-reduce:forced-colors:bg-[repeating-linear-gradient(-45deg,Highlight_0_0.25rem,transparent_0.25rem_0.5rem)]',
           )}
           style={current !== null ? { transform: `translateX(-${100 - current}%)` } : undefined}
         />

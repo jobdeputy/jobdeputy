@@ -1,25 +1,6 @@
 /* The only stylesheet the app loads. Pages style themselves with Tailwind classes; the files
-   imported here hold what classes cannot express (decision 0012). */
+   base.css imports hold what classes cannot express (decision 0012). Tailwind scans the source
+   for classes, skipping the dev-only gallery, so its classes never reach production CSS. */
 @import "tailwindcss";
-@import "./tokens.css";
-@import "./animations.css";
-@import "./story-stage.css";
-
-@layer base {
-  :root {
-    color-scheme: light;
-    font-synthesis: none;
-    /* The sticky header's minimum height (72px at the default font size, in rem so it grows with
-       enlarged text). */
-    --header-height: 4.5rem;
-    /* Focused or linked content stops below the sticky header, not under it; 8px clears the focus ring
-       (2px + 3px offset). WCAG 2.4.11. --header-offset is the header's real height (site-header.tsx). */
-    scroll-padding-top: calc(var(--header-offset, var(--header-height)) + 8px);
-  }
-
-  body {
-    /* A word wider than its line (very large text on a small phone) breaks instead of pushing
-       the page sideways. */
-    @apply bg-background font-text text-foreground antialiased wrap-anywhere;
-  }
-}
+@import "./base.css";
+@source not "../gallery";

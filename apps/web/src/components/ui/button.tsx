@@ -1,6 +1,7 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import { Slot } from 'radix-ui';
 import type * as React from 'react';
+import { useState } from 'react';
 import { Spinner } from '@/components/ui/spinner.tsx';
 import { useDelayedPending } from '@/lib/use-delayed-pending.ts';
 import { cn } from '@/lib/utils.ts';
@@ -17,11 +18,12 @@ import { cn } from '@/lib/utils.ts';
  * `.is-success`; #17). A pending button ignores presses at once, so work never starts twice, but
  * it shows the spinner and `pendingLabel` only after the shared delay (useDelayedPending). It uses
  * `aria-disabled`, not `disabled`, so focus stays on it. Once the work ends the button takes presses
- * again, even while the spinner finishes its minimum time on screen. The caller announces the change through a
+ * again, even while the spinner finishes its minimum time on screen. A caller's `aria-disabled`
+ * blocks presses the same way and dims the button, like `disabled` but keeping it focusable. The caller announces the change through a
  * status region; a button's own name change is not reliably read out.
  */
 const buttonVariants = cva(
-  'inline-flex max-w-full shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-full text-center font-semibold transition-[translate,background-color] duration-180 ease-settle outline-none hover:-translate-y-px focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-3 disabled:pointer-events-none disabled:opacity-50 data-pending:cursor-wait data-pending:hover:translate-y-0 data-success:hover:translate-y-0 motion-reduce:transition-none motion-reduce:hover:translate-y-0 [&_svg]:pointer-events-none [&_svg]:shrink-0',
+  'inline-flex max-w-full shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-full text-center font-semibold transition-[translate,background-color] duration-180 ease-settle outline-none hover:-translate-y-px focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-3 disabled:pointer-events-none disabled:opacity-50 data-unavailable:cursor-not-allowed data-unavailable:opacity-50 data-unavailable:hover:translate-y-0 data-pending:cursor-wait data-pending:hover:translate-y-0 data-success:cursor-default data-success:hover:translate-y-0 motion-reduce:transition-none motion-reduce:hover:translate-y-0 [&_svg]:pointer-events-none [&_svg]:shrink-0',
   {
     variants: {
       variant: {
@@ -81,10 +83,18 @@ function Button({
   'aria-disabled': ariaDisabled,
   ...props
 }: ButtonProps) {
-  const showPending = useDelayedPending(pending);
-  // Presses are ignored from the first moment of the work until its success state is gone. Not
-  // during the spinner's minimum hold after the work ends: a failed sign-in must take a retry at once.
-  const blocked = pending || success;
+  const delayedPending = useDelayedPending(pending);
+  // Once the work has succeeded, the pending look stays gone through the spinner's minimum hold,
+  // even if the caller clears `success` first; new work brings it back.
+  const [succeeded, setSucceeded] = useState(false);
+  if (success && !succeeded) setSucceeded(true);
+  if (pending && !success && succeeded) setSucceeded(false);
+  const showPending = delayedPending && !success && !succeeded;
+  const unavailable = ariaDisabled === true || ariaDisabled === 'true';
+  // Presses are ignored from the first moment of the work until its success state is gone, and
+  // while the caller marks the button unavailable. Not during the spinner's minimum hold after the
+  // work ends: a failed sign-in must take a retry at once.
+  const blocked = pending || success || unavailable;
   const Comp = asChild ? Slot.Root : 'button';
 
   let content = children;
@@ -118,10 +128,11 @@ function Button({
       // A native button inside a form submits it unless told otherwise; only an explicit
       // type="submit" should do that.
       type={asChild ? type : (type ?? 'button')}
-      data-pending={(!success && showPending) || undefined}
+      data-pending={showPending || undefined}
       data-success={success || undefined}
-      aria-busy={(!success && showPending) || undefined}
-      aria-disabled={blocked || ariaDisabled}
+      data-unavailable={unavailable || undefined}
+      aria-busy={showPending || undefined}
+      aria-disabled={blocked || undefined}
       className={cn(buttonVariants({ variant, size, className }))}
       onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
         // Also stops a submit button's form submitting (Enter in a field clicks it too).
