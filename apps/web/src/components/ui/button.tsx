@@ -93,11 +93,16 @@ function Button({
   // work ends: a failed sign-in must take a retry at once.
   const blocked = pending || success || unavailable;
   // Like a disabled button: no press reaches the caller's handlers (a menu trigger opens on
-  // pointerdown or keydown) or bubbles to a clickable row around it. Focus and Tab still work.
+  // pointerdown or keydown) or bubbles to a clickable row around it. Only presses stop bubbling:
+  // Tab and Escape still reach a dialog's focus trap and its close.
   const unlessBlocked =
-    <E extends React.SyntheticEvent>(handler?: (event: E) => void) =>
+    <E extends React.SyntheticEvent>(handler?: (event: E) => void, isPress = (_: E) => true) =>
     (event: E) => {
-      if (!blocked) handler?.(event);
+      if (!blocked) {
+        handler?.(event);
+        return;
+      }
+      if (isPress(event)) event.stopPropagation();
     };
   const Comp = asChild ? Slot.Root : 'button';
 
@@ -148,7 +153,7 @@ function Button({
         onClick?.(event);
       }}
       onPointerDown={unlessBlocked(onPointerDown)}
-      onKeyDown={unlessBlocked(onKeyDown)}
+      onKeyDown={unlessBlocked(onKeyDown, (event) => event.key === 'Enter' || event.key === ' ')}
       {...props}
     >
       {content}

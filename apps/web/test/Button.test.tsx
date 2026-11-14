@@ -182,6 +182,22 @@ describe('Button', () => {
       expect(onParentClick).not.toHaveBeenCalled();
     });
 
+    it('stops a blocked press bubbling, but lets Tab and Escape through', () => {
+      const parentKeys: string[] = [];
+      const onParentPointerDown = vi.fn();
+      render(
+        // biome-ignore lint/a11y/noStaticElementInteractions: a stand-in for a row or dialog.
+        <div onKeyDown={(event) => parentKeys.push(event.key)} onPointerDown={onParentPointerDown}>
+          <Button pending>Save</Button>
+        </div>,
+      );
+      const button = screen.getByRole('button');
+      for (const key of ['Enter', ' ', 'Tab', 'Escape']) fireEvent.keyDown(button, { key });
+      fireEvent.pointerDown(button);
+      expect(parentKeys).toEqual(['Tab', 'Escape']);
+      expect(onParentPointerDown).not.toHaveBeenCalled();
+    });
+
     it('passes a rendered child its own aria-disabled, without taking over its presses', () => {
       const onClick = vi.fn((event: React.MouseEvent) => event.preventDefault());
       render(

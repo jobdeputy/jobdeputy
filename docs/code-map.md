@@ -38,7 +38,7 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `lib/use-delayed-pending.ts` | `useDelayedPending`: the timing every loading state shares (nothing for the first 300 ms, then at least 500 ms) |
 | `gallery/gallery.tsx`, `gallery/main.tsx`, `gallery.html` | the component gallery: every shared component in every state, for review and PR screenshots. Built only by `--mode e2e` (into its own `dist-e2e/`, so a deploy of `dist/` can never carry it) and served by `dev` at `/gallery.html`. Its developer-only words stay in the file, not `en.ts`, which ships |
 | `lib/utils.ts` | `cn()`: joins class names, a later Tailwind class wins. Lists the theme's shadow and easing names; `test/utils.test.ts` fails if tokens.css adds one it lacks |
-| `styles/index.css`, `styles/base.css` | the only stylesheet the app loads: Tailwind (scanning everything but the gallery), then `base.css`: the tokens, the files below, and the base page styles. `gallery/gallery.css` is the gallery's twin, with its own classes |
+| `styles/index.css`, `styles/base.css` | the only stylesheet the app loads: Tailwind (scanning everything but the gallery), then `base.css`: the tokens, the files below, and the base page styles. `styles/gallery.css` is the gallery's twin, with its own classes |
 | `styles/animations.css` | keyframes as `animate-*` utilities (the drawer's slide, the scrim's fade, the spinner's turn, the unknown-length progress sweep) |
 | `styles/story-stage.css` | the story stage's container-query layout: the deputy's size and place, the speech bubble's aim, the props' scale |
 | `styles/tokens.css` | the design tokens as Tailwind's theme (colours, shadows, easing, fonts), and shadcn's role names mapped onto them |

@@ -8,6 +8,9 @@ const percentFormat = new Intl.NumberFormat(copy.locale, {
   maximumFractionDigits: 0,
 });
 
+/** How long a new status region stays empty, so screen readers register it before its text. */
+const LIVE_REGION_SETTLE_MS = 100;
+
 /**
  * The value as a whole percentage in the copy's locale ("40%"). Rounded down, so 99.6 reads 99%:
  * "100%" only when the work is done.
@@ -47,9 +50,14 @@ function Progress({
   const current =
     value === null || !Number.isFinite(value) ? null : Math.min(100, Math.max(0, value));
   // The status region mounts empty and takes its text a moment later: screen readers skip text a
-  // live region is born with, so a bar that first appears at 30% would never say 25%.
+  // live region is born with, so a bar that first appears at 30% would never say 25%. A timer, not
+  // just an effect: after a click, React runs effects in the same task, before the browser has
+  // told assistive technology the region exists.
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    const timer = setTimeout(() => setMounted(true), LIVE_REGION_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, []);
   const announcement = mounted ? milestoneAnnouncement(label, current) : '';
 
   return (

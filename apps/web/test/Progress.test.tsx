@@ -1,9 +1,11 @@
-import { cleanup, render, screen } from '@testing-library/react';
-import { renderToString } from 'react-dom/server';
-import { afterEach, describe, expect, it } from 'vitest';
+import { act, cleanup, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Progress } from '../src/components/ui/progress.tsx';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe('Progress', () => {
   it('is a progress bar named by its visible label, with its value', () => {
@@ -19,13 +21,16 @@ describe('Progress', () => {
     expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('100');
   });
 
-  it('reads out a quarter it first appears past, after its status region exists', () => {
-    // The first render (before effects run) holds an empty status region.
-    expect(renderToString(<Progress label="Uploading résumé" value={30} />)).toMatch(
-      /role="status"[^>]*><\/p>/,
-    );
+  it('reads out a quarter it first appears past, once its status region has settled', () => {
+    vi.useFakeTimers();
     render(<Progress label="Uploading résumé" value={30} />);
-    expect(screen.getByRole('status').textContent).toBe('Uploading résumé, 25%');
+    const status = screen.getByRole('status');
+    // Empty at first, effects and all: screen readers skip text a live region is born with.
+    expect(status.textContent).toBe('');
+    act(() => vi.advanceTimersByTime(99));
+    expect(status.textContent).toBe('');
+    act(() => vi.advanceTimersByTime(1));
+    expect(status.textContent).toBe('Uploading résumé, 25%');
   });
 
   it('starts a new fill when the length becomes known', () => {
@@ -57,7 +62,9 @@ describe('Progress', () => {
   });
 
   it('reads out each quarter once, and again after the value drops back', () => {
+    vi.useFakeTimers();
     const { rerender } = render(<Progress label="Uploading résumé" value={10} />);
+    act(() => vi.advanceTimersByTime(100));
     const status = screen.getByRole('status');
     expect(status.textContent).toBe('');
     rerender(<Progress label="Uploading résumé" value={26} />);

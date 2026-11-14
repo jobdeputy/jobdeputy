@@ -1,5 +1,5 @@
 /* Everything the app's stylesheet holds after Tailwind itself: the tokens, the files below, and
-   the base page styles. Shared by styles/index.css (the app) and gallery/gallery.css. */
+   the base page styles. Shared by index.css (the app) and gallery.css (the dev-only gallery). */
 @import "./tokens.css";
 @import "./animations.css";
 @import "./story-stage.css";

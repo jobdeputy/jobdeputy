@@ -80,6 +80,16 @@ describe('useDelayedPending', () => {
     expect(result.current).toBe(false);
   });
 
+  it('keeps the hold to 500 ms when the system clock jumps back', () => {
+    const { result, rerender } = setup(true);
+    act(() => vi.advanceTimersByTime(300));
+    // An NTP sync moves the wall clock back an hour; the hold must not stretch with it.
+    vi.setSystemTime(Date.now() - 3_600_000);
+    rerender({ pending: false });
+    act(() => vi.advanceTimersByTime(500));
+    expect(result.current).toBe(false);
+  });
+
   it('takes its own delay and minimum', () => {
     const { result, rerender } = setup(true, { delay: 50, minDuration: 100 });
     act(() => vi.advanceTimersByTime(50));

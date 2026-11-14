@@ -29,7 +29,7 @@ export function useDelayedPending(
       // Already showing (the work restarted during the hold): keep showing, no new delay.
       if (shown) return;
       const timer = setTimeout(() => {
-        shownAt.current = Date.now();
+        shownAt.current = performance.now();
         setShown(true);
       }, delay);
       return () => clearTimeout(timer);
@@ -37,7 +37,7 @@ export function useDelayedPending(
     if (!shown) return;
     const timer = setTimeout(
       () => setShown(false),
-      Math.max(0, shownAt.current + minDuration - Date.now()),
+      Math.max(0, shownAt.current + minDuration - performance.now()),
     );
     return () => clearTimeout(timer);
   }, [isPending, shown, delay, minDuration, hideNow]);
