@@ -17,9 +17,16 @@ describe('copy', () => {
 
   it('accepts another language with the same keys and different words', () => {
     // A compile-time check as much as a runtime one: typecheck fails if Copy pins English text.
-    const other: Copy = {
-      shell: { productName: 'JobDeputy', tagline: 'Tu compañero de búsqueda.' },
+    const shell: Copy['shell'] = {
+      productName: 'JobDeputy',
+      tagline: 'Tu compañero de búsqueda de empleo.',
+      taglineShort: 'Tu compañero de búsqueda de empleo',
     };
-    expect(leaves(other).length).toBe(leaves(copy).length);
+    const titleLines: Copy['landing']['titleLines'] = [
+      'Tú lo configuras.',
+      'Tu asistente postula.',
+    ];
+    expect(leaves(shell).length).toBe(leaves(copy.shell).length);
+    expect(titleLines.length).toBe(copy.landing.titleLines.length);
   });
 });

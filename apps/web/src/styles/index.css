@@ -1,6 +1,9 @@
-/* The only stylesheet the app loads. Pages style themselves with Tailwind classes, not CSS. */
+/* The only stylesheet the app loads. Pages style themselves with Tailwind classes; the files
+   imported here hold what classes cannot express (decision 0012). */
 @import "tailwindcss";
 @import "./tokens.css";
+@import "./animations.css";
+@import "./story-stage.css";
 
 @layer base {
   :root {

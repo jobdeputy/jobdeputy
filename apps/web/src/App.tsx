@@ -1,14 +1,38 @@
-import { copy } from '@/copy/index.ts';
+import { useRef, useState } from 'react';
+import { AuthDrawer, type AuthMode } from '@/components/landing/auth-drawer.tsx';
+import { Hero } from '@/components/landing/hero.tsx';
+import { SiteHeader } from '@/components/landing/site-header.tsx';
 
-/** The empty app shell: the brand mark and name until the first screens are built. */
+/** The public landing page: the story of what the deputy does, and the way in (sign up or sign in). */
 export function App() {
+  const [authMode, setAuthMode] = useState<AuthMode>('sign-up');
+  const [authOpen, setAuthOpen] = useState(false);
+  // Four buttons open the drawer; focus returns to whichever one did.
+  const opener = useRef<HTMLElement | null>(null);
+
+  function openAuth(mode: AuthMode) {
+    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setAuthMode(mode);
+    setAuthOpen(true);
+  }
+
   return (
-    <main className="grid min-h-dvh place-content-center justify-items-center gap-2 p-4 text-center">
-      <img src="/jobdeputy-mark.svg" alt="" width="120" height="87" />
-      <h1 className="mt-2 font-display text-[clamp(40px,8vw,72px)] leading-none tracking-[-0.02em]">
-        {copy.shell.productName}
-      </h1>
-      <p className="text-lg text-muted-foreground">{copy.shell.tagline}</p>
-    </main>
+    <>
+      <SiteHeader onOpenAuth={openAuth} />
+      <main>
+        <Hero onOpenAuth={openAuth} />
+      </main>
+      <AuthDrawer
+        mode={authMode}
+        open={authOpen}
+        onOpenChange={setAuthOpen}
+        onCloseAutoFocus={(event) => {
+          if (opener.current) {
+            event.preventDefault();
+            opener.current.focus();
+          }
+        }}
+      />
+    </>
   );
 }

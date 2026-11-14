@@ -1,0 +1,47 @@
+import { Button } from '@/components/ui/button.tsx';
+import { copy } from '@/copy/index.ts';
+import type { AuthMode } from './auth-drawer.tsx';
+
+/**
+ * The sticky top bar: the brand on the left, sign-in and sign-up on the right. Phones keep only
+ * "Sign in" here; the hero right below offers "Get started free".
+ */
+export function SiteHeader({ onOpenAuth }: { onOpenAuth: (mode: AuthMode) => void }) {
+  return (
+    <header className="sticky top-0 z-20 flex h-18 items-center justify-between gap-3 border-b border-line-soft bg-header-surface px-[17px] backdrop-blur-[20px] backdrop-saturate-180 sm:px-[clamp(21px,4vw,55px)]">
+      <a
+        href="/"
+        className="group inline-flex min-h-11 min-w-0 items-center gap-2 rounded-[15px] py-0.5 pe-2.5 transition-colors duration-180 hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ring focus-visible:outline-solid"
+      >
+        <img
+          src="/jobdeputy-mark.svg"
+          alt=""
+          width="62"
+          height="45"
+          className="block w-[62px] shrink-0 transition-transform duration-180 group-hover:-translate-y-px group-active:scale-98 motion-reduce:transition-none"
+        />
+        <span className="grid min-w-0 gap-[3px] leading-none">
+          <span className="text-[19px] tracking-[-0.05em]">
+            <span className="font-[620]">Job</span>
+            <span className="font-[720]">Deputy</span>
+          </span>
+          <span className="hidden text-[8.5px] font-[680] tracking-[0.075em] text-muted-foreground uppercase md:block">
+            {copy.shell.taglineShort}
+          </span>
+        </span>
+      </a>
+      <div className="flex items-center gap-2 md:gap-3.5">
+        <Button variant="outline" aria-haspopup="dialog" onClick={() => onOpenAuth('sign-in')}>
+          {copy.landing.signIn}
+        </Button>
+        <Button
+          className="hidden md:inline-flex"
+          aria-haspopup="dialog"
+          onClick={() => onOpenAuth('sign-up')}
+        >
+          {copy.landing.getStarted}
+        </Button>
+      </div>
+    </header>
+  );
+}

@@ -18,6 +18,8 @@ const buttonVariants = cva(
       size: {
         default: 'h-10 px-4 text-sm',
         lg: 'h-12 px-6 text-base',
+        /** A round 40px button holding one glyph, such as a dialog's close button. */
+        icon: 'size-10 text-[22px] font-normal',
       },
     },
     defaultVariants: {

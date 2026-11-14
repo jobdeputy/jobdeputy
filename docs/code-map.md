@@ -26,19 +26,23 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 
 ## apps/web: the web app (React, Vite, TanStack Query, Tailwind, shadcn/ui)
 
-An empty shell for now; screens come one at a time. Runs with `pnpm --filter @jobdeputy/web dev`. Styling and testing choices: [0012](decisions/0012-web-ui-styling-and-testing.md).
+The public landing page so far (#14); screens come one at a time. Runs with `pnpm --filter @jobdeputy/web dev`. Styling and testing choices: [0012](decisions/0012-web-ui-styling-and-testing.md).
 
 | File | Role |
 |---|---|
 | `main.tsx` | mounts the app inside `StrictMode` and the TanStack Query client |
-| `App.tsx` | the app's root component (today: the brand mark and name) |
+| `App.tsx` | the app's root component (today: the landing page); owns the auth drawer's open state and returns focus to whichever button opened it |
+| `components/landing/` | the landing page: `site-header.tsx` (sticky bar), `hero.tsx` (copy, ways in, layout), `story-stage.tsx` + `panda.tsx` (the deputy in the "Set it up" pose, colours as token classes), `story-strip.tsx` (the three steps), `auth-drawer.tsx` (sign-in / sign-up drawer; forms come next) |
 | `copy/index.ts`, `copy/en.ts` | every word the UI shows. Components import `copy` from `@/copy/index.ts` (Biome blocks importing `en.ts` directly); `en.ts` holds the English, and a future language adds a sibling typed as `Copy` |
-| `components/ui/` | shadcn/ui components, restyled to the prototype (`button.tsx`: the pill buttons). Add more with `pnpm dlx shadcn@4.23.0 add <name>` from `apps/web`, then match them to the prototype |
+| `components/ui/` | shadcn/ui components, restyled to the prototype (`button.tsx`: the pill buttons; `sheet.tsx`: the right-hand drawer). Add more with `pnpm dlx shadcn@4.23.0 add <name>` from `apps/web`, then match them to the prototype |
 | `lib/utils.ts` | `cn()`: joins class names, a later Tailwind class wins. Lists the theme's shadow and easing names; `test/utils.test.ts` fails if tokens.css adds one it lacks |
-| `styles/index.css` | the only stylesheet: imports Tailwind and the tokens, sets base page styles |
+| `styles/index.css` | the only stylesheet the app loads: imports Tailwind, the tokens, and the files below; sets base page styles |
+| `styles/animations.css` | keyframes as `animate-*` utilities (the drawer's slide and the scrim's fade) |
+| `styles/story-stage.css` | the story stage's container-query layout: the deputy's size and place, the speech bubble's aim, the props' scale |
 | `styles/tokens.css` | the design tokens as Tailwind's theme (colours, shadows, easing, fonts), and shadcn's role names mapped onto them |
 | `vite.config.ts` | Vite build (React, Tailwind, the `@/` alias for `src/`) and the Vitest setup (happy-dom) |
 | `playwright.config.ts` | browser tests on the built app across seven devices |
+| `e2e/landing.spec.ts` | the landing page in real browsers: content, tokens, no sideways scroll, axe, drawer open/close by mouse and keyboard, reduced motion |
 | `e2e/checks.ts` | shared browser checks: no sideways scroll, no accessibility violations |
 | `e2e/screenshots.spec.ts` | the screens to screenshot on every device as PR proof (list each new screen here); `screenshots-dir.ts` and `global-setup.ts` put them in `apps/web/screenshots/` and clear old ones |
 
