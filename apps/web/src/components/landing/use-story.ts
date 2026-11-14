@@ -35,7 +35,7 @@ function onVisibility(onChange: () => void) {
 export function useStory() {
   const reducedMotion = useReducedMotion();
   const [index, setIndex] = useState(0);
-  const [playing, setPlaying] = useState(!reducedMotion);
+  const [playing, setPlaying] = useState(true);
   const [announcement, setAnnouncement] = useState('');
   const revealed = useRevealed();
   const hidden = useSyncExternalStore(
@@ -46,10 +46,9 @@ export function useStory() {
   // Reduced motion turned on mid-story stops it for good: turning it off again later does not
   // restart it unasked. (Adjusting state while rendering: React's pattern for this.)
   if (reducedMotion && playing) setPlaying(false);
-  const autoplay = playing && !reducedMotion;
 
   useEffect(() => {
-    if (!autoplay || !revealed || hidden) return;
+    if (!playing || !revealed || hidden) return;
     if (index >= LAST) {
       // The last step plays to its end and holds; the button offers Replay.
       setPlaying(false);
@@ -62,7 +61,7 @@ export function useStory() {
       setAnnouncement('');
     }, stepDuration(step));
     return () => clearTimeout(timer);
-  }, [autoplay, revealed, hidden, index]);
+  }, [playing, revealed, hidden, index]);
 
   const goTo = useCallback((target: number) => {
     const next = Math.max(0, Math.min(LAST, target));
@@ -82,7 +81,7 @@ export function useStory() {
     ? atEnd
       ? 'replay'
       : 'advance'
-    : autoplay
+    : playing
       ? 'pause'
       : atEnd
         ? 'replay'

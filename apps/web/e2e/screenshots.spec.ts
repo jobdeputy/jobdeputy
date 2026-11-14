@@ -7,8 +7,9 @@ import { SCREENSHOTS_DIR } from './screenshots-dir.ts';
  * them on the PR (.github/workflows/web.yml). Add each new screen here.
  */
 const SCREENS = [
-  // The landing page as most people see it, the story playing its first step.
-  { name: 'home', path: '/' },
+  // The landing page as most people see it, its story held on the first step (chosen in the
+  // strip), so every device and run shows the same frame.
+  { name: 'home', path: '/', firstStep: true },
   // The drawer, opened from the first visible "Sign in" button; the story behind it held still
   // (reduced motion), so every run shows the same.
   { name: 'sign-in', path: '/', open: 'Sign in', still: true },
@@ -39,6 +40,13 @@ for (const screen of SCREENS) {
       await page.route('**/assets/*.js', (route) => route.abort());
     }
     await page.goto(screen.path);
+    if (screen.firstStep) {
+      await page
+        .getByRole('list', { name: 'How your deputy works' })
+        .getByRole('button')
+        .first()
+        .click();
+    }
     if (screen.open) {
       await page
         .getByRole('button', { name: screen.open, exact: true })

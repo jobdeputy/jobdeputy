@@ -151,7 +151,7 @@ test.describe('the story', () => {
     await expect(page.getByRole('button', { name: 'Replay story' })).toBeVisible();
   });
 
-  test('steps back and forth by its arrows, and stays where it is put', async ({ page }) => {
+  test('steps back and forth by its arrows', async ({ page }) => {
     // Choosing a step pauses the story there, wherever it had got to.
     await stripSteps(page).nth(0).click();
     await expect(page.getByRole('button', { name: 'Play story' })).toBeVisible();
@@ -167,6 +167,37 @@ test.describe('the story', () => {
     );
     await expect(page.getByRole('button', { name: 'Previous step: Set it up' })).toBeVisible();
     await expectNoAccessibilityViolations(page);
+  });
+});
+
+test.describe('the story, on the page clock', () => {
+  // Each test pauses the story before it moves the clock, so nothing races real time.
+  test.beforeEach(async ({ page }) => {
+    await page.clock.install();
+    await page.goto('/');
+  });
+
+  test('holds a step chosen in the strip', async ({ page }) => {
+    await stripSteps(page).nth(2).click();
+    await page.clock.fastForward(20_000);
+    await expect(stripSteps(page).nth(2)).toHaveAttribute('aria-current', 'step');
+    // The last step: no step after it, and its state passes axe too.
+    await expect(page.getByRole('button', { name: 'Next step' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    await expectNoAccessibilityViolations(page);
+  });
+
+  test('pauses on Pause story, and plays on from there on Play story', async ({ page }) => {
+    await stripSteps(page).nth(0).click();
+    await page.getByRole('button', { name: 'Play story' }).click();
+    await page.getByRole('button', { name: 'Pause story' }).click();
+    await page.clock.fastForward(20_000);
+    await expect(stripSteps(page).nth(0)).toHaveAttribute('aria-current', 'step');
+    await page.getByRole('button', { name: 'Play story' }).click();
+    await page.clock.fastForward(4100);
+    await expect(stripSteps(page).nth(1)).toHaveAttribute('aria-current', 'step');
   });
 });
 
