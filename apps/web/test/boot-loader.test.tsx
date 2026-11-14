@@ -144,6 +144,24 @@ describe('finishBoot', () => {
     await vi.waitFor(() => expect(loader()).toBeNull());
   });
 
+  it("goes on the elements' own end events when an engine never settles `finished`", async () => {
+    const never = new Promise<void>(() => {});
+    const seen = { animationName: 'boot-reveal', startTime: performance.now() - 2000 };
+    (loader() as HTMLElement).getAnimations = () =>
+      [{ ...seen, finished: never }] as unknown as Animation[];
+    root().getAnimations = () => [{ finished: never }] as unknown as Animation[];
+    finishBoot();
+    vi.advanceTimersByTime(0);
+    root().dispatchEvent(new Event('animationend'));
+    // An end event from inside the loader is not its fade: it stays.
+    const inner = loader()?.querySelector('p');
+    inner?.dispatchEvent(new Event('transitionend', { bubbles: true }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(loader()).not.toBeNull();
+    loader()?.dispatchEvent(new Event('transitionend'));
+    await vi.waitFor(() => expect(loader()).toBeNull());
+  });
+
   it('goes when its animations are cancelled too', async () => {
     const seen = { animationName: 'boot-reveal', startTime: performance.now() - 2000 };
     const cancelled = Promise.reject(new DOMException('cancelled', 'AbortError'));

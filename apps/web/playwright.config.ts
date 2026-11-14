@@ -18,7 +18,9 @@ export default defineConfig({
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: `http://127.0.0.1:${port}`,
-    trace: 'retain-on-failure',
+    // Kept only for a failed test; without its screenshots, which made every test's recording
+    // large enough to fill CI's disk (the DOM snapshots still show each step).
+    trace: { mode: 'retain-on-failure', screenshots: false },
   },
   projects: [
     { name: 'desktop-chrome', use: { ...devices['Desktop Chrome'] } },

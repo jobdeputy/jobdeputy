@@ -80,19 +80,50 @@ export function finishBoot(): void {
 
 /**
  * Removes the loader once its fade and the page's rise (keyed to the loader, so removing it would
- * cut the rise short) have both finished or been cancelled; at once when there are none (reduced
+ * cut the rise short) have both ended or been cancelled; at once when there are none (reduced
  * motion). getAnimations() settles styles first, so both exist the moment the fade starts. No
  * timer: in a hidden tab they wait and run when it is back, and a cancelled one settles too.
  */
 function removeWhenSettled(loader: HTMLElement, root: HTMLElement | null) {
-  const moving = [...(loader.getAnimations?.() ?? []), ...(root?.getAnimations?.() ?? [])];
+  const moving = [
+    ...(loader.getAnimations?.() ?? []).map((animation) =>
+      settled(animation, loader, 'transition'),
+    ),
+    ...(root ? (root.getAnimations?.() ?? []).map((a) => settled(a, root, 'animation')) : []),
+  ];
   if (moving.length === 0) {
     loader.remove();
     return;
   }
-  void Promise.allSettled(moving.map((animation) => animation.finished)).then(() =>
-    loader.remove(),
-  );
+  void Promise.all(moving).then(() => loader.remove());
+}
+
+/**
+ * When an animation on `element` has ended or been cancelled: its `finished` promise, or the
+ * element's own end or cancel event, whichever comes first (WebKit does not always settle
+ * `finished`; the events it does fire).
+ */
+function settled(
+  animation: Animation,
+  element: HTMLElement,
+  kind: 'transition' | 'animation',
+): Promise<void> {
+  // No promise to wait on (a stub, an old engine): nothing to wait for.
+  if (!animation.finished) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = (event?: Event) => {
+      if (event && event.target !== element) return;
+      element.removeEventListener(`${kind}end`, done);
+      element.removeEventListener(`${kind}cancel`, done);
+      resolve();
+    };
+    element.addEventListener(`${kind}end`, done);
+    element.addEventListener(`${kind}cancel`, done);
+    animation.finished?.then(
+      () => done(),
+      () => done(),
+    );
+  });
 }
 
 /** Whether the page can be seen yet: what starts motion the visitor should watch (the story). */
