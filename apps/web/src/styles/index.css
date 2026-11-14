@@ -9,6 +9,8 @@
   :root {
     color-scheme: light;
     font-synthesis: none;
+    /* The sticky header's height (prototype: 72px); the landing hero fills the screen below it. */
+    --header-height: 72px;
   }
 
   body {

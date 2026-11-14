@@ -48,12 +48,9 @@ export const en = {
   },
 } as const;
 
-/** Same keys as `en`, any text: the shape every future language file must match. */
-type Widen<T> = {
-  readonly [K in keyof T]: T[K] extends string
-    ? string
-    : T[K] extends readonly (infer U)[]
-      ? readonly (U extends string ? string : Widen<U>)[]
-      : Widen<T[K]>;
-};
+/**
+ * Same keys as `en`, any text: the shape every future language file must match. Lists keep their
+ * length (two wordmark parts, two title lines, three steps), because the UI is built around them.
+ */
+type Widen<T> = T extends string ? string : { readonly [K in keyof T]: Widen<T[K]> };
 export type Copy = Widen<typeof en>;

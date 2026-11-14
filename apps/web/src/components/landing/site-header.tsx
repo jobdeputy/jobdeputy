@@ -7,7 +7,7 @@ import { AuthButton, type AuthControl } from './auth-drawer.tsx';
  */
 export function SiteHeader({ auth }: { auth: AuthControl }) {
   return (
-    <header className="sticky top-0 z-20 flex h-18 items-center justify-between gap-3 border-b border-line-soft bg-header-surface px-[17px] backdrop-blur-[20px] backdrop-saturate-180 sm:px-[clamp(21px,4vw,55px)]">
+    <header className="sticky top-0 z-20 flex h-(--header-height) items-center justify-between gap-3 border-b border-line-soft bg-header-surface px-[17px] backdrop-blur-[20px] backdrop-saturate-180 sm:px-[clamp(21px,4vw,55px)]">
       <a
         href="/"
         className="group inline-flex min-h-11 min-w-0 items-center gap-2 rounded-[15px] py-0.5 pe-2.5 transition-colors duration-180 hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ring focus-visible:outline-solid"

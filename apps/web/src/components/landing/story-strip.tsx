@@ -1,13 +1,16 @@
 import type { ReactNode } from 'react';
-import { copy } from '@/copy/index.ts';
+import { type Copy, copy } from '@/copy/index.ts';
 import { cn } from '@/lib/utils.ts';
 import { PencilShape } from './panda.tsx';
 
 /**
- * Each step's tool, as the deputy holds it: pencil, magnifier, approved page. One per entry in
- * copy.landing.steps.items, in order (test/StoryStrip.test.tsx checks the counts match).
+ * Each step's tool, as the deputy holds it: pencil, magnifier, approved page. Typed to the steps
+ * in the copy, so a language with a different number of steps fails to compile.
  */
-export const STEP_TOOLS: readonly ReactNode[] = [
+/** One `V` per entry of the list `T`, same length (a generic, so tuples stay tuples). */
+type OnePer<T, V> = { readonly [K in keyof T]: V };
+
+const STEP_TOOLS: OnePer<Copy['landing']['steps']['items'], ReactNode> = [
   <PencilShape key="pencil" transform="translate(13.52 33.84) scale(0.63)" />,
   <g key="magnifier" transform="translate(8.11 42.36) scale(0.55)">
     <path

@@ -7,7 +7,7 @@ import { StoryStrip } from './story-strip.tsx';
 /**
  * The landing hero (round 7 `.story-panel`): the promise and the two ways in, the deputy at
  * work, and the three steps. One column up to laptops; from `lg` the copy and the stage sit side
- * by side and the hero fills the screen under the header (`--spacing(18)` is the header's h-18);
+ * by side and the hero fills the screen under the header (`--header-height`, index.css);
  * it grows rather than clips when text is enlarged.
  */
 export function Hero({ auth }: { auth: AuthControl }) {
@@ -15,7 +15,7 @@ export function Hero({ auth }: { auth: AuthControl }) {
   return (
     <section
       aria-labelledby="hero-title"
-      className="relative isolate grid min-h-[calc(100dvh-(--spacing(18)))] grid-rows-[auto_250px_auto] overflow-clip bg-[radial-gradient(circle_at_50%_45%,var(--color-surface-strong),transparent_58%),linear-gradient(145deg,var(--color-paper),var(--color-paper-deep))] p-[21px] sm:grid-rows-[auto_320px_auto] sm:content-center sm:px-[34px] sm:pt-[34px] md:grid-rows-[auto_400px_auto] lg:min-h-[max(600px,calc(100dvh-(--spacing(18))))] lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)_auto] lg:content-normal lg:gap-x-[clamp(32px,4vw,72px)] lg:px-[max(48px,calc((100vw-1280px)/2))] lg:pt-[clamp(28px,4vh,56px)] lg:pb-[clamp(20px,3vh,34px)] 2xl:px-[max(48px,calc((100vw-1480px)/2))]"
+      className="relative isolate grid min-h-[calc(100dvh-var(--header-height))] grid-rows-[auto_250px_auto] overflow-clip bg-[radial-gradient(circle_at_50%_45%,var(--color-surface-strong),transparent_58%),linear-gradient(145deg,var(--color-paper),var(--color-paper-deep))] p-[21px] sm:grid-rows-[auto_320px_auto] sm:content-center sm:px-[34px] sm:pt-[34px] md:grid-rows-[auto_400px_auto] lg:min-h-[max(600px,calc(100dvh-var(--header-height)))] lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)_auto] lg:content-normal lg:gap-x-[clamp(32px,4vw,72px)] lg:px-[max(48px,calc((100vw-1280px)/2))] lg:pt-[clamp(28px,4vh,56px)] lg:pb-[clamp(20px,3vh,34px)] 2xl:px-[max(48px,calc((100vw-1480px)/2))]"
     >
       {/* Still, organic colour fields behind everything. */}
       <div
@@ -41,7 +41,8 @@ export function Hero({ auth }: { auth: AuthControl }) {
         >
           {/* Each line stays whole; the space between them is where the title may break. */}
           {landing.titleLines.map((line, index) => (
-            <Fragment key={line}>
+            // biome-ignore lint/suspicious/noArrayIndexKey: a fixed two-line title; lines may repeat in a translation.
+            <Fragment key={index}>
               {index > 0 && ' '}
               <span className="inline-block">{line}</span>
             </Fragment>
