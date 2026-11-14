@@ -1,7 +1,6 @@
 /**
- * Every word the UI shows, in English. Components read copy from here rather than writing it
- * inline, so adding a language later means adding a sibling file with the same keys, not
- * editing components. Keep whole sentences in one entry: word order differs between languages.
+ * Every word the UI shows, in English. Keep whole sentences in one entry: word order differs
+ * between languages. Components read copy through `@/copy`, never from this file directly.
  */
 export const en = {
   shell: {
@@ -10,5 +9,6 @@ export const en = {
   },
 } as const;
 
-/** The shape every future language file must match. */
-export type Copy = typeof en;
+/** Same keys as `en`, any text: the shape every future language file must match. */
+type Widen<T> = { readonly [K in keyof T]: T[K] extends string ? string : Widen<T[K]> };
+export type Copy = Widen<typeof en>;

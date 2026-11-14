@@ -19,7 +19,7 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 | How jobs are read from a page or board | `apps/worker/src/jobs/` |
 | Which crawled jobs are kept or shown, and why | `apps/worker/src/relevance/` (the code filter, the per-company limit), `apps/worker/src/relevance-worker.ts` (the LLM score, T08d) |
 | UI colours, fonts, and motion | `apps/web/src/styles/tokens.css`, Tailwind's theme (carried over from the round 7 prototype, which stays in the archive repo; [0012](decisions/0012-web-ui-styling-and-testing.md)) |
-| Words the UI shows | `apps/web/src/copy/en.ts` (never inline in components) |
+| Words the UI shows | `apps/web/src/copy/en.ts`, read through `@/copy/index.ts` (never inline in components) |
 | Item attributes | the repository **and** `docs/data-model.md` (with a change-log line) |
 | CI permissions | `infra/lib/cicd-stack.ts` |
 | An LLM task, its prompt, or its limits | `packages/llm/src/tasks/<task>.ts` (raise its `version`, add it to `TASKS`); eval cases in `packages/llm/eval/cases/`, `eval/versions.json`, baseline in `eval/baselines/` |
@@ -32,7 +32,7 @@ An empty shell for now; screens come one at a time. Runs with `pnpm --filter @jo
 |---|---|
 | `main.tsx` | mounts the app inside `StrictMode` and the TanStack Query client |
 | `App.tsx` | the app's root component (today: the brand mark and name) |
-| `copy/en.ts` | every word the UI shows, in English; a future language adds a sibling file with the same keys |
+| `copy/index.ts`, `copy/en.ts` | every word the UI shows. Components import `copy` from `@/copy/index.ts`; `en.ts` holds the English, and a future language adds a sibling typed as `Copy` |
 | `components/ui/` | shadcn/ui components, restyled to the prototype (`button.tsx`: the pill buttons). Add more with `pnpm dlx shadcn@4.23.0 add <name>` from `apps/web`, then match them to the prototype |
 | `lib/utils.ts` | `cn()`: joins class names, a later Tailwind class wins |
 | `styles/index.css` | the only stylesheet: imports Tailwind and the tokens, sets base page styles |
@@ -40,6 +40,7 @@ An empty shell for now; screens come one at a time. Runs with `pnpm --filter @jo
 | `vite.config.ts` | Vite build (React, Tailwind, the `@/` alias for `src/`) and the Vitest setup (happy-dom) |
 | `playwright.config.ts` | browser tests on the built app across seven devices |
 | `e2e/checks.ts` | shared browser checks: no sideways scroll, no accessibility violations |
+| `e2e/screenshots.spec.ts` | the screens to screenshot on every device as PR proof (list each new screen here) |
 
 ## apps/api/src: one Lambda per feature (API Gateway HTTP API)
 
@@ -134,3 +135,4 @@ An empty shell for now; screens come one at a time. Runs with `pnpm --filter @jo
 | `scripts/request-account-deletion.sh` | the only way to delete an account by hand |
 | `scripts/cleanup-log-groups.sh`, `scripts/cloud-setup.sh` | orphaned log groups; cloud dev environment |
 | `scripts/delete-pr-stack.sh` | deletes a PR stack, retrying AWS internal delete failures (#61) |
+| `scripts/publish-ui-screenshots.sh` | posts a PR's UI screenshots as one comment; images on the `ui-screenshots` branch, which keeps only open PRs (#14) |

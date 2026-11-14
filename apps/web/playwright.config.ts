@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const port = 4173;
+// Not vite preview's default (4173), so a preview someone left running is never tested by mistake.
+const port = 4319;
 
 /**
  * End-to-end tests run against the production build (vite preview) on every device class we
@@ -30,6 +31,7 @@ export default defineConfig({
   webServer: {
     command: `vite build && vite preview --host 127.0.0.1 --port ${port} --strictPort`,
     url: `http://127.0.0.1:${port}`,
-    reuseExistingServer: !process.env.CI,
+    // Always build and serve fresh: reusing a server could test stale code.
+    reuseExistingServer: false,
   },
 });

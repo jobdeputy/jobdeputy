@@ -26,7 +26,7 @@ For tests:
 - **Focus ring:** one ring for every control, 2px solid `green` with a 3px offset (the `ring` role). The prototype mixed this with a 3px `green-line` ring, which is about 1.5:1 against paper and fails WCAG's 3:1 for focus indicators.
 - **Breakpoints:** Tailwind's defaults (`sm` 640, `md` 768, `lg` 1024, `xl` 1280), mobile first. The prototype's own breakpoints (540, 720, 880, 1050) are not copied.
 - **Tests:** Vitest + Testing Library for component behaviour (`apps/web/test/`). Playwright for the built app in real browsers (`apps/web/e2e/`) on seven devices: desktop Chrome, Firefox, and Safari; iPad; iPhone; Pixel; and a 320px-wide phone. Shared checks: no sideways scroll, and no WCAG 2.2 A/AA violations that axe finds.
-- **Translation-ready, not translated:** the launch is English and US-only. Every UI string lives in `src/copy/en.ts`, not in components. Use logical spacing (`ps-`/`pe-`/`ms-`/`me-`, `start-`/`end-`) instead of left and right, `Intl` for dates and numbers, and whole sentences per entry. Adding a language later means adding a file with the same keys and an i18n library, with no component rewrites.
+- **Translation-ready, not translated:** the launch is English and US-only. Every UI string lives in `src/copy/en.ts`, and components read it through `@/copy/index.ts` (`Copy` fixes the keys, not the words). Use logical spacing (`ps-`/`pe-`/`ms-`/`me-`, `start-`/`end-`) instead of left and right, `Intl` for dates and numbers, and whole sentences per entry. Adding a language later means adding a file with the same keys and an i18n library, with no component rewrites.
 
 ## Why
 
@@ -35,5 +35,6 @@ The prototype is a custom design, so a kit with its own look would fight it; Tai
 ## Consequences
 
 - Off-brand colours cannot be used by accident; a new colour needs a token, and token changes need approval (CLAUDE.md).
-- Screenshot comparison is not set up yet. Font rendering differs between macOS and Linux, so baselines must come from CI's Linux browsers; it arrives with the landing page (#14, part B).
+- **Screenshot proof on every UI PR:** CI screenshots each screen in `e2e/screenshots.spec.ts` on all seven devices and posts them as one PR comment. The images live on the `ui-screenshots` branch, rewritten as a single commit that keeps only open PRs, so it stays small; the URLs carry the commit, so a browser never shows stale shots.
+- Automatic screenshot *comparison* (failing on visual change) is not set up yet. Font rendering differs between macOS and Linux, so baselines must come from CI's Linux browsers; it arrives with the landing page (#14, part B).
 - Every UI change gets a senior UI review against the prototype before handover (spacing, tokens, breakpoints, accessibility), and any inconsistencies are fixed in the same PR.

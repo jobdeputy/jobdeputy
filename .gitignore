@@ -31,3 +31,4 @@ cdk.out/
 # Playwright
 playwright-report/
 test-results/
+apps/web/screenshots/

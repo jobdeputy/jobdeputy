@@ -1,11 +1,12 @@
 /*
  * JobDeputy design tokens, carried over unchanged from the approved prototype (round 7).
  * The values live in @theme, so Tailwind turns each one into utilities (bg-paper, text-ink,
- * font-display, ease-settle, shadow-control) and also emits it as a CSS variable.
+ * font-display, ease-settle, shadow-control). `static` emits every one as a CSS variable too,
+ * used or not, so keyframes and SVGs can rely on var(--color-orange) and the like.
  * Tailwind's default palette is switched off: only these colours exist, so a page cannot
  * drift to an off-brand grey.
  */
-@theme {
+@theme static {
   --color-*: initial;
   --color-white: #fff;
   --color-ink: #1b1a18;
@@ -56,4 +57,12 @@
   --color-input: var(--color-line-strong);
   --color-ring: var(--color-green);
   --color-destructive: var(--color-danger-ink);
+  --color-destructive-foreground: var(--color-white);
+  --color-accent: var(--color-green-wash);
+  --color-accent-foreground: var(--color-green-ink);
+  --color-card: var(--color-surface-strong);
+  --color-card-foreground: var(--color-ink);
+  --color-popover: var(--color-paper);
+  --color-popover-foreground: var(--color-ink);
 }
+/* There is no black: when a shadcn component brings bg-black (dialog overlays), change it to ink. */

@@ -1,5 +1,5 @@
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Button } from '../src/components/ui/button.tsx';
 
 afterEach(cleanup);
@@ -26,5 +26,26 @@ describe('Button', () => {
     const button = screen.getByRole('button', { name: 'Wide' });
     expect(button.className).toContain('h-14');
     expect(button.className).not.toContain('h-10');
+  });
+
+  it('does not submit a form unless it is the submit button', () => {
+    const onSubmit = vi.fn((event: SubmitEvent) => event.preventDefault());
+    render(
+      <form onSubmit={(event) => onSubmit(event.nativeEvent as SubmitEvent)}>
+        <Button>Cancel</Button>
+        <Button type="submit">Save</Button>
+      </form>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(onSubmit).toHaveBeenCalledOnce();
+  });
+
+  it('lets a caller remove the control shadow', () => {
+    render(<Button className="shadow-none">Flat</Button>);
+    const button = screen.getByRole('button', { name: 'Flat' });
+    expect(button.className).toContain('shadow-none');
+    expect(button.className).not.toContain('shadow-control');
   });
 });

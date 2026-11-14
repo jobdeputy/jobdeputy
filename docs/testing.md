@@ -6,7 +6,7 @@ Three layers, each with one job. A case is tested at the **lowest layer that can
 |---|---|---|---|---|
 | **Unit** | `*/test/*.test.ts` | Every PR (`pnpm verify`), no AWS | Every branch of the logic: valid and invalid input, each error path, retries, timeouts, duplicates, limits. Dependencies are faked. | **As thorough as possible.** Fast (seconds) and deterministic. |
 | **Infrastructure** | `infra/test/` | Every PR, no AWS | The synthesized CloudFormation: Region and cost guards, auth on every route, queue and retry settings, filters, alarms. | Every setting a decision record depends on. |
-| **Browser** | `apps/web/e2e/` | Every PR (CI job **Browser tests**), no AWS | The built web app in real Chromium, Firefox, and WebKit on seven devices (desktop, tablet, phones down to 320px): what users see and can do, layout fits the screen, accessibility (axe, WCAG 2.2 AA), keyboard use. | Every screen on every device. Logic stays in unit tests. |
+| **Browser** | `apps/web/e2e/` | Every PR that changes the web app (workflow **Web**, job **Browser tests**), no AWS | The built web app in real Chromium, Firefox, and WebKit on seven devices (desktop, tablet, phones down to 320px): what users see and can do, layout fits the screen, accessibility (axe, WCAG 2.2 AA), keyboard use. | Every screen on every device. Logic stays in unit tests. |
 | **Integration** | `tests/integration/` | Against a deployed stack (see below) | Only what needs real AWS: wiring between services, IAM permissions, event flow, retries and dead-lettering end to end, and the deployed contract. | **Balanced: few, meaningful, and never flaky.** |
 
 ## What belongs in integration tests
@@ -56,7 +56,7 @@ Every feature PR adds integration tests for its own feature, and the **whole** s
 |---|---|
 | `pnpm verify` | Lint, typecheck, unit and infrastructure tests |
 | `pnpm --filter @jobdeputy/web test` | The web app's component tests (Vitest with happy-dom); `pnpm verify` runs them too |
-| `pnpm --filter @jobdeputy/web test:e2e` | Browser tests on all seven devices (builds the app first). Once per machine: `pnpm --filter @jobdeputy/web exec playwright install chromium firefox webkit`. One device: add `--project=iphone` |
+| `pnpm --filter @jobdeputy/web test:e2e` | Browser tests on all seven devices (builds the app first). Once per machine: `pnpm --filter @jobdeputy/web exec playwright install chromium firefox webkit`. One device: add `--project=iphone`. Screenshots land in `apps/web/screenshots/` (git-ignored); CI posts them on the PR |
 | `JD_OWNER=<you> JD_FULL=1 AWS_PROFILE=jobdeputy-dev-iad pnpm test:integration` | Integration tests against your personal stack; `JD_FULL=1` adds the queue-level tests |
 
 The full suite (`JD_FULL=1`) runs automatically:

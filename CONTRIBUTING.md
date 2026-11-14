@@ -43,6 +43,8 @@ git push --force-with-lease
 
 - No secrets, credentials, real résumés, or personal data in commits, tests, fixtures, or screenshots. Use synthetic data.
 - New behaviour needs tests. Bug fixes need a test that fails without the fix.
+- **UI changes need screenshot proof:** every PR that changes a screen gets phone, tablet, and desktop screenshots in the PR. CI posts them automatically (the **Web** workflow's *Post screenshots* job comments with all seven devices); add each new screen to `apps/web/e2e/screenshots.spec.ts`. Check them before asking for review: a PR without the comment, or with a screen missing, is not ready. PRs from forks get no comment (their token cannot write); attach the screenshots by hand from the `ui-screenshots` artifact of the run.
+- UI follows [0012](docs/decisions/0012-web-ui-styling-and-testing.md): Tailwind classes and shadcn/ui components, not hand-written CSS; words in `apps/web/src/copy/`; one review pass against the round 7 prototype before handover.
 - If you change a decision, add a new record in `docs/decisions/`; don't silently edit an old one.
 
 ## AI-assisted contributions
