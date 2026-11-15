@@ -1,9 +1,11 @@
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { saveBody } from '../src/components/setup/step-you.tsx';
+import { StepYou, saveBody } from '../src/components/setup/step-you.tsx';
 import { ApiError } from '../src/lib/api/client.ts';
 import { createFakeApi } from '../src/lib/api/fake.ts';
+import { ApiContext } from '../src/lib/api/index.ts';
 import type { Profile } from '../src/lib/api/profile.ts';
 import { createFakeAuth } from '../src/lib/auth/fake.ts';
 import { renderApp } from './render-app.tsx';
@@ -303,6 +305,83 @@ describe('the signed-in app', () => {
     await waitFor(() => expect(alertText()).toContain('Try again in 2 minutes.'));
   });
 
+  it('keeps what was typed when only other fields changed elsewhere meanwhile', async () => {
+    const api = createFakeApi({ delay: 0 });
+    await api.request('PUT', '/me/profile', { version: 0, firstName: 'Alex', lastName: 'Morgan' });
+    const saved = await api.request<Profile>('GET', '/me/profile');
+    const request = api.request.bind(api);
+    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      if (method !== 'PUT') return request(method, path, body);
+      // Another device saves skills (the names unchanged), and this save never arrives.
+      await request('PUT', '/me/profile', { ...saveBody(saved, valuesOfSaved()), skills: ['Go'] });
+      throw new ApiError('unsure');
+    });
+    const onSaved = vi.fn();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ApiContext.Provider value={api}>
+          <StepYou profile={saved} onSaved={onSaved} onBack={() => {}} />
+        </ApiContext.Provider>
+      </QueryClientProvider>,
+    );
+    fill('Alexandra', 'Morgan');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() =>
+      expect(alertText()).toContain('That didn’t save. Press Continue to try again.'),
+    );
+    expect((screen.getByLabelText('First name') as HTMLInputElement).value).toBe('Alexandra');
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it('says at once when a saved field this step doesn’t show is wrong too', async () => {
+    const api = createFakeApi({ delay: 0 });
+    // Saved before a rule changed: a headline now over the limit.
+    const saved = { version: 1, firstName: 'Alex', lastName: 'Morgan', headline: 'x'.repeat(201) };
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ApiContext.Provider value={api}>
+          <StepYou profile={saved} onSaved={() => {}} onBack={() => {}} />
+        </ApiContext.Provider>
+      </QueryClientProvider>,
+    );
+    fill('', 'Morgan');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByText('Enter your first name.')).toBeTruthy();
+    const note = screen.getByText(/^Part of your saved profile no longer fits the rules/);
+    // Part of the form's description, so it is there when the form is come back to.
+    expect(screen.getByRole('form').getAttribute('aria-describedby')).toContain(note.id);
+  });
+
+  it('says it cannot tell when the answer and the check are both lost', async () => {
+    const api = createFakeApi({ delay: 0 });
+    await toStepYou(api);
+    fill('Alex', 'Morgan');
+    vi.spyOn(api, 'request').mockRejectedValue(new ApiError('unsure'));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(alertText()).toContain('We couldn’t tell whether that saved.'));
+    expect((screen.getByLabelText('First name') as HTMLInputElement).value).toBe('Alex');
+  });
+
+  it('moves on when a refused save turns out to hold these answers already', async () => {
+    const api = createFakeApi({ delay: 0 });
+    await toStepYou(api);
+    fill('Alex', 'Morgan');
+    const request = api.request.bind(api);
+    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      if (method !== 'PUT') return request(method, path, body);
+      // An earlier save of the same answers did go through (its answer was lost).
+      await request('PUT', '/me/profile', {
+        version: 0,
+        firstName: 'Alex',
+        lastName: 'Morgan',
+        location: { country: 'US' },
+      });
+      throw new ApiError('conflict', { status: 409 });
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'You’re in.' })).toBeTruthy();
+  });
+
   it('goes back from step 1 to the welcome', async () => {
     await renderApp(await signedIn());
     fireEvent.click(await screen.findByRole('button', { name: 'Let’s start' }));
@@ -339,4 +418,9 @@ function alertText(): string {
     .getAllByRole('alert')
     .map((alert) => alert.textContent)
     .join(' ');
+}
+
+/** Step 1's answers as a saved Alex Morgan profile has them. */
+function valuesOfSaved() {
+  return { firstName: 'Alex', lastName: 'Morgan', city: '' };
 }

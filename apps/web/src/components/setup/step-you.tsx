@@ -52,6 +52,7 @@ export function StepYou({
   const [pending, setPending] = useState(false);
   const waiting = useDelayedPending(pending);
   const refusalId = useId();
+  const noteId = useId();
   // A save that ends after the person has left (signed out, say) must not touch anything.
   const here = useRef(true);
   useEffect(() => {
@@ -92,6 +93,8 @@ export function StepYou({
     flushSync(() => setErrors(found.fields));
     const first = (Object.keys(found.fields) as Name[])[0];
     if (first) {
+      // A saved field this step doesn't show is wrong too: say so now, not after the fix.
+      if (found.other) flushSync(() => setNote(copy.setUp.errors.cannotSave));
       form.current?.querySelector<HTMLInputElement>(`[name="${first}"]`)?.focus();
       return;
     }
@@ -107,14 +110,14 @@ export function StepYou({
       onSaved();
     } catch (error) {
       if (!here.current) return;
-      await refused(error, { ...values, version: body.version });
+      await refused(error, values, valuesOf(profile));
     } finally {
       if (here.current) setPending(false);
     }
   }
 
   /** Says why a save was refused, in this step's words, and what to do. */
-  async function refused(error: unknown, sent: Values & { version: number }) {
+  async function refused(error: unknown, sent: Values, before: Values) {
     const errorsText = copy.setUp.errors;
     const kind = error instanceof ApiError ? error.kind : 'server';
     if (kind === 'invalid' && error instanceof ApiError && error.fieldErrors.length > 0) {
@@ -134,23 +137,22 @@ export function StepYou({
     } else if (kind === 'conflict' && error instanceof ApiError && error.code === 'try-again') {
       // A write that collided: nothing was saved and nothing changed. Keep what was typed.
       setRefusal(errorsText.tryLater);
-    } else if (kind === 'conflict') {
-      // Changed meanwhile: show what is saved now, so nothing is overwritten unseen.
+    } else if (kind === 'conflict' || kind === 'unsure') {
+      // A save whose answer was lost, or one refused as out of date: what is saved now says what
+      // happened, read by this step's own fields.
       const fresh = await reload();
       if (!here.current) return;
-      if (fresh) setValues(valuesOf(fresh));
-      setRefusal(fresh ? errorsText.changedElsewhere : errorsText.saveFailed);
-    } else if (kind === 'unsure') {
-      // The answer was lost. What is saved now says what happened: these answers (it went
-      // through), other ones (changed elsewhere: show them, so nothing is overwritten unseen), or
-      // nothing new (it did not go through).
-      const fresh = await reload();
-      if (!here.current) return;
-      if (!fresh || fresh.version <= sent.version) {
-        setRefusal(errorsText.saveFailed);
+      if (!fresh) {
+        setRefusal(errorsText.unknownOutcome);
       } else if (sameAnswers(valuesOf(fresh), sent)) {
+        // These answers are saved (this save went through, or an earlier one of this person's).
         onSaved();
+      } else if (sameAnswers(valuesOf(fresh), before)) {
+        // Nothing this step shows changed elsewhere (something else did, or this save simply
+        // failed): keep what was typed; the newer version is loaded, so trying again works.
+        setRefusal(errorsText.tryAgain);
       } else {
+        // This step's fields changed elsewhere: show them, so nothing is overwritten unseen.
         setValues(valuesOf(fresh));
         setRefusal(errorsText.changedElsewhere);
       }
@@ -179,7 +181,9 @@ export function StepYou({
         noValidate
         onSubmit={submit}
         aria-labelledby="set-up-title"
-        aria-describedby={refusal ? refusalId : undefined}
+        aria-describedby={
+          [refusal && refusalId, note && noteId].filter(Boolean).join(' ') || undefined
+        }
         className="grid gap-4"
       >
         <div className="grid gap-4 sm:grid-cols-2">
@@ -195,12 +199,17 @@ export function StepYou({
         <ul className="m-0 grid list-none p-0">
           <Fact label={text.country} value={copy.setUp.region} pill={copy.setUp.locked} />
         </ul>
-        {/* The wait while saving (read only), or a note beside a refused field (shown too). */}
+        <p role="status" className="sr-only">
+          {pending && waiting ? text.saving : ''}
+        </p>
+        {/* Beside a refused field that has taken focus: said politely, so it doesn't cut off
+            the field's own reason, and part of the form's description. */}
         <p
+          id={noteId}
           role="status"
           className={cn('m-0 text-sm font-[650] text-danger-ink', !note && 'sr-only')}
         >
-          {pending && waiting ? text.saving : note}
+          {note}
         </p>
         <p
           id={refusalId}
