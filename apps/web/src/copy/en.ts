@@ -176,6 +176,31 @@ export const en = {
     },
   },
   /** The page a signed-in person sees until the app's own screens arrive. */
+  /** The guided set-up after the first sign-in (#33): three short steps, then the app. */
+  setUp: {
+    /** Read beside the header's step bar. */
+    progress: '3 short steps',
+    eyebrow: 'Getting started',
+    title: 'Hi, I’m your deputy.',
+    intro: 'About two minutes, so I search the right places.',
+    speech: 'Let’s get going.',
+    status: 'Ready',
+    accountTitle: 'Your account is ready.',
+    signedInAs: 'Signed in as',
+    homeRegion: 'Home Region',
+    /** The Region every account lives in for now (US-only launch). */
+    region: 'United States (US)',
+    locked: 'Locked',
+    regionNote: 'Your profile, searches, and files stay in this Region.',
+    start: 'Let’s start',
+    signOut: 'Sign out',
+  },
+  /** Loading the signed-in person's profile, and failing to. */
+  profile: {
+    loading: 'Opening your search desk',
+    failed: 'Your search desk didn’t open.',
+    retry: 'Try again',
+  },
   signedIn: {
     kicker: 'Signed in',
     title: 'You’re in.',

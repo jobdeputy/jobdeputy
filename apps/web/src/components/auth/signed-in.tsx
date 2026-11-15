@@ -1,19 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
-import { Button } from '@/components/ui/button.tsx';
+import { useEffect, useRef } from 'react';
 import { copy, fill } from '@/copy/index.ts';
-import { AuthError, useAuth } from '@/lib/auth/index.ts';
-import { useDelayedPending } from '@/lib/use-delayed-pending.ts';
-import { cn } from '@/lib/utils.ts';
+import { SignOutButton } from './sign-out-button.tsx';
 
 /**
  * Where a signed-in person lands until the app's own screens arrive (#14 slice 2): who they are
  * signed in as, and Sign out. Its title takes focus, so the change of page is announced.
  */
 export function SignedIn({ email, onSignedOut }: { email: string; onSignedOut: () => void }) {
-  const auth = useAuth();
-  const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState<string | null>(null);
-  const waiting = useDelayedPending(pending);
   const title = useRef<HTMLHeadingElement>(null);
   // Once, on arrival: the change of page is announced, and focus is not pulled back later.
   useEffect(() => {
@@ -35,39 +28,7 @@ export function SignedIn({ email, onSignedOut }: { email: string; onSignedOut: (
           {text.title}
         </h1>
         <p className="m-0 text-[0.9375rem] text-muted-foreground">{fill(text.body, { email })}</p>
-        <Button
-          variant="outline"
-          className="mt-2 justify-self-start"
-          pending={pending}
-          pendingLabel={text.signingOut}
-          onClick={async () => {
-            if (pending) return;
-            setPending(true);
-            setFailed(null);
-            let signedOut = false;
-            try {
-              await auth.signOut();
-              signedOut = true;
-            } catch (error) {
-              // Still signed in (the session is still stored): say so, rather than pretend.
-              setFailed(copy.auth.errors[error instanceof AuthError ? error.kind : 'unknown']);
-            } finally {
-              setPending(false);
-            }
-            if (signedOut) onSignedOut();
-          }}
-        >
-          {text.signOut}
-        </Button>
-        <p role="status" className="sr-only">
-          {pending && waiting ? text.signingOut : ''}
-        </p>
-        <p
-          role="alert"
-          className={cn('m-0 text-sm font-[650] text-danger-ink', !failed && 'sr-only')}
-        >
-          {failed}
-        </p>
+        <SignOutButton onSignedOut={onSignedOut} className="mt-2 justify-self-start" />
       </section>
     </main>
   );

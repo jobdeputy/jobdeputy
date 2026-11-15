@@ -2,6 +2,7 @@ import { createContext, useContext, useMemo } from 'react';
 import { useAuth } from '../auth/index.ts';
 import { readConfig } from '../config.ts';
 import { type ApiClient, createApiClient } from './client.ts';
+import { createFakeApi } from './fake.ts';
 
 export {
   type ApiClient,
@@ -23,10 +24,13 @@ function readApiUrl(): Promise<string | null> {
   return apiUrl;
 }
 
+/** The test build's in-memory API (`--mode e2e`; the production build leaves it out). */
+const testBuildApi = import.meta.env.MODE === 'e2e' ? createFakeApi() : null;
+
 /**
  * The API client for the screens: the cell's API, with the token of whoever `AuthContext` says is
- * signed in (so a test's own sign-in is the one used). A tree may provide its own client instead
- * through `ApiContext` (the unit tests do).
+ * signed in (so a test's own sign-in is the one used), or the in-memory fake in the test build. A
+ * tree may provide its own client instead through `ApiContext` (the unit tests do).
  */
 export const ApiContext = createContext<ApiClient | null>(null);
 
@@ -35,7 +39,9 @@ export function useApi(): ApiClient {
   const auth = useAuth();
   return useMemo(
     () =>
-      provided ?? createApiClient({ apiUrl: readApiUrl, accessToken: () => auth.accessToken() }),
+      provided ??
+      testBuildApi ??
+      createApiClient({ apiUrl: readApiUrl, accessToken: () => auth.accessToken() }),
     [provided, auth],
   );
 }
