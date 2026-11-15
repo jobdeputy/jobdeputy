@@ -87,6 +87,10 @@ export const en = {
     stillWorking: 'Still working…',
     /** Read out when a region's first load passes 8 s: "Loading your matches. Still working…". */
     stillLoading: '{label}. Still working…',
+    /** On a first load paused while the browser is offline. */
+    offline: 'Waiting for a connection…',
+    /** Read out then: "Opening your search desk. Waiting for a connection…". */
+    offlineLoading: '{label}. Waiting for a connection…',
     /** Added to a long background job (a search, a tailoring) once it passes 8 s. */
     background: 'This keeps going in the background. You can leave this page.',
     /** Read out as a progress bar passes each quarter: "Uploading résumé, 50%". */
@@ -174,6 +178,34 @@ export const en = {
       confirmed: 'Your account is confirmed. Sign in to continue.',
       unknown: 'Something went wrong. Try again.',
     },
+  },
+  /** The guided set-up after the first sign-in (#33): a welcome, three short steps, then the app. */
+  setUp: {
+    /** Beside the header's step bar on the welcome, before the steps begin. */
+    progress: '3 short steps',
+    /** Beside the step bar during the steps: where the person is. */
+    step: 'Step {current} of {total}',
+    eyebrow: 'Getting started',
+    title: 'Hi, I’m your deputy.',
+    intro: 'About two minutes, so I search the right places.',
+    speech: 'Let’s get going.',
+    status: 'Ready',
+    accountTitle: 'Your account is ready.',
+    signedInAs: 'Signed in as',
+    homeRegion: 'Home Region',
+    /** The Region every account lives in for now (US-only launch). */
+    region: 'United States (US)',
+    locked: 'Locked',
+    regionNote: 'Your profile, searches, and files stay in this Region.',
+    start: 'Let’s start',
+  },
+  /** Loading the signed-in person's profile, and failing to. */
+  profile: {
+    loading: 'Opening your search desk',
+    failed: 'Your search desk didn’t open.',
+    failedReason:
+      'Check your connection, then try again. If it still won’t open, sign out and back in.',
+    retry: 'Try again',
   },
   /** The page a signed-in person sees until the app's own screens arrive. */
   signedIn: {

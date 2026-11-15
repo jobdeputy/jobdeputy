@@ -44,6 +44,8 @@ export const SCREENS: Screen[] = [
   // test build's in-memory accounts: src/lib/auth/fake.ts).
   { name: 'sign-up-errors', path: '/', open: 'Get started free', still: true, steps: wrongSignUp },
   { name: 'sign-up-code', path: '/', open: 'Get started free', still: true, steps: toCode },
+  // The guided set-up's welcome (#33), where a new account lands, and the page after it.
+  { name: 'set-up', path: '/', open: 'Get started free', still: true, steps: toSetUp },
   { name: 'signed-in', path: '/', open: 'Get started free', still: true, steps: toSignedIn },
   // Every shared component state (#17); the pending buttons and the loading skeleton appear
   // after the 300 ms delay.
@@ -147,10 +149,16 @@ async function toCode(page: Page) {
   await drawer.getByRole('heading', { name: 'Enter your code.' }).waitFor();
 }
 
-async function toSignedIn(page: Page) {
+async function toSetUp(page: Page) {
   await toCode(page);
   const drawer = page.getByRole('dialog');
   await drawer.getByLabel('Code from your email').fill('123456');
   await drawer.getByRole('button', { name: 'Confirm' }).click();
+  await page.getByRole('heading', { level: 1, name: 'Hi, I’m your deputy.' }).waitFor();
+}
+
+async function toSignedIn(page: Page) {
+  await toSetUp(page);
+  await page.getByRole('button', { name: 'Let’s start' }).click();
   await page.getByRole('heading', { level: 1, name: 'You’re in.' }).waitFor();
 }

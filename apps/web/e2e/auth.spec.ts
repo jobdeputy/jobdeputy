@@ -28,12 +28,16 @@ test('creates an account, confirms it with the code, lands signed in, and signs 
   await drawer.getByLabel('Code from your email').fill('123456');
   await drawer.getByRole('button', { name: 'Confirm' }).click();
 
-  const title = page.getByRole('heading', { level: 1, name: 'You’re in.' });
+  // A new account (no profile yet) starts the guided set-up (#33), at its welcome.
+  const title = page.getByRole('heading', { level: 1, name: 'Hi, I’m your deputy.' });
   await expect(title).toBeVisible();
   await expect(title).toBeFocused();
-  await expect(page.getByText('Signed in as new@example.com.')).toBeVisible();
+  await expect(page.getByText('new@example.com')).toBeVisible();
+  await expect(page.getByText('United States (US)')).toBeVisible();
   await expectNoAccessibilityViolations(page);
   await expectNoHorizontalScroll(page);
+  await page.getByRole('button', { name: 'Let’s start' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'You’re in.' })).toBeFocused();
 
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(
@@ -64,7 +68,7 @@ test('refuses wrong details, then signs in', async ({ page }) => {
   );
   await drawer.getByLabel('Password', { exact: true }).fill('correct horse battery');
   await drawer.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('heading', { level: 1, name: 'You’re in.' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Hi, I’m your deputy.' })).toBeVisible();
 });
 
 test('shows the button working while the account is being created', async ({ page }) => {

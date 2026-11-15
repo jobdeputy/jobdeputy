@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef } from 'react';
+import { BrandMark } from '@/components/brand-mark.tsx';
 import { copy } from '@/copy/index.ts';
 import { AuthButton, type AuthControl } from './auth-drawer.tsx';
 
@@ -19,22 +20,7 @@ export function SiteHeader({ auth }: { auth: AuthControl }) {
         href="/"
         className="group inline-flex min-h-11 min-w-0 items-center gap-2 rounded-[15px] py-0.5 pe-2.5 transition-colors duration-180 hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ring focus-visible:outline-solid"
       >
-        <img
-          src="/jobdeputy-mark.svg"
-          alt=""
-          width="62"
-          height="45"
-          className="block w-[62px] min-w-0 shrink transition-transform duration-180 group-hover:-translate-y-px group-active:scale-98 motion-reduce:transition-none"
-        />
-        <span className="grid min-w-0 gap-[3px] leading-none">
-          <span className="text-[1.1875rem] tracking-[-0.05em]">
-            <span className="font-[620]">{copy.shell.wordmark[0]}</span>
-            <span className="font-[720]">{copy.shell.wordmark[1]}</span>
-          </span>
-          <span className="hidden text-[0.53125rem] font-[680] tracking-[0.075em] text-muted-foreground uppercase md:block">
-            {copy.shell.tagline}
-          </span>
-        </span>
+        <BrandMark />
       </a>
       <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end-safe gap-2 md:gap-3.5">
         <AuthButton control={auth} mode="sign-in" variant="outline">
