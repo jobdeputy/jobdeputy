@@ -360,7 +360,12 @@ describe('amplifyAuth', () => {
       Object.assign(new Error('Refresh Token has expired'), { name: 'NotAuthorizedException' }),
     );
     await expect(auth.accessToken()).resolves.toBeNull();
-    // So does any other refusal from Cognito…
+    // Recognised by prefix, as Amplify does.
+    amplify.fetchAuthSession.mockRejectedValue(
+      Object.assign(new Error('reset'), { name: 'PasswordResetRequiredExceptionV2' }),
+    );
+    await expect(auth.accessToken()).resolves.toBeNull();
+    // So does any other session-ending refusal from Cognito…
     amplify.fetchAuthSession.mockRejectedValue(
       Object.assign(new Error('User does not exist.'), { name: 'UserNotFoundException' }),
     );

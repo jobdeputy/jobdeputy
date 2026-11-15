@@ -95,6 +95,8 @@ export function createApiClient(deps: {
       if (!apiUrl) throw new ApiError('not-set-up');
       const token = await dependency(deps.accessToken);
       if (!token) throw new ApiError('signed-out');
+      // Known to be offline before anything is sent: nothing leaves, so nothing can be doubled.
+      if (globalThis.navigator?.onLine === false) throw new ApiError('offline');
       let response: Response;
       try {
         response = await fetch(`${apiUrl}${path}`, {
@@ -107,11 +109,9 @@ export function createApiClient(deps: {
           ...(method === 'GET' ? { signal: AbortSignal.timeout(READ_LIMIT_MS) } : {}),
         });
       } catch (error) {
-        // No answer at all. A read can be asked again; a change may still have reached the API
-        // (the connection can drop after it was sent), so it must not be sent twice blindly,
-        // unless the browser knows it was offline all along.
-        const unsent = method === 'GET' || globalThis.navigator?.onLine === false;
-        throw new ApiError(unsent ? 'offline' : 'unsure', { cause: error });
+        // No answer at all. A read can be asked again; a change was sent and may have reached
+        // the API before the connection dropped, so it must not be sent twice blindly.
+        throw new ApiError(method === 'GET' ? 'offline' : 'unsure', { cause: error });
       }
       let text: string;
       try {

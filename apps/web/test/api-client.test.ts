@@ -75,9 +75,17 @@ describe('the API client', () => {
     expect((await failure(client().request('GET', '/me'))).kind).toBe('offline');
     // The change may have reached the API before the connection dropped.
     expect((await failure(client().request('POST', '/me/crawls', {}))).kind).toBe('unsure');
-    // Unless the browser knows it was offline all along.
-    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    // Even if the browser counts itself offline by the time the answer fails to come.
+    const fetch = vi.fn(async () => {
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+      throw new TypeError('Failed to fetch');
+    });
+    vi.stubGlobal('fetch', fetch);
+    expect((await failure(client().request('POST', '/me/crawls', {}))).kind).toBe('unsure');
+    // Known offline before sending: nothing leaves.
+    fetch.mockClear();
     expect((await failure(client().request('POST', '/me/crawls', {}))).kind).toBe('offline');
+    expect(fetch).not.toHaveBeenCalled();
     vi.restoreAllMocks();
   });
 

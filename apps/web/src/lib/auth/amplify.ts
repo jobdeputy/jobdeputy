@@ -49,17 +49,17 @@ function configure(): Promise<Amplified> {
 }
 
 /**
- * Cognito's refusals that end a session: Amplify clears the stored tokens for exactly these
- * (its isAuthenticationError), so nobody is signed in any more.
+ * Cognito's refusals that end a session: Amplify clears the stored tokens for these (its
+ * isAuthenticationError, which matches names by prefix, as here), so nobody is signed in any more.
  */
-const SESSION_ENDED = new Set([
+const SESSION_ENDED = [
   'NotAuthorizedException',
   'TokenRevokedException',
   'UserNotFoundException',
   'PasswordResetRequiredException',
   'UserNotConfirmedException',
   'RefreshTokenReuseException',
-]);
+];
 
 /** Cognito's error names, in the forms' terms. */
 const KINDS: Record<string, AuthErrorKind> = {
@@ -139,7 +139,7 @@ export const amplifyAuth: Auth = {
       return session.tokens?.accessToken.toString() ?? null;
     } catch (error) {
       const name = (error as { name?: string } | null)?.name ?? '';
-      if (SESSION_ENDED.has(name) || !hasStoredSession()) return null;
+      if (SESSION_ENDED.some((ended) => name.startsWith(ended)) || !hasStoredSession()) return null;
       throw error instanceof AuthError ? error : new AuthError('offline', { cause: error });
     }
   },

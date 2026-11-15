@@ -8,8 +8,9 @@ export type Auth = {
   currentUser(): Promise<string | null>;
   /**
    * The signed-in person's access token for the API (refreshed when it has run out), or null when
-   * nobody is signed in or the session can no longer be refreshed. Fails `offline` when the
-   * refresh could not reach Cognito.
+   * nobody is signed in or Cognito has ended the session. Fails `offline` when the refresh may
+   * work on another try (no network, an answer cut off, a busy or failing Cognito, no answer in
+   * time), and `not-set-up` where sign-in is not configured.
    */
   accessToken(): Promise<string | null>;
   /** Creates the account; a 6-digit code goes to the email next. */
