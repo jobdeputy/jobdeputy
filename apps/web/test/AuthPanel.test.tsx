@@ -277,13 +277,20 @@ describe('AuthPanel', () => {
     type('Email', 'a@example.com');
     submit('Send code');
     await screen.findByRole('heading', { name: 'Set a new password.' });
-    await expectAlert(
+    // A note, not an error: the step went on.
+    expect(screen.getByRole('status').textContent).toBe(
       'JobDeputy didn’t answer in time. A code may still arrive; if not, try again.',
     );
+    expect(screen.getByRole('alert').textContent).toBe('');
     expect(
-      screen.getByText(
-        'If a code arrives at a@example.com, enter it here. If not, go back and ask again.',
-      ),
+      screen.getByText('If a code arrives at a@example.com, enter it here, or send a new one.'),
     ).toBeTruthy();
+    // And a new one can be asked for right there.
+    vi.mocked(auth.resetPassword).mockResolvedValue();
+    fireEvent.click(screen.getByRole('button', { name: 'Send a new code' }));
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toBe('A new code is on its way.'),
+    );
+    expect(auth.resetPassword).toHaveBeenLastCalledWith('a@example.com');
   });
 });

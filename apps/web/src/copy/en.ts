@@ -148,7 +148,7 @@ export const en = {
       title: 'Set a new password.',
       subtitle: 'Enter the code we sent to {email}, if an account uses it.',
       /** When the code request got no answer in time: it may still come. */
-      subtitleMaybe: 'If a code arrives at {email}, enter it here. If not, go back and ask again.',
+      subtitleMaybe: 'If a code arrives at {email}, enter it here, or send a new one.',
       submit: 'Save password',
       pending: 'Saving password…',
       done: 'Your new password is ready. Sign in with it.',

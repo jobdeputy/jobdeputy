@@ -88,7 +88,7 @@ async function call<T>(
   }
 }
 
-/** How long a limited step may take before it counts as a connection problem. */
+/** How long a limited step may take: the set-up then fails as `offline`, a call as `no-answer`. */
 export const CALL_LIMIT_MS = 20_000;
 
 /** `work`'s answer, or a failure of `kind` after the limit (the work runs on, unheeded). */

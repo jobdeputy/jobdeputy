@@ -143,8 +143,9 @@ export function AuthPanel({
         );
         go('reset-confirm', { email });
         if (late) {
-          // No answer in time, but the code may still come: on to where it goes, saying so.
-          setRefusal(text.errors['no-answer']);
+          // No answer in time, but the code may still come: on to where it goes, with a note
+          // (not an error: the step went on) and a subtitle that says what to do.
+          setNotice(text.errors['no-answer']);
           setNoFreshCode(true);
         }
       } else {
@@ -173,7 +174,8 @@ export function AuthPanel({
     setRefusal(null);
     setNotice(null);
     try {
-      await auth.resendSignUpCode(email);
+      // The code step after sign-up, or the one for a new password.
+      await (step === 'confirm' ? auth.resendSignUpCode(email) : auth.resetPassword(email));
       setNoFreshCode(false);
       setNotice(text.confirm.resent);
     } catch (error) {
@@ -307,7 +309,7 @@ export function AuthPanel({
               {text.signUp.switch}
             </LinkButton>
           )}
-          {step === 'confirm' && (
+          {(step === 'confirm' || step === 'reset-confirm') && (
             <LinkButton off={busy} onClick={resend}>
               {text.confirm.resend}
             </LinkButton>
