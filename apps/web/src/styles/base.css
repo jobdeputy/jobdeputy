@@ -21,4 +21,15 @@
        the page sideways. */
     @apply bg-background font-text text-foreground antialiased wrap-anywhere;
   }
+
+  /* While a drawer or dialog is open, the page behind it does not scroll, and does not shift where
+     its scrollbar was. Radix's own <style> for this is blocked by the site's CSP, so lib/scroll-lock.ts
+     measures the scrollbar and marks the lock (data-scroll-gap) for this rule. */
+  body[data-scroll-locked][data-scroll-gap] {
+    overflow: hidden !important;
+    overscroll-behavior: contain;
+    /* As Radix's own: the body holds its absolutely placed children, and keeps the gap. */
+    position: relative !important;
+    margin-right: var(--scroll-gap) !important;
+  }
 }
