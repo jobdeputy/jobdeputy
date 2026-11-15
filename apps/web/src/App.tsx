@@ -12,6 +12,7 @@ import { copy } from '@/copy/index.ts';
 import { useProfile } from '@/lib/api/profile.ts';
 import { useAuth } from '@/lib/auth/index.ts';
 import { useFinishBoot } from '@/lib/boot-loader.ts';
+import { useDelayedPending } from '@/lib/use-delayed-pending.ts';
 
 /**
  * The app: the public landing page (the story of what the deputy does, and the way in), or, for a
@@ -50,23 +51,28 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
     queryClient.clear();
     onSignedOut();
   };
+  // The same hold QueryRegion gives its skeleton (#17), so the header's step bar comes with the
+  // set-up, not while the region still shows it loading.
+  const loading = profile.isLoading || (profile.isPending && profile.isPaused);
+  const holding = useDelayedPending(loading) || loading;
   const settingUp = profile.data === null && !started;
   return (
     <SignedInLayout
-      aside={settingUp ? <StepProgress current={null} /> : undefined}
+      aside={settingUp && !holding ? <StepProgress current={null} /> : undefined}
       onSignedOut={signedOut}
     >
       {/* The shared loading states (#17): nothing for 300 ms, then a skeleton read out as
-          "Opening your search desk", "Still working…" after 8 s, waiting while offline. */}
+          "Opening your search desk", "Still working…" after 8 s, "Waiting for a connection…"
+          while offline. The region holds the page's width and gutters. */}
       <QueryRegion
         query={profile}
         skeleton={{ kind: 'block', rows: 4 }}
         label={copy.profile.loading}
         error={<ProfileFailed onRetry={() => profile.refetch()} />}
-        className="mx-auto w-full max-w-[1120px] px-[17px] py-8 sm:px-[clamp(21px,4vw,55px)]"
+        className="mx-auto w-full max-w-[1120px] px-[17px] py-8 sm:px-[clamp(21px,4vw,55px)] md:py-14"
       >
-        {(data) =>
-          data === null && !started ? (
+        {() =>
+          settingUp ? (
             <SetUp email={email} onStart={() => setStarted(true)} />
           ) : (
             <SignedIn email={email} />
@@ -90,7 +96,7 @@ function ProfileFailed({ onRetry }: { onRetry: () => void }) {
   return (
     <section
       aria-labelledby="profile-failed-title"
-      className="grid max-w-[480px] justify-items-start gap-3 py-8"
+      className="grid max-w-[480px] justify-items-start gap-3"
     >
       <h1
         id="profile-failed-title"
@@ -100,7 +106,9 @@ function ProfileFailed({ onRetry }: { onRetry: () => void }) {
       >
         {copy.profile.failed}
       </h1>
-      <p className="m-0 text-[0.9375rem] text-muted-foreground">{copy.profile.failedReason}</p>
+      <p role="alert" className="m-0 text-[0.9375rem] text-muted-foreground">
+        {copy.profile.failedReason}
+      </p>
       <Button onClick={onRetry}>{copy.profile.retry}</Button>
     </section>
   );

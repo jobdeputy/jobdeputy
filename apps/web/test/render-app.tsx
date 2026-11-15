@@ -15,6 +15,7 @@ export async function renderApp(
   auth: Auth = createFakeAuth(),
   options: Parameters<typeof render>[1] = {},
   api: ApiClient = createFakeApi({ delay: 0 }),
+  { waitForPage = true }: { waitForPage?: boolean } = {},
 ) {
   const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = render(
@@ -27,6 +28,6 @@ export async function renderApp(
     </QueryClientProvider>,
     options,
   );
-  await screen.findByRole('heading', { level: 1 });
+  if (waitForPage) await screen.findByRole('heading', { level: 1 });
   return Object.assign(view, { queries });
 }

@@ -27,7 +27,7 @@ export function SetUp({
     title.current?.focus();
   }, []);
   return (
-    <div className="mx-auto grid w-full max-w-[1120px] content-start gap-8 px-[17px] py-8 sm:px-[clamp(21px,4vw,55px)] md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] md:items-start md:py-14">
+    <div className="grid content-start gap-8 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] md:items-start">
       {/* Phones: a small deputy beside what he says, so the step stays near the top. From md
             up: the deputy large, centred over his words, beside the step. */}
       <div className="flex items-center gap-4 md:sticky md:top-8 md:grid md:justify-items-center md:gap-3">

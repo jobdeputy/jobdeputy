@@ -1,12 +1,8 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { App } from '../src/App.tsx';
 import { ApiError } from '../src/lib/api/client.ts';
 import { createFakeApi } from '../src/lib/api/fake.ts';
-import { ApiContext } from '../src/lib/api/index.ts';
 import { createFakeAuth } from '../src/lib/auth/fake.ts';
-import { AuthContext } from '../src/lib/auth/index.ts';
 import { renderApp } from './render-app.tsx';
 
 afterEach(cleanup);
@@ -86,17 +82,7 @@ describe('the signed-in app', () => {
   it('keeps Sign out within reach while the profile is still loading', async () => {
     const api = createFakeApi({ delay: 0 });
     vi.spyOn(api, 'request').mockReturnValue(new Promise(() => {}));
-    const auth = await signedIn();
-    const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
-      <QueryClientProvider client={queries}>
-        <AuthContext.Provider value={auth}>
-          <ApiContext.Provider value={api}>
-            <App />
-          </ApiContext.Provider>
-        </AuthContext.Provider>
-      </QueryClientProvider>,
-    );
+    await renderApp(await signedIn(), {}, api, { waitForPage: false });
     expect(await screen.findByRole('button', { name: 'Sign out' })).toBeTruthy();
     // After the shared 300 ms, the wait is read out.
     await waitFor(() =>

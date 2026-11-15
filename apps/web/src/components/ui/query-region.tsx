@@ -24,6 +24,8 @@ export type QueryState<T> = Pick<
  * - **Refreshing** (data on screen, a newer copy loading): the data stays, readable and not busy,
  *   and after 300 ms a quiet "Updating…" sits at its top right, letting clicks through. Nothing is
  *   read out: a refetch on every window focus would be noise.
+ * - **Waiting offline** (a first load TanStack paused until the network returns): after 300 ms
+ *   "Waiting for a connection…" sits on the skeleton and is read out with the label.
  * - **Failed with no data:** `error` shows (the error component's job, not this one's).
  */
 export function QueryRegion<T>({
@@ -51,6 +53,8 @@ export function QueryRegion<T>({
   const longLoad = useLongWait(loading && !query.isPaused) && skeletonShown;
   // The skeleton holds its 500 ms even when the data comes sooner, so it never flashes.
   const holding = loading || skeletonShown;
+  // A first load paused offline waits for the network: say so, on screen and read out.
+  const offline = skeletonShown && query.isPaused;
   // "Updating…" only ever sits on data: never over a skeleton, an error, or nothing.
   const updatingVisible = updatingShown && !holding && query.data !== undefined;
 
@@ -72,7 +76,13 @@ export function QueryRegion<T>({
       {/* Mounted empty with the region, so the label is read when it arrives; outside the busy
           content, whose updates screen readers may hold back until it is done. */}
       <p role="status" className="sr-only">
-        {longLoad ? fill(copy.loading.stillLoading, { label }) : skeletonShown ? label : ''}
+        {offline
+          ? fill(copy.loading.offlineLoading, { label })
+          : longLoad
+            ? fill(copy.loading.stillLoading, { label })
+            : skeletonShown
+              ? label
+              : ''}
       </p>
       {updatingVisible && (
         <p
@@ -85,12 +95,12 @@ export function QueryRegion<T>({
       <div data-slot="query-region-content" aria-busy={holding || undefined}>
         {body}
       </div>
-      {longLoad && (
+      {(longLoad || offline) && (
         <p
           aria-hidden="true"
           className="pointer-events-none absolute top-1/2 left-1/2 m-0 w-max max-w-[calc(100%-1rem)] -translate-1/2 rounded-[13px] bg-surface-strong px-3 py-1 text-center text-sm text-muted-foreground shadow-panel"
         >
-          {copy.loading.stillWorking}
+          {offline ? copy.loading.offline : copy.loading.stillWorking}
         </p>
       )}
     </div>

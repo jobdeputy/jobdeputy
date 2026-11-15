@@ -87,6 +87,10 @@ export const en = {
     stillWorking: 'Still working…',
     /** Read out when a region's first load passes 8 s: "Loading your matches. Still working…". */
     stillLoading: '{label}. Still working…',
+    /** On a first load paused while the browser is offline. */
+    offline: 'Waiting for a connection…',
+    /** Read out then: "Opening your search desk. Waiting for a connection…". */
+    offlineLoading: '{label}. Waiting for a connection…',
     /** Added to a long background job (a search, a tailoring) once it passes 8 s. */
     background: 'This keeps going in the background. You can leave this page.',
     /** Read out as a progress bar passes each quarter: "Uploading résumé, 50%". */

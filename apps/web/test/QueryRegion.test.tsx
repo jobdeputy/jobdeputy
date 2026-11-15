@@ -149,12 +149,14 @@ describe('QueryRegion', () => {
     expect(region().textContent).toBe('');
   });
 
-  it('treats a first load paused offline as loading', () => {
+  it('treats a first load paused offline as loading, waiting for a connection', () => {
     render(<Region query={{ ...loading, isLoading: false, isFetching: false, isPaused: true }} />);
     expect(content().getAttribute('aria-busy')).toBe('true');
     act(() => vi.advanceTimersByTime(300));
     expect(skeleton()?.className).not.toContain('invisible');
-    expect(status()).toBe('Loading your matches');
+    // Said on screen and read out: it waits for the network, not working.
+    expect(status()).toBe('Loading your matches. Waiting for a connection…');
+    expect(screen.getByText('Waiting for a connection…')).toBeTruthy();
   });
 
   it('keeps its data when a refresh is paused offline', () => {
@@ -196,7 +198,7 @@ describe('QueryRegion', () => {
   it('does not claim to be working while a first load waits offline', () => {
     render(<Region query={{ ...loading, isLoading: false, isFetching: false, isPaused: true }} />);
     act(() => vi.advanceTimersByTime(20_000));
-    expect(status()).toBe('Loading your matches');
+    expect(status()).toBe('Loading your matches. Waiting for a connection…');
     expect(screen.queryByText('Still working…')).toBeNull();
   });
 

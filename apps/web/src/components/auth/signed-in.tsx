@@ -13,7 +13,7 @@ export function SignedIn({ email }: { email: string }) {
   }, []);
   const { signedIn: text } = copy;
   return (
-    <div className="grid place-items-center p-[21px]">
+    <div className="grid place-items-center">
       <section aria-labelledby="signed-in-title" className="grid max-w-[480px] gap-3">
         <p className="m-0 flex items-center gap-2 text-xs font-[750] tracking-[0.12em] uppercase before:block before:h-[3px] before:w-[13px] before:rounded-full before:bg-green">
           {text.kicker}
