@@ -223,8 +223,9 @@ export const en = {
       tooLong: 'Use at most {max} characters.',
       saveFailed: 'That didn’t save. Check your connection, then try again.',
       tryLater: 'That didn’t save. Try again in a moment.',
-      /** The save failed, and nothing this step shows changed elsewhere. */
-      tryAgain: 'That didn’t save. Press Continue to try again.',
+      /** Refused as out of date: something this step doesn't show was saved meanwhile. */
+      savedMeanwhile:
+        'Something else in your profile was saved meanwhile. Press Continue to save this too.',
       /** A save's answer was lost, and what is saved can't be read either. */
       unknownOutcome: 'We couldn’t tell whether that saved. Check your connection, then try again.',
       tooMany: 'Too many saves for now. Try again in {wait}.',

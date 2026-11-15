@@ -327,7 +327,7 @@ describe('the signed-in app', () => {
     fill('Alexandra', 'Morgan');
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await waitFor(() =>
-      expect(alertText()).toContain('That didn’t save. Press Continue to try again.'),
+      expect(alertText()).toContain('That didn’t save. Check your connection, then try again.'),
     );
     expect((screen.getByLabelText('First name') as HTMLInputElement).value).toBe('Alexandra');
     expect(onSaved).not.toHaveBeenCalled();
@@ -350,6 +350,79 @@ describe('the signed-in app', () => {
     const note = screen.getByText(/^Part of your saved profile no longer fits the rules/);
     // Part of the form's description, so it is there when the form is come back to.
     expect(screen.getByRole('form').getAttribute('aria-describedby')).toContain(note.id);
+  });
+
+  it('says a refused save did not save when what is saved can’t be read either', async () => {
+    const api = createFakeApi({ delay: 0 });
+    await toStepYou(api);
+    fill('Alex', 'Morgan');
+    vi.spyOn(api, 'request').mockImplementation(async (method) => {
+      throw method === 'PUT' ? new ApiError('conflict', { status: 409 }) : new ApiError('offline');
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() =>
+      expect(alertText()).toContain('That didn’t save. Check your connection, then try again.'),
+    );
+  });
+
+  it('locks the fields while saving', async () => {
+    const api = createFakeApi({ delay: 0 });
+    await toStepYou(api);
+    fill('Alex', 'Morgan');
+    vi.spyOn(api, 'request').mockReturnValue(new Promise(() => {}));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() =>
+      expect(screen.getByLabelText('First name').hasAttribute('readonly')).toBe(true),
+    );
+  });
+
+  it('says something else was saved meanwhile when only other fields changed', async () => {
+    const api = createFakeApi({ delay: 0 });
+    await api.request('PUT', '/me/profile', { version: 0, firstName: 'Alex', lastName: 'Morgan' });
+    const saved = await api.request<Profile>('GET', '/me/profile');
+    // Another device saves skills (the names unchanged) before this save is sent.
+    await api.request('PUT', '/me/profile', {
+      ...saveBody(saved, valuesOfSaved()),
+      skills: ['Go'],
+    });
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ApiContext.Provider value={api}>
+          <StepYou profile={saved} onSaved={() => {}} onBack={() => {}} />
+        </ApiContext.Provider>
+      </QueryClientProvider>,
+    );
+    fill('Alexandra', 'Morgan');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() =>
+      expect(alertText()).toContain('Something else in your profile was saved meanwhile.'),
+    );
+    expect((screen.getByLabelText('First name') as HTMLInputElement).value).toBe('Alexandra');
+  });
+
+  it('does not claim a lost save went through when nothing new was saved', async () => {
+    const api = createFakeApi({ delay: 0 });
+    await api.request('PUT', '/me/profile', { version: 0, firstName: 'Alex', lastName: 'Morgan' });
+    const saved = await api.request<Profile>('GET', '/me/profile');
+    const request = api.request.bind(api);
+    // The save never arrives; the saved answers already match what is sent.
+    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      if (method === 'PUT') throw new ApiError('unsure');
+      return request(method, path, body);
+    });
+    const onSaved = vi.fn();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ApiContext.Provider value={api}>
+          <StepYou profile={saved} onSaved={onSaved} onBack={() => {}} />
+        </ApiContext.Provider>
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() =>
+      expect(alertText()).toContain('That didn’t save. Check your connection, then try again.'),
+    );
+    expect(onSaved).not.toHaveBeenCalled();
   });
 
   it('says it cannot tell when the answer and the check are both lost', async () => {

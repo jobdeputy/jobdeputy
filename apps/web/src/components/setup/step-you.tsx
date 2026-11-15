@@ -67,8 +67,12 @@ export function StepYou({
     name,
     value: values[name],
     error: errors[name] ?? null,
-    onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
-      setValues((current) => ({ ...current, [name]: event.target.value })),
+    // Locked while saving, so a reload can't overwrite anything typed meanwhile.
+    readOnly: pending,
+    onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
+      setValues((current) => ({ ...current, [name]: event.target.value }));
+      setNote(null);
+    },
   });
 
   /** Reads the saved profile again; shows it here and returns it (null if it can't be read). */
@@ -85,8 +89,11 @@ export function StepYou({
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (pending) return;
-    setRefusal(null);
-    setNote(null);
+    // Cleared in a render of its own, so the same refusal again is announced again.
+    flushSync(() => {
+      setRefusal(null);
+      setNote(null);
+    });
     const body = saveBody(profile, values);
     const found = check(body);
     // Rendered before focus moves, so the field is read with its reason.
@@ -110,14 +117,14 @@ export function StepYou({
       onSaved();
     } catch (error) {
       if (!here.current) return;
-      await refused(error, values, valuesOf(profile));
+      await refused(error, values, valuesOf(profile), body.version);
     } finally {
       if (here.current) setPending(false);
     }
   }
 
   /** Says why a save was refused, in this step's words, and what to do. */
-  async function refused(error: unknown, sent: Values, before: Values) {
+  async function refused(error: unknown, sent: Values, before: Values, sentVersion: number) {
     const errorsText = copy.setUp.errors;
     const kind = error instanceof ApiError ? error.kind : 'server';
     if (kind === 'invalid' && error instanceof ApiError && error.fieldErrors.length > 0) {
@@ -143,14 +150,15 @@ export function StepYou({
       const fresh = await reload();
       if (!here.current) return;
       if (!fresh) {
-        setRefusal(errorsText.unknownOutcome);
-      } else if (sameAnswers(valuesOf(fresh), sent)) {
+        // A definite refusal saved nothing; a lost answer may have.
+        setRefusal(kind === 'conflict' ? errorsText.saveFailed : errorsText.unknownOutcome);
+      } else if (fresh.version > sentVersion && sameAnswers(valuesOf(fresh), sent)) {
         // These answers are saved (this save went through, or an earlier one of this person's).
         onSaved();
       } else if (sameAnswers(valuesOf(fresh), before)) {
-        // Nothing this step shows changed elsewhere (something else did, or this save simply
-        // failed): keep what was typed; the newer version is loaded, so trying again works.
-        setRefusal(errorsText.tryAgain);
+        // Nothing this step shows changed elsewhere: keep what was typed (the newer version is
+        // loaded, so trying again works). A lost answer was most likely the connection.
+        setRefusal(kind === 'conflict' ? errorsText.savedMeanwhile : errorsText.saveFailed);
       } else {
         // This step's fields changed elsewhere: show them, so nothing is overwritten unseen.
         setValues(valuesOf(fresh));
