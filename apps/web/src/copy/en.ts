@@ -217,9 +217,17 @@ export const en = {
     errors: {
       firstNameMissing: 'Enter your first name.',
       lastNameMissing: 'Enter your last name.',
+      firstNameInvalid: 'Check your first name.',
+      lastNameInvalid: 'Check your last name.',
+      cityInvalid: 'Check the city.',
       tooLong: 'Use at most {max} characters.',
       saveFailed: 'That didn’t save. Check your connection, then try again.',
-      changedElsewhere: 'Your profile changed somewhere else. Check it here, then continue.',
+      tryLater: 'That didn’t save. Try again in a moment.',
+      tooMany: 'Too many saves for now. Try again in {seconds} seconds.',
+      changedElsewhere:
+        'Your profile changed somewhere else. It shows here now: check it, then continue.',
+      cannotSave: 'Your profile couldn’t be saved as it is. Try again, or sign out and back in.',
+      accountClosed: 'This account can’t be changed any more. Sign out to continue.',
       signedOut: 'Your session has ended. Sign in again to continue.',
     },
   },

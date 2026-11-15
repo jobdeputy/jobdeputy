@@ -28,8 +28,8 @@ export function SetUp({
 }: {
   email: string;
   step: SetUpStep;
-  /** What is saved so far (null until the first step saves it). */
-  profile: Profile | null;
+  /** What is saved so far (the API's version-0 defaults before the first step saves). */
+  profile: Profile;
   onNext: () => void;
   onBack: () => void;
 }) {

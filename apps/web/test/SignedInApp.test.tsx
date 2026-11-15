@@ -1,7 +1,9 @@
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { saveBody } from '../src/components/setup/step-you.tsx';
 import { ApiError } from '../src/lib/api/client.ts';
 import { createFakeApi } from '../src/lib/api/fake.ts';
+import type { Profile } from '../src/lib/api/profile.ts';
 import { createFakeAuth } from '../src/lib/auth/fake.ts';
 import { renderApp } from './render-app.tsx';
 
@@ -132,43 +134,93 @@ describe('the signed-in app', () => {
     expect(save.mock.calls.filter(([method]) => method === 'PUT')).toHaveLength(0);
   });
 
-  it('shows the API’s refusals beside their fields, and says when it changed elsewhere', async () => {
+  it('shows the API’s refusals beside their fields, in its own words', async () => {
     const api = createFakeApi({ delay: 0 });
-    await renderApp(await signedIn(), {}, api);
-    fireEvent.click(await screen.findByRole('button', { name: 'Let’s start' }));
-    await screen.findByRole('heading', { level: 1, name: 'First, what should I call you?' });
-    fireEvent.change(screen.getByLabelText('First name'), { target: { value: 'Alex' } });
-    fireEvent.change(screen.getByLabelText('Last name'), { target: { value: 'Morgan' } });
-    const request = api.request.bind(api);
-    const put = vi.spyOn(api, 'request').mockImplementation((method, path, body) =>
-      method === 'PUT'
-        ? Promise.reject(
-            new ApiError('invalid', {
-              status: 400,
-              fieldErrors: [{ path: 'location.city', message: 'Not a city we know.' }],
-            }),
-          )
-        : request(method, path, body),
+    await toStepYou(api);
+    fill('Alex', 'Morgan');
+    refuseSaves(
+      api,
+      new ApiError('invalid', {
+        status: 400,
+        fieldErrors: [{ path: 'location.city', message: 'raw server words' }],
+      }),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(await screen.findByText('Not a city we know.')).toBeTruthy();
-    put.mockImplementation((method, path, body) =>
-      method === 'PUT'
-        ? Promise.reject(new ApiError('conflict', { status: 409 }))
-        : request(method, path, body),
-    );
+    expect(await screen.findByText('Check the city.')).toBeTruthy();
+    expect(screen.queryByText('raw server words')).toBeNull();
+  });
+
+  it('shows what is saved now when the profile changed elsewhere', async () => {
+    const api = createFakeApi({ delay: 0 });
+    await toStepYou(api);
+    // Saved meanwhile in another tab.
+    await api.request('PUT', '/me/profile', { version: 0, firstName: 'Robert', lastName: 'Lee' });
+    fill('Bob', 'Lee');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(alertText()).toContain('Your profile changed somewhere else.'));
+    expect((screen.getByLabelText('First name') as HTMLInputElement).value).toBe('Robert');
+  });
+
+  it('moves on when a save whose answer was lost did go through', async () => {
+    const api = createFakeApi({ delay: 0 });
+    await toStepYou(api);
+    fill('Alex', 'Morgan');
+    const request = api.request.bind(api);
+    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      if (method !== 'PUT') return request(method, path, body);
+      await request(method, path, body);
+      throw new ApiError('unsure');
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'You’re in.' })).toBeTruthy();
+  });
+
+  it('says how long to wait, or that the account can no longer change', async () => {
+    const api = createFakeApi({ delay: 0 });
+    await toStepYou(api);
+    fill('Alex', 'Morgan');
+    refuseSaves(api, new ApiError('too-many', { status: 429, retryAfterSeconds: 30 }));
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await waitFor(() =>
-      expect(
-        screen
-          .getAllByRole('alert')
-          .some(
-            (alert) =>
-              alert.textContent ===
-              'Your profile changed somewhere else. Check it here, then continue.',
-          ),
-      ).toBe(true),
+      expect(alertText()).toContain('Too many saves for now. Try again in 30 seconds.'),
     );
+    refuseSaves(api, new ApiError('forbidden', { status: 410, code: 'account-deleted' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(alertText()).toContain('This account can’t be changed any more.'));
+  });
+
+  it('sends back only what a save may carry, keeping the saved region', async () => {
+    const api = createFakeApi({ delay: 0 });
+    await api.request('PUT', '/me/profile', {
+      version: 0,
+      firstName: 'Alex',
+      lastName: 'Morgan',
+      skills: ['TypeScript'],
+      location: { city: 'Austin', region: 'TX', country: 'US' },
+    });
+    const saved = await api.request<Profile>('GET', '/me/profile');
+    // What the server adds is on the saved profile…
+    expect(saved).toMatchObject({ email: expect.any(String), homeCell: 'iad' });
+    const body = saveBody(saved, { firstName: 'Alexandra', lastName: 'Morgan', city: 'Dallas' });
+    // …but not in what goes back, which keeps the rest (skills, the region).
+    expect(body).not.toHaveProperty('email');
+    expect(body).not.toHaveProperty('createdAt');
+    expect(body).toMatchObject({
+      version: 1,
+      firstName: 'Alexandra',
+      skills: ['TypeScript'],
+      location: { city: 'Dallas', region: 'TX', country: 'US' },
+    });
+    // The API's strict schema refuses the server's own fields sent back, and takes the body.
+    await expect(api.request('PUT', '/me/profile', { ...saved, version: 1 })).rejects.toMatchObject(
+      { kind: 'invalid' },
+    );
+    await expect(api.request('PUT', '/me/profile', body)).resolves.toMatchObject({ version: 2 });
+    // A city cleared is gone; the rest of the place stays.
+    expect(saveBody(saved, { firstName: 'A', lastName: 'M', city: ' ' }).location).toEqual({
+      region: 'TX',
+      country: 'US',
+    });
   });
 
   it('goes back from step 1 to the welcome', async () => {
@@ -181,3 +233,30 @@ describe('the signed-in app', () => {
     ).toBeTruthy();
   });
 });
+
+/** Signs a new account in and opens step 1, You. */
+async function toStepYou(api: ReturnType<typeof createFakeApi>) {
+  await renderApp(await signedIn(), {}, api);
+  fireEvent.click(await screen.findByRole('button', { name: 'Let’s start' }));
+  await screen.findByRole('heading', { level: 1, name: 'First, what should I call you?' });
+}
+
+function fill(first: string, last: string) {
+  fireEvent.change(screen.getByLabelText('First name'), { target: { value: first } });
+  fireEvent.change(screen.getByLabelText('Last name'), { target: { value: last } });
+}
+
+/** Every save refused with `error`; reads still answered. */
+function refuseSaves(api: ReturnType<typeof createFakeApi>, error: ApiError) {
+  const request = api.request.bind(api);
+  vi.spyOn(api, 'request').mockImplementation((method, path, body) =>
+    method === 'PUT' ? Promise.reject(error) : request(method, path, body),
+  );
+}
+
+function alertText(): string {
+  return screen
+    .getAllByRole('alert')
+    .map((alert) => alert.textContent)
+    .join(' ');
+}

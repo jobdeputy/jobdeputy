@@ -1,6 +1,6 @@
 import { profileInput } from '@jobdeputy/shared/profile';
 import { useQueryClient } from '@tanstack/react-query';
-import { type FormEvent, useId, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Field } from '@/components/auth/fields.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { copy, fill } from '@/copy/index.ts';
@@ -11,27 +11,31 @@ import { cn } from '@/lib/utils.ts';
 import { Fact, StepIntro } from './parts.tsx';
 
 type Name = 'firstName' | 'lastName' | 'city';
+type Values = Record<Name, string>;
 type Errors = Partial<Record<Name, string>>;
 
-/** The longest each field may be (the API's limits, packages/shared/src/profile.ts). */
-const LIMITS: Record<Name, number> = { firstName: 100, lastName: 100, city: 100 };
+/** What a save may carry: the API's schema is strict and refuses anything else it is sent. */
+const INPUT_KEYS: readonly string[] = profileInput.keyof().options;
 
-/** The country every profile has for now: the US (the only Region, US-only launch). */
+/** The country a new profile gets: the US (the only Region, US-only launch). */
 const COUNTRY = 'US';
+
+type Location = { city?: string; region?: string; postalCode?: string; country?: string };
 
 /**
  * Set it up, step 1 (#33): who the person is. First and last name (the API needs both) and,
  * optionally, the city they are based in; the country is the United States, as their Region.
- * Checked with the API's own schema before it is sent, then saved (`PUT /me/profile`), so the
- * next step starts from a saved profile. A wrong field says why beside itself and takes focus; a
- * refusal from the API is said above the buttons.
+ * Checked with the API's own schema before it is sent, then saved (`PUT /me/profile`, which
+ * replaces the whole profile: everything else saved goes along unchanged). A wrong field says why
+ * beside itself and takes focus; any other refusal is said above the buttons.
  */
 export function StepYou({
   profile,
   onSaved,
   onBack,
 }: {
-  profile: Profile | null;
+  /** What is saved (the API's version-0 defaults before anything is). */
+  profile: Profile;
   onSaved: () => void;
   onBack: () => void;
 }) {
@@ -39,17 +43,20 @@ export function StepYou({
   const api = useApi();
   const queries = useQueryClient();
   const form = useRef<HTMLFormElement>(null);
-  const location = profile?.location as { city?: string } | undefined;
-  const [values, setValues] = useState<Record<Name, string>>({
-    firstName: typeof profile?.firstName === 'string' ? profile.firstName : '',
-    lastName: typeof profile?.lastName === 'string' ? profile.lastName : '',
-    city: location?.city ?? '',
-  });
+  const [values, setValues] = useState<Values>(() => valuesOf(profile));
   const [errors, setErrors] = useState<Errors>({});
   const [refusal, setRefusal] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const waiting = useDelayedPending(pending);
   const refusalId = useId();
+  // A save that ends after the person has left (signed out, say) must not touch anything.
+  const here = useRef(true);
+  useEffect(
+    () => () => {
+      here.current = false;
+    },
+    [],
+  );
 
   const bind = (name: Name) => ({
     name,
@@ -59,47 +66,77 @@ export function StepYou({
       setValues((current) => ({ ...current, [name]: event.target.value })),
   });
 
+  /** Reads the saved profile again; shows it here and returns it (null if it can't be read). */
+  async function reload(): Promise<Profile | null> {
+    try {
+      const fresh = await api.request<Profile>('GET', '/me/profile');
+      if (here.current) queries.setQueryData(['profile'], fresh);
+      return fresh;
+    } catch {
+      return null;
+    }
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (pending) return;
     setRefusal(null);
-    const city = values.city.trim();
-    // What this step owns, on top of what is saved (a later step's answers stay as they are).
-    const { version = 0, ...saved } = profile ?? {};
-    const body = {
-      ...saved,
-      version,
-      firstName: values.firstName.trim(),
-      lastName: values.lastName.trim(),
-      location: { ...(city ? { city } : {}), country: COUNTRY },
-    };
+    const body = saveBody(profile, values);
     const found = check(body);
-    setErrors(found);
-    const first = (Object.keys(found) as Name[])[0];
+    setErrors(found.fields);
+    const first = (Object.keys(found.fields) as Name[])[0];
     if (first) {
       form.current?.querySelector<HTMLInputElement>(`[name="${first}"]`)?.focus();
+      return;
+    }
+    if (found.other) {
+      setRefusal(copy.setUp.errors.cannotSave);
       return;
     }
     setPending(true);
     try {
       const next = await api.request<Profile>('PUT', '/me/profile', body);
+      if (!here.current) return;
       queries.setQueryData(['profile'], next);
       onSaved();
     } catch (error) {
-      const kind = error instanceof ApiError ? error.kind : 'server';
-      if (error instanceof ApiError && kind === 'invalid' && error.fieldErrors.length > 0) {
-        setErrors(fromApi(error));
-      } else if (kind === 'conflict' || kind === 'unsure') {
-        // Saved meanwhile (here, or elsewhere): read it again, then let the person check it.
-        await queries.invalidateQueries({ queryKey: ['profile'] });
-        setRefusal(copy.setUp.errors.changedElsewhere);
-      } else {
-        setRefusal(
-          kind === 'signed-out' ? copy.setUp.errors.signedOut : copy.setUp.errors.saveFailed,
-        );
-      }
+      if (!here.current) return;
+      await refused(error, body.version);
     } finally {
-      setPending(false);
+      if (here.current) setPending(false);
+    }
+  }
+
+  /** Says why a save was refused, in this step's words, and what to do. */
+  async function refused(error: unknown, sentVersion: number) {
+    const errorsText = copy.setUp.errors;
+    const kind = error instanceof ApiError ? error.kind : 'server';
+    if (kind === 'invalid' && error instanceof ApiError && error.fieldErrors.length > 0) {
+      const fields = fromApi(error);
+      if (Object.keys(fields).length > 0) setErrors(fields);
+      else setRefusal(errorsText.cannotSave);
+    } else if (kind === 'conflict') {
+      // Changed meanwhile: show what is saved now, so nothing is overwritten unseen.
+      const fresh = await reload();
+      if (!here.current) return;
+      if (fresh) setValues(valuesOf(fresh));
+      setRefusal(fresh ? errorsText.changedElsewhere : errorsText.saveFailed);
+    } else if (kind === 'unsure') {
+      // The answer was lost: if the saved version moved on, the save went through.
+      const fresh = await reload();
+      if (!here.current) return;
+      if (fresh && fresh.version > sentVersion) onSaved();
+      else setRefusal(errorsText.saveFailed);
+    } else if (kind === 'too-many' && error instanceof ApiError) {
+      setRefusal(fill(errorsText.tooMany, { seconds: String(error.retryAfterSeconds ?? 5) }));
+    } else if (kind === 'forbidden') {
+      setRefusal(errorsText.accountClosed);
+    } else if (kind === 'signed-out') {
+      setRefusal(errorsText.signedOut);
+    } else if (kind === 'offline') {
+      setRefusal(errorsText.saveFailed);
+    } else {
+      setRefusal(errorsText.tryLater);
     }
   }
 
@@ -150,34 +187,81 @@ export function StepYou({
   );
 }
 
-/** This step's fields, checked with the API's schema, in the person's words. */
-function check(body: unknown): Errors {
-  const result = profileInput.safeParse(body);
-  if (result.success) return {};
-  const errors: Errors = {};
-  for (const issue of result.error.issues) {
-    const name = fieldOf(issue.path.join('.'));
-    if (!name || errors[name]) continue;
-    errors[name] =
-      issue.code === 'too_big'
-        ? fill(copy.setUp.errors.tooLong, { max: String(LIMITS[name]) })
-        : name === 'lastName'
-          ? copy.setUp.errors.lastNameMissing
-          : name === 'firstName'
-            ? copy.setUp.errors.firstNameMissing
-            : issue.message;
-  }
-  return errors;
+/** This step's fields as the saved profile has them. */
+function valuesOf(profile: Profile): Values {
+  const location = profile.location as Location | undefined;
+  return {
+    firstName: typeof profile.firstName === 'string' ? profile.firstName : '',
+    lastName: typeof profile.lastName === 'string' ? profile.lastName : '',
+    city: location?.city ?? '',
+  };
 }
 
-/** The API's refusals, per field, where they are this step's. */
-function fromApi(error: ApiError): Errors {
-  const errors: Errors = {};
-  for (const { path, message } of error.fieldErrors) {
-    const name = fieldOf(path);
-    if (name && !errors[name]) errors[name] = message;
+/**
+ * The whole profile to save: what is saved, limited to what a save may carry (not the fields the
+ * server adds, such as email), with this step's answers on top. The location keeps its saved
+ * region and postal code; only its city is this step's.
+ */
+export function saveBody(profile: Profile, values: Values) {
+  const saved = Object.fromEntries(
+    Object.entries(profile).filter(([key]) => INPUT_KEYS.includes(key) && key !== 'version'),
+  );
+  const { city: _city, ...place } = (profile.location as Location | undefined) ?? {};
+  const city = values.city.trim();
+  return {
+    ...saved,
+    version: profile.version,
+    firstName: values.firstName.trim(),
+    lastName: values.lastName.trim(),
+    location: { ...place, country: place.country ?? COUNTRY, ...(city ? { city } : {}) },
+  };
+}
+
+/**
+ * The body checked with the API's schema: this step's fields in the person's words, and whether
+ * anything else is wrong (a saved field this step does not show).
+ */
+function check(body: unknown): { fields: Errors; other: boolean } {
+  const result = profileInput.safeParse(body);
+  const fields: Errors = {};
+  let other = false;
+  if (result.success) return { fields, other };
+  for (const issue of result.error.issues) {
+    const name = fieldOf(issue.path.join('.'));
+    if (!name) {
+      other = true;
+      continue;
+    }
+    if (fields[name]) continue;
+    fields[name] =
+      issue.code === 'too_big'
+        ? fill(copy.setUp.errors.tooLong, { max: String(issue.maximum) })
+        : issue.code === 'too_small' && name === 'firstName'
+          ? copy.setUp.errors.firstNameMissing
+          : issue.code === 'too_small' && name === 'lastName'
+            ? copy.setUp.errors.lastNameMissing
+            : invalid(name);
   }
-  return errors;
+  return { fields, other };
+}
+
+/** The API's refusals, on this step's fields, in the person's words. */
+function fromApi(error: ApiError): Errors {
+  const fields: Errors = {};
+  for (const { path } of error.fieldErrors) {
+    const name = fieldOf(path);
+    if (name && !fields[name]) fields[name] = invalid(name);
+  }
+  return fields;
+}
+
+function invalid(name: Name): string {
+  const errors = copy.setUp.errors;
+  return name === 'firstName'
+    ? errors.firstNameInvalid
+    : name === 'lastName'
+      ? errors.lastNameInvalid
+      : errors.cityInvalid;
 }
 
 function fieldOf(path: string): Name | undefined {

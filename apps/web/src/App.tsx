@@ -55,8 +55,7 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
   const step =
     setUpStep === 'done'
       ? null
-      : (setUpStep ??
-        (profile.data !== undefined && !hasProfile(profile.data) ? 'welcome' : null));
+      : (setUpStep ?? (profile.data !== undefined && !hasProfile(profile.data) ? 'welcome' : null));
   return (
     <SignedInLayout onSignedOut={signedOut}>
       {/* The shared loading states (#17): nothing for 300 ms, then a skeleton read out as

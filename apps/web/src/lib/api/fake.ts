@@ -1,3 +1,4 @@
+import { profileInput } from '@jobdeputy/shared/profile';
 import { type ApiClient, ApiError } from './client.ts';
 
 /**
@@ -5,7 +6,7 @@ import { type ApiClient, ApiError } from './client.ts';
  * `auth/fake.ts` stands in for Cognito. It answers the routes the screens use so far as the API
  * does (apps/api/src/profile.ts): no profile yet is the defaults at version 0, not a 404; a saved
  * one carries what the server adds (email, homeCell, createdAt, updatedAt); a save with a stale
- * version is a conflict. It keeps each account's data apart (by whoever `user` says is signed in);
+ * version is a conflict, and a save the API's (strict) schema refuses is refused. It keeps each account's data apart (by whoever `user` says is signed in);
  * anything else is not found. It forgets everything on reload.
  */
 export function createFakeApi({
@@ -34,7 +35,18 @@ export function createFakeApi({
         }) as T;
       }
       if (path === '/me/profile' && method === 'PUT') {
-        const { version, ...fields } = body as Record<string, unknown> & { version: number };
+        // The API's own (strict) schema: a field it does not take is refused, as there.
+        const checked = profileInput.safeParse(body);
+        if (!checked.success) {
+          throw new ApiError('invalid', {
+            status: 400,
+            fieldErrors: checked.error.issues.map((issue) => ({
+              path: issue.path.join('.'),
+              message: issue.message,
+            })),
+          });
+        }
+        const { version, ...fields } = checked.data;
         const current = typeof saved?.version === 'number' ? saved.version : 0;
         if (version !== current) throw new ApiError('conflict', { status: 409, code: 'conflict' });
         const now = new Date().toISOString();
