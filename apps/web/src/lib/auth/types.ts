@@ -37,8 +37,6 @@ export type AuthErrorKind =
   | 'offline'
   /** No answer in time to a request that may still go through (a code may still arrive). */
   | 'no-answer'
-  /** Reset: the account never confirmed its email, so no reset code can go to it. */
-  | 'unconfirmed'
   /** Sign-in is not configured where the app runs. */
   | 'not-set-up'
   /** The code confirmed the account, but signing in straight after failed: sign in now. */
