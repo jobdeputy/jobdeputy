@@ -16,7 +16,7 @@ async function signedIn() {
 }
 
 describe('the signed-in app', () => {
-  it('starts a new account (no profile yet) on the guided set-up', async () => {
+  it('starts a new account (no profile yet: version 0) on the guided set-up', async () => {
     await renderApp(await signedIn());
     const title = await screen.findByRole('heading', { level: 1, name: 'Hi, I’m your deputy.' });
     expect(document.activeElement).toBe(title);
@@ -32,7 +32,7 @@ describe('the signed-in app', () => {
 
   it('takes someone with a profile straight to their page', async () => {
     const api = createFakeApi({ delay: 0 });
-    await api.request('PUT', '/me/profile', { name: 'Alex' });
+    await api.request('PUT', '/me/profile', { version: 0, firstName: 'Alex', lastName: 'Morgan' });
     await renderApp(await signedIn(), {}, api);
     expect(await screen.findByRole('heading', { level: 1, name: 'You’re in.' })).toBeTruthy();
   });

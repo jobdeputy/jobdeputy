@@ -9,7 +9,7 @@ import { SignedInLayout } from '@/components/signed-in-layout.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { QueryRegion } from '@/components/ui/query-region.tsx';
 import { copy } from '@/copy/index.ts';
-import { useProfile } from '@/lib/api/profile.ts';
+import { hasProfile, useProfile } from '@/lib/api/profile.ts';
 import { useAuth } from '@/lib/auth/index.ts';
 import { useFinishBoot } from '@/lib/boot-loader.ts';
 
@@ -50,7 +50,7 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
     queryClient.clear();
     onSignedOut();
   };
-  const settingUp = profile.data === null && !started;
+  const settingUp = profile.data !== undefined && !hasProfile(profile.data) && !started;
   return (
     <SignedInLayout onSignedOut={signedOut}>
       {/* The shared loading states (#17): nothing for 300 ms, then a skeleton read out as
