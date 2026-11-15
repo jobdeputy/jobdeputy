@@ -23,7 +23,12 @@ export type ApiErrorKind =
   /** Too many requests for now; `retryAfterSeconds` says how long to wait. */
   | 'too-many'
   /** The API failed. */
-  | 'server';
+  | 'server'
+  /**
+   * A change the API took (it answered with success) whose answer was then lost on the way: it
+   * was most likely saved. Reload to see, rather than send it again (it could be done twice).
+   */
+  | 'unsure';
 
 /** One field the API refused, by its path in the request body (for example `contact.email`). */
 export interface FieldError {
@@ -108,8 +113,14 @@ export function createApiClient(deps: {
       try {
         text = await response.text();
       } catch (error) {
-        // The answer stopped coming (the network, or the read's time limit).
-        throw new ApiError('offline', { status: response.status, cause: error });
+        // The answer stopped coming (the network, or the read's time limit). A refusal is still a
+        // refusal (its status and headers came); a read can be asked again; a change that was
+        // taken must not be sent twice blindly.
+        if (!response.ok) throw failure(response, '');
+        throw new ApiError(method === 'GET' ? 'offline' : 'unsure', {
+          status: response.status,
+          cause: error,
+        });
       }
       if (!response.ok) throw failure(response, text);
       if (!text) return undefined as T;

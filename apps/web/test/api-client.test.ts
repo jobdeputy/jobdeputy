@@ -172,6 +172,30 @@ describe('the API client', () => {
     expect((await failure(client().request('GET', '/me'))).kind).toBe('offline');
   });
 
+  it('keeps what it knows when an answer is cut off', async () => {
+    const cutOff = (status: number, headers: Record<string, string> = {}) =>
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => ({
+          ok: status < 400,
+          status,
+          headers: new Headers(headers),
+          text: async () => {
+            throw new TypeError('network error');
+          },
+        })),
+      );
+    // A change the API took: most likely saved, so not offline (which invites sending it again).
+    cutOff(202);
+    expect((await failure(client().request('POST', '/me/crawls', {}))).kind).toBe('unsure');
+    // A refusal stays what its status says, with its wait.
+    cutOff(401);
+    expect((await failure(client().request('PUT', '/me/profile', {}))).kind).toBe('signed-out');
+    cutOff(429, { 'retry-after': '9' });
+    const throttled = await failure(client().request('GET', '/me'));
+    expect([throttled.kind, throttled.retryAfterSeconds]).toEqual(['too-many', 9]);
+  });
+
   it('says an account being deleted is refused', async () => {
     answer(410, JSON.stringify({ title: 'Gone', code: 'account-deleted' }));
     const error = await failure(client().request('PUT', '/me/profile', {}));

@@ -360,6 +360,11 @@ describe('amplifyAuth', () => {
       Object.assign(new Error('Refresh Token has expired'), { name: 'NotAuthorizedException' }),
     );
     await expect(auth.accessToken()).resolves.toBeNull();
+    // So does any other refusal from Cognito…
+    amplify.fetchAuthSession.mockRejectedValue(
+      Object.assign(new Error('User does not exist.'), { name: 'UserNotFoundException' }),
+    );
+    await expect(auth.accessToken()).resolves.toBeNull();
     // …but a refresh that could not reach Cognito is a connection problem.
     amplify.fetchAuthSession.mockRejectedValue(
       Object.assign(new Error('Network error'), { name: 'NetworkError' }),
