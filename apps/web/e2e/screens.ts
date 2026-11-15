@@ -21,6 +21,11 @@ export interface Screen {
   blockScript?: boolean;
   /** Wait for the boot loader's logo story to end. */
   storyEnd?: boolean;
+  /**
+   * Run the page on its own clock, moved on this many ms after loading and then held, so a timer
+   * (the gallery's 8 s long wait) cannot change the frame on a slow device.
+   */
+  clockAt?: number;
 }
 
 export const SCREENS: Screen[] = [
@@ -41,6 +46,8 @@ export const SCREENS: Screen[] = [
     name: 'gallery',
     path: '/gallery.html',
     ready: '[data-slot="query-region"][data-state="loading"]',
+    // Past the 300 ms delay (the skeleton and pending buttons show), well short of the 8 s wait.
+    clockAt: 1000,
   },
   // The boot loader at the end of its story, held up by an app script that never arrives.
   { name: 'boot-loader', path: '/', ready: '#boot-loader', blockScript: true, storyEnd: true },
@@ -61,7 +68,13 @@ export async function showScreen(page: Page, screen: Screen) {
   if (screen.blockScript) {
     await page.route('**/assets/*.js', (route) => route.abort());
   }
+  if (screen.clockAt !== undefined) {
+    await page.clock.install();
+  }
   await page.goto(screen.path);
+  if (screen.clockAt !== undefined) {
+    await page.clock.runFor(screen.clockAt);
+  }
   if (screen.firstStep) {
     await page
       .getByRole('list', { name: 'How your deputy works' })

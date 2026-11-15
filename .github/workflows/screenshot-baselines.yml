@@ -16,14 +16,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  baselines:
+  # Makes them with no write access: this job installs and runs the app's dependencies, so it
+  # keeps no credentials (persist-credentials: false) and hands the PNGs on as an artifact.
+  make:
     name: Make the baselines
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    permissions:
-      contents: write # repo-wide by GitHub design; the job pushes only its own new branch
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -47,15 +49,39 @@ jobs:
       - name: Install the browsers' system libraries
         if: steps.browsers.outputs.cache-hit == 'true'
         run: pnpm --filter @jobdeputy/web exec playwright install-deps chromium webkit
+      # Only the baselines that are missing or no longer match are written, so an unchanged screen
+      # keeps its PNG byte for byte.
       - name: Make the baselines (desktop, tablet, phone)
         run: >-
           pnpm --filter @jobdeputy/web exec playwright test visual
-          --project=desktop-chrome --project=ipad --project=iphone --update-snapshots=all
+          --project=desktop-chrome --project=ipad --project=iphone --update-snapshots=changed
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: screenshot-baselines
+          path: apps/web/e2e/__screenshots__/
+          if-no-files-found: error
+          retention-days: 7
+
+  # Pushes them: write access, but it never installs or runs dependency code.
+  push:
+    name: Push them to a new branch
+    needs: make
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write # repo-wide by GitHub design; the job pushes only its own new branch
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: screenshot-baselines
+          path: apps/web/e2e/__screenshots__/
       - name: Push them to a new branch
         env:
           FROM: ${{ github.ref_name }}
-          BRANCH: chore/screenshot-baselines-${{ github.run_number }}
+          BRANCH: chore/screenshot-baselines-${{ github.run_number }}-${{ github.run_attempt }}
           REPO: ${{ github.repository }}
+          RUN: ${{ github.run_number }}
         run: |
           if [ -z "$(git status --porcelain -- apps/web/e2e/__screenshots__)" ]; then
             echo "The baselines are unchanged; nothing to push." >> "$GITHUB_STEP_SUMMARY"
@@ -65,9 +91,9 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git switch -c "$BRANCH"
           git add apps/web/e2e/__screenshots__
-          git commit -q -m "Screenshot baselines from $FROM (run ${{ github.run_number }})"
+          git commit -q -m "Screenshot baselines from $FROM (run $RUN)"
           git push -q origin "$BRANCH"
           {
-            echo "New baselines are on \`$BRANCH\`. Look at them, then open a pull request:"
+            echo "New baselines are on \`$BRANCH\`. Look at them, then open a pull request into \`$FROM\`:"
             echo "https://github.com/$REPO/compare/$FROM...$BRANCH?expand=1"
           } >> "$GITHUB_STEP_SUMMARY"
