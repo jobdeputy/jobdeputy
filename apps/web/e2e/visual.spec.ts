@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { SCREENS, showScreen } from './screens.ts';
@@ -12,7 +12,10 @@ import { SCREENS, showScreen } from './screens.ts';
 const COMPARED = ['home', 'sign-in', 'gallery'];
 const DEVICES = ['desktop-chrome', 'ipad', 'iphone'];
 const BASELINES = join(import.meta.dirname, '__screenshots__');
-const made = existsSync(BASELINES) ? readdirSync(BASELINES).filter((f) => f.endsWith('.png')) : [];
+// Every file there, not only PNGs (dot files such as .DS_Store aside).
+const made = existsSync(BASELINES)
+  ? readdirSync(BASELINES).filter((file) => !file.startsWith('.'))
+  : [];
 // Before the workflow's first run there are none, and the comparisons wait for them. Once there
 // are any, a missing one fails (a renamed screen or device must not pass by checking nothing).
 const bootstrapping = made.length === 0;
@@ -32,14 +35,17 @@ for (const screen of SCREENS.filter((s) => COMPARED.includes(s.name))) {
 }
 
 // Every baseline belongs to a compared screen on a compared device: one left behind by a removed
-// screen would be compared with again, unreviewed, if the name came back.
-test('keeps no stray baselines', async ({ browserName }, testInfo) => {
-  test.skip(
-    browserName !== 'chromium' || testInfo.project.name !== 'desktop-chrome',
-    'one listing, one check',
-  );
+// screen would be compared with again, unreviewed, if the name came back. A test run fails on
+// one; an update run (the workflow) removes it, so its new branch drops it.
+test('keeps no stray baselines', async ({ baseURL: _baseURL }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-chrome', 'one listing, one check');
   const expected = COMPARED.flatMap((screen) =>
     DEVICES.map((device) => `${screen}--${device}.png`),
   );
-  expect(made.filter((file) => !expected.includes(file))).toEqual([]);
+  const strays = made.filter((file) => !expected.includes(file));
+  if (testInfo.config.updateSnapshots !== 'none') {
+    for (const file of strays) rmSync(join(BASELINES, file), { recursive: true });
+    return;
+  }
+  expect(strays).toEqual([]);
 });

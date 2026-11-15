@@ -22,8 +22,8 @@ export interface Screen {
   /** Wait for the boot loader's logo story to end. */
   storyEnd?: boolean;
   /**
-   * Run the page on its own clock, moved on this many ms after loading and then held, so a timer
-   * (the gallery's 8 s long wait) cannot change the frame on a slow device.
+   * Run the page on its own clock: once the page has loaded, moved on this many ms and held there,
+   * so a timer (the gallery's 8 s long wait) cannot change the frame on a slow device.
    */
   clockAt?: number;
 }
@@ -73,7 +73,8 @@ export async function showScreen(page: Page, screen: Screen) {
   }
   await page.goto(screen.path);
   if (screen.clockAt !== undefined) {
-    await page.clock.runFor(screen.clockAt);
+    // Moved on from where the page stands, then held there (install leaves it running).
+    await page.clock.pauseAt((await page.evaluate(() => Date.now())) + screen.clockAt);
   }
   if (screen.firstStep) {
     await page
