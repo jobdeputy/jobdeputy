@@ -13,6 +13,7 @@ const amplify = vi.hoisted(() => ({
   confirmResetPassword: vi.fn(),
   resendSignUpCode: vi.fn(),
   getCurrentUser: vi.fn(),
+  fetchAuthSession: vi.fn(),
 }));
 vi.mock('aws-amplify', () => ({ Amplify: { configure: amplify.configure } }));
 vi.mock('aws-amplify/auth', () => amplify);
@@ -343,5 +344,48 @@ describe('amplifyAuth', () => {
     arrive({ ok: true, status: 200, text: async () => JSON.stringify(CONFIG) } as Response);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(amplify.configure).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands over the access token of a stored session, and none without one', async () => {
+    const auth = await load();
+    await expect(auth.accessToken()).resolves.toBeNull();
+    expect(amplify.fetchAuthSession).not.toHaveBeenCalled();
+    localStorage.setItem('CognitoIdentityServiceProvider.client.LastAuthUser', 'abc');
+    amplify.fetchAuthSession.mockResolvedValue({
+      tokens: { accessToken: { toString: () => 'header.payload.signature' } },
+    });
+    await expect(auth.accessToken()).resolves.toBe('header.payload.signature');
+    // A session Cognito refuses to refresh has no token…
+    amplify.fetchAuthSession.mockRejectedValue(
+      Object.assign(new Error('Refresh Token has expired'), { name: 'NotAuthorizedException' }),
+    );
+    await expect(auth.accessToken()).resolves.toBeNull();
+    // Recognised by prefix, as Amplify does.
+    amplify.fetchAuthSession.mockRejectedValue(
+      Object.assign(new Error('reset'), { name: 'PasswordResetRequiredExceptionV2' }),
+    );
+    await expect(auth.accessToken()).resolves.toBeNull();
+    // So does any other session-ending refusal from Cognito…
+    amplify.fetchAuthSession.mockRejectedValue(
+      Object.assign(new Error('User does not exist.'), { name: 'UserNotFoundException' }),
+    );
+    await expect(auth.accessToken()).resolves.toBeNull();
+    // …but a refresh that could not reach Cognito, or found it busy or failing, or lost its
+    // answer, is a connection problem (the session is still stored).
+    for (const name of [
+      'NetworkError',
+      'TooManyRequestsException',
+      'InternalErrorException',
+      'Unknown',
+    ]) {
+      amplify.fetchAuthSession.mockRejectedValue(Object.assign(new Error(name), { name }));
+      await expect(auth.accessToken()).rejects.toMatchObject({ kind: 'offline' });
+    }
+    // Once Amplify has cleared the session, whatever the refusal, nobody is signed in.
+    amplify.fetchAuthSession.mockImplementation(async () => {
+      localStorage.clear();
+      throw Object.assign(new Error('gone'), { name: 'SomethingNew' });
+    });
+    await expect(auth.accessToken()).resolves.toBeNull();
   });
 });

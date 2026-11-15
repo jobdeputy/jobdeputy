@@ -1,3 +1,4 @@
+import { readConfig } from '../config.ts';
 import { type Auth, AuthError, type AuthErrorKind } from './types.ts';
 
 /**
@@ -10,9 +11,6 @@ const amplify = () => Promise.all([import('aws-amplify'), import('aws-amplify/au
 const SESSION_KEYS = 'CognitoIdentityServiceProvider.';
 
 /** Where the deployed app finds its Cognito pool (written by the web stack: #14 slice 2b). */
-const CONFIG_URL = '/config.json';
-
-type Config = { userPoolId: string; userPoolClientId: string };
 
 type Amplified = Awaited<ReturnType<typeof amplify>>[1];
 
@@ -49,6 +47,19 @@ function configure(): Promise<Amplified> {
   });
   return configured;
 }
+
+/**
+ * Cognito's refusals that end a session: Amplify clears the stored tokens for these (its
+ * isAuthenticationError, which matches names by prefix, as here), so nobody is signed in any more.
+ */
+const SESSION_ENDED = [
+  'NotAuthorizedException',
+  'TokenRevokedException',
+  'UserNotFoundException',
+  'PasswordResetRequiredException',
+  'UserNotConfirmedException',
+  'RefreshTokenReuseException',
+];
 
 /** Cognito's error names, in the forms' terms. */
 const KINDS: Record<string, AuthErrorKind> = {
@@ -116,6 +127,20 @@ export const amplifyAuth: Auth = {
       return user.signInDetails?.loginId ?? user.username;
     } catch {
       return null;
+    }
+  },
+  async accessToken() {
+    if (!hasStoredSession()) return null;
+    // Amplify refreshes a token that has run out. The session is gone only when Cognito refuses
+    // it for good (and Amplify clears it); anything else (no network, an answer cut off, a busy
+    // or failing Cognito, no answer in time) is a connection problem, and asking again can work.
+    try {
+      const session = await within(configure().then(({ fetchAuthSession }) => fetchAuthSession()));
+      return session.tokens?.accessToken.toString() ?? null;
+    } catch (error) {
+      const name = (error as { name?: string } | null)?.name ?? '';
+      if (SESSION_ENDED.some((ended) => name.startsWith(ended)) || !hasStoredSession()) return null;
+      throw error instanceof AuthError ? error : new AuthError('offline', { cause: error });
     }
   },
   signUp: (email, password) =>
@@ -187,38 +212,3 @@ function hasStoredSession(): boolean {
   }
   return false;
 }
-
-/**
- * The deployed app's sign-in config, or null where there is none: a 404, or the app's own page,
- * which the site sends for any unknown path (CloudFront, Vite). Anything else that is not the
- * config is a connection problem (`offline`): a server or rate-limit error, or a page from wifi
- * that asks you to sign in to it first.
- */
-async function readConfig(): Promise<Config | null> {
-  const response = await fetch(CONFIG_URL, {
-    cache: 'no-store',
-    signal: AbortSignal.timeout(8000),
-  });
-  if (response.status === 404) return null;
-  if (!response.ok) throw new AuthError('offline');
-  const body = await response.text();
-  const config = parseJson(body) as Partial<Config> | null;
-  if (typeof config?.userPoolId === 'string' && typeof config.userPoolClientId === 'string') {
-    return { userPoolId: config.userPoolId, userPoolClientId: config.userPoolClientId };
-  }
-  // The deploy writes the config whole, so anything else is not ours: the app's own page means
-  // there is none here; another answer came from something on the way.
-  if (body.includes(APP_PAGE_MARK)) return null;
-  throw new AuthError('offline');
-}
-
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-}
-
-/** Only the app's own page (index.html) has the boot loader. */
-const APP_PAGE_MARK = 'id="boot-loader"';
