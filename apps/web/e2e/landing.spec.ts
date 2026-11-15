@@ -128,11 +128,11 @@ test.describe('landing page', () => {
   });
 });
 
-/** The current step's bar: how long it takes to fill, and whether it is filling now. */
+/** The current step's bar: how long it takes to fill (ms), and whether it is filling now. */
 function stepBar(page: Page) {
   return page.locator('[data-bar]').evaluate((bar) => {
-    const style = getComputedStyle(bar);
-    return [style.animationDuration, style.animationPlayState];
+    const fill = bar.getAnimations()[0];
+    return [fill?.effect?.getTiming().duration, fill?.playState];
   });
 }
 
@@ -222,9 +222,7 @@ test.describe('the story, step by step', () => {
     // The middle step: its bar shows full, with nothing filling it, so the story stays.
     await stripSteps(page).nth(1).click();
     await expect(stripSteps(page).nth(1)).toHaveAttribute('data-progress', 'full');
-    expect(
-      await page.locator('[data-bar]').evaluate((bar) => getComputedStyle(bar).animationName),
-    ).toBe('none');
+    expect((await stepBar(page))[1]).toBe('paused');
     await stripSteps(page).nth(2).click();
     // The last step: no step after it, and its state passes axe too.
     await expect(page.getByRole('button', { name: 'Next step' })).toHaveAttribute(
@@ -243,7 +241,7 @@ test.describe('the story, step by step', () => {
     await expect.poll(() => breathing(page)).toBe(false);
     // …the step's bar stops part-way (it fills over the step's 4.1 s)…
     await expect(stripSteps(page).nth(0)).toHaveAttribute('data-progress', 'held');
-    expect(await stepBar(page)).toEqual(['4.1s', 'paused']);
+    expect(await stepBar(page)).toEqual([4100, 'paused']);
     const stopped = await barTime(page);
     expect(stopped).toBeGreaterThan(0);
     // …and, paused by its button, the step's flourish holds where it is.

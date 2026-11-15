@@ -117,10 +117,16 @@ export function StoryStrip({
   );
 }
 
+/** The bar's fill, from empty to full; it is linear, so how full it is says how far the step is. */
+const FILL: Keyframe[] = [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }];
+
 /**
  * The current step's bar: it fills over the step's time while the story plays, stops part-way on
- * Pause (Play goes on from there), waits empty while nobody can watch, and shows full otherwise.
- * When it has filled while playing it tells the story, which moves on: it is the story's clock.
+ * Pause (Play goes on from there), waits empty while nobody can watch, and shows full otherwise
+ * (a chosen step, the story's end, reduced motion). When it has filled while playing it tells the
+ * story, which moves on: it is the story's clock. Driven through the Web Animations API (play,
+ * pause, a finish event), which every engine keeps the same; CSS play states did not (Linux WebKit
+ * restarted a resumed bar).
  */
 function StepBar({
   progress,
@@ -131,36 +137,62 @@ function StepBar({
   duration: number;
   onFilled: () => void;
 }) {
+  const bar = useRef<HTMLSpanElement>(null);
+  const fill = useRef<Animation | null>(null);
+  // The latest state, for the finish event (set up once per bar).
+  const state = useRef({ progress, onFilled });
+  state.current = { progress, onFilled };
   // Filled just as the story was paused (the end landed a frame after Pause): it cannot fill
   // again, so Play moves the story on at once instead.
   const filledWhileHeld = useRef(false);
+
   useEffect(() => {
-    if (progress === 'held' || !filledWhileHeld.current) return;
-    // Only straight from that hold to Play; a hold that ended any other way forgets it.
-    filledWhileHeld.current = false;
-    if (progress === 'filling') onFilled();
-  }, [progress, onFilled]);
+    const element = bar.current;
+    if (!element?.animate) return;
+    const animation = element.animate(FILL, { duration, easing: 'linear', fill: 'both' });
+    // Cancelling rejects `finished`; that is expected here, not an error.
+    animation.finished?.catch(() => {});
+    animation.pause();
+    animation.onfinish = () => {
+      if (state.current.progress === 'filling') state.current.onFilled();
+      else if (state.current.progress === 'held') filledWhileHeld.current = true;
+    };
+    fill.current = animation;
+    return () => {
+      animation.onfinish = null;
+      animation.cancel();
+      fill.current = null;
+    };
+  }, [duration]);
+
+  useEffect(() => {
+    const animation = fill.current;
+    if (progress !== 'held' && filledWhileHeld.current) {
+      // Only straight from that hold to Play; a hold that ended any other way forgets it.
+      filledWhileHeld.current = false;
+      if (progress === 'filling') {
+        onFilled();
+        return;
+      }
+    }
+    if (!animation) return;
+    if (progress === 'filling') {
+      animation.play();
+    } else if (progress === 'held') {
+      animation.pause();
+    } else {
+      // Full or waiting: shown still at that end.
+      animation.pause();
+      animation.currentTime = progress === 'full' ? duration : 0;
+    }
+  }, [progress, duration, onFilled]);
+
   return (
     <span
+      ref={bar}
       aria-hidden="true"
       data-bar={progress}
-      // Inline, so only the play state changes between filling and held: the animation itself (its
-      // class) stays put. Swapping classes re-read the animation, and WebKit restarted it.
-      style={{
-        animationDuration: `${duration}ms`,
-        animationPlayState: progress === 'held' ? 'paused' : 'running',
-      }}
-      onAnimationEnd={(event) => {
-        if (event.target !== event.currentTarget) return;
-        if (progress === 'filling') onFilled();
-        else if (progress === 'held') filledWhileHeld.current = true;
-      }}
-      className={cn(
-        'absolute inset-x-2 bottom-1 h-[5px] origin-left rounded-full bg-green-ink',
-        (progress === 'filling' || progress === 'held') &&
-          'animate-strip-fill motion-reduce:animate-none',
-        progress === 'waiting' && 'scale-x-0',
-      )}
+      className="absolute inset-x-2 bottom-1 h-[5px] origin-left rounded-full bg-green-ink"
     />
   );
 }
