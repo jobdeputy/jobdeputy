@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
-import { expectNoAccessibilityViolations, expectNoHorizontalScroll } from './checks.ts';
+import { expectNoAccessibilityViolations, expectNoHorizontalScroll, openHome } from './checks.ts';
 
 /**
  * The sign-in and sign-up forms (#14 slice 2) in real browsers. The test build swaps Cognito for
@@ -9,7 +9,7 @@ import { expectNoAccessibilityViolations, expectNoHorizontalScroll } from './che
 
 /** Opens the drawer from the first visible button with this name. */
 async function openDrawer(page: Page, name: string) {
-  await page.goto('/');
+  await openHome(page);
   await page.getByRole('button', { name, exact: true }).filter({ visible: true }).first().click();
   await expect(page.getByRole('dialog')).toBeVisible();
 }
