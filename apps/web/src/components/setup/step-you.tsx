@@ -1,11 +1,11 @@
 import { profileInput } from '@jobdeputy/shared/profile';
 import { useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { Field } from '@/components/auth/fields.tsx';
 import { Button } from '@/components/ui/button.tsx';
-import { copy, fill } from '@/copy/index.ts';
-import { DEFAULT_RETRY_AFTER_SECONDS } from '@/lib/api/client.ts';
-import { ApiError, useApi } from '@/lib/api/index.ts';
+import { copy, fill, plural } from '@/copy/index.ts';
+import { ApiError, DEFAULT_RETRY_AFTER_SECONDS, useApi } from '@/lib/api/index.ts';
 import type { Profile } from '@/lib/api/profile.ts';
 import { useDelayedPending } from '@/lib/use-delayed-pending.ts';
 import { cn } from '@/lib/utils.ts';
@@ -47,6 +47,8 @@ export function StepYou({
   const [values, setValues] = useState<Values>(() => valuesOf(profile));
   const [errors, setErrors] = useState<Errors>({});
   const [refusal, setRefusal] = useState<string | null>(null);
+  // Said politely (not an alert) beside a refused field that has taken focus.
+  const [note, setNote] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const waiting = useDelayedPending(pending);
   const refusalId = useId();
@@ -83,9 +85,11 @@ export function StepYou({
     event.preventDefault();
     if (pending) return;
     setRefusal(null);
+    setNote(null);
     const body = saveBody(profile, values);
     const found = check(body);
-    setErrors(found.fields);
+    // Rendered before focus moves, so the field is read with its reason.
+    flushSync(() => setErrors(found.fields));
     const first = (Object.keys(found.fields) as Name[])[0];
     if (first) {
       form.current?.querySelector<HTMLInputElement>(`[name="${first}"]`)?.focus();
@@ -115,12 +119,18 @@ export function StepYou({
     const kind = error instanceof ApiError ? error.kind : 'server';
     if (kind === 'invalid' && error instanceof ApiError && error.fieldErrors.length > 0) {
       const { fields, other } = fromApi(error);
-      setErrors(fields);
-      // Refused on a field it doesn't show too: say so, as well as the fields here.
-      if (other || Object.keys(fields).length === 0) setRefusal(errorsText.cannotSave);
-      // The first refused field takes focus, so its reason is read out.
       const first = (Object.keys(fields) as Name[])[0];
-      if (first) form.current?.querySelector<HTMLInputElement>(`[name="${first}"]`)?.focus();
+      if (first) {
+        // Rendered before focus moves, so the field is read with its reason; a refusal on a
+        // field this step doesn't show is said politely, so it doesn't cut that off.
+        flushSync(() => {
+          setErrors(fields);
+          if (other) setNote(errorsText.cannotSave);
+        });
+        form.current?.querySelector<HTMLInputElement>(`[name="${first}"]`)?.focus();
+      } else {
+        setRefusal(errorsText.cannotSave);
+      }
     } else if (kind === 'conflict' && error instanceof ApiError && error.code === 'try-again') {
       // A write that collided: nothing was saved and nothing changed. Keep what was typed.
       setRefusal(errorsText.tryLater);
@@ -131,11 +141,19 @@ export function StepYou({
       if (fresh) setValues(valuesOf(fresh));
       setRefusal(fresh ? errorsText.changedElsewhere : errorsText.saveFailed);
     } else if (kind === 'unsure') {
-      // The answer was lost: if what is saved now is what was sent, the save went through.
+      // The answer was lost. What is saved now says what happened: these answers (it went
+      // through), other ones (changed elsewhere: show them, so nothing is overwritten unseen), or
+      // nothing new (it did not go through).
       const fresh = await reload();
       if (!here.current) return;
-      if (fresh && fresh.version > sent.version && sameAnswers(valuesOf(fresh), sent)) onSaved();
-      else setRefusal(errorsText.saveFailed);
+      if (!fresh || fresh.version <= sent.version) {
+        setRefusal(errorsText.saveFailed);
+      } else if (sameAnswers(valuesOf(fresh), sent)) {
+        onSaved();
+      } else {
+        setValues(valuesOf(fresh));
+        setRefusal(errorsText.changedElsewhere);
+      }
     } else if (kind === 'too-many' && error instanceof ApiError) {
       setRefusal(
         fill(errorsText.tooMany, {
@@ -177,8 +195,12 @@ export function StepYou({
         <ul className="m-0 grid list-none p-0">
           <Fact label={text.country} value={copy.setUp.region} pill={copy.setUp.locked} />
         </ul>
-        <p role="status" className="sr-only">
-          {pending && waiting ? text.saving : ''}
+        {/* The wait while saving (read only), or a note beside a refused field (shown too). */}
+        <p
+          role="status"
+          className={cn('m-0 text-sm font-[650] text-danger-ink', !note && 'sr-only')}
+        >
+          {pending && waiting ? text.saving : note}
         </p>
         <p
           id={refusalId}
@@ -280,16 +302,9 @@ function sameAnswers(saved: Values, sent: Values): boolean {
 /** A wait in words: "1 second", "30 seconds", "2 minutes". */
 function waitText(seconds: number): string {
   const units = copy.setUp.errors.units;
-  const plural = new Intl.PluralRules('en');
-  if (seconds < 60) {
-    return fill(units.seconds[plural.select(seconds) === 'one' ? 'one' : 'other'], {
-      count: String(seconds),
-    });
-  }
-  const minutes = Math.ceil(seconds / 60);
-  return fill(units.minutes[plural.select(minutes) === 'one' ? 'one' : 'other'], {
-    count: String(minutes),
-  });
+  return seconds < 60
+    ? plural(units.seconds, seconds)
+    : plural(units.minutes, Math.ceil(seconds / 60));
 }
 
 function invalid(name: Name): string {

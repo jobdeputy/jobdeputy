@@ -244,7 +244,7 @@ describe('the signed-in app', () => {
     expect((screen.getByLabelText('First name') as HTMLInputElement).value).toBe('Alex');
   });
 
-  it('does not move on when what is saved after a lost answer is not what was sent', async () => {
+  it('shows what another device saved when a save’s answer was lost', async () => {
     const api = createFakeApi({ delay: 0 });
     await toStepYou(api);
     fill('Alex', 'Morgan');
@@ -256,10 +256,9 @@ describe('the signed-in app', () => {
       throw new ApiError('unsure');
     });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    await waitFor(() => expect(alertText()).toContain('That didn’t save.'));
-    expect(
-      screen.getByRole('heading', { level: 1, name: 'First, what should I call you?' }),
-    ).toBeTruthy();
+    // Changed elsewhere: what is saved now shows, nothing is overwritten unseen.
+    await waitFor(() => expect(alertText()).toContain('Your profile changed somewhere else.'));
+    expect((screen.getByLabelText('First name') as HTMLInputElement).value).toBe('Robert');
   });
 
   it('moves focus to a field the API refused, and says when it refused another', async () => {
@@ -278,8 +277,18 @@ describe('the signed-in app', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(await screen.findByText('Check your last name.')).toBeTruthy();
-    expect(document.activeElement).toBe(screen.getByLabelText('Last name'));
-    expect(alertText()).toContain('Part of your saved profile no longer fits the rules');
+    const lastName = screen.getByLabelText('Last name');
+    expect(document.activeElement).toBe(lastName);
+    // Its reason was there when it took focus (tied to it), and the other refusal is said politely.
+    expect(lastName.getAttribute('aria-invalid')).toBe('true');
+    expect(
+      screen
+        .getAllByRole('status')
+        .some((status) =>
+          status.textContent?.includes('Part of your saved profile no longer fits the rules'),
+        ),
+    ).toBe(true);
+    expect(alertText()).not.toContain('Part of your saved profile');
   });
 
   it('says a wait in words', async () => {
