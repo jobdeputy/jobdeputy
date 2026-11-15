@@ -20,21 +20,24 @@ let configured: Promise<Amplified> | undefined;
 
 /** Loads Amplify, reads the app's config once and sets it up; `not-set-up` where there is none. */
 function configure(): Promise<Amplified> {
-  configured ??= (async () => {
-    // Amplify's code and the config load side by side; the config is read whole within 8 s.
-    const [[{ Amplify }, auth], config] = await Promise.all([amplify(), readConfig()]);
-    if (!config?.userPoolId || !config.userPoolClientId) throw new AuthError('not-set-up');
-    Amplify.configure({
-      Auth: {
-        Cognito: {
-          userPoolId: config.userPoolId,
-          userPoolClientId: config.userPoolClientId,
-          loginWith: { email: true },
+  // Limited inside, so a load given up on is dropped and the next try starts afresh.
+  configured ??= within(
+    (async () => {
+      // Amplify's code and the config load side by side; the config is read whole within 8 s.
+      const [[{ Amplify }, auth], config] = await Promise.all([amplify(), readConfig()]);
+      if (!config?.userPoolId || !config.userPoolClientId) throw new AuthError('not-set-up');
+      Amplify.configure({
+        Auth: {
+          Cognito: {
+            userPoolId: config.userPoolId,
+            userPoolClientId: config.userPoolClientId,
+            loginWith: { email: true },
+          },
         },
-      },
-    });
-    return auth;
-  })().catch((error: unknown) => {
+      });
+      return auth;
+    })(),
+  ).catch((error: unknown) => {
     // Let a later try read the config again (a network blip, say).
     configured = undefined;
     throw error instanceof AuthError ? error : new AuthError('offline', { cause: error });
@@ -61,15 +64,16 @@ const KINDS: Record<string, AuthErrorKind> = {
 /**
  * Runs one Amplify call, configured first, with its failure in our terms. Amplify's requests have
  * no time limit of their own, so loading it and its config gets one; so does the call, with
- * `limited`, where a late answer does no harm (a new code that arrives anyway). A call that changes
- * the account (confirming, signing in, a new password) waits for its real answer: given up on, it
- * could still succeed and leave the form telling the person something untrue.
+ * `limited`, where a late answer does no harm (a code that arrives anyway). A call that changes the
+ * account (creating it, confirming it, signing in or out, a new password) waits for its real
+ * answer: given up on, it could still succeed and leave the form telling the person something
+ * untrue.
  */
 async function call<T>(
   work: (auth: Amplified) => Promise<T>,
   { limited = false } = {},
 ): Promise<T> {
-  const auth = await within(configure());
+  const auth = await configure();
   try {
     return await (limited ? within(work(auth)) : work(auth));
   } catch (error) {
@@ -101,9 +105,9 @@ export const amplifyAuth: Auth = {
     // No session stored: nobody is signed in, and Amplify need not load.
     if (!hasStoredSession()) return null;
     try {
-      // Limited, so a stalled check (a token refresh on bad wifi) cannot hold the page up.
-      const { getCurrentUser } = await within(configure());
-      const user = await within(getCurrentUser());
+      // One limit for the whole check, so a stall (a token refresh on bad wifi) cannot hold the
+      // page up.
+      const user = await within(configure().then(({ getCurrentUser }) => getCurrentUser()));
       return user.signInDetails?.loginId ?? user.username;
     } catch {
       return null;
@@ -154,9 +158,12 @@ export const amplifyAuth: Auth = {
       return 'done';
     }),
   resetPassword: (email) =>
-    call(async ({ resetPassword }) => {
-      await resetPassword({ username: email });
-    }),
+    call(
+      async ({ resetPassword }) => {
+        await resetPassword({ username: email });
+      },
+      { limited: true },
+    ),
   confirmResetPassword: (email, code, newPassword) =>
     call(async ({ confirmResetPassword }) => {
       await confirmResetPassword({ username: email, confirmationCode: code, newPassword });

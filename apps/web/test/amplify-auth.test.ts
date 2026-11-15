@@ -286,4 +286,46 @@ describe('amplifyAuth', () => {
       vi.useRealTimers();
     }
   });
+
+  it('gives up on a reset code that never comes back, as a network problem', async () => {
+    const auth = await load();
+    amplify.signIn.mockResolvedValue({ isSignedIn: true, nextStep: { signInStep: 'DONE' } });
+    await auth.signIn('a@example.com', 'pw');
+    vi.useFakeTimers();
+    try {
+      amplify.resetPassword.mockReturnValue(new Promise(() => {}));
+      const result = expect(auth.resetPassword('a@example.com')).rejects.toMatchObject({
+        kind: 'offline',
+      });
+      await vi.advanceTimersByTimeAsync(CALL_LIMIT_MS);
+      await result;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('starts the set-up afresh after one that stalled was given up on', async () => {
+    vi.resetModules();
+    const config = new Response(JSON.stringify(CONFIG));
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockReturnValueOnce(new Promise(() => {}))
+        .mockResolvedValueOnce(config),
+    );
+    const { amplifyAuth } = await import('../src/lib/auth/amplify.ts');
+    amplify.signIn.mockResolvedValue({ isSignedIn: true, nextStep: { signInStep: 'DONE' } });
+    vi.useFakeTimers();
+    try {
+      const first = expect(amplifyAuth.signIn('a@example.com', 'pw')).rejects.toMatchObject({
+        kind: 'offline',
+      });
+      await vi.advanceTimersByTimeAsync(CALL_LIMIT_MS);
+      await first;
+    } finally {
+      vi.useRealTimers();
+    }
+    await expect(amplifyAuth.signIn('a@example.com', 'pw')).resolves.toBe('done');
+  });
 });
