@@ -22,11 +22,16 @@ export interface Screen {
   /** Wait for the boot loader's logo story to end. */
   storyEnd?: boolean;
   /**
-   * Run the page on its own clock: once the page has loaded, moved on this many ms and held there,
-   * so a timer (the gallery's 8 s long wait) cannot change the frame on a slow device.
+   * Run the page on its own clock, held from the start and moved on only this many ms (in steps),
+   * so the frame never depends on the device's speed and a later timer (the gallery's 8 s long
+   * wait) never fires.
    */
   clockAt?: number;
 }
+
+/** A fixed start for pages on their own clock, and the step it is moved on by. */
+const CLOCK_START = Date.UTC(2026, 0, 5, 9, 0, 0);
+const CLOCK_STEP = 100;
 
 export const SCREENS: Screen[] = [
   // The landing page, its story paused on the first step (chosen in the strip), so every device
@@ -69,12 +74,17 @@ export async function showScreen(page: Page, screen: Screen) {
     await page.route('**/assets/*.js', (route) => route.abort());
   }
   if (screen.clockAt !== undefined) {
-    await page.clock.install();
+    // Held from the start at a fixed time, so the page's time never depends on how fast it loads.
+    await page.clock.install({ time: CLOCK_START });
+    await page.clock.pauseAt(CLOCK_START + 1);
   }
   await page.goto(screen.path);
   if (screen.clockAt !== undefined) {
-    // Moved on from where the page stands, then held there (install leaves it running).
-    await page.clock.pauseAt((await page.evaluate(() => Date.now())) + screen.clockAt);
+    // Moved on in short steps, each a round trip, so the page renders between them and a timer
+    // set by one step (a delay that shows something, then its beats) fires in the next.
+    for (let ran = 0; ran < screen.clockAt; ran += CLOCK_STEP) {
+      await page.clock.runFor(CLOCK_STEP);
+    }
   }
   if (screen.firstStep) {
     await page

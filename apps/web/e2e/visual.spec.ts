@@ -36,7 +36,7 @@ for (const screen of SCREENS.filter((s) => COMPARED.includes(s.name))) {
 
 // Every baseline belongs to a compared screen on a compared device: one left behind by a removed
 // screen would be compared with again, unreviewed, if the name came back. A test run fails on
-// one; an update run (the workflow) removes it, so its new branch drops it.
+// one; an update run on Linux (the workflow) removes it, so its new branch drops it.
 test('keeps no stray baselines', async ({ baseURL: _baseURL }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-chrome', 'one listing, one check');
   const expected = COMPARED.flatMap((screen) =>
@@ -44,6 +44,9 @@ test('keeps no stray baselines', async ({ baseURL: _baseURL }, testInfo) => {
   );
   const strays = made.filter((file) => !expected.includes(file));
   if (testInfo.config.updateSnapshots !== 'none') {
+    // Only where the baselines are made (Linux): elsewhere the comparisons skip and would not
+    // make the replacements.
+    test.skip(process.platform !== 'linux', 'baselines are Linux renderings');
     for (const file of strays) rmSync(join(BASELINES, file), { recursive: true });
     return;
   }
