@@ -170,7 +170,7 @@ describe('web app hosting (decision 0011)', () => {
     const value = JSON.stringify(written?.Properties.Value);
     expect(value).toMatch(/userPoolId.*Ref.*AuthUserPool/);
     expect(value).toMatch(/userPoolClientId.*Ref.*AuthUserPoolWebClient/);
-    expect(value).toMatch(/apiUrl.*Ref.*HttpApi/);
+    expect(value).toMatch(/apiUrl.*HttpApi.*ApiEndpoint/);
     // And the origins the site may call there: exactly its API and its documents bucket.
     const origins = JSON.stringify(
       Object.values(cell.findResources('AWS::SSM::Parameter')).find(
@@ -178,7 +178,7 @@ describe('web app hosting (decision 0011)', () => {
       )?.Properties.Value,
     );
     expect(origins).toMatch(
-      /https:\/\/.*HttpApi.*execute-api.*https:\/\/.*DocumentsBucket.*RegionalDomainName/,
+      /HttpApi.*ApiEndpoint.*https:\/\/.*DocumentsBucket.*RegionalDomainName/,
     );
     // …and the site reads it at deploy time, after the cell: no stack export, so the pool and
     // client can still be replaced.
@@ -220,7 +220,7 @@ describe('web app hosting (decision 0011)', () => {
       'cannot sign people in to a cell in ap-south-1',
     );
     expect(() => site('b', india)).toThrow('need a known Region');
-    expect(() => site('c', personal, 'us-east-1')).toThrow('writes no sign-in config');
+    expect(() => site('c', personal, 'us-east-1')).toThrow('writes no web config');
     // Same Region, another account: the parameter could not be read there.
     const elsewhere = new CellStack(app, 'jobdeputy-dev-iad', {
       stage: 'dev',
@@ -272,6 +272,7 @@ describe('web app hosting (decision 0011)', () => {
         AllowOrigins: ['https://dev.jobdeputy.com'],
         AllowMethods: ['GET', 'POST', 'PUT', 'DELETE'],
         AllowHeaders: ['authorization', 'content-type'],
+        ExposeHeaders: ['retry-after'],
         MaxAge: 3600,
       },
     });
@@ -281,7 +282,6 @@ describe('web app hosting (decision 0011)', () => {
           {
             AllowedOrigins: ['https://dev.jobdeputy.com'],
             AllowedMethods: ['POST'],
-            AllowedHeaders: ['*'],
             MaxAge: 3600,
           },
         ],

@@ -94,7 +94,7 @@ export class WebStack extends Stack {
     // The config is read in this stack's account and Region: a cell elsewhere (or a Region not
     // known yet) could mean a hand-off across Regions, which decision 0004 rules out.
     const signIn = props.signIn;
-    const signInParameter = signIn ? checkedSignIn(this, signIn) : undefined;
+    const signInParameters = signIn ? checkedSignIn(this, signIn) : undefined;
     // The zone comes from the DNS stack as a strong reference on purpose: that stack can't
     // drop the zone while this one uses it (the delegation names its name servers).
     Annotations.of(this).acknowledgeWarning(
@@ -124,8 +124,8 @@ export class WebStack extends Stack {
         contentSecurityPolicy: {
           contentSecurityPolicy: webCsp(
             signIn?.region,
-            signIn?.webConnectParameter
-              ? StringParameter.valueForStringParameter(this, signIn.webConnectParameter)
+            signInParameters
+              ? StringParameter.valueForStringParameter(this, signInParameters.connectSrc)
               : undefined,
           ),
           override: true,
@@ -180,11 +180,11 @@ export class WebStack extends Stack {
           Source.asset(props.contentDir),
           // Fetched with cache: 'no-store' (src/lib/auth/amplify.ts), so browsers never keep it;
           // each deploy clears CloudFront's copy.
-          ...(signInParameter
+          ...(signInParameters
             ? [
                 Source.data(
                   'config.json',
-                  StringParameter.valueForStringParameter(this, signInParameter),
+                  StringParameter.valueForStringParameter(this, signInParameters.config),
                 ),
               ]
             : []),
@@ -209,13 +209,16 @@ export class WebStack extends Stack {
 }
 
 /**
- * The cell's sign-in parameter, once the site can read it: the cell writes one (a shared stack),
+ * The cell's web config parameters, once the site can read them: the cell writes one (a shared stack),
  * both stacks are in the same known Region, and their accounts are both given and equal, or both
  * left to the deploy's credentials (as in local synths). The site then deploys after the cell.
  */
-function checkedSignIn(site: Stack, cell: CellStack): string {
-  if (!cell.webSignInParameter || !cell.webConnectParameter) {
-    throw new Error(`${cell.stackName} writes no sign-in config (a personal or PR stack).`);
+function checkedSignIn(
+  site: Stack,
+  cell: CellStack,
+): { readonly config: string; readonly connectSrc: string } {
+  if (!cell.webConfig) {
+    throw new Error(`${cell.stackName} writes no web config (a personal or PR stack).`);
   }
   if (Token.isUnresolved(site.region) || Token.isUnresolved(cell.region)) {
     throw new Error(
@@ -236,5 +239,5 @@ function checkedSignIn(site: Stack, cell: CellStack): string {
     throw new Error(`${site.stackName} and ${cell.stackName} must be in the same account.`);
   }
   site.addDependency(cell);
-  return cell.webSignInParameter;
+  return cell.webConfig;
 }

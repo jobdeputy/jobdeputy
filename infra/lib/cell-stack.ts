@@ -65,10 +65,11 @@ export function webConnectParameter(stage: StageName, cell: CellId): string {
 
 /** Everything one Region cell needs. Tables follow docs/data-model.md. */
 export class CellStack extends Stack {
-  /** The SSM parameter holding the web app's config; shared stacks only (#14). */
-  readonly webSignInParameter?: string;
-  /** The SSM parameter holding the origins the web app calls here; shared stacks only (#33). */
-  readonly webConnectParameter?: string;
+  /**
+   * The SSM parameters a site reads from this cell (shared stacks only): its config (#14) and
+   * the origins its CSP lets it call here (#33).
+   */
+  readonly webConfig?: { readonly config: string; readonly connectSrc: string };
 
   constructor(scope: Construct, id: string, props: CellStackProps) {
     super(scope, id, props);
@@ -614,6 +615,8 @@ export class CellStack extends Stack {
                 CorsHttpMethod.DELETE,
               ],
               allowHeaders: ['authorization', 'content-type'],
+              // Read by the app on a 429 (the crawl and AI routes send it).
+              exposeHeaders: ['retry-after'],
               maxAge: Duration.hours(1),
             },
           }
@@ -644,23 +647,26 @@ export class CellStack extends Stack {
     // the pool, client, API and bucket stay free to be replaced. Shared stacks only: personal and
     // PR stacks have no site.
     if (!props.owner) {
-      this.webSignInParameter = webSignInParameter(props.stage, props.cell);
+      this.webConfig = {
+        config: webSignInParameter(props.stage, props.cell),
+        connectSrc: webConnectParameter(props.stage, props.cell),
+      };
       new StringParameter(this, 'WebSignIn', {
-        parameterName: this.webSignInParameter,
+        parameterName: this.webConfig.config,
         description: 'The web app’s config (read by the web stack).',
         stringValue: this.toJsonString({
           userPoolId: auth.userPool.userPoolId,
           userPoolClientId: auth.webClient.userPoolClientId,
-          apiUrl: stage.url,
+          // No trailing slash: the app adds paths that start with one.
+          apiUrl: httpApi.apiEndpoint,
         }),
       });
-      this.webConnectParameter = webConnectParameter(props.stage, props.cell);
       new StringParameter(this, 'WebConnectSrc', {
-        parameterName: this.webConnectParameter,
+        parameterName: this.webConfig.connectSrc,
         description:
           'The origins the web app calls in this cell, for its CSP (read by the web stack).',
         stringValue: [
-          `https://${httpApi.apiId}.execute-api.${this.region}.${this.urlSuffix}`,
+          httpApi.apiEndpoint,
           `https://${documents.bucket.bucketRegionalDomainName}`,
         ].join(' '),
       });

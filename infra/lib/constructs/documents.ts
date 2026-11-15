@@ -77,8 +77,8 @@ export class Documents extends Construct {
             cors: [
               {
                 allowedOrigins: [props.siteOrigin],
+                // A form POST: no preflight, no headers of its own.
                 allowedMethods: [HttpMethods.POST],
-                allowedHeaders: ['*'],
                 maxAge: 3600,
               },
             ],
