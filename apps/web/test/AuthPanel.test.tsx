@@ -235,7 +235,7 @@ describe('AuthPanel', () => {
   it('treats sending a new code as a request: the links wait for it', async () => {
     let finish = () => {};
     const auth = createFakeAuth({ delay: 0 });
-    renderPanel('sign-up', auth);
+    const { onSignedIn } = renderPanel('sign-up', auth);
     type('Email', 'new@example.com');
     type(/^Password/, 'a long enough password');
     submit('Create account');
@@ -251,13 +251,12 @@ describe('AuthPanel', () => {
     expect(screen.getByRole('heading', { name: 'Enter your code.' })).toBeTruthy();
     // It says what it is doing, and the Confirm button does not claim to be checking.
     await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Sending a new code…'));
-    // Shown, not only read out; the Confirm button waits too.
+    // Shown, not only read out.
     expect(screen.getByRole('status').className).not.toContain('sr-only');
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Confirm' }).getAttribute('aria-disabled')).toBe(
-        'true',
-      ),
-    );
+    // A code already in the inbox can still be confirmed meanwhile.
+    type('Code from your email', FAKE_CODE);
+    submit('Confirm');
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith('new@example.com'));
     finish();
   });
 });

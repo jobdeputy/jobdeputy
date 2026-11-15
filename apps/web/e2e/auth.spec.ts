@@ -76,3 +76,11 @@ test('shows the button working while the account is being created', async ({ pag
   // "slow" makes the fake take 1.5 s, well past the 300 ms delay: the pending state shows.
   await expect(drawer.getByRole('button', { name: 'Creating your account…' })).toBeVisible();
 });
+
+// The real sign-in tells a site without its config ("not set up") from someone else's page by
+// the boot loader in the app's own page (src/lib/auth/amplify.ts): the built site must keep it.
+test('the built site answers a missing config with its own page', async ({ request }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-chrome', 'one server, one check');
+  const response = await request.get('/config.json');
+  expect(await response.text()).toContain('id="boot-loader"');
+});

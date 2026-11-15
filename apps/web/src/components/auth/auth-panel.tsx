@@ -99,7 +99,8 @@ export function AuthPanel({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (busy) return;
+    // A code already in the inbox can be confirmed while a new one is on its way.
+    if (pending) return;
     const found = check(step, values);
     setErrors(found);
     setRefusal(null);
@@ -266,15 +267,7 @@ export function AuthPanel({
           {refusal}
         </p>
 
-        <Button
-          type="submit"
-          size="lg"
-          pending={pending}
-          pendingLabel={action.pending}
-          // Waits, dimmed, while a new code is on its way (on the shared delay, so a quick answer
-          // does not flicker it; until then submit() ignores presses).
-          aria-disabled={(waiting && resending) || undefined}
-        >
+        <Button type="submit" size="lg" pending={pending} pendingLabel={action.pending}>
           {action.submit}
         </Button>
 

@@ -167,6 +167,8 @@ async function readConfig(): Promise<Partial<Config> | null> {
   try {
     return JSON.parse(body) as Partial<Config>;
   } catch {
+    // Ours but broken (the server calls it JSON), or the app's own page: not set up.
+    if (response.headers.get('content-type')?.includes('json')) return null;
     if (body.includes(APP_PAGE_MARK)) return null;
     throw new AuthError('offline');
   }
