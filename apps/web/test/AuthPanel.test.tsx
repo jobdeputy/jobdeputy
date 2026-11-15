@@ -253,10 +253,16 @@ describe('AuthPanel', () => {
     await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Sending a new code…'));
     // Shown, not only read out.
     expect(screen.getByRole('status').className).not.toContain('sr-only');
-    // A code already in the inbox can still be confirmed meanwhile.
+    // Confirm waits too (Cognito may retire the old code), and looks it at once.
+    expect(screen.getByRole('button', { name: 'Confirm' }).getAttribute('aria-disabled')).toBe(
+      'true',
+    );
     type('Code from your email', FAKE_CODE);
-    submit('Confirm');
-    await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith('new@example.com'));
+    // Enter in the field submits the form itself, past the button.
+    const confirm = screen.getByRole('button', { name: 'Confirm' });
+    fireEvent.submit(confirm.closest('form') as HTMLFormElement);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(onSignedIn).not.toHaveBeenCalled();
     finish();
   });
 });

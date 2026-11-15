@@ -99,8 +99,7 @@ export function AuthPanel({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    // A code already in the inbox can be confirmed while a new one is on its way.
-    if (pending) return;
+    if (busy) return;
     const found = check(step, values);
     setErrors(found);
     setRefusal(null);
@@ -267,7 +266,15 @@ export function AuthPanel({
           {refusal}
         </p>
 
-        <Button type="submit" size="lg" pending={pending} pendingLabel={action.pending}>
+        <Button
+          type="submit"
+          size="lg"
+          pending={pending}
+          pendingLabel={action.pending}
+          // Off while a new code is on its way (Cognito may retire the old one), dimmed at once
+          // like the links: a press that does nothing must look it.
+          aria-disabled={resending || undefined}
+        >
           {action.submit}
         </Button>
 

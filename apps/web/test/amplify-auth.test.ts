@@ -222,19 +222,4 @@ describe('amplifyAuth', () => {
   it('recognises the app’s own page by its boot loader, which index.html has', () => {
     expect(readFileSync('index.html', 'utf8')).toContain('id="boot-loader"');
   });
-
-  it('calls a broken config (sent as JSON, but not JSON) not set up', async () => {
-    vi.resetModules();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(
-        async () =>
-          new Response('{"userPoolId": ', { headers: { 'content-type': 'application/json' } }),
-      ),
-    );
-    const { amplifyAuth } = await import('../src/lib/auth/amplify.ts');
-    await expect(amplifyAuth.signIn('a@example.com', 'pw')).rejects.toMatchObject({
-      kind: 'not-set-up',
-    });
-  });
 });
