@@ -200,8 +200,8 @@ export class WebStack extends Stack {
 
 /**
  * The cell's sign-in parameter, once the site can read it: the cell writes one (a shared stack),
- * and both stacks are in the same known Region and the same account. The site then deploys after
- * the cell.
+ * both stacks are in the same known Region, and their accounts are both given and equal, or both
+ * left to the deploy's credentials (as in local synths). The site then deploys after the cell.
  */
 function checkedSignIn(site: Stack, cell: CellStack): string {
   if (!cell.webSignInParameter) {
@@ -217,8 +217,12 @@ function checkedSignIn(site: Stack, cell: CellStack): string {
       `The site in ${site.region} cannot sign people in to a cell in ${cell.region}.`,
     );
   }
-  const known = [site.account, cell.account].filter((account) => !Token.isUnresolved(account));
-  if (known.length === 1 || (known.length === 2 && site.account !== cell.account)) {
+  const siteAccount = !Token.isUnresolved(site.account);
+  const cellAccount = !Token.isUnresolved(cell.account);
+  if (siteAccount !== cellAccount) {
+    throw new Error(`${site.stackName} and ${cell.stackName} need their accounts given alike.`);
+  }
+  if (siteAccount && site.account !== cell.account) {
     throw new Error(`${site.stackName} and ${cell.stackName} must be in the same account.`);
   }
   site.addDependency(cell);
