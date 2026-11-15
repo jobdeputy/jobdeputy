@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { test } from '@playwright/test';
+import { type Page, test } from '@playwright/test';
 import { SCREENSHOTS_DIR } from './screenshots-dir.ts';
 
 /**
@@ -13,6 +13,11 @@ const SCREENS = [
   // The drawer, opened from the first visible "Sign in" button; the story behind it held still
   // (reduced motion), so every run shows the same.
   { name: 'sign-in', path: '/', open: 'Sign in', still: true },
+  // Sign-up with its fields marked wrong, then its 6-digit code step, and the signed-in page (the
+  // test build's in-memory accounts: src/lib/auth/fake.ts).
+  { name: 'sign-up-errors', path: '/', open: 'Get started free', still: true, steps: wrongSignUp },
+  { name: 'sign-up-code', path: '/', open: 'Get started free', still: true, steps: toCode },
+  { name: 'signed-in', path: '/', open: 'Get started free', still: true, steps: toSignedIn },
   // Every shared component state (#17); the pending buttons and the loading skeleton appear
   // after the 300 ms delay.
   {
@@ -57,6 +62,9 @@ for (const screen of SCREENS) {
         .click();
       await page.getByRole('dialog').waitFor();
     }
+    if (screen.steps) {
+      await screen.steps(page);
+    }
     for (const ready of [screen.ready ?? []].flat()) {
       await page.locator(ready).first().waitFor();
     }
@@ -94,3 +102,27 @@ test.describe('without JavaScript', () => {
     });
   });
 });
+
+async function wrongSignUp(page: Page) {
+  const drawer = page.getByRole('dialog');
+  await drawer.getByLabel('Email').fill('not-an-email');
+  await drawer.getByLabel('Password', { exact: true }).fill('short');
+  await drawer.getByRole('button', { name: 'Create account' }).click();
+  await drawer.getByText('Enter an email like name@example.com.').waitFor();
+}
+
+async function toCode(page: Page) {
+  const drawer = page.getByRole('dialog');
+  await drawer.getByLabel('Email').fill('new@example.com');
+  await drawer.getByLabel('Password', { exact: true }).fill('a long enough password');
+  await drawer.getByRole('button', { name: 'Create account' }).click();
+  await drawer.getByRole('heading', { name: 'Enter your code.' }).waitFor();
+}
+
+async function toSignedIn(page: Page) {
+  await toCode(page);
+  const drawer = page.getByRole('dialog');
+  await drawer.getByLabel('Code from your email').fill('123456');
+  await drawer.getByRole('button', { name: 'Confirm' }).click();
+  await page.getByRole('heading', { level: 1, name: 'You’re in.' }).waitFor();
+}
