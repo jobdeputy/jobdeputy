@@ -25,9 +25,10 @@ describe('the signed-in app', () => {
     // The step bar sits in the header, with Sign out.
     expect(screen.getByRole('banner').textContent).toContain('3 short steps');
     fireEvent.click(screen.getByRole('button', { name: 'Let’s start' }));
-    expect(await screen.findByRole('heading', { level: 1, name: 'You’re in.' })).toBeTruthy();
-    // It goes with the set-up.
-    expect(screen.getByRole('banner').textContent).not.toContain('3 short steps');
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'First, what should I call you?' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('banner').textContent).toContain('Step 1 of 3');
   });
 
   it('takes someone with a profile straight to their page', async () => {
@@ -92,5 +93,91 @@ describe('the signed-in app', () => {
         screen.getAllByRole('status').some((s) => s.textContent === 'Opening your search desk'),
       ).toBe(true),
     );
+  });
+
+  it('saves step 1, You, and moves on (the set-up stays, though a profile now exists)', async () => {
+    const api = createFakeApi({ delay: 0 });
+    const save = vi.spyOn(api, 'request');
+    await renderApp(await signedIn(), {}, api);
+    fireEvent.click(await screen.findByRole('button', { name: 'Let’s start' }));
+    await screen.findByRole('heading', { level: 1, name: 'First, what should I call you?' });
+    fireEvent.change(screen.getByLabelText('First name'), { target: { value: ' Alex ' } });
+    fireEvent.change(screen.getByLabelText('Last name'), { target: { value: 'Morgan' } });
+    fireEvent.change(screen.getByLabelText('City (optional)'), { target: { value: 'Austin' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'You’re in.' })).toBeTruthy();
+    expect(save).toHaveBeenCalledWith(
+      'PUT',
+      '/me/profile',
+      expect.objectContaining({
+        version: 0,
+        firstName: 'Alex',
+        lastName: 'Morgan',
+        location: { city: 'Austin', country: 'US' },
+      }),
+    );
+  });
+
+  it('marks what is missing beside it, and starts at the first', async () => {
+    const api = createFakeApi({ delay: 0 });
+    const save = vi.spyOn(api, 'request');
+    await renderApp(await signedIn(), {}, api);
+    fireEvent.click(await screen.findByRole('button', { name: 'Let’s start' }));
+    await screen.findByRole('heading', { level: 1, name: 'First, what should I call you?' });
+    fireEvent.change(screen.getByLabelText('Last name'), { target: { value: 'x'.repeat(101) } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByText('Enter your first name.')).toBeTruthy();
+    expect(screen.getByText('Use at most 100 characters.')).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByLabelText('First name'));
+    expect(save.mock.calls.filter(([method]) => method === 'PUT')).toHaveLength(0);
+  });
+
+  it('shows the API’s refusals beside their fields, and says when it changed elsewhere', async () => {
+    const api = createFakeApi({ delay: 0 });
+    await renderApp(await signedIn(), {}, api);
+    fireEvent.click(await screen.findByRole('button', { name: 'Let’s start' }));
+    await screen.findByRole('heading', { level: 1, name: 'First, what should I call you?' });
+    fireEvent.change(screen.getByLabelText('First name'), { target: { value: 'Alex' } });
+    fireEvent.change(screen.getByLabelText('Last name'), { target: { value: 'Morgan' } });
+    const request = api.request.bind(api);
+    const put = vi.spyOn(api, 'request').mockImplementation((method, path, body) =>
+      method === 'PUT'
+        ? Promise.reject(
+            new ApiError('invalid', {
+              status: 400,
+              fieldErrors: [{ path: 'location.city', message: 'Not a city we know.' }],
+            }),
+          )
+        : request(method, path, body),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByText('Not a city we know.')).toBeTruthy();
+    put.mockImplementation((method, path, body) =>
+      method === 'PUT'
+        ? Promise.reject(new ApiError('conflict', { status: 409 }))
+        : request(method, path, body),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByRole('alert')
+          .some(
+            (alert) =>
+              alert.textContent ===
+              'Your profile changed somewhere else. Check it here, then continue.',
+          ),
+      ).toBe(true),
+    );
+  });
+
+  it('goes back from step 1 to the welcome', async () => {
+    await renderApp(await signedIn());
+    fireEvent.click(await screen.findByRole('button', { name: 'Let’s start' }));
+    await screen.findByRole('heading', { level: 1, name: 'First, what should I call you?' });
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Hi, I’m your deputy.' }),
+    ).toBeTruthy();
   });
 });

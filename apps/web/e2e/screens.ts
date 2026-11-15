@@ -46,6 +46,7 @@ export const SCREENS: Screen[] = [
   { name: 'sign-up-code', path: '/', open: 'Get started free', still: true, steps: toCode },
   // The guided set-up's welcome (#33), where a new account lands, and the page after it.
   { name: 'set-up', path: '/', open: 'Get started free', still: true, steps: toSetUp },
+  { name: 'set-up-you', path: '/', open: 'Get started free', still: true, steps: toStepYou },
   { name: 'signed-in', path: '/', open: 'Get started free', still: true, steps: toSignedIn },
   // Every shared component state (#17); the pending buttons and the loading skeleton appear
   // after the 300 ms delay.
@@ -157,8 +158,16 @@ async function toSetUp(page: Page) {
   await page.getByRole('heading', { level: 1, name: 'Hi, I’m your deputy.' }).waitFor();
 }
 
-async function toSignedIn(page: Page) {
+async function toStepYou(page: Page) {
   await toSetUp(page);
   await page.getByRole('button', { name: 'Let’s start' }).click();
+  await page.getByRole('heading', { level: 1, name: 'First, what should I call you?' }).waitFor();
+}
+
+async function toSignedIn(page: Page) {
+  await toStepYou(page);
+  await page.getByLabel('First name').fill('Alex');
+  await page.getByLabel('Last name').fill('Morgan');
+  await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByRole('heading', { level: 1, name: 'You’re in.' }).waitFor();
 }

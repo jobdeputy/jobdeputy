@@ -198,6 +198,30 @@ export const en = {
     locked: 'Locked',
     regionNote: 'Your profile, searches, and files stay in this Region.',
     start: 'Let’s start',
+    /** Step 1: who the person is, so the deputy can address them and fill in applications. */
+    you: {
+      eyebrow: 'You',
+      title: 'First, what should I call you?',
+      intro: 'Your name goes on the applications I prepare. You can change it later in Profile.',
+      speech: 'Nice to meet you.',
+      firstName: 'First name',
+      lastName: 'Last name',
+      city: 'City (optional)',
+      cityHint: 'Where you are based, so I look for roles near you too.',
+      country: 'Country',
+      continue: 'Continue',
+      saving: 'Saving…',
+      back: 'Back',
+    },
+    /** What is wrong with a field, or with saving. */
+    errors: {
+      firstNameMissing: 'Enter your first name.',
+      lastNameMissing: 'Enter your last name.',
+      tooLong: 'Use at most {max} characters.',
+      saveFailed: 'That didn’t save. Check your connection, then try again.',
+      changedElsewhere: 'Your profile changed somewhere else. Check it here, then continue.',
+      signedOut: 'Your session has ended. Sign in again to continue.',
+    },
   },
   /** Loading the signed-in person's profile, and failing to. */
   profile: {
