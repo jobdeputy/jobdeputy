@@ -56,7 +56,7 @@ Every feature PR adds integration tests for its own feature, and the **whole** s
 |---|---|
 | `pnpm verify` | Lint, typecheck, unit and infrastructure tests |
 | `pnpm --filter @jobdeputy/web test` | The web app's component tests (Vitest with happy-dom); `pnpm verify` runs them too |
-| `pnpm --filter @jobdeputy/web test:e2e` | Browser tests on all seven devices (builds the app first). Once per machine: `pnpm --filter @jobdeputy/web exec playwright install chromium firefox webkit`. One device: add `--project=iphone`. Screenshots land in `apps/web/screenshots/` (git-ignored); CI posts them on the PR |
+| `pnpm --filter @jobdeputy/web test:e2e` | Browser tests on all seven devices (builds the app first). Once per machine: `pnpm --filter @jobdeputy/web exec playwright install chromium firefox webkit`. One device: add `--project=iphone`. Screenshots land in `apps/web/screenshots/` (git-ignored); CI posts them on the PR. The visual baselines (`e2e/visual.spec.ts`) are checked on Linux only: after an approved look change, run the **Update screenshot baselines** workflow on the branch and merge the PR it links |
 | `JD_OWNER=<you> JD_FULL=1 AWS_PROFILE=jobdeputy-dev-iad pnpm test:integration` | Integration tests against your personal stack; `JD_FULL=1` adds the queue-level tests |
 
 The full suite (`JD_FULL=1`) runs automatically:
