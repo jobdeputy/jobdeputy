@@ -85,8 +85,10 @@ export function createApiClient(deps: {
 }): ApiClient {
   return {
     async request<T>(method: ApiMethod, path: `/${string}`, body?: unknown): Promise<T> {
-      const [apiUrl, token] = await Promise.all([deps.apiUrl(), deps.accessToken()]);
+      // The address first: a site without an API never needs a token (nor loads Amplify for one).
+      const apiUrl = await dependency(deps.apiUrl);
       if (!apiUrl) throw new ApiError('not-set-up');
+      const token = await dependency(deps.accessToken);
       if (!token) throw new ApiError('signed-out');
       let response: Response;
       try {
@@ -102,16 +104,37 @@ export function createApiClient(deps: {
       } catch (error) {
         throw new ApiError('offline', { cause: error });
       }
-      const text = await response.text().catch(() => '');
-      if (response.ok) return (text ? parseJson(text) : undefined) as T;
-      throw failure(response, text);
+      let text: string;
+      try {
+        text = await response.text();
+      } catch (error) {
+        // The answer stopped coming (the network, or the read's time limit).
+        throw new ApiError('offline', { status: response.status, cause: error });
+      }
+      if (!response.ok) throw failure(response, text);
+      if (!text) return undefined as T;
+      const json = parseJson(text);
+      // The API answers in JSON: anything else came from something on the way (a wifi sign-in
+      // page, a proxy), not from it.
+      if (json === NOT_JSON) throw new ApiError('offline', { status: response.status });
+      return json as T;
     },
   };
 }
 
+/** Reads one of the client's inputs; a failure there is a connection problem, never a raw error. */
+async function dependency<T>(read: () => Promise<T>): Promise<T> {
+  try {
+    return await read();
+  } catch (error) {
+    throw new ApiError('offline', { cause: error });
+  }
+}
+
 /** The API's refusal (a problem+json body) as an `ApiError`. */
 function failure(response: Response, text: string): ApiError {
-  const problem = (parseJson(text) ?? {}) as {
+  const parsed = parseJson(text);
+  const problem = (parsed === NOT_JSON || parsed === null ? {} : parsed) as {
     title?: unknown;
     detail?: unknown;
     code?: unknown;
@@ -135,6 +158,8 @@ function failure(response: Response, text: string): ApiError {
     case 401:
       return new ApiError('signed-out', details);
     case 403:
+    // An account being deleted (code account-deleted).
+    case 410:
       return new ApiError('forbidden', details);
     case 404:
       return new ApiError('not-found', details);
@@ -160,21 +185,27 @@ function fieldErrors(errors: unknown): FieldError[] {
   );
 }
 
-/** Retry-After in seconds (a number of seconds, or an HTTP date), else the default wait. */
+/**
+ * Retry-After as seconds to wait (at least 1): a whole number of seconds, or an HTTP date (which
+ * names a weekday or month, so it has letters); anything else gets the default wait.
+ */
 function retryAfter(header: string | null): number {
-  if (header) {
-    const seconds = Number(header);
-    if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
-    const date = Date.parse(header);
-    if (!Number.isNaN(date)) return Math.max(0, Math.ceil((date - Date.now()) / 1000));
+  const value = header?.trim() ?? '';
+  if (/^\d+$/.test(value)) return Math.max(1, Number(value));
+  if (/[a-z]/i.test(value)) {
+    const date = Date.parse(value);
+    if (!Number.isNaN(date)) return Math.max(1, Math.ceil((date - Date.now()) / 1000));
   }
   return DEFAULT_RETRY_AFTER_SECONDS;
 }
+
+/** A body that is not JSON. */
+const NOT_JSON = Symbol('not JSON');
 
 function parseJson(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch {
-    return null;
+    return NOT_JSON;
   }
 }

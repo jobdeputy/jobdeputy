@@ -355,8 +355,15 @@ describe('amplifyAuth', () => {
       tokens: { accessToken: { toString: () => 'header.payload.signature' } },
     });
     await expect(auth.accessToken()).resolves.toBe('header.payload.signature');
-    // A session Amplify cannot refresh has no token.
-    amplify.fetchAuthSession.mockRejectedValue(new Error('refresh failed'));
+    // A session Cognito refuses to refresh has no token…
+    amplify.fetchAuthSession.mockRejectedValue(
+      Object.assign(new Error('Refresh Token has expired'), { name: 'NotAuthorizedException' }),
+    );
     await expect(auth.accessToken()).resolves.toBeNull();
+    // …but a refresh that could not reach Cognito is a connection problem.
+    amplify.fetchAuthSession.mockRejectedValue(
+      Object.assign(new Error('Network error'), { name: 'NetworkError' }),
+    );
+    await expect(auth.accessToken()).rejects.toMatchObject({ kind: 'offline' });
   });
 });

@@ -118,11 +118,15 @@ export const amplifyAuth: Auth = {
   },
   async accessToken() {
     if (!hasStoredSession()) return null;
-    // Amplify refreshes a token that has run out; a session it cannot refresh has none.
-    const session = await within(
-      configure().then(({ fetchAuthSession }) => fetchAuthSession()),
-    ).catch(() => null);
-    return session?.tokens?.accessToken.toString() ?? null;
+    // Amplify refreshes a token that has run out; a session Cognito refuses to refresh has none.
+    // Anything else (no network, no answer) is a connection problem, not a signed-out person.
+    try {
+      const session = await within(configure().then(({ fetchAuthSession }) => fetchAuthSession()));
+      return session.tokens?.accessToken.toString() ?? null;
+    } catch (error) {
+      if ((error as { name?: string } | null)?.name === 'NotAuthorizedException') return null;
+      throw error instanceof AuthError ? error : new AuthError('offline', { cause: error });
+    }
   },
   signUp: (email, password) =>
     call(async ({ signUp }) => {

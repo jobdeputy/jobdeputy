@@ -1,5 +1,5 @@
-import { createContext, useContext } from 'react';
-import { appAuth } from '../auth/index.ts';
+import { createContext, useContext, useMemo } from 'react';
+import { useAuth } from '../auth/index.ts';
 import { readConfig } from '../config.ts';
 import { type ApiClient, createApiClient } from './client.ts';
 
@@ -24,16 +24,18 @@ function readApiUrl(): Promise<string | null> {
 }
 
 /**
- * The app's API client: the cell's API, with the signed-in person's token. Screens read it
- * through `useApi`, so unit tests (and, later, the test build) can provide their own.
+ * The API client for the screens: the cell's API, with the token of whoever `AuthContext` says is
+ * signed in (so a test's own sign-in is the one used). A tree may provide its own client instead
+ * through `ApiContext` (the unit tests do).
  */
-export const appApi: ApiClient = createApiClient({
-  apiUrl: () => readApiUrl().catch(() => null),
-  accessToken: () => appAuth.accessToken(),
-});
-
-export const ApiContext = createContext<ApiClient>(appApi);
+export const ApiContext = createContext<ApiClient | null>(null);
 
 export function useApi(): ApiClient {
-  return useContext(ApiContext);
+  const provided = useContext(ApiContext);
+  const auth = useAuth();
+  return useMemo(
+    () =>
+      provided ?? createApiClient({ apiUrl: readApiUrl, accessToken: () => auth.accessToken() }),
+    [provided, auth],
+  );
 }

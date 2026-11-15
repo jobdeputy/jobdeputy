@@ -129,4 +129,68 @@ describe('the API client', () => {
       DEFAULT_RETRY_AFTER_SECONDS,
     ]);
   });
+
+  it('asks for a token only once there is an API to call', async () => {
+    const accessToken = vi.fn(async () => 'token-1');
+    const noApi = createApiClient({ apiUrl: async () => null, accessToken });
+    expect((await failure(noApi.request('GET', '/me'))).kind).toBe('not-set-up');
+    expect(accessToken).not.toHaveBeenCalled();
+  });
+
+  it('calls a failure to read its address or token a connection problem', async () => {
+    const fetch = answer(200);
+    const noConfig = createApiClient({
+      apiUrl: async () => {
+        throw new Error('config unreachable');
+      },
+      accessToken: async () => 'token-1',
+    });
+    expect((await failure(noConfig.request('GET', '/me'))).kind).toBe('offline');
+    const noRefresh = createApiClient({
+      apiUrl: async () => API,
+      accessToken: async () => {
+        throw new Error('refresh unreachable');
+      },
+    });
+    expect((await failure(noRefresh.request('GET', '/me'))).kind).toBe('offline');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('calls an answer that is not the API’s, or stops coming, a connection problem', async () => {
+    answer(200, '<!doctype html><title>Hotel wifi</title>');
+    expect((await failure(client().request('GET', '/me'))).kind).toBe('offline');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        text: async () => {
+          throw new DOMException('The operation timed out.', 'TimeoutError');
+        },
+      })),
+    );
+    expect((await failure(client().request('GET', '/me'))).kind).toBe('offline');
+  });
+
+  it('says an account being deleted is refused', async () => {
+    answer(410, JSON.stringify({ title: 'Gone', code: 'account-deleted' }));
+    const error = await failure(client().request('PUT', '/me/profile', {}));
+    expect([error.kind, error.code]).toEqual(['forbidden', 'account-deleted']);
+  });
+
+  it('waits at least a second, and only on a Retry-After it can read', async () => {
+    for (const [header, wait] of [
+      ['0', 1],
+      ['-5', DEFAULT_RETRY_AFTER_SECONDS],
+      [' ', DEFAULT_RETRY_AFTER_SECONDS],
+      ['soon', DEFAULT_RETRY_AFTER_SECONDS],
+    ] as const) {
+      answer(429, '', { 'retry-after': header });
+      expect((await failure(client().request('GET', '/me'))).retryAfterSeconds).toBe(wait);
+    }
+    answer(429, '', { 'retry-after': new Date(Date.now() + 30_000).toUTCString() });
+    const dated = (await failure(client().request('GET', '/me'))).retryAfterSeconds ?? 0;
+    expect(dated).toBeGreaterThanOrEqual(29);
+    expect(dated).toBeLessThanOrEqual(31);
+  });
 });
