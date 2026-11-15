@@ -25,6 +25,7 @@ import { CloudFrontTarget } from 'aws-cdk-lib/aws-route53-targets';
 import { BlockPublicAccess, Bucket, BucketEncryption, type IBucket } from 'aws-cdk-lib/aws-s3';
 import { BucketDeployment, Source } from 'aws-cdk-lib/aws-s3-deployment';
 import type { Construct } from 'constructs';
+import { CELLS } from '../config/cells.js';
 
 export interface WebStackProps extends StackProps {
   /** The site's address; also the zone's name (the site sits at the zone apex). */
@@ -35,11 +36,20 @@ export interface WebStackProps extends StackProps {
    * infrastructure only; bin/app.ts always passes it (and fails if it is missing).
    */
   readonly contentDir?: string;
+  /**
+   * The Cognito pool and client people sign in to (the US cell's), written to the site's
+   * `/config.json`, which the app reads before it signs anyone in (#14 slice 2b).
+   */
+  readonly signIn?: { userPoolId: string; userPoolClientId: string };
 }
 
+/** Where the app signs people in: Cognito in the US cell's Region (US-only launch). */
+export const COGNITO_ORIGIN = `https://cognito-idp.${CELLS.iad.region}.amazonaws.com`;
+
 /**
- * Content-Security-Policy for the static app: everything from this origin only. The API
- * and Cognito origins are added to connect-src by the task that first calls them.
+ * Content-Security-Policy for the static app: everything from this origin only, and sign-in
+ * calls to Cognito (#14 slice 2b). The API origin is added to connect-src by the task that first
+ * calls it.
  */
 export const WEB_CSP = [
   "default-src 'self'",
@@ -47,7 +57,7 @@ export const WEB_CSP = [
   "style-src 'self'",
   "img-src 'self' data:",
   "font-src 'self'",
-  "connect-src 'self'",
+  `connect-src 'self' ${COGNITO_ORIGIN}`,
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -141,7 +151,10 @@ export class WebStack extends Stack {
 
     if (props.contentDir) {
       new BucketDeployment(this, 'Content', {
-        sources: [Source.asset(props.contentDir)],
+        sources: [
+          Source.asset(props.contentDir),
+          ...(props.signIn ? [Source.jsonData('config.json', props.signIn)] : []),
+        ],
         destinationBucket: siteBucket,
         // Every deploy replaces the whole site; one '/*' invalidation counts as one path
         // (1,000 free a month).

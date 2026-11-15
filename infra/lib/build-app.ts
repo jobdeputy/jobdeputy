@@ -52,6 +52,7 @@ export function buildApp(options: BuildAppOptions): App {
   }
 
   const app = options.app ?? new App(options.appProps);
+  let usCell: CellStack | undefined;
   for (const cell of STAGES[stage].cells) {
     const account = env[accountEnvVar(stage, cell)];
     const id = owner ? `jobdeputy-${stage}-${owner}-${cell}` : `jobdeputy-${stage}-${cell}`;
@@ -65,7 +66,7 @@ export function buildApp(options: BuildAppOptions): App {
           env: stackEnv,
           crossRegionReferences: false,
         });
-    const cellStack = new CellStack(app, id, {
+    const cellStack: CellStack = new CellStack(app, id, {
       stage,
       cell,
       ...(owner ? { owner } : {}),
@@ -77,8 +78,10 @@ export function buildApp(options: BuildAppOptions): App {
     });
     // The cell reads the key's ARN from SSM at deploy time, so the key must exist first.
     if (keys) cellStack.addDependency(keys);
+    // The web app signs people in to the US cell (US-only launch; the site is in its account).
+    if (cell === 'iad') usCell = cellStack;
   }
-  if (!owner) addWebStacks(app, stage, env, options.webContentDir);
+  if (!owner) addWebStacks(app, stage, env, options.webContentDir, usCell);
   return app;
 }
 
@@ -92,6 +95,7 @@ function addWebStacks(
   stage: StageName,
   env: Record<string, string | undefined>,
   contentDir: string | undefined,
+  usCell: CellStack | undefined,
 ): void {
   const site = WEB_SITES[stage];
   if (!site) return;
@@ -111,6 +115,7 @@ function addWebStacks(
     zone: dns.zone,
     env: stackEnv,
     ...(contentDir !== undefined ? { contentDir } : {}),
+    ...(usCell ? { signIn: usCell.webSignIn } : {}),
   });
 }
 

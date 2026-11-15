@@ -50,6 +50,9 @@ export const MAX_RECEIVES = 3;
 
 /** Everything one Region cell needs. Tables follow docs/data-model.md. */
 export class CellStack extends Stack {
+  /** What the web app needs to sign people in to this cell (#14 slice 2b): its config.json. */
+  readonly webSignIn: { userPoolId: string; userPoolClientId: string };
+
   constructor(scope: Construct, id: string, props: CellStackProps) {
     super(scope, id, props);
 
@@ -107,6 +110,10 @@ export class CellStack extends Stack {
       deletionProtection: isProd,
       testsClient: props.stage === 'dev',
     });
+    this.webSignIn = {
+      userPoolId: auth.userPool.userPoolId,
+      userPoolClientId: auth.webClient.userPoolClientId,
+    };
 
     // User data tables (docs/data-model.md): keyed by userId, never shared across cells.
     const userTable = (
