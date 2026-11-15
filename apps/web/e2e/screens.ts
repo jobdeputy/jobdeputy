@@ -22,11 +22,11 @@ export interface Screen {
   /** Wait for the boot loader's logo story to end. */
   storyEnd?: boolean;
   /**
-   * Run the page on its own clock, held from the start and moved on only this many ms (in steps),
-   * so the frame never depends on the device's speed and a later timer (the gallery's 8 s long
-   * wait) never fires.
+   * Run the page on its own clock, held, and move it on in short steps only until every `ready`
+   * selector is on the page, and never past this many ms: the frame comes from the page's state,
+   * not from how fast the device is, and a later timer (the gallery's 8 s long wait) never fires.
    */
-  clockAt?: number;
+  clockUpTo?: number;
 }
 
 /** A fixed start for pages on their own clock, and the step it is moved on by. */
@@ -50,11 +50,12 @@ export const SCREENS: Screen[] = [
   {
     name: 'gallery',
     path: '/gallery.html',
-    // The skeleton (after the 300 ms delay) and the deputy's last beat: a frame cut short fails here,
-    // not as a quiet mismatch.
-    ready: ['[data-slot="query-region"][data-state="loading"]', 'text=Reading page 3 of 12'],
-    // Past the 300 ms delay (the skeleton and pending buttons show), well short of the 8 s wait.
-    clockAt: 1000,
+    // The skeleton (after the 300 ms delay) and the deputy's last beat (the long-wait demo's line).
+    ready: [
+      '[data-slot="query-region"][data-state="loading"]',
+      '[data-slot="deputy-working"][data-long]',
+    ],
+    clockUpTo: 3000,
   },
   // The boot loader at the end of its story, held up by an app script that never arrives.
   { name: 'boot-loader', path: '/', ready: '#boot-loader', blockScript: true, storyEnd: true },
@@ -67,17 +68,6 @@ export const SCREENS: Screen[] = [
   },
 ];
 
-/** Two rounds of the page's task queue: a render, then the effects it schedules. */
-async function settle() {
-  for (let round = 0; round < 2; round++) {
-    await new Promise<void>((done) => {
-      const channel = new MessageChannel();
-      channel.port1.onmessage = () => done();
-      channel.port2.postMessage(null);
-    });
-  }
-}
-
 /** Opens a screen and brings it to the frame its shot shows. */
 export async function showScreen(page: Page, screen: Screen) {
   if (screen.still) {
@@ -86,20 +76,18 @@ export async function showScreen(page: Page, screen: Screen) {
   if (screen.blockScript) {
     await page.route('**/assets/*.js', (route) => route.abort());
   }
-  if (screen.clockAt !== undefined) {
-    // Held from the start at a fixed time (pauseAt installs the clock at 0 and moves it on, so
-    // there is no race with a running clock), so the page's time never depends on how fast it loads.
+  if (screen.clockUpTo !== undefined) {
+    // Paused at a fixed time (it takes hold once the page first reads the time).
     await page.clock.pauseAt(CLOCK_START);
   }
   await page.goto(screen.path);
-  if (screen.clockAt !== undefined) {
-    // Moved on in short steps. After each, the page's pending tasks run (React renders through
-    // MessageChannel, which the clock leaves alone), so a timer set by one step (a delay that
-    // shows something, then its beats) is in place before the next.
-    await page.evaluate(settle);
-    for (let ran = 0; ran < screen.clockAt; ran += CLOCK_STEP) {
+  if (screen.clockUpTo !== undefined) {
+    const ready = [screen.ready ?? []].flat();
+    const reached = async () =>
+      (await Promise.all(ready.map((selector) => page.locator(selector).count()))).every(Boolean);
+    // Short steps until the frame's state is all there: a slow render only takes more steps.
+    for (let ran = 0; ran < screen.clockUpTo && !(await reached()); ran += CLOCK_STEP) {
       await page.clock.runFor(CLOCK_STEP);
-      await page.evaluate(settle);
     }
   }
   if (screen.firstStep) {
