@@ -24,8 +24,8 @@ import { AaaaRecord, ARecord, type IHostedZone, RecordTarget } from 'aws-cdk-lib
 import { CloudFrontTarget } from 'aws-cdk-lib/aws-route53-targets';
 import { BlockPublicAccess, Bucket, BucketEncryption, type IBucket } from 'aws-cdk-lib/aws-s3';
 import { BucketDeployment, Source } from 'aws-cdk-lib/aws-s3-deployment';
+import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import type { Construct } from 'constructs';
-import { CELLS } from '../config/cells.js';
 
 export interface WebStackProps extends StackProps {
   /** The site's address; also the zone's name (the site sits at the zone apex). */
@@ -37,32 +37,36 @@ export interface WebStackProps extends StackProps {
    */
   readonly contentDir?: string;
   /**
-   * The Cognito pool and client people sign in to (the US cell's), written to the site's
-   * `/config.json`, which the app reads before it signs anyone in (#14 slice 2b).
+   * Where people sign in (#14): the SSM parameter holding the cell's sign-in config, written to
+   * the site as `/config.json` (the app reads it before it signs anyone in), and the cell's Region,
+   * whose Cognito the CSP lets the app call. Left out, the site has no sign-in.
    */
-  readonly signIn?: { userPoolId: string; userPoolClientId: string };
+  readonly signIn?: { parameterName: string; region: string };
 }
 
-/** Where the app signs people in: Cognito in the US cell's Region (US-only launch). */
-export const COGNITO_ORIGIN = `https://cognito-idp.${CELLS.iad.region}.amazonaws.com`;
+/** Cognito's sign-in endpoint in a Region. */
+export function cognitoOrigin(region: string): string {
+  return `https://cognito-idp.${region}.amazonaws.com`;
+}
 
 /**
- * Content-Security-Policy for the static app: everything from this origin only, and sign-in
- * calls to Cognito (#14 slice 2b). The API origin is added to connect-src by the task that first
- * calls it.
+ * Content-Security-Policy for the static app: everything from this origin only, and sign-in calls
+ * to Cognito in the signing-in cell's Region, when there is one (#14). The API origin is added to
+ * connect-src by the task that first calls it.
  */
-export const WEB_CSP = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self'",
-  "img-src 'self' data:",
-  "font-src 'self'",
-  `connect-src 'self' ${COGNITO_ORIGIN}`,
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-].join('; ');
+export const webCsp = (signInRegion?: string): string =>
+  [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self'",
+    "img-src 'self' data:",
+    "font-src 'self'",
+    ['connect-src', "'self'", ...(signInRegion ? [cognitoOrigin(signInRegion)] : [])].join(' '),
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join('; ');
 
 /**
  * Decision 0011: the web app as static files in a private S3 bucket behind CloudFront,
@@ -104,7 +108,10 @@ export class WebStack extends Stack {
 
     const headers = new ResponseHeadersPolicy(this, 'SecurityHeaders', {
       securityHeadersBehavior: {
-        contentSecurityPolicy: { contentSecurityPolicy: WEB_CSP, override: true },
+        contentSecurityPolicy: {
+          contentSecurityPolicy: webCsp(props.signIn?.region),
+          override: true,
+        },
         strictTransportSecurity: {
           accessControlMaxAge: Duration.days(365),
           includeSubdomains: true,
@@ -153,7 +160,16 @@ export class WebStack extends Stack {
       new BucketDeployment(this, 'Content', {
         sources: [
           Source.asset(props.contentDir),
-          ...(props.signIn ? [Source.jsonData('config.json', props.signIn)] : []),
+          // Fetched with cache: 'no-store' (src/lib/auth/amplify.ts), so browsers never keep it;
+          // each deploy clears CloudFront's copy.
+          ...(props.signIn
+            ? [
+                Source.data(
+                  'config.json',
+                  StringParameter.valueForStringParameter(this, props.signIn.parameterName),
+                ),
+              ]
+            : []),
         ],
         destinationBucket: siteBucket,
         // Every deploy replaces the whole site; one '/*' invalidation counts as one path

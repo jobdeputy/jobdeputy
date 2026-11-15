@@ -8,7 +8,7 @@ import {
 import { CELLS } from '../config/cells.js';
 import { accountEnvVar, isStageName, STAGES, type StageName } from '../config/stages.js';
 import { WEB_SITES } from '../config/web.js';
-import { CellStack } from './cell-stack.js';
+import { CellStack, webSignInParameter } from './cell-stack.js';
 import { KeysStack } from './keys-stack.js';
 import { WebDnsStack } from './web-dns-stack.js';
 import { WebStack } from './web-stack.js';
@@ -52,7 +52,6 @@ export function buildApp(options: BuildAppOptions): App {
   }
 
   const app = options.app ?? new App(options.appProps);
-  let usCell: CellStack | undefined;
   for (const cell of STAGES[stage].cells) {
     const account = env[accountEnvVar(stage, cell)];
     const id = owner ? `jobdeputy-${stage}-${owner}-${cell}` : `jobdeputy-${stage}-${cell}`;
@@ -66,7 +65,7 @@ export function buildApp(options: BuildAppOptions): App {
           env: stackEnv,
           crossRegionReferences: false,
         });
-    const cellStack: CellStack = new CellStack(app, id, {
+    const cellStack = new CellStack(app, id, {
       stage,
       cell,
       ...(owner ? { owner } : {}),
@@ -78,10 +77,8 @@ export function buildApp(options: BuildAppOptions): App {
     });
     // The cell reads the key's ARN from SSM at deploy time, so the key must exist first.
     if (keys) cellStack.addDependency(keys);
-    // The web app signs people in to the US cell (US-only launch; the site is in its account).
-    if (cell === 'iad') usCell = cellStack;
   }
-  if (!owner) addWebStacks(app, stage, env, options.webContentDir, usCell);
+  if (!owner) addWebStacks(app, stage, env, options.webContentDir);
   return app;
 }
 
@@ -95,7 +92,6 @@ function addWebStacks(
   stage: StageName,
   env: Record<string, string | undefined>,
   contentDir: string | undefined,
-  usCell: CellStack | undefined,
 ): void {
   const site = WEB_SITES[stage];
   if (!site) return;
@@ -104,19 +100,26 @@ function addWebStacks(
       `The web app is not built (${contentDir} is missing): run pnpm --filter @jobdeputy/web build.`,
     );
   }
+  // The site signs people in to the US cell (US-only launch), in that cell's account and Region.
+  const usCell = app.node.tryFindChild(`jobdeputy-${stage}-iad`);
+  if (!(usCell instanceof CellStack)) {
+    throw new Error(`The ${stage} site signs people in to the US cell, which this stage lacks.`);
+  }
   const account = env[accountEnvVar(stage, 'iad')];
   const stackEnv = { region: CELLS.iad.region, ...(account ? { account } : {}) };
   const dns = new WebDnsStack(app, `jobdeputy-${stage}-web-dns`, {
     domain: site.domain,
     env: stackEnv,
   });
-  new WebStack(app, `jobdeputy-${stage}-web`, {
+  const web = new WebStack(app, `jobdeputy-${stage}-web`, {
     domain: site.domain,
     zone: dns.zone,
     env: stackEnv,
     ...(contentDir !== undefined ? { contentDir } : {}),
-    ...(usCell ? { signIn: usCell.webSignIn } : {}),
+    signIn: { parameterName: webSignInParameter(stage, 'iad'), region: CELLS.iad.region },
   });
+  // It reads the cell's sign-in config from SSM at deploy time, so the cell must exist first.
+  web.addDependency(usCell);
 }
 
 // Cast: the class's optional getters do not satisfy exactOptionalPropertyTypes.

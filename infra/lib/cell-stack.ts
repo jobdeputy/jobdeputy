@@ -48,11 +48,13 @@ const CRAWL_WORKER_TIMEOUT = Duration.seconds(180);
 /** T04 decision: 3 tries, then the dead-letter queue. Must match the worker's MAX_RECEIVES. */
 export const MAX_RECEIVES = 3;
 
+/** The SSM parameter that holds a shared cell's web sign-in config (its user pool and client). */
+export function webSignInParameter(stage: StageName, cell: CellId): string {
+  return `/jobdeputy/jobdeputy-${stage}-${cell}/web-sign-in`;
+}
+
 /** Everything one Region cell needs. Tables follow docs/data-model.md. */
 export class CellStack extends Stack {
-  /** What the web app needs to sign people in to this cell (#14 slice 2b): its config.json. */
-  readonly webSignIn: { userPoolId: string; userPoolClientId: string };
-
   constructor(scope: Construct, id: string, props: CellStackProps) {
     super(scope, id, props);
 
@@ -110,10 +112,19 @@ export class CellStack extends Stack {
       deletionProtection: isProd,
       testsClient: props.stage === 'dev',
     });
-    this.webSignIn = {
-      userPoolId: auth.userPool.userPoolId,
-      userPoolClientId: auth.webClient.userPoolClientId,
-    };
+    // What the web app needs to sign people in here, read by the web stack at deploy time (its
+    // /config.json; #14). Through SSM, not a stack export, so the pool and client stay free to be
+    // replaced. Shared stacks only: personal and PR stacks have no site.
+    if (!props.owner) {
+      new StringParameter(this, 'WebSignIn', {
+        parameterName: webSignInParameter(props.stage, props.cell),
+        description: 'The web app’s sign-in config (read by the web stack).',
+        stringValue: this.toJsonString({
+          userPoolId: auth.userPool.userPoolId,
+          userPoolClientId: auth.webClient.userPoolClientId,
+        }),
+      });
+    }
 
     // User data tables (docs/data-model.md): keyed by userId, never shared across cells.
     const userTable = (
