@@ -2,10 +2,10 @@ import { readFileSync } from 'node:fs';
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fillHtmlCopy } from '../html-copy.ts';
-import { App } from '../src/App.tsx';
 import { en } from '../src/copy/en.ts';
 import { BOOT_EXIT_MS, bootHoldMs, finishBoot, useFinishBoot } from '../src/lib/boot-loader.ts';
 import { PENDING_DELAY_MS, PENDING_MIN_MS } from '../src/lib/use-delayed-pending.ts';
+import { renderApp } from './render-app.tsx';
 
 // Read from disk (Vitest runs in apps/web): Vitest does not load CSS, and the page is not a module.
 const indexHtml = fillHtmlCopy(readFileSync('index.html', 'utf8'));
@@ -216,8 +216,10 @@ describe('useFinishBoot', () => {
     expect(loader()).toBeNull();
   });
 
-  it('is what the landing page ends the boot with', () => {
-    render(<App />, { container: root() });
+  it('is what the landing page ends the boot with', async () => {
+    // Real timers: the page waits for its session check before it can end the boot.
+    vi.useRealTimers();
+    await renderApp(undefined, { container: root() });
     expect(loader()).toBeNull();
   });
 });

@@ -1,17 +1,41 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { SignedIn } from '@/components/auth/signed-in.tsx';
 import { type AuthControl, AuthDrawer, type AuthMode } from '@/components/landing/auth-drawer.tsx';
 import { Hero } from '@/components/landing/hero.tsx';
 import { SiteHeader } from '@/components/landing/site-header.tsx';
+import { useAuth } from '@/lib/auth/index.ts';
 import { useFinishBoot } from '@/lib/boot-loader.ts';
 
-/** The public landing page: the story of what the deputy does, and the way in (sign up or sign in). */
+/**
+ * The app: the public landing page (the story of what the deputy does, and the way in), or, for a
+ * signed-in person, their page. The boot ends once it knows which.
+ */
 export function App() {
+  const session = useAuth();
+  // undefined: not known yet; null: nobody signed in.
+  const [user, setUser] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    let current = true;
+    session.currentUser().then((email) => {
+      if (current) setUser(email);
+    });
+    return () => {
+      current = false;
+    };
+  }, [session]);
+  useFinishBoot(user !== undefined);
+
+  if (user === undefined) return null;
+  if (user) return <SignedIn email={user} onSignedOut={() => setUser(null)} />;
+  return <Landing onSignedIn={setUser} />;
+}
+
+/** The public landing page: the story of what the deputy does, and the way in (sign up or sign in). */
+function Landing({ onSignedIn }: { onSignedIn: (email: string) => void }) {
   const [authMode, setAuthMode] = useState<AuthMode>('sign-up');
   const [authOpen, setAuthOpen] = useState(false);
   // Four buttons open the drawer; focus returns to whichever one did.
   const opener = useRef<HTMLElement | null>(null);
-  // Nothing to fetch before the landing page shows, so the boot ends on its first render.
-  useFinishBoot();
 
   const auth: AuthControl = {
     open: authOpen,
@@ -37,6 +61,7 @@ export function App() {
         mode={authMode}
         open={authOpen}
         onOpenChange={setAuthOpen}
+        onSignedIn={onSignedIn}
         onCloseAutoFocus={(event) => {
           if (opener.current) {
             event.preventDefault();

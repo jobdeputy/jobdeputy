@@ -1,12 +1,7 @@
 import type * as React from 'react';
+import { AuthPanel } from '@/components/auth/auth-panel.tsx';
 import { Button } from '@/components/ui/button.tsx';
-import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetTitle,
-} from '@/components/ui/sheet.tsx';
+import { Sheet, SheetClose, SheetContent } from '@/components/ui/sheet.tsx';
 import { copy } from '@/copy/index.ts';
 
 export type AuthMode = 'sign-in' | 'sign-up';
@@ -42,25 +37,25 @@ export function AuthButton({
   );
 }
 
-const intro = { 'sign-in': copy.auth.signIn, 'sign-up': copy.auth.signUp } as const;
-
 /**
- * The sign-in / sign-up drawer the landing page opens (round 7 `.auth-panel`). The forms come
- * next (#14); this holds the frame and each mode's introduction.
+ * The sign-in / sign-up drawer the landing page opens (round 7 `.auth-panel`): the forms, one step
+ * at a time (AuthPanel). Its content mounts afresh each time it opens, so a new opening starts
+ * clean, in the mode its button asked for.
  */
 export function AuthDrawer({
   mode,
   open,
   onOpenChange,
   onCloseAutoFocus,
+  onSignedIn,
 }: {
   mode: AuthMode;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Where focus goes once the drawer has closed; Radix cannot know which button opened it. */
   onCloseAutoFocus: (event: Event) => void;
+  onSignedIn: (email: string) => void;
 }) {
-  const text = intro[mode];
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -78,17 +73,7 @@ export function AuthDrawer({
             <span aria-hidden="true">×</span>
           </Button>
         </SheetClose>
-        <div className="max-w-[430px]">
-          <p className="mb-[7px] flex items-center gap-2 text-xs font-[750] tracking-[0.12em] uppercase before:block before:h-[3px] before:w-[13px] before:rounded-full before:bg-green">
-            {text.kicker}
-          </p>
-          <SheetTitle className="font-display text-[clamp(2.1875rem,10.5vw,2.625rem)] leading-none font-medium tracking-[-0.05em] text-balance md:text-[clamp(2.5rem,4vw,3.25rem)]">
-            {text.title}
-          </SheetTitle>
-          <SheetDescription className="mt-1 max-w-[390px] text-[0.9375rem] leading-normal tracking-[-0.01em] text-muted-foreground md:mt-2">
-            {text.subtitle}
-          </SheetDescription>
-        </div>
+        <AuthPanel start={mode} onSignedIn={onSignedIn} />
       </SheetContent>
     </Sheet>
   );
