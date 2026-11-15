@@ -22,9 +22,12 @@ describe('the signed-in app', () => {
     expect(document.activeElement).toBe(title);
     expect(screen.getByText('new@example.com')).toBeTruthy();
     expect(screen.getByText('United States (US)')).toBeTruthy();
-    expect(screen.getByText('3 short steps')).toBeTruthy();
+    // The step bar sits in the header, with Sign out.
+    expect(screen.getByRole('banner').textContent).toContain('3 short steps');
     fireEvent.click(screen.getByRole('button', { name: 'Let’s start' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'You’re in.' })).toBeTruthy();
+    // It goes with the set-up.
+    expect(screen.getByRole('banner').textContent).not.toContain('3 short steps');
   });
 
   it('takes someone with a profile straight to their page', async () => {
@@ -40,12 +43,13 @@ describe('the signed-in app', () => {
       .spyOn(api, 'request')
       .mockRejectedValueOnce(new ApiError('server', { status: 500 }));
     await renderApp(await signedIn(), {}, api);
-    const title = await screen.findByRole('heading', {
-      level: 1,
-      name: 'Your search desk didn’t open.',
-    });
-    expect(document.activeElement).toBe(title);
-    expect(screen.getByText(/^Check your connection, then try again\./)).toBeTruthy();
+    // The section takes focus, read as its title and its reason.
+    const failed = await screen.findByRole('region', { name: 'Your search desk didn’t open.' });
+    expect(document.activeElement).toBe(failed);
+    expect(failed.getAttribute('aria-describedby')).toBe('profile-failed-reason');
+    expect(document.getElementById('profile-failed-reason')?.textContent).toMatch(
+      /^Check your connection, then try again\./,
+    );
     // Never a trap: Sign out is in the header.
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));

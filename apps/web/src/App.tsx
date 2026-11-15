@@ -4,7 +4,7 @@ import { SignedIn } from '@/components/auth/signed-in.tsx';
 import { type AuthControl, AuthDrawer, type AuthMode } from '@/components/landing/auth-drawer.tsx';
 import { Hero } from '@/components/landing/hero.tsx';
 import { SiteHeader } from '@/components/landing/site-header.tsx';
-import { SetUp, StepProgress } from '@/components/setup/set-up.tsx';
+import { SetUp } from '@/components/setup/set-up.tsx';
 import { SignedInLayout } from '@/components/signed-in-layout.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { QueryRegion } from '@/components/ui/query-region.tsx';
@@ -12,7 +12,6 @@ import { copy } from '@/copy/index.ts';
 import { useProfile } from '@/lib/api/profile.ts';
 import { useAuth } from '@/lib/auth/index.ts';
 import { useFinishBoot } from '@/lib/boot-loader.ts';
-import { useDelayedPending } from '@/lib/use-delayed-pending.ts';
 
 /**
  * The app: the public landing page (the story of what the deputy does, and the way in), or, for a
@@ -51,16 +50,9 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
     queryClient.clear();
     onSignedOut();
   };
-  // The same hold QueryRegion gives its skeleton (#17), so the header's step bar comes with the
-  // set-up, not while the region still shows it loading.
-  const loading = profile.isLoading || (profile.isPending && profile.isPaused);
-  const holding = useDelayedPending(loading) || loading;
   const settingUp = profile.data === null && !started;
   return (
-    <SignedInLayout
-      aside={settingUp && !holding ? <StepProgress current={null} /> : undefined}
-      onSignedOut={signedOut}
-    >
+    <SignedInLayout onSignedOut={signedOut}>
       {/* The shared loading states (#17): nothing for 300 ms, then a skeleton read out as
           "Opening your search desk", "Still working…" after 8 s, "Waiting for a connection…"
           while offline. The region holds the page's width and gutters. */}
@@ -85,28 +77,29 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
 
 /**
  * The profile could not be read: say so, and offer to try again (Sign out is in the header, so an
- * account that can no longer be read never traps its person). Its title takes focus each time it
- * shows, so a failed retry is announced again.
+ * account that can no longer be read never traps its person). The section takes focus each time
+ * it shows, read as its title and reason, so a failed retry is announced again.
  */
 function ProfileFailed({ onRetry }: { onRetry: () => void }) {
-  const title = useRef<HTMLHeadingElement>(null);
+  const section = useRef<HTMLElement>(null);
   useEffect(() => {
-    title.current?.focus();
+    section.current?.focus();
   }, []);
   return (
     <section
+      ref={section}
+      tabIndex={-1}
       aria-labelledby="profile-failed-title"
-      className="grid max-w-[480px] justify-items-start gap-3"
+      aria-describedby="profile-failed-reason"
+      className="grid max-w-[480px] justify-items-start gap-3 outline-none"
     >
       <h1
         id="profile-failed-title"
-        tabIndex={-1}
-        ref={title}
-        className="m-0 font-display text-[clamp(1.75rem,6vw,2.25rem)] leading-tight font-medium tracking-[-0.03em] outline-none"
+        className="m-0 font-display text-[clamp(1.75rem,6vw,2.25rem)] leading-tight font-medium tracking-[-0.03em]"
       >
         {copy.profile.failed}
       </h1>
-      <p role="alert" className="m-0 text-[0.9375rem] text-muted-foreground">
+      <p id="profile-failed-reason" className="m-0 text-[0.9375rem] text-muted-foreground">
         {copy.profile.failedReason}
       </p>
       <Button onClick={onRetry}>{copy.profile.retry}</Button>

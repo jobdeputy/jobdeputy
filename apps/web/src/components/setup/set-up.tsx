@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { DeputySpeech, DeputyStatus } from '@/components/deputy/deputy-speech.tsx';
 import { Panda } from '@/components/deputy/panda.tsx';
+import { HeaderAside } from '@/components/header-aside.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { copy, fill } from '@/copy/index.ts';
 
@@ -9,7 +10,7 @@ const STEPS = 3;
 
 /**
  * The guided set-up after the first sign-in (#33), from the round 7 prototype's onboarding: the
- * deputy beside the current step, inside the signed-in layout (whose header shows `StepProgress`).
+ * deputy beside the current step, inside the signed-in layout (its header shows the step bar).
  * This is the welcome: who is signed in and the Region their account lives in. Its title takes
  * focus on arrival, so the change of page is announced.
  */
@@ -28,6 +29,9 @@ export function SetUp({
   }, []);
   return (
     <div className="grid content-start gap-8 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] md:items-start">
+      <HeaderAside>
+        <StepProgress current={null} />
+      </HeaderAside>
       {/* Phones: a small deputy beside what he says, so the step stays near the top. From md
             up: the deputy large, centred over his words, beside the step. */}
       <div className="flex items-center gap-4 md:sticky md:top-8 md:grid md:justify-items-center md:gap-3">

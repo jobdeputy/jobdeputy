@@ -206,4 +206,27 @@ describe('QueryRegion', () => {
     render(<Region query={loading} />);
     expect(content().contains(screen.getByRole('status'))).toBe(false);
   });
+
+  it('says nothing about a connection once the data is in, even if a refresh pauses', () => {
+    const { rerender } = render(<Region query={loading} />);
+    act(() => vi.advanceTimersByTime(300));
+    // The data arrives inside the skeleton's hold, and a refresh pauses offline at once.
+    rerender(<Region query={{ ...loaded, isFetching: false, isPaused: true }} />);
+    act(() => vi.advanceTimersByTime(50));
+    expect(screen.queryByText('Waiting for a connection…')).toBeNull();
+    expect(status()).not.toContain('Waiting for a connection');
+  });
+
+  it('counts a long first load across an offline spell', () => {
+    const { rerender } = render(<Region query={loading} />);
+    act(() => vi.advanceTimersByTime(5000));
+    rerender(
+      <Region query={{ ...loading, isLoading: false, isFetching: false, isPaused: true }} />,
+    );
+    act(() => vi.advanceTimersByTime(4000));
+    // Back online, 9 s in: still working, not starting over.
+    rerender(<Region query={loading} />);
+    act(() => vi.advanceTimersByTime(10));
+    expect(status()).toBe('Loading your matches. Still working…');
+  });
 });

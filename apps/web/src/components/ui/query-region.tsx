@@ -49,12 +49,13 @@ export function QueryRegion<T>({
   const refreshing = !loading && query.isFetching && query.data !== undefined;
   const skeletonShown = useDelayedPending(loading);
   const updatingShown = useDelayedPending(refreshing);
-  // Only a load that is actually running is "still working": a paused one is waiting for the network.
-  const longLoad = useLongWait(loading && !query.isPaused) && skeletonShown;
+  // Counted over the whole first load (offline spells too); only a load that is actually running
+  // is "still working": a paused one is waiting for the network.
+  const longLoad = useLongWait(loading) && skeletonShown && !query.isPaused;
   // The skeleton holds its 500 ms even when the data comes sooner, so it never flashes.
   const holding = loading || skeletonShown;
   // A first load paused offline waits for the network: say so, on screen and read out.
-  const offline = skeletonShown && query.isPaused;
+  const offline = skeletonShown && loading && query.isPaused;
   // "Updating…" only ever sits on data: never over a skeleton, an error, or nothing.
   const updatingVisible = updatingShown && !holding && query.data !== undefined;
 
