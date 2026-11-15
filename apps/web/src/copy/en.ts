@@ -175,11 +175,12 @@ export const en = {
       unknown: 'Something went wrong. Try again.',
     },
   },
-  /** The page a signed-in person sees until the app's own screens arrive. */
-  /** The guided set-up after the first sign-in (#33): three short steps, then the app. */
+  /** The guided set-up after the first sign-in (#33): a welcome, three short steps, then the app. */
   setUp: {
-    /** Read beside the header's step bar. */
+    /** Beside the header's step bar on the welcome, before the steps begin. */
     progress: '3 short steps',
+    /** Beside the step bar during the steps: where the person is. */
+    step: 'Step {current} of {total}',
     eyebrow: 'Getting started',
     title: 'Hi, I’m your deputy.',
     intro: 'About two minutes, so I search the right places.',
@@ -193,14 +194,19 @@ export const en = {
     locked: 'Locked',
     regionNote: 'Your profile, searches, and files stay in this Region.',
     start: 'Let’s start',
-    signOut: 'Sign out',
   },
   /** Loading the signed-in person's profile, and failing to. */
   profile: {
     loading: 'Opening your search desk',
+    /** While the browser is offline: the load waits for the network. */
+    offline: 'Waiting for a connection…',
     failed: 'Your search desk didn’t open.',
+    failedReason:
+      'Check your connection, then try again. If it still won’t open, sign out and back in.',
     retry: 'Try again',
+    retrying: 'Trying again…',
   },
+  /** The page a signed-in person sees until the app's own screens arrive. */
   signedIn: {
     kicker: 'Signed in',
     title: 'You’re in.',

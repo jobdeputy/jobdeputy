@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo } from 'react';
-import { useAuth } from '../auth/index.ts';
+import { appAuth, useAuth } from '../auth/index.ts';
 import { readConfig } from '../config.ts';
 import { type ApiClient, createApiClient } from './client.ts';
 import { createFakeApi } from './fake.ts';
@@ -25,7 +25,8 @@ function readApiUrl(): Promise<string | null> {
 }
 
 /** The test build's in-memory API (`--mode e2e`; the production build leaves it out). */
-const testBuildApi = import.meta.env.MODE === 'e2e' ? createFakeApi() : null;
+const testBuildApi =
+  import.meta.env.MODE === 'e2e' ? createFakeApi({ user: () => appAuth.currentUser() }) : null;
 
 /**
  * The API client for the screens: the cell's API, with the token of whoever `AuthContext` says is

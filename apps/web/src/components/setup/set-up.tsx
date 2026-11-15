@@ -4,9 +4,9 @@ import { BrandMark } from '@/components/brand-mark.tsx';
 import { DeputySpeech, DeputyStatus } from '@/components/deputy/deputy-speech.tsx';
 import { Panda } from '@/components/deputy/panda.tsx';
 import { Button } from '@/components/ui/button.tsx';
-import { copy } from '@/copy/index.ts';
+import { copy, fill } from '@/copy/index.ts';
 
-/** The set-up's steps (#33): the welcome, then you, your target roles and your résumé. */
+/** The set-up's steps after the welcome (#33): you, your target roles, your résumé. */
 const STEPS = 3;
 
 /**
@@ -37,7 +37,7 @@ export function SetUp({
           <BrandMark />
         </span>
         <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end-safe gap-x-4 gap-y-1">
-          <StepProgress current={0} />
+          <StepProgress current={null} />
           <SignOutButton onSignedOut={onSignedOut} messageClassName="basis-full text-end" />
         </div>
       </header>
@@ -106,20 +106,28 @@ function Fact({ label, value, pill }: { label: string; value: string; pill?: str
 }
 
 /**
- * Where the set-up is: "3 short steps" and a bar per step, the steps done and the current one
- * filled. The bar is decorative; the words say it.
+ * Where the set-up is: a bar per step, the steps done and the current one filled, and the words
+ * that say it ("3 short steps" on the welcome, before any step; "Step 2 of 3" during them). The
+ * bar is decorative; the words are what is read.
  */
-function StepProgress({ current }: { current: number }) {
+function StepProgress({ current }: { current: number | null }) {
+  const text = copy.setUp;
   return (
     <div className="flex items-center gap-2.5">
-      <p className="m-0 text-xs font-[650] text-muted-foreground">{copy.setUp.progress}</p>
+      <p className="m-0 text-xs font-[650] text-muted-foreground">
+        {current === null
+          ? text.progress
+          : fill(text.step, { current: String(current + 1), total: String(STEPS) })}
+      </p>
       <ol aria-hidden="true" className="m-0 flex list-none gap-1 p-0">
         {Array.from({ length: STEPS }, (_, step) => (
           <li
             // biome-ignore lint/suspicious/noArrayIndexKey: a fixed number of bars, one per step.
             key={step}
             className={
-              step <= current ? 'h-1.5 w-6 rounded-full bg-green' : 'h-1.5 w-6 rounded-full bg-line'
+              current !== null && step <= current
+                ? 'h-1.5 w-6 rounded-full bg-green'
+                : 'h-1.5 w-6 rounded-full bg-line'
             }
           />
         ))}

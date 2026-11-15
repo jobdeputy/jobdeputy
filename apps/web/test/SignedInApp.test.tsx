@@ -40,10 +40,18 @@ describe('the signed-in app', () => {
       .spyOn(api, 'request')
       .mockRejectedValueOnce(new ApiError('server', { status: 500 }));
     await renderApp(await signedIn(), {}, api);
+    const title = await screen.findByRole('heading', {
+      level: 1,
+      name: 'Your search desk didn’t open.',
+    });
+    expect(document.activeElement).toBe(title);
     expect(
-      await screen.findByRole('heading', { level: 1, name: 'Your search desk didn’t open.' }),
-    ).toBeTruthy();
-    expect(screen.getByRole('alert')).toBeTruthy();
+      screen
+        .getAllByRole('alert')
+        .some((alert) => alert.textContent?.startsWith('Check your connection')),
+    ).toBe(true);
+    // Never a trap: Sign out is right there.
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Hi, I’m your deputy.' }),
@@ -63,5 +71,15 @@ describe('the signed-in app', () => {
     );
     // The next person in this tab starts clean.
     expect(queries.getQueryCache().getAll()).toEqual([]);
+  });
+
+  it('keeps the page when a later refresh of the profile fails', async () => {
+    const api = createFakeApi({ delay: 0 });
+    const { queries } = await renderApp(await signedIn(), {}, api);
+    await screen.findByRole('heading', { level: 1, name: 'Hi, I’m your deputy.' });
+    vi.spyOn(api, 'request').mockRejectedValue(new ApiError('offline'));
+    await queries.refetchQueries({ queryKey: ['profile'] }).catch(() => {});
+    await waitFor(() => expect(queries.getQueryState(['profile'])?.status).toBe('error'));
+    expect(screen.getByRole('heading', { level: 1, name: 'Hi, I’m your deputy.' })).toBeTruthy();
   });
 });
