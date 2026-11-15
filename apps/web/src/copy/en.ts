@@ -168,6 +168,7 @@ export const en = {
       'too-many-tries': 'Too many tries. Wait a few minutes, then try again.',
       'weak-password': 'Choose a longer or less common password.',
       offline: 'Can’t reach JobDeputy. Check your connection and try again.',
+      unconfirmed: 'This account isn’t confirmed yet. Sign in to get a new code for it.',
       'no-answer': 'JobDeputy didn’t answer in time. A code may still arrive; if not, try again.',
       'not-set-up': 'Sign-in isn’t available here yet.',
       /** Not a failure: the code worked, but signing in straight after did not (shown as a note). */

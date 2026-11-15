@@ -174,8 +174,8 @@ export function AuthPanel({
       }
     } catch (error) {
       setRefusal(text.errors[error instanceof AuthError ? error.kind : 'unknown']);
-      // A code may or may not have gone: the step says to use the latest one.
-      setNoFreshCode(true);
+      // A code may or may not have gone: the code step after sign-up says to use the latest one.
+      if (step === 'confirm') setNoFreshCode(true);
     } finally {
       setResending(false);
     }

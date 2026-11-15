@@ -344,4 +344,14 @@ describe('amplifyAuth', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(amplify.configure).toHaveBeenCalledTimes(1);
   });
+
+  it('says an account that never confirmed its email cannot reset its password yet', async () => {
+    const auth = await load();
+    amplify.resetPassword.mockRejectedValue(
+      Object.assign(new Error('no verified email'), { name: 'InvalidParameterException' }),
+    );
+    await expect(auth.resetPassword('a@example.com')).rejects.toMatchObject({
+      kind: 'unconfirmed',
+    });
+  });
 });

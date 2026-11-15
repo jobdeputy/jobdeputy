@@ -164,7 +164,15 @@ export const amplifyAuth: Auth = {
     }),
   resetPassword: (email) =>
     call(async ({ resetPassword }) => {
-      await resetPassword({ username: email });
+      try {
+        await resetPassword({ username: email });
+      } catch (error) {
+        // Cognito's answer for an account whose email was never confirmed: no reset code can go.
+        if ((error as { name?: string } | null)?.name === 'InvalidParameterException') {
+          throw new AuthError('unconfirmed', { cause: error });
+        }
+        throw error;
+      }
     }),
   confirmResetPassword: (email, code, newPassword) =>
     call(async ({ confirmResetPassword }) => {
