@@ -50,9 +50,11 @@ export const SCREENS: Screen[] = [
   {
     name: 'gallery',
     path: '/gallery.html',
-    // The skeleton (after the 300 ms delay) and the deputy's last beat (the long-wait demo's line).
+    // The skeleton (after the 300 ms delay), the first deputy's step line, and the deputy's last
+    // beat (the long-wait demo's line).
     ready: [
       '[data-slot="query-region"][data-state="loading"]',
+      'text=Reading page 3 of 12',
       '[data-slot="deputy-working"][data-long]',
     ],
     clockUpTo: 3000,
@@ -83,8 +85,12 @@ export async function showScreen(page: Page, screen: Screen) {
   await page.goto(screen.path);
   if (screen.clockUpTo !== undefined) {
     const ready = [screen.ready ?? []].flat();
+    if (ready.length === 0) throw new Error(`${screen.name}: clockUpTo needs ready selectors.`);
+    // Visible, as the wait below checks: a hidden match must not stop the clock.
     const reached = async () =>
-      (await Promise.all(ready.map((selector) => page.locator(selector).count()))).every(Boolean);
+      (
+        await Promise.all(ready.map((selector) => page.locator(selector).first().isVisible()))
+      ).every(Boolean);
     // Short steps until the frame's state is all there: a slow render only takes more steps.
     for (let ran = 0; ran < screen.clockUpTo && !(await reached()); ran += CLOCK_STEP) {
       await page.clock.runFor(CLOCK_STEP);
