@@ -146,4 +146,68 @@ describe('AuthPanel', () => {
     expect(password.type).toBe('text');
     expect(screen.getByRole('button', { name: 'Hide password' })).toBeTruthy();
   });
+
+  it('sends someone whose code confirmed but who could not be signed in on to sign in', async () => {
+    const auth = createFakeAuth({ delay: 0 });
+    vi.spyOn(auth, 'confirmSignUp').mockRejectedValue(new AuthError('confirmed'));
+    renderPanel('sign-up', auth);
+    type('Email', 'new@example.com');
+    type(/^Password/, 'a long enough password');
+    submit('Create account');
+    await screen.findByRole('heading', { name: 'Enter your code.' });
+    type('Code from your email', FAKE_CODE);
+    submit('Confirm');
+    expect(await screen.findByRole('heading', { name: 'Welcome back.' })).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toBe(
+      'Your account is confirmed. Sign in to continue.',
+    );
+  });
+
+  it('sends a fresh code when an unconfirmed account signs in', async () => {
+    const auth = createFakeAuth({ delay: 0 });
+    await auth.signUp('later@example.com', 'a long enough password');
+    const resend = vi.spyOn(auth, 'resendSignUpCode');
+    renderPanel('sign-in', auth);
+    type('Email', 'later@example.com');
+    type(/^Password/, 'a long enough password');
+    submit('Sign in');
+    await screen.findByRole('heading', { name: 'Enter your code.' });
+    expect(resend).toHaveBeenCalledWith('later@example.com');
+    // And there is a way back.
+    expect(screen.getByRole('button', { name: 'Back to sign in' })).toBeTruthy();
+  });
+
+  it('keeps the step while a request runs, and says it is working', async () => {
+    let finish = () => {};
+    const auth = createFakeAuth({ delay: 0 });
+    vi.spyOn(auth, 'signIn').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve('done');
+        }),
+    );
+    renderPanel('sign-in', auth);
+    type('Email', 'a@example.com');
+    type(/^Password/, 'anything at all');
+    submit('Sign in');
+    fireEvent.click(screen.getByRole('button', { name: 'Forgot password?' }));
+    expect(screen.getByRole('heading', { name: 'Welcome back.' })).toBeTruthy();
+    // After the shared 300 ms, the wait is read out.
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Signing in…'));
+    finish();
+  });
+
+  it('leaves a step’s message behind when moving to another step', async () => {
+    renderPanel('sign-up');
+    type('Email', 'new@example.com');
+    type(/^Password/, 'a long enough password');
+    submit('Create account');
+    await screen.findByRole('heading', { name: 'Enter your code.' });
+    fireEvent.click(screen.getByRole('button', { name: 'Send a new code' }));
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toBe('A new code is on its way.'),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Back to sign in' }));
+    expect(screen.getByRole('status').textContent).toBe('');
+  });
 });

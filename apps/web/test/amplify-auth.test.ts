@@ -111,4 +111,25 @@ describe('amplifyAuth', () => {
     });
     await expect(auth.currentUser()).resolves.toBe('a@example.com');
   });
+
+  it('clears a stale session that blocks a new sign-in, and signs in once more', async () => {
+    const auth = await load();
+    const blocked = Object.assign(new Error('already'), {
+      name: 'UserAlreadyAuthenticatedException',
+    });
+    amplify.signIn
+      .mockRejectedValueOnce(blocked)
+      .mockResolvedValueOnce({ isSignedIn: true, nextStep: { signInStep: 'DONE' } });
+    await expect(auth.signIn('a@example.com', 'pw')).resolves.toBe('done');
+    expect(amplify.signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it('says the account is confirmed when signing in straight after the code fails', async () => {
+    const auth = await load();
+    amplify.confirmSignUp.mockResolvedValue({ nextStep: { signUpStep: 'DONE' } });
+    amplify.signIn.mockRejectedValue(Object.assign(new Error('net'), { name: 'NetworkError' }));
+    await expect(auth.confirmSignUp('a@example.com', 'pw', '123456')).rejects.toMatchObject({
+      kind: 'confirmed',
+    });
+  });
 });

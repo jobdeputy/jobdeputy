@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button.tsx';
 import { copy, fill } from '@/copy/index.ts';
-import { useAuth } from '@/lib/auth/index.ts';
+import { AuthError, useAuth } from '@/lib/auth/index.ts';
+import { useDelayedPending } from '@/lib/use-delayed-pending.ts';
+import { cn } from '@/lib/utils.ts';
 
 /**
  * Where a signed-in person lands until the app's own screens arrive (#14 slice 2): who they are
@@ -10,6 +12,13 @@ import { useAuth } from '@/lib/auth/index.ts';
 export function SignedIn({ email, onSignedOut }: { email: string; onSignedOut: () => void }) {
   const auth = useAuth();
   const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+  const waiting = useDelayedPending(pending);
+  const title = useRef<HTMLHeadingElement>(null);
+  // Once, on arrival: the change of page is announced, and focus is not pulled back later.
+  useEffect(() => {
+    title.current?.focus();
+  }, []);
   const { signedIn: text } = copy;
   return (
     <main className="grid min-h-dvh place-items-center bg-background p-[21px]">
@@ -20,7 +29,7 @@ export function SignedIn({ email, onSignedOut }: { email: string; onSignedOut: (
         <h1
           id="signed-in-title"
           tabIndex={-1}
-          ref={(heading) => heading?.focus()}
+          ref={title}
           className="m-0 font-display text-[clamp(2.5rem,9vw,3.25rem)] leading-none font-medium tracking-[-0.05em] outline-none"
         >
           {text.title}
@@ -32,17 +41,31 @@ export function SignedIn({ email, onSignedOut }: { email: string; onSignedOut: (
           pending={pending}
           pendingLabel={text.signingOut}
           onClick={async () => {
+            if (pending) return;
             setPending(true);
+            setFailed(null);
             try {
               await auth.signOut();
+              onSignedOut();
+            } catch (error) {
+              // Still signed in (the session is still stored): say so, rather than pretend.
+              setFailed(copy.auth.errors[error instanceof AuthError ? error.kind : 'unknown']);
             } finally {
               setPending(false);
-              onSignedOut();
             }
           }}
         >
           {text.signOut}
         </Button>
+        <p role="status" className="sr-only">
+          {waiting ? text.signingOut : ''}
+        </p>
+        <p
+          role="alert"
+          className={cn('m-0 text-sm font-[650] text-danger-ink', !failed && 'sr-only')}
+        >
+          {failed}
+        </p>
       </section>
     </main>
   );

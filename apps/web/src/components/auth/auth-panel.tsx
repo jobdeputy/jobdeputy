@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button.tsx';
 import { SheetDescription, SheetTitle } from '@/components/ui/sheet.tsx';
 import { copy, fill } from '@/copy/index.ts';
 import { AuthError, useAuth } from '@/lib/auth/index.ts';
+import { useDelayedPending } from '@/lib/use-delayed-pending.ts';
 import { cn } from '@/lib/utils.ts';
 import { Field, PasswordField } from './fields.tsx';
 
@@ -62,6 +63,9 @@ export function AuthPanel({
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const form = useRef<HTMLFormElement>(null);
+  // Said in the status line on the button's timing (nothing for 300 ms), so a screen reader hears
+  // the wait too: the button's own label change is not reliably read out.
+  const waiting = useDelayedPending(pending);
   const refusalId = useId();
 
   // A new step starts at its first field.
@@ -76,6 +80,7 @@ export function AuthPanel({
     setValues(keep ?? { email: values.email ?? '' });
     setErrors({});
     setRefusal(null);
+    setNotice(null);
   };
 
   const bind = (name: keyof Errors | 'email') => ({
@@ -103,8 +108,11 @@ export function AuthPanel({
       const { password = '', code = '' } = values;
       if (step === 'sign-in') {
         const next = await auth.signIn(email, password);
-        if (next === 'confirm') go('confirm', { email, password });
-        else onSignedIn(email);
+        if (next === 'confirm') {
+          // The code from sign-up may be long gone: send a fresh one before asking for it.
+          await auth.resendSignUpCode(email);
+          go('confirm', { email, password });
+        } else onSignedIn(email);
       } else if (step === 'sign-up') {
         await auth.signUp(email, password);
         go('confirm', { email, password });
@@ -121,14 +129,22 @@ export function AuthPanel({
       }
     } catch (error) {
       const kind = error instanceof AuthError ? error.kind : 'unknown';
-      setRefusal(text.errors[kind]);
+      if (kind === 'confirmed') {
+        // Confirmed, but not signed in: the code cannot be used again, so on to sign in.
+        go('sign-in', { email });
+        setNotice(text.confirm.confirmed);
+      } else {
+        setRefusal(text.errors[kind]);
+      }
     } finally {
       setPending(false);
     }
   }
 
   async function resend() {
+    if (pending) return;
     setRefusal(null);
+    setNotice(null);
     try {
       await auth.resendSignUpCode(email);
       setNotice(text.confirm.resent);
@@ -214,7 +230,7 @@ export function AuthPanel({
         {/* Live regions stay in the accessibility tree when empty (visually hidden, never
             display:none), so their first words are read. */}
         <p role="status" className={cn('m-0 text-sm text-green-ink', !notice && 'sr-only')}>
-          {notice}
+          {waiting ? action.pending : notice}
         </p>
         <p
           id={refusalId}
@@ -231,16 +247,28 @@ export function AuthPanel({
         <div className="flex flex-wrap justify-between gap-x-4 gap-y-2 text-sm">
           {step === 'sign-in' && (
             <>
-              <LinkButton onClick={() => go('reset')}>{text.signIn.forgot}</LinkButton>
-              <LinkButton onClick={() => go('sign-up')}>{text.signIn.switch}</LinkButton>
+              <LinkButton off={pending} onClick={() => go('reset')}>
+                {text.signIn.forgot}
+              </LinkButton>
+              <LinkButton off={pending} onClick={() => go('sign-up')}>
+                {text.signIn.switch}
+              </LinkButton>
             </>
           )}
           {step === 'sign-up' && (
-            <LinkButton onClick={() => go('sign-in')}>{text.signUp.switch}</LinkButton>
+            <LinkButton off={pending} onClick={() => go('sign-in')}>
+              {text.signUp.switch}
+            </LinkButton>
           )}
-          {step === 'confirm' && <LinkButton onClick={resend}>{text.confirm.resend}</LinkButton>}
-          {(step === 'reset' || step === 'reset-confirm') && (
-            <LinkButton onClick={() => go('sign-in')}>{text.backToSignIn}</LinkButton>
+          {step === 'confirm' && (
+            <LinkButton off={pending} onClick={resend}>
+              {text.confirm.resend}
+            </LinkButton>
+          )}
+          {(step === 'confirm' || step === 'reset' || step === 'reset-confirm') && (
+            <LinkButton off={pending} onClick={() => go('sign-in')}>
+              {text.backToSignIn}
+            </LinkButton>
           )}
         </div>
       </form>
@@ -248,13 +276,27 @@ export function AuthPanel({
   );
 }
 
-/** A quiet text button that moves between steps (it changes the form, so it is a button). */
-function LinkButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+/**
+ * A quiet text button that moves between steps (it changes the form, so it is a button). Off while
+ * a request runs, so a late answer cannot land on another step; it keeps its focus (aria-disabled).
+ */
+function LinkButton({
+  onClick,
+  off = false,
+  children,
+}: {
+  onClick: () => void;
+  off?: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <button
       type="button"
-      onClick={onClick}
-      className="cursor-pointer rounded-xs font-[650] text-green-ink underline underline-offset-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ring focus-visible:outline-solid"
+      aria-disabled={off || undefined}
+      onClick={() => {
+        if (!off) onClick();
+      }}
+      className="cursor-pointer rounded-xs font-[650] text-green-ink underline underline-offset-2 hover:text-ink aria-disabled:cursor-default aria-disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ring focus-visible:outline-solid"
     >
       {children}
     </button>

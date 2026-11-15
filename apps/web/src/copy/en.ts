@@ -132,6 +132,8 @@ export const en = {
       pending: 'Checking…',
       resend: 'Send a new code',
       resent: 'A new code is on its way.',
+      /** The code worked, but signing in straight after did not. */
+      confirmed: 'Your account is confirmed. Sign in to continue.',
     },
     reset: {
       kicker: 'Reset password',
@@ -165,6 +167,7 @@ export const en = {
       'weak-password': 'Choose a longer or less common password.',
       offline: 'Can’t reach JobDeputy. Check your connection and try again.',
       'not-set-up': 'Sign-in isn’t available here yet.',
+      confirmed: 'Your account is confirmed. Sign in to continue.',
       unknown: 'Something went wrong. Try again.',
     },
   },

@@ -37,6 +37,8 @@ export type AuthErrorKind =
   | 'offline'
   /** Sign-in is not configured where the app runs. */
   | 'not-set-up'
+  /** The code confirmed the account, but signing in straight after failed: sign in now. */
+  | 'confirmed'
   | 'unknown';
 
 export class AuthError extends Error {

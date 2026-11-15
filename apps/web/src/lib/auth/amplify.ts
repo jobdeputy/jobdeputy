@@ -102,15 +102,27 @@ export const amplifyAuth: Auth = {
         const result = await autoSignIn().catch(() => null);
         if (result?.isSignedIn) return;
       }
-      await signIn({ username: email, password });
+      try {
+        await signIn({ username: email, password });
+      } catch (error) {
+        // The account is confirmed now (the code cannot be used again): send them to sign in.
+        throw new AuthError('confirmed', { cause: error });
+      }
     }),
   resendSignUpCode: (email) =>
     call(async ({ resendSignUpCode }) => {
       await resendSignUpCode({ username: email });
     }),
   signIn: (email, password) =>
-    call(async ({ signIn }) => {
-      const { isSignedIn, nextStep } = await signIn({ username: email, password });
+    call(async ({ signIn, signOut }) => {
+      // A session left from before (stored, but not readable at boot) would block a new sign-in:
+      // clear it and sign in once more.
+      const attempt = () => signIn({ username: email, password });
+      const { isSignedIn, nextStep } = await attempt().catch(async (error: { name?: string }) => {
+        if (error?.name !== 'UserAlreadyAuthenticatedException') throw error;
+        await signOut();
+        return attempt();
+      });
       if (nextStep.signInStep === 'CONFIRM_SIGN_UP') return 'confirm';
       if (!isSignedIn) throw new AuthError('unknown');
       return 'done';
