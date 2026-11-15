@@ -74,6 +74,10 @@ export function buildApp(options: BuildAppOptions): App {
       cell,
       ...(owner ? { owner } : {}),
       alertEmails: parseAlertEmails(env.JD_ALERT_EMAIL),
+      // The site's cell answers CORS for the site's origin (shared stacks only).
+      ...(!owner && cell === SITE_CELL && WEB_SITES[stage]
+        ? { siteOrigin: `https://${WEB_SITES[stage].domain}` }
+        : {}),
       env: stackEnv,
       // Decision 0004: never share values across Regions.
       crossRegionReferences: false,

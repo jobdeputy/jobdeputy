@@ -32,4 +32,4 @@ A user can create a profile, submit a job-listing URL, and later see the relevan
 
 ## Build order
 
-Workspace → stack decision → infrastructure → backend → crawl pipeline → UI → end-to-end hardening. See the [task board](tasks/README.md).
+Workspace → stack decision → infrastructure → backend → crawl pipeline → UI → end-to-end hardening. Tasks are [GitHub issues](https://github.com/jobdeputy/jobdeputy/issues).

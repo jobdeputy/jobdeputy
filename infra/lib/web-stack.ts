@@ -53,18 +53,23 @@ export function cognitoOrigin(region: string): string {
 }
 
 /**
- * Content-Security-Policy for the static app: everything from this origin only, and sign-in calls
- * to Cognito in the signing-in cell's Region, when there is one (#14). The API origin is added to
- * connect-src by the task that first calls it.
+ * Content-Security-Policy for the static app: everything from this origin only, plus, when the
+ * site signs people in to a cell, calls to Cognito in that cell's Region (#14) and to the cell's
+ * own origins: its API and its documents bucket (#33; a deploy-time value from the cell).
  */
-export const webCsp = (signInRegion?: string): string =>
+export const webCsp = (signInRegion?: string, cellOrigins?: string): string =>
   [
     "default-src 'self'",
     "script-src 'self'",
     "style-src 'self'",
     "img-src 'self' data:",
     "font-src 'self'",
-    ['connect-src', "'self'", ...(signInRegion ? [cognitoOrigin(signInRegion)] : [])].join(' '),
+    [
+      'connect-src',
+      "'self'",
+      ...(signInRegion ? [cognitoOrigin(signInRegion)] : []),
+      ...(cellOrigins ? [cellOrigins] : []),
+    ].join(' '),
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -117,7 +122,12 @@ export class WebStack extends Stack {
     const headers = new ResponseHeadersPolicy(this, 'SecurityHeaders', {
       securityHeadersBehavior: {
         contentSecurityPolicy: {
-          contentSecurityPolicy: webCsp(signIn?.region),
+          contentSecurityPolicy: webCsp(
+            signIn?.region,
+            signIn?.webConnectParameter
+              ? StringParameter.valueForStringParameter(this, signIn.webConnectParameter)
+              : undefined,
+          ),
           override: true,
         },
         strictTransportSecurity: {
@@ -204,7 +214,7 @@ export class WebStack extends Stack {
  * left to the deploy's credentials (as in local synths). The site then deploys after the cell.
  */
 function checkedSignIn(site: Stack, cell: CellStack): string {
-  if (!cell.webSignInParameter) {
+  if (!cell.webSignInParameter || !cell.webConnectParameter) {
     throw new Error(`${cell.stackName} writes no sign-in config (a personal or PR stack).`);
   }
   if (Token.isUnresolved(site.region) || Token.isUnresolved(cell.region)) {

@@ -6,7 +6,7 @@ import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 import { WEB_SITES } from '../config/web.js';
 import { buildApp } from '../lib/build-app.js';
-import { CellStack, webSignInParameter } from '../lib/cell-stack.js';
+import { CellStack, webConnectParameter, webSignInParameter } from '../lib/cell-stack.js';
 import { checkGuards } from '../lib/guards.js';
 import { WebDnsStack } from '../lib/web-dns-stack.js';
 import { WebStack, webCsp } from '../lib/web-stack.js';
@@ -107,10 +107,29 @@ describe('web app hosting (decision 0011)', () => {
     // without sign-in talks to itself only.
     expect(csp).toContain("connect-src 'self' https://cognito-idp.us-east-1.amazonaws.com;");
     expect(webCsp()).toContain("connect-src 'self';");
+    // The cell's own origins (its API and documents bucket) follow Cognito.
+    expect(webCsp('us-east-1', 'https://a.example https://b.example')).toContain(
+      "connect-src 'self' https://cognito-idp.us-east-1.amazonaws.com https://a.example https://b.example;",
+    );
     web.hasResourceProperties('AWS::CloudFront::ResponseHeadersPolicy', {
       ResponseHeadersPolicyConfig: Match.objectLike({
         SecurityHeadersConfig: Match.objectLike({
-          ContentSecurityPolicy: { ContentSecurityPolicy: csp, Override: true },
+          // Joined at deploy time with the cell's origins, read from its SSM parameter.
+          ContentSecurityPolicy: {
+            ContentSecurityPolicy: {
+              'Fn::Join': [
+                '',
+                [
+                  Match.stringLikeRegexp(
+                    "connect-src 'self' https://cognito-idp\\.us-east-1\\.amazonaws\\.com $",
+                  ),
+                  { Ref: Match.stringLikeRegexp('webconnectsrc') },
+                  Match.stringLikeRegexp("^; object-src 'none'"),
+                ],
+              ],
+            },
+            Override: true,
+          },
           StrictTransportSecurity: Match.objectLike({ AccessControlMaxAgeSec: 31536000 }),
           FrameOptions: { FrameOption: 'DENY', Override: true },
         }),
@@ -151,6 +170,16 @@ describe('web app hosting (decision 0011)', () => {
     const value = JSON.stringify(written?.Properties.Value);
     expect(value).toMatch(/userPoolId.*Ref.*AuthUserPool/);
     expect(value).toMatch(/userPoolClientId.*Ref.*AuthUserPoolWebClient/);
+    expect(value).toMatch(/apiUrl.*Ref.*HttpApi/);
+    // And the origins the site may call there: exactly its API and its documents bucket.
+    const origins = JSON.stringify(
+      Object.values(cell.findResources('AWS::SSM::Parameter')).find(
+        (r) => r.Properties.Name === webConnectParameter('dev', 'iad'),
+      )?.Properties.Value,
+    );
+    expect(origins).toMatch(
+      /https:\/\/.*HttpApi.*execute-api.*https:\/\/.*DocumentsBucket.*RegionalDomainName/,
+    );
     // …and the site reads it at deploy time, after the cell: no stack export, so the pool and
     // client can still be replaced.
     const webStack = app.node.findChild('jobdeputy-dev-web') as never;
@@ -233,6 +262,38 @@ describe('web app hosting (decision 0011)', () => {
     const dist = mkdtempSync(join(tmpdir(), 'web-dist-'));
     writeFileSync(join(dist, 'index.html'), '<!doctype html><title>t</title>');
     expect(checkGuards(buildApp({ stage: 'dev', env: {}, webContentDir: dist }))).toEqual([]);
+  });
+  it("lets only the site's origin call the site cell's API and post its uploads (#33)", () => {
+    const app = buildApp({ stage: 'dev', env: {} });
+    const cell = Template.fromStack(app.node.findChild('jobdeputy-dev-iad') as never);
+    cell.hasResourceProperties('AWS::ApiGatewayV2::Api', {
+      Name: 'jobdeputy-dev-iad',
+      CorsConfiguration: {
+        AllowOrigins: ['https://dev.jobdeputy.com'],
+        AllowMethods: ['GET', 'POST', 'PUT', 'DELETE'],
+        AllowHeaders: ['authorization', 'content-type'],
+        MaxAge: 3600,
+      },
+    });
+    cell.hasResourceProperties('AWS::S3::Bucket', {
+      CorsConfiguration: {
+        CorsRules: [
+          {
+            AllowedOrigins: ['https://dev.jobdeputy.com'],
+            AllowedMethods: ['POST'],
+            AllowedHeaders: ['*'],
+            MaxAge: 3600,
+          },
+        ],
+      },
+    });
+    // Personal and PR stacks: no browser may call them.
+    const personal = buildApp({ stage: 'dev', env: {}, owner: 'alice' });
+    const own = Template.fromStack(
+      personal.node.children.find((c) => c.node.id.endsWith('-iad')) as never,
+    );
+    expect(JSON.stringify(own.findResources('AWS::ApiGatewayV2::Api'))).not.toContain('Cors');
+    expect(JSON.stringify(own.findResources('AWS::S3::Bucket'))).not.toContain('CorsConfiguration');
   });
 });
 
