@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
-import { expectNoAccessibilityViolations, expectNoHorizontalScroll } from './checks.ts';
+import { expectNoAccessibilityViolations, expectNoHorizontalScroll, openHome } from './checks.ts';
 
 const TITLE = 'You set it up. Your deputy applies.';
 
@@ -31,7 +31,7 @@ async function expectHeroFillsScreen(page: Page) {
 
 test.describe('landing page', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await openHome(page);
   });
 
   test('shows the promise, the two ways in, and the three steps', async ({ page }) => {
@@ -163,7 +163,7 @@ test.describe('the story', () => {
   // Real time, waiting on facts: the story's steps are 4 s, so a step changes well inside the
   // 15 s these waits allow, and nothing depends on how fast the page loaded.
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await openHome(page);
   });
 
   test('plays each step once by itself, then offers Replay', async ({ page }) => {
@@ -203,7 +203,7 @@ test.describe('the story, step by step', () => {
   // The story's clock is the current step's bar (a CSS animation), so these wait on facts in
   // real time rather than on the page's clock, which does not drive CSS.
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await openHome(page);
   });
 
   test("shows each step's props, with its flourish", async ({ page }) => {
@@ -236,6 +236,8 @@ test.describe('the story, step by step', () => {
     await stripSteps(page).nth(0).click();
     await page.getByRole('button', { name: 'Play story' }).click();
     await expect.poll(() => breathing(page)).toBe(true);
+    // Well into the step, so a bar that started over could not pass for one that went on.
+    await expect.poll(() => barTime(page)).toBeGreaterThan(1000);
     await page.getByRole('button', { name: 'Pause story' }).click();
     // Paused, the deputy stops breathing (easing back to his pose)…
     await expect.poll(() => breathing(page)).toBe(false);
@@ -243,14 +245,23 @@ test.describe('the story, step by step', () => {
     await expect(stripSteps(page).nth(0)).toHaveAttribute('data-progress', 'held');
     expect(await stepBar(page)).toEqual([4100, 'paused']);
     const stopped = await barTime(page);
-    expect(stopped).toBeGreaterThan(0);
+    // Marked, to tell after Play whether it is the same fill going on or a new one.
+    await page.locator('[data-bar]').evaluate((bar) => {
+      const fill = bar.getAnimations()[0];
+      if (fill) fill.id = 'paused-fill';
+    });
     // …and, paused by its button, the step's flourish holds where it is.
     await expect(page.locator('.story-stage')).toHaveAttribute('data-held', 'true');
     await expect(page.locator('.animate-tailor-paw')).toHaveCSS('animation-play-state', 'paused');
     await page.getByRole('button', { name: 'Play story' }).click();
     // Its bar goes on from where it stopped (not from empty), fills the rest of the way, and the
     // next step comes on.
-    expect(await barTime(page)).toBeGreaterThanOrEqual(stopped);
+    expect(await page.locator('[data-bar]').evaluate((bar) => bar.getAnimations()[0]?.id)).toBe(
+      'paused-fill',
+    );
+    // WebKit on Linux can read up to a frame or so behind as it resumes; empty would read near 0.
+    expect(await barTime(page)).toBeGreaterThan(stopped - 100);
+    await expect.poll(() => barTime(page)).toBeGreaterThan(stopped);
     await expect(stripSteps(page).nth(1)).toHaveAttribute('aria-current', 'step', {
       timeout: 15_000,
     });
@@ -262,7 +273,7 @@ test.describe('with reduced motion', () => {
 
   test('the story never plays by itself; its button advances a step', async ({ page }) => {
     await page.clock.install();
-    await page.goto('/');
+    await openHome(page);
     // Well past every step's time: under reduced motion nothing has moved.
     await page.clock.fastForward(20_000);
     await expect(stripSteps(page).nth(0)).toHaveAttribute('aria-current', 'step');
@@ -275,7 +286,7 @@ test.describe('with reduced motion', () => {
   });
 
   test('the drawer appears without sliding', async ({ page }) => {
-    await page.goto('/');
+    await openHome(page);
     await visibleButton(page, 'Sign in').click();
     const drawer = page.getByRole('dialog', { name: 'Welcome back.' });
     await expect(drawer).toHaveCSS('animation-name', 'none');
