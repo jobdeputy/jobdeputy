@@ -43,13 +43,11 @@ describe('the signed-in app', () => {
       .spyOn(api, 'request')
       .mockRejectedValueOnce(new ApiError('server', { status: 500 }));
     await renderApp(await signedIn(), {}, api);
-    // The section takes focus, read as its title and its reason.
-    const failed = await screen.findByRole('region', { name: 'Your search desk didn’t open.' });
+    // The section takes focus, named by its title and its reason.
+    const failed = await screen.findByRole('region', {
+      name: /^Your search desk didn’t open\. Check your connection, then try again\./,
+    });
     expect(document.activeElement).toBe(failed);
-    expect(failed.getAttribute('aria-describedby')).toBe('profile-failed-reason');
-    expect(document.getElementById('profile-failed-reason')?.textContent).toMatch(
-      /^Check your connection, then try again\./,
-    );
     // Never a trap: Sign out is in the header.
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));

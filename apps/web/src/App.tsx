@@ -78,7 +78,7 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
 /**
  * The profile could not be read: say so, and offer to try again (Sign out is in the header, so an
  * account that can no longer be read never traps its person). The section takes focus each time
- * it shows, read as its title and reason, so a failed retry is announced again.
+ * it shows, named by its title and reason, so a failed retry is announced again.
  */
 function ProfileFailed({ onRetry }: { onRetry: () => void }) {
   const section = useRef<HTMLElement>(null);
@@ -89,8 +89,9 @@ function ProfileFailed({ onRetry }: { onRetry: () => void }) {
     <section
       ref={section}
       tabIndex={-1}
-      aria-labelledby="profile-failed-title"
-      aria-describedby="profile-failed-reason"
+      // Named by its title and reason, so taking focus reads both on every screen reader
+      // (a description can be read late, or only as a hint).
+      aria-labelledby="profile-failed-title profile-failed-reason"
       className="grid max-w-[480px] justify-items-start gap-3 outline-none"
     >
       <h1
