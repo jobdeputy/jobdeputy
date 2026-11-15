@@ -5,7 +5,7 @@ import {
   CliCredentialsStackSynthesizer,
   type IStackSynthesizer,
 } from 'aws-cdk-lib';
-import { CELLS } from '../config/cells.js';
+import { CELLS, type CellId } from '../config/cells.js';
 import { accountEnvVar, isStageName, STAGES, type StageName } from '../config/stages.js';
 import { WEB_SITES } from '../config/web.js';
 import { CellStack } from './cell-stack.js';
@@ -37,6 +37,9 @@ export interface BuildAppOptions {
 
 const OWNER_PATTERN = /^[a-z][a-z0-9-]{1,15}$/;
 
+/** The cell the site lives beside and signs people in to (US-only launch), in its account. */
+const SITE_CELL: CellId = 'iad';
+
 export function buildApp(options: BuildAppOptions): App {
   const { stage, owner } = options;
   const env = options.env ?? process.env;
@@ -52,6 +55,7 @@ export function buildApp(options: BuildAppOptions): App {
   }
 
   const app = options.app ?? new App(options.appProps);
+  const cellStacks: Partial<Record<CellId, CellStack>> = {};
   for (const cell of STAGES[stage].cells) {
     const account = env[accountEnvVar(stage, cell)];
     const id = owner ? `jobdeputy-${stage}-${owner}-${cell}` : `jobdeputy-${stage}-${cell}`;
@@ -77,8 +81,9 @@ export function buildApp(options: BuildAppOptions): App {
     });
     // The cell reads the key's ARN from SSM at deploy time, so the key must exist first.
     if (keys) cellStack.addDependency(keys);
+    cellStacks[cell] = cellStack;
   }
-  if (!owner) addWebStacks(app, stage, env, options.webContentDir);
+  if (!owner) addWebStacks(app, stage, env, options.webContentDir, cellStacks[SITE_CELL]);
   return app;
 }
 
@@ -92,6 +97,7 @@ function addWebStacks(
   stage: StageName,
   env: Record<string, string | undefined>,
   contentDir: string | undefined,
+  siteCell: CellStack | undefined,
 ): void {
   const site = WEB_SITES[stage];
   if (!site) return;
@@ -100,8 +106,11 @@ function addWebStacks(
       `The web app is not built (${contentDir} is missing): run pnpm --filter @jobdeputy/web build.`,
     );
   }
-  const account = env[accountEnvVar(stage, 'iad')];
-  const stackEnv = { region: CELLS.iad.region, ...(account ? { account } : {}) };
+  if (!siteCell) {
+    throw new Error(`The ${stage} site signs people in to the ${SITE_CELL} cell, which it lacks.`);
+  }
+  const account = env[accountEnvVar(stage, SITE_CELL)];
+  const stackEnv = { region: CELLS[SITE_CELL].region, ...(account ? { account } : {}) };
   const dns = new WebDnsStack(app, `jobdeputy-${stage}-web-dns`, {
     domain: site.domain,
     env: stackEnv,
@@ -111,6 +120,7 @@ function addWebStacks(
     zone: dns.zone,
     env: stackEnv,
     ...(contentDir !== undefined ? { contentDir } : {}),
+    signIn: siteCell,
   });
 }
 

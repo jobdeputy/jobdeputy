@@ -5,6 +5,7 @@ import {
   RemovalPolicy,
   Stack,
   type StackProps,
+  Token,
 } from 'aws-cdk-lib';
 import { Certificate, CertificateValidation } from 'aws-cdk-lib/aws-certificatemanager';
 import {
@@ -24,7 +25,9 @@ import { AaaaRecord, ARecord, type IHostedZone, RecordTarget } from 'aws-cdk-lib
 import { CloudFrontTarget } from 'aws-cdk-lib/aws-route53-targets';
 import { BlockPublicAccess, Bucket, BucketEncryption, type IBucket } from 'aws-cdk-lib/aws-s3';
 import { BucketDeployment, Source } from 'aws-cdk-lib/aws-s3-deployment';
+import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import type { Construct } from 'constructs';
+import type { CellStack } from './cell-stack.js';
 
 export interface WebStackProps extends StackProps {
   /** The site's address; also the zone's name (the site sits at the zone apex). */
@@ -35,24 +38,38 @@ export interface WebStackProps extends StackProps {
    * infrastructure only; bin/app.ts always passes it (and fails if it is missing).
    */
   readonly contentDir?: string;
+  /**
+   * Where people sign in (#14): the shared cell whose sign-in config (an SSM parameter, read at
+   * deploy time, so this stack deploys after it) becomes the site's `/config.json`, and whose
+   * Cognito the CSP lets the app call. It must be in this stack's Region (decision 0004). Left
+   * out, the site has no sign-in.
+   */
+  readonly signIn?: CellStack;
+}
+
+/** Cognito's sign-in endpoint in a Region. */
+export function cognitoOrigin(region: string): string {
+  return `https://cognito-idp.${region}.amazonaws.com`;
 }
 
 /**
- * Content-Security-Policy for the static app: everything from this origin only. The API
- * and Cognito origins are added to connect-src by the task that first calls them.
+ * Content-Security-Policy for the static app: everything from this origin only, and sign-in calls
+ * to Cognito in the signing-in cell's Region, when there is one (#14). The API origin is added to
+ * connect-src by the task that first calls it.
  */
-export const WEB_CSP = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self'",
-  "img-src 'self' data:",
-  "font-src 'self'",
-  "connect-src 'self'",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-].join('; ');
+export const webCsp = (signInRegion?: string): string =>
+  [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self'",
+    "img-src 'self' data:",
+    "font-src 'self'",
+    ['connect-src', "'self'", ...(signInRegion ? [cognitoOrigin(signInRegion)] : [])].join(' '),
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join('; ');
 
 /**
  * Decision 0011: the web app as static files in a private S3 bucket behind CloudFront,
@@ -68,6 +85,11 @@ export class WebStack extends Stack {
 
   constructor(scope: Construct, id: string, props: WebStackProps) {
     super(scope, id, props);
+
+    // The config is read in this stack's account and Region: a cell elsewhere (or a Region not
+    // known yet) could mean a hand-off across Regions, which decision 0004 rules out.
+    const signIn = props.signIn;
+    const signInParameter = signIn ? checkedSignIn(this, signIn) : undefined;
     // The zone comes from the DNS stack as a strong reference on purpose: that stack can't
     // drop the zone while this one uses it (the delegation names its name servers).
     Annotations.of(this).acknowledgeWarning(
@@ -94,7 +116,10 @@ export class WebStack extends Stack {
 
     const headers = new ResponseHeadersPolicy(this, 'SecurityHeaders', {
       securityHeadersBehavior: {
-        contentSecurityPolicy: { contentSecurityPolicy: WEB_CSP, override: true },
+        contentSecurityPolicy: {
+          contentSecurityPolicy: webCsp(signIn?.region),
+          override: true,
+        },
         strictTransportSecurity: {
           accessControlMaxAge: Duration.days(365),
           includeSubdomains: true,
@@ -141,7 +166,19 @@ export class WebStack extends Stack {
 
     if (props.contentDir) {
       new BucketDeployment(this, 'Content', {
-        sources: [Source.asset(props.contentDir)],
+        sources: [
+          Source.asset(props.contentDir),
+          // Fetched with cache: 'no-store' (src/lib/auth/amplify.ts), so browsers never keep it;
+          // each deploy clears CloudFront's copy.
+          ...(signInParameter
+            ? [
+                Source.data(
+                  'config.json',
+                  StringParameter.valueForStringParameter(this, signInParameter),
+                ),
+              ]
+            : []),
+        ],
         destinationBucket: siteBucket,
         // Every deploy replaces the whole site; one '/*' invalidation counts as one path
         // (1,000 free a month).
@@ -159,4 +196,35 @@ export class WebStack extends Stack {
     new CfnOutput(this, 'SiteUrl', { value: `https://${props.domain}` });
     new CfnOutput(this, 'DistributionId', { value: this.distribution.distributionId });
   }
+}
+
+/**
+ * The cell's sign-in parameter, once the site can read it: the cell writes one (a shared stack),
+ * both stacks are in the same known Region, and their accounts are both given and equal, or both
+ * left to the deploy's credentials (as in local synths). The site then deploys after the cell.
+ */
+function checkedSignIn(site: Stack, cell: CellStack): string {
+  if (!cell.webSignInParameter) {
+    throw new Error(`${cell.stackName} writes no sign-in config (a personal or PR stack).`);
+  }
+  if (Token.isUnresolved(site.region) || Token.isUnresolved(cell.region)) {
+    throw new Error(
+      `${site.stackName} and ${cell.stackName} need a known Region to sign people in.`,
+    );
+  }
+  if (cell.region !== site.region) {
+    throw new Error(
+      `The site in ${site.region} cannot sign people in to a cell in ${cell.region}.`,
+    );
+  }
+  const siteAccount = !Token.isUnresolved(site.account);
+  const cellAccount = !Token.isUnresolved(cell.account);
+  if (siteAccount !== cellAccount) {
+    throw new Error(`${site.stackName} and ${cell.stackName} need their accounts given alike.`);
+  }
+  if (siteAccount && site.account !== cell.account) {
+    throw new Error(`${site.stackName} and ${cell.stackName} must be in the same account.`);
+  }
+  site.addDependency(cell);
+  return cell.webSignInParameter;
 }
