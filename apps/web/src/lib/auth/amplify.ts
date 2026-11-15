@@ -48,6 +48,19 @@ function configure(): Promise<Amplified> {
   return configured;
 }
 
+/**
+ * Cognito's refusals that end a session: Amplify clears the stored tokens for exactly these
+ * (its isAuthenticationError), so nobody is signed in any more.
+ */
+const SESSION_ENDED = new Set([
+  'NotAuthorizedException',
+  'TokenRevokedException',
+  'UserNotFoundException',
+  'PasswordResetRequiredException',
+  'UserNotConfirmedException',
+  'RefreshTokenReuseException',
+]);
+
 /** Cognito's error names, in the forms' terms. */
 const KINDS: Record<string, AuthErrorKind> = {
   NotAuthorizedException: 'wrong-details',
@@ -118,17 +131,16 @@ export const amplifyAuth: Auth = {
   },
   async accessToken() {
     if (!hasStoredSession()) return null;
-    // Amplify refreshes a token that has run out. No network, or no answer in time (set-up
-    // included), is a connection problem; any refusal from Cognito means the session is gone.
+    // Amplify refreshes a token that has run out. The session is gone only when Cognito refuses
+    // it for good (and Amplify clears it); anything else (no network, an answer cut off, a busy
+    // or failing Cognito, no answer in time) is a connection problem, and asking again can work.
     try {
       const session = await within(configure().then(({ fetchAuthSession }) => fetchAuthSession()));
       return session.tokens?.accessToken.toString() ?? null;
     } catch (error) {
-      if (error instanceof AuthError) throw error;
-      if ((error as { name?: string } | null)?.name === 'NetworkError') {
-        throw new AuthError('offline', { cause: error });
-      }
-      return null;
+      const name = (error as { name?: string } | null)?.name ?? '';
+      if (SESSION_ENDED.has(name) || !hasStoredSession()) return null;
+      throw error instanceof AuthError ? error : new AuthError('offline', { cause: error });
     }
   },
   signUp: (email, password) =>

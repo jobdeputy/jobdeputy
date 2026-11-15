@@ -365,10 +365,22 @@ describe('amplifyAuth', () => {
       Object.assign(new Error('User does not exist.'), { name: 'UserNotFoundException' }),
     );
     await expect(auth.accessToken()).resolves.toBeNull();
-    // …but a refresh that could not reach Cognito is a connection problem.
-    amplify.fetchAuthSession.mockRejectedValue(
-      Object.assign(new Error('Network error'), { name: 'NetworkError' }),
-    );
-    await expect(auth.accessToken()).rejects.toMatchObject({ kind: 'offline' });
+    // …but a refresh that could not reach Cognito, or found it busy or failing, or lost its
+    // answer, is a connection problem (the session is still stored).
+    for (const name of [
+      'NetworkError',
+      'TooManyRequestsException',
+      'InternalErrorException',
+      'Unknown',
+    ]) {
+      amplify.fetchAuthSession.mockRejectedValue(Object.assign(new Error(name), { name }));
+      await expect(auth.accessToken()).rejects.toMatchObject({ kind: 'offline' });
+    }
+    // Once Amplify has cleared the session, whatever the refusal, nobody is signed in.
+    amplify.fetchAuthSession.mockImplementation(async () => {
+      localStorage.clear();
+      throw Object.assign(new Error('gone'), { name: 'SomethingNew' });
+    });
+    await expect(auth.accessToken()).resolves.toBeNull();
   });
 });

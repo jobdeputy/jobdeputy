@@ -25,8 +25,8 @@ export type ApiErrorKind =
   /** The API failed. */
   | 'server'
   /**
-   * A change the API took (it answered with success) whose answer was then lost on the way: it
-   * was most likely saved. Reload to see, rather than send it again (it could be done twice).
+   * A change whose answer was lost (the connection dropped, or the answer was cut off): it may
+   * well have been saved. Reload to see, rather than send it again (it could be done twice).
    */
   | 'unsure';
 
@@ -107,7 +107,11 @@ export function createApiClient(deps: {
           ...(method === 'GET' ? { signal: AbortSignal.timeout(READ_LIMIT_MS) } : {}),
         });
       } catch (error) {
-        throw new ApiError('offline', { cause: error });
+        // No answer at all. A read can be asked again; a change may still have reached the API
+        // (the connection can drop after it was sent), so it must not be sent twice blindly,
+        // unless the browser knows it was offline all along.
+        const unsent = method === 'GET' || globalThis.navigator?.onLine === false;
+        throw new ApiError(unsent ? 'offline' : 'unsure', { cause: error });
       }
       let text: string;
       try {

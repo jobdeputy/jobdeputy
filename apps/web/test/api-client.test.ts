@@ -65,7 +65,7 @@ describe('the API client', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('calls a request that never got an answer offline', async () => {
+  it('calls a read that never got an answer offline, and a change unsure', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => {
@@ -73,6 +73,12 @@ describe('the API client', () => {
       }),
     );
     expect((await failure(client().request('GET', '/me'))).kind).toBe('offline');
+    // The change may have reached the API before the connection dropped.
+    expect((await failure(client().request('POST', '/me/crawls', {}))).kind).toBe('unsure');
+    // Unless the browser knows it was offline all along.
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    expect((await failure(client().request('POST', '/me/crawls', {}))).kind).toBe('offline');
+    vi.restoreAllMocks();
   });
 
   it('turns the API’s refusals into kinds, with its reason and field errors', async () => {
