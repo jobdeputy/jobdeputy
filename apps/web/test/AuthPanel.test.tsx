@@ -253,8 +253,10 @@ describe('AuthPanel', () => {
     await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Sending a new code…'));
     // Shown, not only read out; the Confirm button waits too.
     expect(screen.getByRole('status').className).not.toContain('sr-only');
-    expect(screen.getByRole('button', { name: 'Confirm' }).getAttribute('aria-disabled')).toBe(
-      'true',
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Confirm' }).getAttribute('aria-disabled')).toBe(
+        'true',
+      ),
     );
     finish();
   });

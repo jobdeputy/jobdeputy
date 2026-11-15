@@ -271,8 +271,9 @@ export function AuthPanel({
           size="lg"
           pending={pending}
           pendingLabel={action.pending}
-          // Waits, dimmed, while a new code is on its way.
-          aria-disabled={resending || undefined}
+          // Waits, dimmed, while a new code is on its way (on the shared delay, so a quick answer
+          // does not flicker it; until then submit() ignores presses).
+          aria-disabled={(waiting && resending) || undefined}
         >
           {action.submit}
         </Button>

@@ -151,21 +151,26 @@ function hasStoredSession(): boolean {
 }
 
 /**
- * The deployed app's sign-in config, or null where there is none. A server error is temporary
- * (`offline`); a body that is not JSON is the page the server sends for any unknown path (CloudFront,
- * Vite), so there is no config: not set up.
+ * The deployed app's sign-in config, or null where there is none: a 404, or the app's own page,
+ * which the site sends for any unknown path (CloudFront, Vite). Anything else that is not the
+ * config is a connection problem (`offline`): a server or rate-limit error, or a page from wifi
+ * that asks you to sign in to it first.
  */
 async function readConfig(): Promise<Partial<Config> | null> {
   const response = await fetch(CONFIG_URL, {
     cache: 'no-store',
     signal: AbortSignal.timeout(8000),
   });
-  if (response.status >= 500) throw new AuthError('offline');
-  if (!response.ok) return null;
+  if (response.status === 404) return null;
+  if (!response.ok) throw new AuthError('offline');
   const body = await response.text();
   try {
     return JSON.parse(body) as Partial<Config>;
   } catch {
-    return null;
+    if (body.includes(APP_PAGE_MARK)) return null;
+    throw new AuthError('offline');
   }
 }
+
+/** Only the app's own page (index.html) has the boot loader. */
+const APP_PAGE_MARK = 'id="boot-loader"';

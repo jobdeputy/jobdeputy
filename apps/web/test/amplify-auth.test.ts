@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const amplify = vi.hoisted(() => ({
@@ -188,11 +189,37 @@ describe('amplifyAuth', () => {
     vi.resetModules();
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response('<!doctype html><title>JobDeputy</title>', { status: 200 })),
+      vi.fn(
+        async () =>
+          new Response('<!doctype html><title>JobDeputy</title><div id="boot-loader"></div>', {
+            status: 200,
+          }),
+      ),
     );
     const { amplifyAuth } = await import('../src/lib/auth/amplify.ts');
     await expect(amplifyAuth.signIn('a@example.com', 'pw')).rejects.toMatchObject({
       kind: 'not-set-up',
     });
+  });
+
+  it('calls a page from someone else (wifi that wants a sign-in first) a network problem', async () => {
+    vi.resetModules();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('<!doctype html><title>Hotel wifi</title>', { status: 200 })),
+    );
+    const { amplifyAuth } = await import('../src/lib/auth/amplify.ts');
+    await expect(amplifyAuth.signIn('a@example.com', 'pw')).rejects.toMatchObject({
+      kind: 'offline',
+    });
+  });
+
+  it('calls a rate limit on the config a network problem', async () => {
+    const auth = await load(null, 429);
+    await expect(auth.signIn('a@example.com', 'pw')).rejects.toMatchObject({ kind: 'offline' });
+  });
+
+  it('recognises the app’s own page by its boot loader, which index.html has', () => {
+    expect(readFileSync('index.html', 'utf8')).toContain('id="boot-loader"');
   });
 });
