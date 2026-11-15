@@ -82,7 +82,11 @@ export function Hero({ auth }: { auth: AuthControl }) {
 
       <StoryStrip
         current={story.index}
+        progress={story.progress}
+        duration={story.duration}
+        run={story.run}
         onSelect={story.goTo}
+        onStepEnd={story.onStepEnd}
         className="mt-[13px] w-full max-w-[690px] justify-self-center lg:col-span-2 lg:mt-[18px] lg:max-w-[1100px]"
       />
     </section>

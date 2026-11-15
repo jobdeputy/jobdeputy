@@ -16,3 +16,12 @@ export async function expectNoAccessibilityViolations(page: Page) {
     .analyze();
   expect(results.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
 }
+
+/**
+ * Opens the home page once the boot loader has handed over: until then the app is inert under it
+ * (focus and keys do nothing) and rises in as it fades, so it is not yet where it settles.
+ */
+export async function openHome(page: Page) {
+  await page.goto('/');
+  await page.locator('#boot-loader').waitFor({ state: 'detached' });
+}
