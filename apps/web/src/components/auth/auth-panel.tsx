@@ -134,8 +134,19 @@ export function AuthPanel({
         await auth.confirmSignUp(email, values.password ?? '', code.trim());
         onSignedIn(email);
       } else if (step === 'reset') {
-        await auth.resetPassword(email);
+        const late = await auth.resetPassword(email).then(
+          () => false,
+          (error: unknown) => {
+            if (error instanceof AuthError && error.kind === 'no-answer') return true;
+            throw error;
+          },
+        );
         go('reset-confirm', { email });
+        if (late) {
+          // No answer in time, but the code may still come: on to where it goes, saying so.
+          setRefusal(text.errors['no-answer']);
+          setNoFreshCode(true);
+        }
       } else {
         await auth.confirmResetPassword(email, code.trim(), password);
         go('sign-in', { email });
@@ -182,7 +193,9 @@ export function AuthPanel({
     reset: text.reset,
     'reset-confirm': {
       ...text.resetConfirm,
-      subtitle: fill(text.resetConfirm.subtitle, { email }),
+      subtitle: fill(noFreshCode ? text.resetConfirm.subtitleMaybe : text.resetConfirm.subtitle, {
+        email,
+      }),
     },
   }[step];
   const action = {

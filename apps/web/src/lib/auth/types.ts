@@ -35,6 +35,8 @@ export type AuthErrorKind =
   | 'weak-password'
   /** The network failed. */
   | 'offline'
+  /** No answer in time to a request that may still go through (a code may still arrive). */
+  | 'no-answer'
   /** Sign-in is not configured where the app runs. */
   | 'not-set-up'
   /** The code confirmed the account, but signing in straight after failed: sign in now. */

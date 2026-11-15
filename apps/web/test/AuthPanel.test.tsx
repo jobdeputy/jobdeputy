@@ -268,4 +268,22 @@ describe('AuthPanel', () => {
       expect(screen.getByRole('status').textContent).toBe('A new code is on its way.'),
     );
   });
+
+  it('goes on to the reset code when asking for it got no answer in time', async () => {
+    const auth = createFakeAuth({ delay: 0 });
+    vi.spyOn(auth, 'resetPassword').mockRejectedValue(new AuthError('no-answer'));
+    renderPanel('sign-in', auth);
+    fireEvent.click(screen.getByRole('button', { name: 'Forgot password?' }));
+    type('Email', 'a@example.com');
+    submit('Send code');
+    await screen.findByRole('heading', { name: 'Set a new password.' });
+    await expectAlert(
+      'JobDeputy didn’t answer in time. A code may still arrive; if not, try again.',
+    );
+    expect(
+      screen.getByText(
+        'If a code arrives at a@example.com, enter it here. If not, go back and ask again.',
+      ),
+    ).toBeTruthy();
+  });
 });

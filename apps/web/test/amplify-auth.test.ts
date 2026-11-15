@@ -20,12 +20,13 @@ vi.mock('aws-amplify/auth', () => amplify);
 const CONFIG = { userPoolId: 'us-east-1_abc', userPoolClientId: 'client' };
 
 /** A fresh adapter (it keeps its configuration for the page), with /config.json answering `body`. */
-async function load(body: unknown = CONFIG, status = 200) {
+async function load(
+  body: unknown = CONFIG,
+  status = 200,
+  fetch = vi.fn(async () => new Response(JSON.stringify(body), { status })),
+) {
   vi.resetModules();
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => new Response(JSON.stringify(body), { status })),
-  );
+  vi.stubGlobal('fetch', fetch);
   return (await import('../src/lib/auth/amplify.ts')).amplifyAuth;
 }
 
@@ -238,7 +239,7 @@ describe('amplifyAuth', () => {
     try {
       amplify.resendSignUpCode.mockReturnValue(new Promise(() => {}));
       const result = expect(auth.resendSignUpCode('a@example.com')).rejects.toMatchObject({
-        kind: 'offline',
+        kind: 'no-answer',
       });
       await vi.advanceTimersByTimeAsync(CALL_LIMIT_MS);
       await result;
@@ -295,7 +296,7 @@ describe('amplifyAuth', () => {
     try {
       amplify.resetPassword.mockReturnValue(new Promise(() => {}));
       const result = expect(auth.resetPassword('a@example.com')).rejects.toMatchObject({
-        kind: 'offline',
+        kind: 'no-answer',
       });
       await vi.advanceTimersByTimeAsync(CALL_LIMIT_MS);
       await result;
@@ -305,16 +306,14 @@ describe('amplifyAuth', () => {
   });
 
   it('starts the set-up afresh after one that stalled was given up on', async () => {
-    vi.resetModules();
-    const config = new Response(JSON.stringify(CONFIG));
-    vi.stubGlobal(
-      'fetch',
+    const amplifyAuth = await load(
+      CONFIG,
+      200,
       vi
         .fn()
         .mockReturnValueOnce(new Promise(() => {}))
-        .mockResolvedValueOnce(config),
+        .mockResolvedValueOnce(new Response(JSON.stringify(CONFIG))),
     );
-    const { amplifyAuth } = await import('../src/lib/auth/amplify.ts');
     amplify.signIn.mockResolvedValue({ isSignedIn: true, nextStep: { signInStep: 'DONE' } });
     vi.useFakeTimers();
     try {
@@ -327,5 +326,39 @@ describe('amplifyAuth', () => {
       vi.useRealTimers();
     }
     await expect(amplifyAuth.signIn('a@example.com', 'pw')).resolves.toBe('done');
+  });
+
+  it('never lets a set-up given up on configure Amplify late', async () => {
+    let arrive = (_: Response) => {};
+    const auth = await load(
+      CONFIG,
+      200,
+      vi
+        .fn()
+        .mockReturnValueOnce(
+          new Promise<Response>((resolve) => {
+            arrive = resolve;
+          }),
+        )
+        .mockResolvedValue(new Response(JSON.stringify(CONFIG))),
+    );
+    amplify.signIn.mockResolvedValue({ isSignedIn: true, nextStep: { signInStep: 'DONE' } });
+    vi.useFakeTimers();
+    try {
+      const first = expect(auth.signIn('a@example.com', 'pw')).rejects.toMatchObject({
+        kind: 'offline',
+      });
+      await vi.advanceTimersByTimeAsync(CALL_LIMIT_MS);
+      await first;
+    } finally {
+      vi.useRealTimers();
+    }
+    await auth.signIn('a@example.com', 'pw');
+    expect(amplify.configure).toHaveBeenCalledTimes(1);
+    // The first one's config comes in at last: it is dropped, not applied. (Its body is ready at
+    // once, so one task is enough for that set-up to run to its end.)
+    arrive({ ok: true, status: 200, text: async () => JSON.stringify(CONFIG) } as Response);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(amplify.configure).toHaveBeenCalledTimes(1);
   });
 });

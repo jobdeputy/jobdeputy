@@ -147,6 +147,8 @@ export const en = {
       kicker: 'Reset password',
       title: 'Set a new password.',
       subtitle: 'Enter the code we sent to {email}, if an account uses it.',
+      /** When the code request got no answer in time: it may still come. */
+      subtitleMaybe: 'If a code arrives at {email}, enter it here. If not, go back and ask again.',
       submit: 'Save password',
       pending: 'Saving password…',
       done: 'Your new password is ready. Sign in with it.',
@@ -167,6 +169,7 @@ export const en = {
       'too-many-tries': 'Too many tries. Wait a few minutes, then try again.',
       'weak-password': 'Choose a longer or less common password.',
       offline: 'Can’t reach JobDeputy. Check your connection and try again.',
+      'no-answer': 'JobDeputy didn’t answer in time. A code may still arrive; if not, try again.',
       'not-set-up': 'Sign-in isn’t available here yet.',
       /** Not a failure: the code worked, but signing in straight after did not (shown as a note). */
       confirmed: 'Your account is confirmed. Sign in to continue.',

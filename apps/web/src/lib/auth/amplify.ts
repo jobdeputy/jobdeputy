@@ -17,15 +17,20 @@ type Config = { userPoolId: string; userPoolClientId: string };
 type Amplified = Awaited<ReturnType<typeof amplify>>[1];
 
 let configured: Promise<Amplified> | undefined;
+/** Which set-up is the live one: one given up on must not configure Amplify late. */
+let setUps = 0;
 
 /** Loads Amplify, reads the app's config once and sets it up; `not-set-up` where there is none. */
 function configure(): Promise<Amplified> {
-  // Limited inside, so a load given up on is dropped and the next try starts afresh.
+  // Limited inside, so a set-up given up on is dropped and the next try reads the config afresh.
+  // (A stalled download of Amplify's own code is one the browser shares until it ends; a reload
+  // starts it over.)
   configured ??= within(
-    (async () => {
+    (async (setUp: number) => {
       // Amplify's code and the config load side by side; the config is read whole within 8 s.
       const [[{ Amplify }, auth], config] = await Promise.all([amplify(), readConfig()]);
       if (!config?.userPoolId || !config.userPoolClientId) throw new AuthError('not-set-up');
+      if (setUp !== setUps) throw new AuthError('offline');
       Amplify.configure({
         Auth: {
           Cognito: {
@@ -36,7 +41,7 @@ function configure(): Promise<Amplified> {
         },
       });
       return auth;
-    })(),
+    })(++setUps),
   ).catch((error: unknown) => {
     // Let a later try read the config again (a network blip, say).
     configured = undefined;
@@ -75,7 +80,7 @@ async function call<T>(
 ): Promise<T> {
   const auth = await configure();
   try {
-    return await (limited ? within(work(auth)) : work(auth));
+    return await (limited ? within(work(auth), 'no-answer') : work(auth));
   } catch (error) {
     if (error instanceof AuthError) throw error;
     const name = (error as { name?: string } | null)?.name ?? '';
@@ -86,11 +91,11 @@ async function call<T>(
 /** How long a limited step may take before it counts as a connection problem. */
 export const CALL_LIMIT_MS = 20_000;
 
-/** `work`'s answer, or `offline` after the limit (the work runs on, unheeded). */
-async function within<T>(work: Promise<T>): Promise<T> {
+/** `work`'s answer, or a failure of `kind` after the limit (the work runs on, unheeded). */
+async function within<T>(work: Promise<T>, kind: AuthErrorKind = 'offline'): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const limit = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new AuthError('offline')), CALL_LIMIT_MS);
+    timer = setTimeout(() => reject(new AuthError(kind)), CALL_LIMIT_MS);
   });
   try {
     return await Promise.race([work, limit]);
