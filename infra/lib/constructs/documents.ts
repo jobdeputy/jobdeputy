@@ -10,7 +10,13 @@ import { Rule } from 'aws-cdk-lib/aws-events';
 import { SqsQueue } from 'aws-cdk-lib/aws-events-targets';
 import { CfnMalwareProtectionPlan } from 'aws-cdk-lib/aws-guardduty';
 import { Effect, type IRole, PolicyStatement, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
-import { BlockPublicAccess, Bucket, BucketEncryption, ObjectOwnership } from 'aws-cdk-lib/aws-s3';
+import {
+  BlockPublicAccess,
+  Bucket,
+  BucketEncryption,
+  HttpMethods,
+  ObjectOwnership,
+} from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 import { AppFunction } from './node-function.js';
 import type { QueueHealth } from './queue-health.js';
@@ -24,6 +30,8 @@ export interface DocumentsProps {
   readonly removalPolicy: RemovalPolicy;
   /** Shared stacks only (see addQueueWorker). */
   readonly health?: QueueHealth | undefined;
+  /** The site's origin: the only one whose browsers may post uploads here (#33). */
+  readonly siteOrigin?: string;
 }
 
 const WORKER_TIMEOUT = Duration.seconds(60);
@@ -63,6 +71,19 @@ export class Documents extends Construct {
           expiration: Duration.days(CRAWL_PAGE_RETENTION_DAYS),
         },
       ],
+      // Résumé uploads come straight from the browser (a presigned POST), from the site only.
+      ...(props.siteOrigin
+        ? {
+            cors: [
+              {
+                allowedOrigins: [props.siteOrigin],
+                // A form POST: no preflight, no headers of its own.
+                allowedMethods: [HttpMethods.POST],
+                maxAge: 3600,
+              },
+            ],
+          }
+        : {}),
       removalPolicy: props.removalPolicy,
       // Dev and PR stacks must delete cleanly; prod keeps user files.
       autoDeleteObjects: !isProd,

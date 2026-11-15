@@ -1,6 +1,6 @@
 import { crawlKeys, DEFAULT_CRAWL_LIMITS, DERIVED_PREFIX, SCANNED_PREFIX } from '@jobdeputy/shared';
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps, Tags } from 'aws-cdk-lib';
-import { HttpApi, HttpMethod, HttpStage } from 'aws-cdk-lib/aws-apigatewayv2';
+import { CorsHttpMethod, HttpApi, HttpMethod, HttpStage } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import {
@@ -35,6 +35,11 @@ export interface CellStackProps extends StackProps {
   readonly cell: CellId;
   /** Set for personal developer stacks, for example "nava". */
   readonly owner?: string;
+  /**
+   * The site's origin (https://<domain>), for the cell the site signs people in to: its API and
+   * documents bucket answer CORS for that origin only (#33). Left out, no browser may call them.
+   */
+  readonly siteOrigin?: string;
   /** Receive alarm emails. Come from JD_ALERT_EMAIL (comma-separated), never from the repository. */
   readonly alertEmails?: readonly string[];
 }
@@ -53,10 +58,26 @@ export function webSignInParameter(stage: StageName, cell: CellId): string {
   return `/jobdeputy/jobdeputy-${stage}-${cell}/web-sign-in`;
 }
 
+/** The SSM parameter that holds the origins a shared cell's web app calls (for the site's CSP). */
+export function webConnectParameter(stage: StageName, cell: CellId): string {
+  return `/jobdeputy/jobdeputy-${stage}-${cell}/web-connect-src`;
+}
+
+/** The names of the SSM parameters a site reads from its cell (see CellStack.webConfig). */
+export interface WebConfig {
+  /** The site's /config.json: sign-in IDs and the API's address. */
+  readonly config: string;
+  /** The origins the site's CSP lets it call in the cell (its API, its documents bucket). */
+  readonly connectSrc: string;
+}
+
 /** Everything one Region cell needs. Tables follow docs/data-model.md. */
 export class CellStack extends Stack {
-  /** The SSM parameter holding the web app's sign-in config; shared stacks only (#14). */
-  readonly webSignInParameter?: string;
+  /**
+   * The SSM parameters a site reads from this cell (shared stacks only): its config (#14) and
+   * the origins its CSP lets it call here (#33).
+   */
+  readonly webConfig?: WebConfig;
 
   constructor(scope: Construct, id: string, props: CellStackProps) {
     super(scope, id, props);
@@ -115,20 +136,6 @@ export class CellStack extends Stack {
       deletionProtection: isProd,
       testsClient: props.stage === 'dev',
     });
-    // What the web app needs to sign people in here, read by the web stack at deploy time (its
-    // /config.json; #14). Through SSM, not a stack export, so the pool and client stay free to be
-    // replaced. Shared stacks only: personal and PR stacks have no site.
-    if (!props.owner) {
-      this.webSignInParameter = webSignInParameter(props.stage, props.cell);
-      new StringParameter(this, 'WebSignIn', {
-        parameterName: this.webSignInParameter,
-        description: 'The web app’s sign-in config (read by the web stack).',
-        stringValue: this.toJsonString({
-          userPoolId: auth.userPool.userPoolId,
-          userPoolClientId: auth.webClient.userPoolClientId,
-        }),
-      });
-    }
 
     // User data tables (docs/data-model.md): keyed by userId, never shared across cells.
     const userTable = (
@@ -187,6 +194,7 @@ export class CellStack extends Stack {
       auditTable,
       removalPolicy,
       health: queueHealth,
+      ...(props.siteOrigin ? { siteOrigin: props.siteOrigin } : {}),
     });
 
     // T13, every stage: reserved test domains (example.com, *.test, …) can never become
@@ -603,6 +611,24 @@ export class CellStack extends Stack {
     const httpApi = new HttpApi(this, 'HttpApi', {
       apiName: id,
       createDefaultStage: false,
+      // The site's own origin only (#33), answered by API Gateway before the authorizer.
+      ...(props.siteOrigin
+        ? {
+            corsPreflight: {
+              allowOrigins: [props.siteOrigin],
+              allowMethods: [
+                CorsHttpMethod.GET,
+                CorsHttpMethod.POST,
+                CorsHttpMethod.PUT,
+                CorsHttpMethod.DELETE,
+              ],
+              allowHeaders: ['authorization', 'content-type'],
+              // Read by the app on a 429 (the crawl and AI routes send it).
+              exposeHeaders: ['retry-after'],
+              maxAge: Duration.hours(1),
+            },
+          }
+        : {}),
       // Every route needs a valid token from this cell's pool (T05). API Gateway
       // rejects missing, invalid, or expired tokens before any Lambda runs.
       defaultAuthorizer: new HttpUserPoolAuthorizer('Cognito', auth.userPool, {
@@ -622,6 +648,37 @@ export class CellStack extends Stack {
       autoDeploy: true,
       throttle: isProd ? { rateLimit: 50, burstLimit: 100 } : { rateLimit: 5, burstLimit: 10 },
     });
+
+    // What the web app needs from this cell, read by the web stack at deploy time (#14, #33):
+    // its /config.json (sign-in IDs and the API's address) and the origins its CSP lets it call
+    // (this API, and the documents bucket for résumé uploads). Through SSM, not stack exports, so
+    // the pool, client, API and bucket stay free to be replaced. Shared stacks only: personal and
+    // PR stacks have no site.
+    if (!props.owner) {
+      this.webConfig = {
+        config: webSignInParameter(props.stage, props.cell),
+        connectSrc: webConnectParameter(props.stage, props.cell),
+      };
+      new StringParameter(this, 'WebSignIn', {
+        parameterName: this.webConfig.config,
+        description: 'The web app’s config (read by the web stack).',
+        stringValue: this.toJsonString({
+          userPoolId: auth.userPool.userPoolId,
+          userPoolClientId: auth.webClient.userPoolClientId,
+          // No trailing slash: the app adds paths that start with one.
+          apiUrl: httpApi.apiEndpoint,
+        }),
+      });
+      new StringParameter(this, 'WebConnectSrc', {
+        parameterName: this.webConfig.connectSrc,
+        description:
+          'The origins the web app calls in this cell, for its CSP (read by the web stack).',
+        stringValue: [
+          httpApi.apiEndpoint,
+          `https://${documents.bucket.bucketRegionalDomainName}`,
+        ].join(' '),
+      });
+    }
     if (ping) {
       const integration = new HttpLambdaIntegration('PingIntegration', ping.api.fn);
       httpApi.addRoutes({ path: '/ping-jobs', methods: [HttpMethod.POST], integration });
@@ -731,6 +788,8 @@ export class CellStack extends Stack {
       new CfnOutput(this, 'TestSiteUrl', { value: testSiteStage.url });
     }
 
+    // With a trailing slash (the integration tests join paths onto it); the web app's apiUrl is
+    // the endpoint without one (its paths start with a slash).
     new CfnOutput(this, 'ApiUrl', { value: stage.url });
     new CfnOutput(this, 'UserPoolId', { value: auth.userPool.userPoolId });
     new CfnOutput(this, 'DocumentsBucketName', { value: documents.bucket.bucketName });
