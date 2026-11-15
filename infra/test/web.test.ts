@@ -1,13 +1,15 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { App } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 import { WEB_SITES } from '../config/web.js';
 import { buildApp } from '../lib/build-app.js';
 import { webSignInParameter } from '../lib/cell-stack.js';
 import { checkGuards } from '../lib/guards.js';
-import { webCsp } from '../lib/web-stack.js';
+import { WebDnsStack } from '../lib/web-dns-stack.js';
+import { WebStack, webCsp } from '../lib/web-stack.js';
 
 function stack(name: string, webContentDir?: string): Template {
   const app = buildApp({ stage: 'dev', env: {}, ...(webContentDir ? { webContentDir } : {}) });
@@ -162,6 +164,20 @@ describe('web app hosting (decision 0011)', () => {
     expect(
       (webStack as { dependencies: { stackName: string }[] }).dependencies.map((d) => d.stackName),
     ).toContain('jobdeputy-dev-iad');
+  });
+
+  it('will not sign people in to a cell in another Region (decision 0004)', () => {
+    const app = new App();
+    const zone = new WebDnsStack(app, 'dns', { domain: 'x.example', env: { region: 'us-east-1' } });
+    expect(
+      () =>
+        new WebStack(app, 'site', {
+          domain: 'x.example',
+          zone: zone.zone,
+          env: { region: 'us-east-1' },
+          signIn: { stage: 'dev', cell: 'bom' },
+        }),
+    ).toThrow('cannot sign people in to a cell in ap-south-1');
   });
 
   it('writes no sign-in parameter from personal or PR stacks (they have no site)', () => {

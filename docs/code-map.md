@@ -10,7 +10,7 @@ Tests mirror the source: `apps/<app>/test/<name>.test.ts`, `packages/<pkg>/test/
 
 | To change… | Edit |
 |---|---|
-| Where the web app is served, its security headers (CSP), or its `/config.json` (sign-in IDs) | `infra/config/web.ts`, `infra/lib/web-stack.ts` (IDs from `CellStack.webSignIn`, wired in `infra/lib/build-app.ts`) |
+| Where the web app is served, its security headers (CSP), or its `/config.json` (sign-in IDs) | `infra/config/web.ts`, `infra/lib/web-stack.ts` (the US cell writes the IDs to SSM, `webSignInParameter` in `infra/lib/cell-stack.ts`; the web stack reads them at deploy time) |
 | A table, grant, route, queue, Lambda, or alarm | `infra/lib/cell-stack.ts` (constructs in `infra/lib/constructs/`); guard tests in `infra/test/` |
 | An API route's behaviour | `apps/api/src/<feature>.ts` (`route()` switches on `routeKey`); the route must also be added in `cell-stack.ts` |
 | Request validation or shared limits | `packages/shared/src/<feature>.ts` (Zod schemas, limits, error codes) |

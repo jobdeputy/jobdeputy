@@ -5,6 +5,7 @@ import {
   RemovalPolicy,
   Stack,
   type StackProps,
+  Token,
 } from 'aws-cdk-lib';
 import { Certificate, CertificateValidation } from 'aws-cdk-lib/aws-certificatemanager';
 import {
@@ -26,6 +27,9 @@ import { BlockPublicAccess, Bucket, BucketEncryption, type IBucket } from 'aws-c
 import { BucketDeployment, Source } from 'aws-cdk-lib/aws-s3-deployment';
 import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import type { Construct } from 'constructs';
+import { CELLS, type CellId } from '../config/cells.js';
+import type { StageName } from '../config/stages.js';
+import { webSignInParameter } from './cell-stack.js';
 
 export interface WebStackProps extends StackProps {
   /** The site's address; also the zone's name (the site sits at the zone apex). */
@@ -37,11 +41,11 @@ export interface WebStackProps extends StackProps {
    */
   readonly contentDir?: string;
   /**
-   * Where people sign in (#14): the SSM parameter holding the cell's sign-in config, written to
-   * the site as `/config.json` (the app reads it before it signs anyone in), and the cell's Region,
-   * whose Cognito the CSP lets the app call. Left out, the site has no sign-in.
+   * Where people sign in (#14): the shared cell whose sign-in config (an SSM parameter, read at
+   * deploy time) becomes the site's `/config.json`, and whose Cognito the CSP lets the app call.
+   * It must be in this stack's Region (decision 0004). Left out, the site has no sign-in.
    */
-  readonly signIn?: { parameterName: string; region: string };
+  readonly signIn?: { stage: StageName; cell: CellId };
 }
 
 /** Cognito's sign-in endpoint in a Region. */
@@ -82,6 +86,15 @@ export class WebStack extends Stack {
 
   constructor(scope: Construct, id: string, props: WebStackProps) {
     super(scope, id, props);
+
+    // The config is read in this stack's Region: a cell elsewhere would mean a hand-off across
+    // Regions, which decision 0004 rules out.
+    const signInRegion = props.signIn ? CELLS[props.signIn.cell].region : undefined;
+    if (signInRegion && !Token.isUnresolved(this.region) && signInRegion !== this.region) {
+      throw new Error(
+        `The site in ${this.region} cannot sign people in to a cell in ${signInRegion}.`,
+      );
+    }
     // The zone comes from the DNS stack as a strong reference on purpose: that stack can't
     // drop the zone while this one uses it (the delegation names its name servers).
     Annotations.of(this).acknowledgeWarning(
@@ -109,7 +122,7 @@ export class WebStack extends Stack {
     const headers = new ResponseHeadersPolicy(this, 'SecurityHeaders', {
       securityHeadersBehavior: {
         contentSecurityPolicy: {
-          contentSecurityPolicy: webCsp(props.signIn?.region),
+          contentSecurityPolicy: webCsp(signInRegion),
           override: true,
         },
         strictTransportSecurity: {
@@ -166,7 +179,10 @@ export class WebStack extends Stack {
             ? [
                 Source.data(
                   'config.json',
-                  StringParameter.valueForStringParameter(this, props.signIn.parameterName),
+                  StringParameter.valueForStringParameter(
+                    this,
+                    webSignInParameter(props.signIn.stage, props.signIn.cell),
+                  ),
                 ),
               ]
             : []),
