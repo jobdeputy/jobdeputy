@@ -6,6 +6,11 @@
 export type Auth = {
   /** The signed-in person's email, or null. */
   currentUser(): Promise<string | null>;
+  /**
+   * The signed-in person's access token for the API (refreshed when it has run out), or null when
+   * nobody is signed in or the session can no longer be refreshed.
+   */
+  accessToken(): Promise<string | null>;
   /** Creates the account; a 6-digit code goes to the email next. */
   signUp(email: string, password: string): Promise<void>;
   /** Confirms the account with its code, and signs the person in. */

@@ -13,6 +13,7 @@ const amplify = vi.hoisted(() => ({
   confirmResetPassword: vi.fn(),
   resendSignUpCode: vi.fn(),
   getCurrentUser: vi.fn(),
+  fetchAuthSession: vi.fn(),
 }));
 vi.mock('aws-amplify', () => ({ Amplify: { configure: amplify.configure } }));
 vi.mock('aws-amplify/auth', () => amplify);
@@ -343,5 +344,19 @@ describe('amplifyAuth', () => {
     arrive({ ok: true, status: 200, text: async () => JSON.stringify(CONFIG) } as Response);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(amplify.configure).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands over the access token of a stored session, and none without one', async () => {
+    const auth = await load();
+    await expect(auth.accessToken()).resolves.toBeNull();
+    expect(amplify.fetchAuthSession).not.toHaveBeenCalled();
+    localStorage.setItem('CognitoIdentityServiceProvider.client.LastAuthUser', 'abc');
+    amplify.fetchAuthSession.mockResolvedValue({
+      tokens: { accessToken: { toString: () => 'header.payload.signature' } },
+    });
+    await expect(auth.accessToken()).resolves.toBe('header.payload.signature');
+    // A session Amplify cannot refresh has no token.
+    amplify.fetchAuthSession.mockRejectedValue(new Error('refresh failed'));
+    await expect(auth.accessToken()).resolves.toBeNull();
   });
 });

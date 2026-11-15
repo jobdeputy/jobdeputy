@@ -24,6 +24,9 @@ export function createFakeAuth({ delay = 400 }: { delay?: number } = {}): Auth {
     async currentUser() {
       return signedIn;
     },
+    async accessToken() {
+      return signedIn ? `fake-token:${signedIn}` : null;
+    },
     async signUp(email, password) {
       await settle(email);
       if (accounts.has(email)) throw new AuthError('account-exists');
