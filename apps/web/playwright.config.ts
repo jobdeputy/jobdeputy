@@ -16,6 +16,13 @@ export default defineConfig({
   // No retries: a test that needs a second try is flaky, and flaky tests get fixed, not retried.
   retries: 0,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
+  // Visual baselines (e2e/visual.spec.ts): one PNG per screen and device, made on Linux by the
+  // "Update screenshot baselines" workflow. A shot may differ from its baseline in 0.1% of its
+  // pixels (anti-aliasing), no more.
+  expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.001, animations: 'disabled' } },
+  snapshotPathTemplate: '{testDir}/__screenshots__/{arg}--{projectName}{ext}',
+  // Baselines are written only on purpose (--update-snapshots), never filled in by a test run.
+  updateSnapshots: 'none',
   use: {
     baseURL: `http://127.0.0.1:${port}`,
     // Kept only for a failed test; without its screenshots, which made every test's recording

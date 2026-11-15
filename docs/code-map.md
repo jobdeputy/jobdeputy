@@ -56,8 +56,10 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `e2e/auth.spec.ts` | sign-up with its code, sign-in, wrong fields and details, the pending button, signed in and out, on the test build's in-memory accounts |
 | `e2e/gallery-long-wait.spec.ts` | the gallery's 8 s long wait on the page's clock (installed before the page loads, then fast-forwarded): "Still working…" read and shown, axe, no sideways scroll (also at 200% text) |
 | `e2e/gallery.spec.ts` | the component gallery in real browsers: axe, no sideways scroll (also at 200% text), a pending button keeps focus and runs once, progress read-outs, skeleton shapes and shimmer, a query region from skeleton to data to refresh and to error, the deputy working with his hourglass and the background line, reduced motion |
-| `e2e/checks.ts` | shared browser checks: no sideways scroll, no accessibility violations |
-| `e2e/screenshots.spec.ts` | the screens to screenshot on every device as PR proof (list each new screen here); `screenshots-dir.ts` and `global-setup.ts` put them in `apps/web/screenshots/` and clear old ones |
+| `e2e/checks.ts` | shared browser checks: no sideways scroll, no accessibility violations; `openHome` (the home page once the boot loader has handed over) |
+| `e2e/screens.ts` | every screen to screenshot and how to reach its frame (add each new screen here); used by both specs below |
+| `e2e/screenshots.spec.ts` | a shot of every screen on every device as PR proof; `screenshots-dir.ts` and `global-setup.ts` put them in `apps/web/screenshots/` and clear old ones |
+| `e2e/visual.spec.ts`, `e2e/__screenshots__/` | visual baselines: home, sign-in and the gallery compared pixel for pixel (0.1% allowed) on desktop Chrome, iPad and iPhone, on Linux only; made by the `.github/workflows/screenshot-baselines.yml` workflow (run by hand), which pushes them to a new branch for review; skipped while a baseline is missing |
 
 ## apps/api/src: one Lambda per feature (API Gateway HTTP API)
 
