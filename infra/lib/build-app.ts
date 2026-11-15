@@ -80,7 +80,7 @@ export function buildApp(options: BuildAppOptions): App {
     if (keys) cellStack.addDependency(keys);
     cellStacks[cell] = cellStack;
   }
-  if (!owner) addWebStacks(app, stage, env, options.webContentDir, cellStacks.iad);
+  if (!owner) addWebStacks(app, stage, env, options.webContentDir, cellStacks[SITE_CELL]);
   return app;
 }
 
@@ -103,25 +103,22 @@ function addWebStacks(
       `The web app is not built (${contentDir} is missing): run pnpm --filter @jobdeputy/web build.`,
     );
   }
-  // The site signs people in to the US cell (US-only launch), in that cell's account and Region.
   if (!usCell) {
-    throw new Error(`The ${stage} site signs people in to the US cell, which this stage lacks.`);
+    throw new Error(`The ${stage} site signs people in to the ${SITE_CELL} cell, which it lacks.`);
   }
-  const account = env[accountEnvVar(stage, 'iad')];
-  const stackEnv = { region: CELLS.iad.region, ...(account ? { account } : {}) };
+  const account = env[accountEnvVar(stage, SITE_CELL)];
+  const stackEnv = { region: CELLS[SITE_CELL].region, ...(account ? { account } : {}) };
   const dns = new WebDnsStack(app, `jobdeputy-${stage}-web-dns`, {
     domain: site.domain,
     env: stackEnv,
   });
-  const web = new WebStack(app, `jobdeputy-${stage}-web`, {
+  new WebStack(app, `jobdeputy-${stage}-web`, {
     domain: site.domain,
     zone: dns.zone,
     env: stackEnv,
     ...(contentDir !== undefined ? { contentDir } : {}),
-    signIn: { stage, cell: 'iad' },
+    signIn: usCell,
   });
-  // It reads the cell's sign-in config from SSM at deploy time, so the cell must exist first.
-  web.addDependency(usCell);
 }
 
 // Cast: the class's optional getters do not satisfy exactOptionalPropertyTypes.
@@ -153,3 +150,5 @@ export function parseAlertEmails(value: string | undefined): string[] {
   }
   return [...new Set(emails)];
 }
+/** The cell the site lives beside and signs people in to (US-only launch), in its account. */
+const SITE_CELL: CellId = 'iad';

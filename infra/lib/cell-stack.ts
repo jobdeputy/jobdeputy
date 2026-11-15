@@ -55,6 +55,9 @@ export function webSignInParameter(stage: StageName, cell: CellId): string {
 
 /** Everything one Region cell needs. Tables follow docs/data-model.md. */
 export class CellStack extends Stack {
+  /** The SSM parameter holding the web app's sign-in config; shared stacks only (#14). */
+  readonly webSignInParameter?: string;
+
   constructor(scope: Construct, id: string, props: CellStackProps) {
     super(scope, id, props);
 
@@ -116,8 +119,9 @@ export class CellStack extends Stack {
     // /config.json; #14). Through SSM, not a stack export, so the pool and client stay free to be
     // replaced. Shared stacks only: personal and PR stacks have no site.
     if (!props.owner) {
+      this.webSignInParameter = webSignInParameter(props.stage, props.cell);
       new StringParameter(this, 'WebSignIn', {
-        parameterName: webSignInParameter(props.stage, props.cell),
+        parameterName: this.webSignInParameter,
         description: 'The web app’s sign-in config (read by the web stack).',
         stringValue: this.toJsonString({
           userPoolId: auth.userPool.userPoolId,

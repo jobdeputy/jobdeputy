@@ -6,7 +6,7 @@ import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 import { WEB_SITES } from '../config/web.js';
 import { buildApp } from '../lib/build-app.js';
-import { webSignInParameter } from '../lib/cell-stack.js';
+import { CellStack, webSignInParameter } from '../lib/cell-stack.js';
 import { checkGuards } from '../lib/guards.js';
 import { WebDnsStack } from '../lib/web-dns-stack.js';
 import { WebStack, webCsp } from '../lib/web-stack.js';
@@ -166,18 +166,32 @@ describe('web app hosting (decision 0011)', () => {
     ).toContain('jobdeputy-dev-iad');
   });
 
-  it('will not sign people in to a cell in another Region (decision 0004)', () => {
+  it('will not sign people in to a cell elsewhere, or anywhere unknown (decision 0004)', () => {
     const app = new App();
+    const india = new CellStack(app, 'jobdeputy-dev-bom', {
+      stage: 'dev',
+      cell: 'bom',
+      env: { region: 'ap-south-1' },
+    });
+    const personal = new CellStack(app, 'jobdeputy-dev-alice-iad', {
+      stage: 'dev',
+      cell: 'iad',
+      owner: 'alice',
+      env: { region: 'us-east-1' },
+    });
     const zone = new WebDnsStack(app, 'dns', { domain: 'x.example', env: { region: 'us-east-1' } });
-    expect(
-      () =>
-        new WebStack(app, 'site', {
-          domain: 'x.example',
-          zone: zone.zone,
-          env: { region: 'us-east-1' },
-          signIn: { stage: 'dev', cell: 'bom' },
-        }),
-    ).toThrow('cannot sign people in to a cell in ap-south-1');
+    const site = (id: string, signIn: CellStack, region?: string) =>
+      new WebStack(app, id, {
+        domain: 'x.example',
+        zone: zone.zone,
+        ...(region ? { env: { region } } : {}),
+        signIn,
+      });
+    expect(() => site('a', india, 'us-east-1')).toThrow(
+      'cannot sign people in to a cell in ap-south-1',
+    );
+    expect(() => site('b', india)).toThrow('cannot sign people in to a cell in ap-south-1');
+    expect(() => site('c', personal, 'us-east-1')).toThrow('writes no sign-in config');
   });
 
   it('writes no sign-in parameter from personal or PR stacks (they have no site)', () => {
