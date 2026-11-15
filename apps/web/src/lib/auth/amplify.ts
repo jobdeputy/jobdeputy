@@ -61,14 +61,25 @@ const KINDS: Record<string, AuthErrorKind> = {
 /** Runs one Amplify call, configured first, with its failure in our terms. */
 async function call<T>(work: (auth: Amplified) => Promise<T>): Promise<T> {
   const auth = await configure();
+  // Amplify's requests have no time limit of their own: one that never answers would leave its
+  // form waiting for ever, so after 20 s it is a connection problem.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const limit = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new AuthError('offline')), CALL_LIMIT_MS);
+  });
   try {
-    return await work(auth);
+    return await Promise.race([work(auth), limit]);
   } catch (error) {
     if (error instanceof AuthError) throw error;
     const name = (error as { name?: string } | null)?.name ?? '';
     throw new AuthError(KINDS[name] ?? 'unknown', { cause: error });
+  } finally {
+    clearTimeout(timer);
   }
 }
+
+/** How long one sign-in request may take before it counts as a connection problem. */
+export const CALL_LIMIT_MS = 20_000;
 
 /** The app's authentication against Cognito, through Amplify (decision on #14: Amplify Auth v6). */
 export const amplifyAuth: Auth = {
@@ -156,7 +167,7 @@ function hasStoredSession(): boolean {
  * config is a connection problem (`offline`): a server or rate-limit error, or a page from wifi
  * that asks you to sign in to it first.
  */
-async function readConfig(): Promise<Partial<Config> | null> {
+async function readConfig(): Promise<Config | null> {
   const response = await fetch(CONFIG_URL, {
     cache: 'no-store',
     signal: AbortSignal.timeout(8000),
@@ -164,13 +175,21 @@ async function readConfig(): Promise<Partial<Config> | null> {
   if (response.status === 404) return null;
   if (!response.ok) throw new AuthError('offline');
   const body = await response.text();
+  const config = parseJson(body) as Partial<Config> | null;
+  if (typeof config?.userPoolId === 'string' && typeof config.userPoolClientId === 'string') {
+    return { userPoolId: config.userPoolId, userPoolClientId: config.userPoolClientId };
+  }
+  // The deploy writes the config whole, so anything else is not ours: the app's own page means
+  // there is none here; another answer came from something on the way.
+  if (body.includes(APP_PAGE_MARK)) return null;
+  throw new AuthError('offline');
+}
+
+function parseJson(text: string): unknown {
   try {
-    return JSON.parse(body) as Partial<Config>;
+    return JSON.parse(text);
   } catch {
-    // The deploy writes the config, so a body that does not parse is not ours: unless it is the
-    // app's own page (no config here), something on the way answered instead.
-    if (body.includes(APP_PAGE_MARK)) return null;
-    throw new AuthError('offline');
+    return null;
   }
 }
 

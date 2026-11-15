@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CALL_LIMIT_MS } from '../src/lib/auth/amplify.ts';
 
 const amplify = vi.hoisted(() => ({
   configure: vi.fn(),
@@ -221,5 +222,28 @@ describe('amplifyAuth', () => {
 
   it('recognises the app’s own page by its boot loader, which index.html has', () => {
     expect(readFileSync('index.html', 'utf8')).toContain('id="boot-loader"');
+  });
+
+  it('calls a config from someone else that parses (a proxy’s JSON) a network problem', async () => {
+    const auth = await load({ error: 'login required' });
+    await expect(auth.signIn('a@example.com', 'pw')).rejects.toMatchObject({ kind: 'offline' });
+  });
+
+  it('gives up on a request that never answers, as a network problem', async () => {
+    const auth = await load();
+    // Set up first (its fetch is real time), then a resend that hangs.
+    amplify.signIn.mockResolvedValue({ isSignedIn: true, nextStep: { signInStep: 'DONE' } });
+    await auth.signIn('a@example.com', 'pw');
+    vi.useFakeTimers();
+    try {
+      amplify.resendSignUpCode.mockReturnValue(new Promise(() => {}));
+      const result = expect(auth.resendSignUpCode('a@example.com')).rejects.toMatchObject({
+        kind: 'offline',
+      });
+      await vi.advanceTimersByTimeAsync(CALL_LIMIT_MS);
+      await result;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

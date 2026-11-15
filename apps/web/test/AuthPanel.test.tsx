@@ -258,11 +258,14 @@ describe('AuthPanel', () => {
       'true',
     );
     type('Code from your email', FAKE_CODE);
-    // Enter in the field submits the form itself, past the button.
+    // The button blocks its own presses; the form's guard backs it up for any other submit.
+    const confirmCode = vi.spyOn(auth, 'confirmSignUp');
     const confirm = screen.getByRole('button', { name: 'Confirm' });
     fireEvent.submit(confirm.closest('form') as HTMLFormElement);
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(onSignedIn).not.toHaveBeenCalled();
+    expect(confirmCode).not.toHaveBeenCalled();
     finish();
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toBe('A new code is on its way.'),
+    );
   });
 });
