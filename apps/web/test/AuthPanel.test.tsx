@@ -224,6 +224,12 @@ describe('AuthPanel', () => {
     submit('Sign in');
     await screen.findByRole('heading', { name: 'Enter your code.' });
     await expectAlert('Too many tries. Wait a few minutes, then try again.');
+    // No new code went out: the step says to use an earlier one.
+    expect(
+      screen.getByText(
+        'Use the latest 6-digit code we sent to later@example.com, or send a new one.',
+      ),
+    ).toBeTruthy();
   });
 
   it('treats sending a new code as a request: the links wait for it', async () => {
@@ -243,6 +249,9 @@ describe('AuthPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send a new code' }));
     fireEvent.click(screen.getByRole('button', { name: 'Back to sign in' }));
     expect(screen.getByRole('heading', { name: 'Enter your code.' })).toBeTruthy();
+    // It says what it is doing, and the Confirm button does not claim to be checking.
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Sending a new code…'));
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeTruthy();
     finish();
   });
 });

@@ -60,7 +60,7 @@ export function SignedIn({ email, onSignedOut }: { email: string; onSignedOut: (
           {text.signOut}
         </Button>
         <p role="status" className="sr-only">
-          {waiting ? text.signingOut : ''}
+          {pending && waiting ? text.signingOut : ''}
         </p>
         <p
           role="alert"

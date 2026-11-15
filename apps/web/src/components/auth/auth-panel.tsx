@@ -62,10 +62,15 @@ export function AuthPanel({
   const [refusal, setRefusal] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  // Sending a new code: its own wait, so the Confirm button does not claim to be checking.
+  const [resending, setResending] = useState(false);
+  // The fresh code could not be sent: the code step says to use an earlier one.
+  const [noFreshCode, setNoFreshCode] = useState(false);
   const form = useRef<HTMLFormElement>(null);
   // Said in the status line on the button's timing (nothing for 300 ms), so a screen reader hears
   // the wait too: the button's own label change is not reliably read out.
-  const waiting = useDelayedPending(pending);
+  const busy = pending || resending;
+  const waiting = useDelayedPending(busy);
   const refusalId = useId();
 
   // A new step starts at its first field.
@@ -81,6 +86,7 @@ export function AuthPanel({
     setErrors({});
     setRefusal(null);
     setNotice(null);
+    setNoFreshCode(false);
   };
 
   const bind = (name: keyof Errors | 'email') => ({
@@ -93,7 +99,7 @@ export function AuthPanel({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (pending) return;
+    if (busy) return;
     const found = check(step, values);
     setErrors(found);
     setRefusal(null);
@@ -116,7 +122,10 @@ export function AuthPanel({
             (error: unknown) => text.errors[error instanceof AuthError ? error.kind : 'unknown'],
           );
           go('confirm', { email, password });
-          if (resent) setRefusal(resent);
+          if (resent) {
+            setRefusal(resent);
+            setNoFreshCode(true);
+          }
         } else onSignedIn(email);
       } else if (step === 'sign-up') {
         await auth.signUp(email, password);
@@ -147,25 +156,29 @@ export function AuthPanel({
   }
 
   async function resend() {
-    if (pending) return;
-    // A request like any other: the links and the button wait for it.
-    setPending(true);
+    if (busy) return;
+    // A request like any other (the links wait for it), with its own words.
+    setResending(true);
     setRefusal(null);
     setNotice(null);
     try {
       await auth.resendSignUpCode(email);
+      setNoFreshCode(false);
       setNotice(text.confirm.resent);
     } catch (error) {
       setRefusal(text.errors[error instanceof AuthError ? error.kind : 'unknown']);
     } finally {
-      setPending(false);
+      setResending(false);
     }
   }
 
   const intro = {
     'sign-in': text.signIn,
     'sign-up': text.signUp,
-    confirm: { ...text.confirm, subtitle: fill(text.confirm.subtitle, { email }) },
+    confirm: {
+      ...text.confirm,
+      subtitle: fill(noFreshCode ? text.confirm.subtitleEarlier : text.confirm.subtitle, { email }),
+    },
     reset: text.reset,
     'reset-confirm': {
       ...text.resetConfirm,
@@ -239,7 +252,11 @@ export function AuthPanel({
         {/* Live regions stay in the accessibility tree when empty (visually hidden, never
             display:none), so their first words are read. */}
         <p role="status" className={cn('m-0 text-sm text-green-ink', !notice && 'sr-only')}>
-          {pending && waiting ? action.pending : notice}
+          {waiting && pending
+            ? action.pending
+            : waiting && resending
+              ? text.confirm.resending
+              : notice}
         </p>
         <p
           id={refusalId}
@@ -256,26 +273,26 @@ export function AuthPanel({
         <div className="flex flex-wrap justify-between gap-x-4 gap-y-2 text-sm">
           {step === 'sign-in' && (
             <>
-              <LinkButton off={pending} onClick={() => go('reset')}>
+              <LinkButton off={busy} onClick={() => go('reset')}>
                 {text.signIn.forgot}
               </LinkButton>
-              <LinkButton off={pending} onClick={() => go('sign-up')}>
+              <LinkButton off={busy} onClick={() => go('sign-up')}>
                 {text.signIn.switch}
               </LinkButton>
             </>
           )}
           {step === 'sign-up' && (
-            <LinkButton off={pending} onClick={() => go('sign-in')}>
+            <LinkButton off={busy} onClick={() => go('sign-in')}>
               {text.signUp.switch}
             </LinkButton>
           )}
           {step === 'confirm' && (
-            <LinkButton off={pending} onClick={resend}>
+            <LinkButton off={busy} onClick={resend}>
               {text.confirm.resend}
             </LinkButton>
           )}
           {(step === 'confirm' || step === 'reset' || step === 'reset-confirm') && (
-            <LinkButton off={pending} onClick={() => go('sign-in')}>
+            <LinkButton off={busy} onClick={() => go('sign-in')}>
               {text.backToSignIn}
             </LinkButton>
           )}

@@ -130,7 +130,10 @@ export const en = {
       subtitle: 'We sent a 6-digit code to {email}.',
       submit: 'Confirm',
       pending: 'Checking…',
+      /** When a fresh code could not be sent: one sent earlier may still be in the inbox. */
+      subtitleEarlier: 'Use the latest 6-digit code we sent to {email}, or send a new one.',
       resend: 'Send a new code',
+      resending: 'Sending a new code…',
       resent: 'A new code is on its way.',
     },
     reset: {

@@ -21,14 +21,14 @@ let configured: Promise<Amplified> | undefined;
 /** Loads Amplify, reads the app's config once and sets it up; `not-set-up` where there is none. */
 function configure(): Promise<Amplified> {
   configured ??= (async () => {
-    // Amplify's code and the config load side by side; a config that does not come in 8 s fails.
-    const [[{ Amplify }, auth], response] = await Promise.all([
+    // Amplify's code and the config load side by side; the config, read whole within 8 s, is null
+    // where there is none (a 404), and a failed read is the network's fault ('offline').
+    const [[{ Amplify }, auth], config] = await Promise.all([
       amplify(),
-      fetch(CONFIG_URL, { cache: 'no-store', signal: AbortSignal.timeout(8000) }),
+      fetch(CONFIG_URL, { cache: 'no-store', signal: AbortSignal.timeout(8000) }).then(
+        async (response) => (response.ok ? ((await response.json()) as Partial<Config>) : null),
+      ),
     ]);
-    const config = (
-      response.ok ? await response.json().catch(() => null) : null
-    ) as Partial<Config> | null;
     if (!config?.userPoolId || !config.userPoolClientId) throw new AuthError('not-set-up');
     Amplify.configure({
       Auth: {

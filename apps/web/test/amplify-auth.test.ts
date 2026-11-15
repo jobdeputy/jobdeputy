@@ -153,4 +153,21 @@ describe('amplifyAuth', () => {
     const [, init] = vi.mocked(fetch).mock.calls[0] ?? [];
     expect((init as RequestInit).signal).toBeInstanceOf(AbortSignal);
   });
+
+  it('calls a config that fails to read a network problem, not a missing set-up', async () => {
+    vi.resetModules();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => {
+          throw new DOMException('The operation was aborted.', 'AbortError');
+        },
+      })),
+    );
+    const { amplifyAuth } = await import('../src/lib/auth/amplify.ts');
+    await expect(amplifyAuth.signIn('a@example.com', 'pw')).rejects.toMatchObject({
+      kind: 'offline',
+    });
+  });
 });
