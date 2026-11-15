@@ -27,7 +27,7 @@ import { BlockPublicAccess, Bucket, BucketEncryption, type IBucket } from 'aws-c
 import { BucketDeployment, Source } from 'aws-cdk-lib/aws-s3-deployment';
 import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import type { Construct } from 'constructs';
-import type { CellStack } from './cell-stack.js';
+import type { CellStack, WebConfig } from './cell-stack.js';
 
 export interface WebStackProps extends StackProps {
   /** The site's address; also the zone's name (the site sits at the zone apex). */
@@ -209,14 +209,11 @@ export class WebStack extends Stack {
 }
 
 /**
- * The cell's web config parameters, once the site can read them: the cell writes one (a shared stack),
+ * The cell's web config parameters, once the site can read them: the cell writes them (a shared stack),
  * both stacks are in the same known Region, and their accounts are both given and equal, or both
  * left to the deploy's credentials (as in local synths). The site then deploys after the cell.
  */
-function checkedSignIn(
-  site: Stack,
-  cell: CellStack,
-): { readonly config: string; readonly connectSrc: string } {
+function checkedSignIn(site: Stack, cell: CellStack): WebConfig {
   if (!cell.webConfig) {
     throw new Error(`${cell.stackName} writes no web config (a personal or PR stack).`);
   }

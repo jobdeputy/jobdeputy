@@ -63,13 +63,21 @@ export function webConnectParameter(stage: StageName, cell: CellId): string {
   return `/jobdeputy/jobdeputy-${stage}-${cell}/web-connect-src`;
 }
 
+/** The names of the SSM parameters a site reads from its cell (see CellStack.webConfig). */
+export interface WebConfig {
+  /** The site's /config.json: sign-in IDs and the API's address. */
+  readonly config: string;
+  /** The origins the site's CSP lets it call in the cell (its API, its documents bucket). */
+  readonly connectSrc: string;
+}
+
 /** Everything one Region cell needs. Tables follow docs/data-model.md. */
 export class CellStack extends Stack {
   /**
    * The SSM parameters a site reads from this cell (shared stacks only): its config (#14) and
    * the origins its CSP lets it call here (#33).
    */
-  readonly webConfig?: { readonly config: string; readonly connectSrc: string };
+  readonly webConfig?: WebConfig;
 
   constructor(scope: Construct, id: string, props: CellStackProps) {
     super(scope, id, props);
@@ -780,6 +788,8 @@ export class CellStack extends Stack {
       new CfnOutput(this, 'TestSiteUrl', { value: testSiteStage.url });
     }
 
+    // With a trailing slash (the integration tests join paths onto it); the web app's apiUrl is
+    // the endpoint without one (its paths start with a slash).
     new CfnOutput(this, 'ApiUrl', { value: stage.url });
     new CfnOutput(this, 'UserPoolId', { value: auth.userPool.userPoolId });
     new CfnOutput(this, 'DocumentsBucketName', { value: documents.bucket.bucketName });
