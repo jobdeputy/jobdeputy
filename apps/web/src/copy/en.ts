@@ -223,10 +223,17 @@ export const en = {
       tooLong: 'Use at most {max} characters.',
       saveFailed: 'That didn’t save. Check your connection, then try again.',
       tryLater: 'That didn’t save. Try again in a moment.',
-      tooMany: 'Too many saves for now. Try again in {seconds} seconds.',
+      tooMany: 'Too many saves for now. Try again in {wait}.',
+      /** The wait in tooMany, by count. */
+      units: {
+        seconds: { one: '{count} second', other: '{count} seconds' },
+        minutes: { one: '{count} minute', other: '{count} minutes' },
+      },
       changedElsewhere:
         'Your profile changed somewhere else. It shows here now: check it, then continue.',
-      cannotSave: 'Your profile couldn’t be saved as it is. Try again, or sign out and back in.',
+      /** Something saved that this step doesn't show no longer fits the rules. */
+      cannotSave:
+        'Part of your saved profile no longer fits the rules, so this can’t be saved yet.',
       accountClosed: 'This account can’t be changed any more. Sign out to continue.',
       signedOut: 'Your session has ended. Sign in again to continue.',
     },

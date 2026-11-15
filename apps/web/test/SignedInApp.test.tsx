@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { saveBody } from '../src/components/setup/step-you.tsx';
 import { ApiError } from '../src/lib/api/client.ts';
@@ -221,6 +222,76 @@ describe('the signed-in app', () => {
       region: 'TX',
       country: 'US',
     });
+  });
+
+  it('saves under React’s development check (StrictMode mounts twice)', async () => {
+    const api = createFakeApi({ delay: 0 });
+    await renderApp(await signedIn(), { wrapper: StrictMode }, api);
+    fireEvent.click(await screen.findByRole('button', { name: 'Let’s start' }));
+    await screen.findByRole('heading', { level: 1, name: 'First, what should I call you?' });
+    fill('Alex', 'Morgan');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'You’re in.' })).toBeTruthy();
+  });
+
+  it('keeps what was typed when a save only collided (try again)', async () => {
+    const api = createFakeApi({ delay: 0 });
+    await toStepYou(api);
+    fill('Alex', 'Morgan');
+    refuseSaves(api, new ApiError('conflict', { status: 409, code: 'try-again' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(alertText()).toContain('That didn’t save. Try again in a moment.'));
+    expect((screen.getByLabelText('First name') as HTMLInputElement).value).toBe('Alex');
+  });
+
+  it('does not move on when what is saved after a lost answer is not what was sent', async () => {
+    const api = createFakeApi({ delay: 0 });
+    await toStepYou(api);
+    fill('Alex', 'Morgan');
+    const request = api.request.bind(api);
+    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      if (method !== 'PUT') return request(method, path, body);
+      // Another device saved something else meanwhile; this save's answer was lost.
+      await request('PUT', '/me/profile', { version: 0, firstName: 'Robert', lastName: 'Lee' });
+      throw new ApiError('unsure');
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(alertText()).toContain('That didn’t save.'));
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'First, what should I call you?' }),
+    ).toBeTruthy();
+  });
+
+  it('moves focus to a field the API refused, and says when it refused another', async () => {
+    const api = createFakeApi({ delay: 0 });
+    await toStepYou(api);
+    fill('Alex', 'Morgan');
+    refuseSaves(
+      api,
+      new ApiError('invalid', {
+        status: 400,
+        fieldErrors: [
+          { path: 'lastName', message: 'raw' },
+          { path: 'links.github', message: 'raw' },
+        ],
+      }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByText('Check your last name.')).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByLabelText('Last name'));
+    expect(alertText()).toContain('Part of your saved profile no longer fits the rules');
+  });
+
+  it('says a wait in words', async () => {
+    const api = createFakeApi({ delay: 0 });
+    await toStepYou(api);
+    fill('Alex', 'Morgan');
+    refuseSaves(api, new ApiError('too-many', { status: 429, retryAfterSeconds: 1 }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(alertText()).toContain('Try again in 1 second.'));
+    refuseSaves(api, new ApiError('too-many', { status: 429, retryAfterSeconds: 90 }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(alertText()).toContain('Try again in 2 minutes.'));
   });
 
   it('goes back from step 1 to the welcome', async () => {

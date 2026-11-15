@@ -4,6 +4,7 @@ import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Field } from '@/components/auth/fields.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { copy, fill } from '@/copy/index.ts';
+import { DEFAULT_RETRY_AFTER_SECONDS } from '@/lib/api/client.ts';
 import { ApiError, useApi } from '@/lib/api/index.ts';
 import type { Profile } from '@/lib/api/profile.ts';
 import { useDelayedPending } from '@/lib/use-delayed-pending.ts';
@@ -51,12 +52,13 @@ export function StepYou({
   const refusalId = useId();
   // A save that ends after the person has left (signed out, say) must not touch anything.
   const here = useRef(true);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    // Set on every mount: React's development check mounts, unmounts and mounts again.
+    here.current = true;
+    return () => {
       here.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
 
   const bind = (name: Name) => ({
     name,
@@ -101,20 +103,27 @@ export function StepYou({
       onSaved();
     } catch (error) {
       if (!here.current) return;
-      await refused(error, body.version);
+      await refused(error, { ...values, version: body.version });
     } finally {
       if (here.current) setPending(false);
     }
   }
 
   /** Says why a save was refused, in this step's words, and what to do. */
-  async function refused(error: unknown, sentVersion: number) {
+  async function refused(error: unknown, sent: Values & { version: number }) {
     const errorsText = copy.setUp.errors;
     const kind = error instanceof ApiError ? error.kind : 'server';
     if (kind === 'invalid' && error instanceof ApiError && error.fieldErrors.length > 0) {
-      const fields = fromApi(error);
-      if (Object.keys(fields).length > 0) setErrors(fields);
-      else setRefusal(errorsText.cannotSave);
+      const { fields, other } = fromApi(error);
+      setErrors(fields);
+      // Refused on a field it doesn't show too: say so, as well as the fields here.
+      if (other || Object.keys(fields).length === 0) setRefusal(errorsText.cannotSave);
+      // The first refused field takes focus, so its reason is read out.
+      const first = (Object.keys(fields) as Name[])[0];
+      if (first) form.current?.querySelector<HTMLInputElement>(`[name="${first}"]`)?.focus();
+    } else if (kind === 'conflict' && error instanceof ApiError && error.code === 'try-again') {
+      // A write that collided: nothing was saved and nothing changed. Keep what was typed.
+      setRefusal(errorsText.tryLater);
     } else if (kind === 'conflict') {
       // Changed meanwhile: show what is saved now, so nothing is overwritten unseen.
       const fresh = await reload();
@@ -122,13 +131,17 @@ export function StepYou({
       if (fresh) setValues(valuesOf(fresh));
       setRefusal(fresh ? errorsText.changedElsewhere : errorsText.saveFailed);
     } else if (kind === 'unsure') {
-      // The answer was lost: if the saved version moved on, the save went through.
+      // The answer was lost: if what is saved now is what was sent, the save went through.
       const fresh = await reload();
       if (!here.current) return;
-      if (fresh && fresh.version > sentVersion) onSaved();
+      if (fresh && fresh.version > sent.version && sameAnswers(valuesOf(fresh), sent)) onSaved();
       else setRefusal(errorsText.saveFailed);
     } else if (kind === 'too-many' && error instanceof ApiError) {
-      setRefusal(fill(errorsText.tooMany, { seconds: String(error.retryAfterSeconds ?? 5) }));
+      setRefusal(
+        fill(errorsText.tooMany, {
+          wait: waitText(error.retryAfterSeconds ?? DEFAULT_RETRY_AFTER_SECONDS),
+        }),
+      );
     } else if (kind === 'forbidden') {
       setRefusal(errorsText.accountClosed);
     } else if (kind === 'signed-out') {
@@ -245,14 +258,38 @@ function check(body: unknown): { fields: Errors; other: boolean } {
   return { fields, other };
 }
 
-/** The API's refusals, on this step's fields, in the person's words. */
-function fromApi(error: ApiError): Errors {
+/** The API's refusals: on this step's fields, in the person's words, and whether any other. */
+function fromApi(error: ApiError): { fields: Errors; other: boolean } {
   const fields: Errors = {};
+  let other = false;
   for (const { path } of error.fieldErrors) {
     const name = fieldOf(path);
-    if (name && !fields[name]) fields[name] = invalid(name);
+    if (!name) other = true;
+    else if (!fields[name]) fields[name] = invalid(name);
   }
-  return fields;
+  return { fields, other };
+}
+
+/** Whether a saved profile holds these answers (trimmed, as they are sent). */
+function sameAnswers(saved: Values, sent: Values): boolean {
+  return (['firstName', 'lastName', 'city'] as const).every(
+    (name) => saved[name] === sent[name].trim(),
+  );
+}
+
+/** A wait in words: "1 second", "30 seconds", "2 minutes". */
+function waitText(seconds: number): string {
+  const units = copy.setUp.errors.units;
+  const plural = new Intl.PluralRules('en');
+  if (seconds < 60) {
+    return fill(units.seconds[plural.select(seconds) === 'one' ? 'one' : 'other'], {
+      count: String(seconds),
+    });
+  }
+  const minutes = Math.ceil(seconds / 60);
+  return fill(units.minutes[plural.select(minutes) === 'one' ? 'one' : 'other'], {
+    count: String(minutes),
+  });
 }
 
 function invalid(name: Name): string {
