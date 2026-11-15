@@ -198,13 +198,10 @@ export const en = {
   /** Loading the signed-in person's profile, and failing to. */
   profile: {
     loading: 'Opening your search desk',
-    /** While the browser is offline: the load waits for the network. */
-    offline: 'Waiting for a connection…',
     failed: 'Your search desk didn’t open.',
     failedReason:
       'Check your connection, then try again. If it still won’t open, sign out and back in.',
     retry: 'Try again',
-    retrying: 'Trying again…',
   },
   /** The page a signed-in person sees until the app's own screens arrive. */
   signedIn: {

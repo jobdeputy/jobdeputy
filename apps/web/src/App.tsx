@@ -1,18 +1,17 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-import { SignOutButton } from '@/components/auth/sign-out-button.tsx';
 import { SignedIn } from '@/components/auth/signed-in.tsx';
 import { type AuthControl, AuthDrawer, type AuthMode } from '@/components/landing/auth-drawer.tsx';
 import { Hero } from '@/components/landing/hero.tsx';
 import { SiteHeader } from '@/components/landing/site-header.tsx';
-import { SetUp } from '@/components/setup/set-up.tsx';
+import { SetUp, StepProgress } from '@/components/setup/set-up.tsx';
+import { SignedInLayout } from '@/components/signed-in-layout.tsx';
 import { Button } from '@/components/ui/button.tsx';
-import { Spinner } from '@/components/ui/spinner.tsx';
-import { copy, fill } from '@/copy/index.ts';
+import { QueryRegion } from '@/components/ui/query-region.tsx';
+import { copy } from '@/copy/index.ts';
 import { useProfile } from '@/lib/api/profile.ts';
 import { useAuth } from '@/lib/auth/index.ts';
 import { useFinishBoot } from '@/lib/boot-loader.ts';
-import { useDelayedPending, useLongWait } from '@/lib/use-delayed-pending.ts';
 
 /**
  * The app: the public landing page (the story of what the deputy does, and the way in), or, for a
@@ -47,97 +46,63 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
   const profile = useProfile();
   const queryClient = useQueryClient();
   const [started, setStarted] = useState(false);
-  // The shared timing (#17): nothing for 300 ms, then shown at least 500 ms.
-  const loadingShown = useDelayedPending(profile.isPending);
   const signedOut = () => {
     queryClient.clear();
     onSignedOut();
   };
-  if (profile.isPending || loadingShown) {
-    return <ProfileLoading shown={loadingShown} paused={profile.isPaused} />;
-  }
-  // Only with nothing loaded: a failed refresh of a profile on screen keeps the page.
-  if (profile.data === undefined) {
-    return (
-      <ProfileFailed
-        retrying={profile.isFetching}
-        onRetry={() => profile.refetch()}
-        onSignedOut={signedOut}
-      />
-    );
-  }
-  if (profile.data === null && !started) {
-    return <SetUp email={email} onStart={() => setStarted(true)} onSignedOut={signedOut} />;
-  }
-  return <SignedIn email={email} onSignedOut={signedOut} />;
-}
-
-/**
- * While the profile loads: once `shown`, a quiet turning ring and what is opening, read out
- * through a status line that is there from the start (a live region's first words are not read);
- * after 8 s "Still working…" is added, and while the browser is offline it says it is waiting.
- */
-function ProfileLoading({ shown, paused }: { shown: boolean; paused: boolean }) {
-  const long = useLongWait(shown && !paused);
-  const text = copy.profile;
-  const said = paused
-    ? text.offline
-    : long
-      ? fill(copy.loading.stillLoading, { label: text.loading })
-      : text.loading;
+  const settingUp = profile.data === null && !started;
   return (
-    <main className="grid min-h-dvh place-items-center bg-background p-[21px]">
-      <p role="status" className="m-0 inline-flex items-center gap-2 text-sm text-muted-foreground">
-        {shown && <Spinner />}
-        {shown ? said : ''}
-      </p>
-    </main>
+    <SignedInLayout
+      aside={settingUp ? <StepProgress current={null} /> : undefined}
+      onSignedOut={signedOut}
+    >
+      {/* The shared loading states (#17): nothing for 300 ms, then a skeleton read out as
+          "Opening your search desk", "Still working…" after 8 s, waiting while offline. */}
+      <QueryRegion
+        query={profile}
+        skeleton={{ kind: 'block', rows: 4 }}
+        label={copy.profile.loading}
+        error={<ProfileFailed onRetry={() => profile.refetch()} />}
+        className="mx-auto w-full max-w-[1120px] px-[17px] py-8 sm:px-[clamp(21px,4vw,55px)]"
+      >
+        {(data) =>
+          data === null && !started ? (
+            <SetUp email={email} onStart={() => setStarted(true)} />
+          ) : (
+            <SignedIn email={email} />
+          )
+        }
+      </QueryRegion>
+    </SignedInLayout>
   );
 }
 
 /**
- * The profile could not be read: say so, and offer to try again or sign out (an account that can
- * no longer be read must not trap its person here). The title takes focus on arrival; the reason
- * is an alert, emptied while a retry runs so a second failure is read out again.
+ * The profile could not be read: say so, and offer to try again (Sign out is in the header, so an
+ * account that can no longer be read never traps its person). Its title takes focus each time it
+ * shows, so a failed retry is announced again.
  */
-function ProfileFailed({
-  retrying,
-  onRetry,
-  onSignedOut,
-}: {
-  retrying: boolean;
-  onRetry: () => void;
-  onSignedOut: () => void;
-}) {
+function ProfileFailed({ onRetry }: { onRetry: () => void }) {
   const title = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     title.current?.focus();
   }, []);
   return (
-    <main className="grid min-h-dvh place-items-center bg-background p-[21px]">
-      <section
-        aria-labelledby="profile-failed-title"
-        className="grid max-w-[480px] justify-items-start gap-3"
+    <section
+      aria-labelledby="profile-failed-title"
+      className="grid max-w-[480px] justify-items-start gap-3 py-8"
+    >
+      <h1
+        id="profile-failed-title"
+        tabIndex={-1}
+        ref={title}
+        className="m-0 font-display text-[clamp(1.75rem,6vw,2.25rem)] leading-tight font-medium tracking-[-0.03em] outline-none"
       >
-        <h1
-          id="profile-failed-title"
-          tabIndex={-1}
-          ref={title}
-          className="m-0 font-display text-[clamp(1.75rem,6vw,2.25rem)] leading-tight font-medium tracking-[-0.03em] outline-none"
-        >
-          {copy.profile.failed}
-        </h1>
-        <p role="alert" className="m-0 text-[0.9375rem] text-muted-foreground">
-          {retrying ? '' : copy.profile.failedReason}
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <Button pending={retrying} pendingLabel={copy.profile.retrying} onClick={onRetry}>
-            {copy.profile.retry}
-          </Button>
-          <SignOutButton onSignedOut={onSignedOut} messageClassName="basis-full" />
-        </div>
-      </section>
-    </main>
+        {copy.profile.failed}
+      </h1>
+      <p className="m-0 text-[0.9375rem] text-muted-foreground">{copy.profile.failedReason}</p>
+      <Button onClick={onRetry}>{copy.profile.retry}</Button>
+    </section>
   );
 }
 

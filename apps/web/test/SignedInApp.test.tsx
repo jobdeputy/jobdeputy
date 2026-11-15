@@ -1,8 +1,12 @@
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { App } from '../src/App.tsx';
 import { ApiError } from '../src/lib/api/client.ts';
 import { createFakeApi } from '../src/lib/api/fake.ts';
+import { ApiContext } from '../src/lib/api/index.ts';
 import { createFakeAuth } from '../src/lib/auth/fake.ts';
+import { AuthContext } from '../src/lib/auth/index.ts';
 import { renderApp } from './render-app.tsx';
 
 afterEach(cleanup);
@@ -45,12 +49,8 @@ describe('the signed-in app', () => {
       name: 'Your search desk didn’t open.',
     });
     expect(document.activeElement).toBe(title);
-    expect(
-      screen
-        .getAllByRole('alert')
-        .some((alert) => alert.textContent?.startsWith('Check your connection')),
-    ).toBe(true);
-    // Never a trap: Sign out is right there.
+    expect(screen.getByText(/^Check your connection, then try again\./)).toBeTruthy();
+    // Never a trap: Sign out is in the header.
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(
@@ -81,5 +81,28 @@ describe('the signed-in app', () => {
     await queries.refetchQueries({ queryKey: ['profile'] }).catch(() => {});
     await waitFor(() => expect(queries.getQueryState(['profile'])?.status).toBe('error'));
     expect(screen.getByRole('heading', { level: 1, name: 'Hi, I’m your deputy.' })).toBeTruthy();
+  });
+
+  it('keeps Sign out within reach while the profile is still loading', async () => {
+    const api = createFakeApi({ delay: 0 });
+    vi.spyOn(api, 'request').mockReturnValue(new Promise(() => {}));
+    const auth = await signedIn();
+    const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queries}>
+        <AuthContext.Provider value={auth}>
+          <ApiContext.Provider value={api}>
+            <App />
+          </ApiContext.Provider>
+        </AuthContext.Provider>
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByRole('button', { name: 'Sign out' })).toBeTruthy();
+    // After the shared 300 ms, the wait is read out.
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole('status').some((s) => s.textContent === 'Opening your search desk'),
+      ).toBe(true),
+    );
   });
 });
