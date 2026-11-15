@@ -69,10 +69,10 @@ const KINDS: Record<string, AuthErrorKind> = {
 /**
  * Runs one Amplify call, configured first, with its failure in our terms. Amplify's requests have
  * no time limit of their own, so loading it and its config gets one; so does the call, with
- * `limited`, where a late answer does no harm (a code that arrives anyway). A call that changes the
- * account (creating it, confirming it, signing in or out, a new password) waits for its real
- * answer: given up on, it could still succeed and leave the form telling the person something
- * untrue.
+ * `limited`, where a late answer does no harm: a new sign-up code, which the code step already
+ * waits for. Every other call waits for its real answer: given up on, it could still succeed and
+ * leave the form telling the person something untrue (an account made, a password changed, a
+ * reset code sent after the form said it had not been).
  */
 async function call<T>(
   work: (auth: Amplified) => Promise<T>,
@@ -163,12 +163,9 @@ export const amplifyAuth: Auth = {
       return 'done';
     }),
   resetPassword: (email) =>
-    call(
-      async ({ resetPassword }) => {
-        await resetPassword({ username: email });
-      },
-      { limited: true },
-    ),
+    call(async ({ resetPassword }) => {
+      await resetPassword({ username: email });
+    }),
   confirmResetPassword: (email, code, newPassword) =>
     call(async ({ confirmResetPassword }) => {
       await confirmResetPassword({ username: email, confirmationCode: code, newPassword });

@@ -134,20 +134,8 @@ export function AuthPanel({
         await auth.confirmSignUp(email, values.password ?? '', code.trim());
         onSignedIn(email);
       } else if (step === 'reset') {
-        const late = await auth.resetPassword(email).then(
-          () => false,
-          (error: unknown) => {
-            if (error instanceof AuthError && error.kind === 'no-answer') return true;
-            throw error;
-          },
-        );
+        await auth.resetPassword(email);
         go('reset-confirm', { email });
-        if (late) {
-          // No answer in time, but the code may still come: on to where it goes, with a note
-          // (not an error: the step went on) and a subtitle that says what to do.
-          setNotice(text.errors['no-answer']);
-          setNoFreshCode(true);
-        }
       } else {
         await auth.confirmResetPassword(email, code.trim(), password);
         go('sign-in', { email });
@@ -175,11 +163,19 @@ export function AuthPanel({
     setNotice(null);
     try {
       // The code step after sign-up, or the one for a new password.
-      await (step === 'confirm' ? auth.resendSignUpCode(email) : auth.resetPassword(email));
-      setNoFreshCode(false);
-      setNotice(text.confirm.resent);
+      if (step === 'confirm') {
+        await auth.resendSignUpCode(email);
+        setNoFreshCode(false);
+        setNotice(text.confirm.resent);
+      } else {
+        await auth.resetPassword(email);
+        // Cognito answers alike whether or not an account uses the email.
+        setNotice(fill(text.resetConfirm.resent, { email }));
+      }
     } catch (error) {
       setRefusal(text.errors[error instanceof AuthError ? error.kind : 'unknown']);
+      // A code may or may not have gone: the step says to use the latest one.
+      setNoFreshCode(true);
     } finally {
       setResending(false);
     }
@@ -195,9 +191,7 @@ export function AuthPanel({
     reset: text.reset,
     'reset-confirm': {
       ...text.resetConfirm,
-      subtitle: fill(noFreshCode ? text.resetConfirm.subtitleMaybe : text.resetConfirm.subtitle, {
-        email,
-      }),
+      subtitle: fill(text.resetConfirm.subtitle, { email }),
     },
   }[step];
   const action = {

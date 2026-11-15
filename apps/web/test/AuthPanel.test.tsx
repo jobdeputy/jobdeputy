@@ -269,28 +269,42 @@ describe('AuthPanel', () => {
     );
   });
 
-  it('goes on to the reset code when asking for it got no answer in time', async () => {
+  it('asks for a new reset code from the code step, saying only what it can know', async () => {
     const auth = createFakeAuth({ delay: 0 });
-    vi.spyOn(auth, 'resetPassword').mockRejectedValue(new AuthError('no-answer'));
+    const reset = vi.spyOn(auth, 'resetPassword');
     renderPanel('sign-in', auth);
     fireEvent.click(screen.getByRole('button', { name: 'Forgot password?' }));
     type('Email', 'a@example.com');
     submit('Send code');
     await screen.findByRole('heading', { name: 'Set a new password.' });
-    // A note, not an error: the step went on.
-    expect(screen.getByRole('status').textContent).toBe(
-      'JobDeputy didn’t answer in time. A code may still arrive; if not, try again.',
-    );
-    expect(screen.getByRole('alert').textContent).toBe('');
     expect(
-      screen.getByText('If a code arrives at a@example.com, enter it here, or send a new one.'),
+      screen.getByText('Enter the latest code we sent to a@example.com, if an account uses it.'),
     ).toBeTruthy();
-    // And a new one can be asked for right there.
-    vi.mocked(auth.resetPassword).mockResolvedValue();
     fireEvent.click(screen.getByRole('button', { name: 'Send a new code' }));
     await waitFor(() =>
-      expect(screen.getByRole('status').textContent).toBe('A new code is on its way.'),
+      expect(screen.getByRole('status').textContent).toBe(
+        'If an account uses a@example.com, a new code is on its way.',
+      ),
     );
-    expect(auth.resetPassword).toHaveBeenLastCalledWith('a@example.com');
+    expect(reset).toHaveBeenCalledTimes(2);
+  });
+
+  it('points to the latest code when a new sign-up code could not be sent', async () => {
+    const auth = createFakeAuth({ delay: 0 });
+    renderPanel('sign-up', auth);
+    type('Email', 'new@example.com');
+    type(/^Password/, 'a long enough password');
+    submit('Create account');
+    await screen.findByRole('heading', { name: 'Enter your code.' });
+    vi.spyOn(auth, 'resendSignUpCode').mockRejectedValue(new AuthError('no-answer'));
+    fireEvent.click(screen.getByRole('button', { name: 'Send a new code' }));
+    await expectAlert(
+      'JobDeputy didn’t answer in time. A code may still arrive; if not, try again.',
+    );
+    expect(
+      screen.getByText(
+        'Use the latest 6-digit code we sent to new@example.com, or send a new one.',
+      ),
+    ).toBeTruthy();
   });
 });

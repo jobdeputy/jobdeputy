@@ -288,23 +288,6 @@ describe('amplifyAuth', () => {
     }
   });
 
-  it('gives up on a reset code that never comes back, as a network problem', async () => {
-    const auth = await load();
-    amplify.signIn.mockResolvedValue({ isSignedIn: true, nextStep: { signInStep: 'DONE' } });
-    await auth.signIn('a@example.com', 'pw');
-    vi.useFakeTimers();
-    try {
-      amplify.resetPassword.mockReturnValue(new Promise(() => {}));
-      const result = expect(auth.resetPassword('a@example.com')).rejects.toMatchObject({
-        kind: 'no-answer',
-      });
-      await vi.advanceTimersByTimeAsync(CALL_LIMIT_MS);
-      await result;
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
   it('starts the set-up afresh after one that stalled was given up on', async () => {
     const amplifyAuth = await load(
       CONFIG,

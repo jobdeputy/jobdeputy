@@ -146,9 +146,8 @@ export const en = {
     resetConfirm: {
       kicker: 'Reset password',
       title: 'Set a new password.',
-      subtitle: 'Enter the code we sent to {email}, if an account uses it.',
-      /** When the code request got no answer in time: it may still come. */
-      subtitleMaybe: 'If a code arrives at {email}, enter it here, or send a new one.',
+      subtitle: 'Enter the latest code we sent to {email}, if an account uses it.',
+      resent: 'If an account uses {email}, a new code is on its way.',
       submit: 'Save password',
       pending: 'Saving password…',
       done: 'Your new password is ready. Sign in with it.',
