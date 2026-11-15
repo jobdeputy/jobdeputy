@@ -79,8 +79,8 @@ jobs:
           path: ${{ runner.temp }}/baselines
       # The artifact comes from a job that ran dependency code: only plain files named
       # <screen>--<device>.png that really are PNGs, at most 30 of them and 5 MB each, go in. They
-      # replace the PNGs (so a baseline the make job dropped is dropped here too); any other file
-      # there stays. The pull request is still reviewed before anything merges.
+      # replace everything there but dot files, as the stray check counts it (so whatever the make
+      # job dropped is dropped here too). The pull request is still reviewed before anything merges.
       - name: Take in only PNG baselines
         env:
           INCOMING: ${{ runner.temp }}/baselines
@@ -102,7 +102,7 @@ jobs:
             fi
           done
           mkdir -p apps/web/e2e/__screenshots__
-          rm -f apps/web/e2e/__screenshots__/*.png
+          find apps/web/e2e/__screenshots__ -mindepth 1 -maxdepth 1 ! -name '.*' -exec rm -rf {} +
           cp "${files[@]}" apps/web/e2e/__screenshots__/
       - name: Push them to a new branch
         env:
