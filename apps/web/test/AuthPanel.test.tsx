@@ -235,7 +235,7 @@ describe('AuthPanel', () => {
   it('treats sending a new code as a request: the links wait for it', async () => {
     let finish = () => {};
     const auth = createFakeAuth({ delay: 0 });
-    const { onSignedIn } = renderPanel('sign-up', auth);
+    renderPanel('sign-up', auth);
     type('Email', 'new@example.com');
     type(/^Password/, 'a long enough password');
     submit('Create account');

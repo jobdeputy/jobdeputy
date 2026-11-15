@@ -229,7 +229,7 @@ describe('amplifyAuth', () => {
     await expect(auth.signIn('a@example.com', 'pw')).rejects.toMatchObject({ kind: 'offline' });
   });
 
-  it('gives up on a request that never answers, as a network problem', async () => {
+  it('gives up on a new code that never comes back, as a network problem', async () => {
     const auth = await load();
     // Set up first (its fetch is real time), then a resend that hangs.
     amplify.signIn.mockResolvedValue({ isSignedIn: true, nextStep: { signInStep: 'DONE' } });
@@ -242,6 +242,46 @@ describe('amplifyAuth', () => {
       });
       await vi.advanceTimersByTimeAsync(CALL_LIMIT_MS);
       await result;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('waits for a confirm’s real answer, however long (it may yet succeed)', async () => {
+    const auth = await load();
+    amplify.signIn.mockResolvedValue({ isSignedIn: true, nextStep: { signInStep: 'DONE' } });
+    await auth.signIn('a@example.com', 'pw');
+    vi.useFakeTimers();
+    try {
+      let settled = false;
+      amplify.confirmSignUp.mockReturnValue(new Promise(() => {}));
+      auth.confirmSignUp('a@example.com', 'pw', '123456').then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+      await vi.advanceTimersByTimeAsync(CALL_LIMIT_MS * 3);
+      expect(settled).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows the page signed out when the session check never answers', async () => {
+    const auth = await load();
+    localStorage.setItem('CognitoIdentityServiceProvider.client.LastAuthUser', 'abc');
+    amplify.getCurrentUser.mockReturnValue(new Promise(() => {}));
+    // Set up first (its fetch is real time), then the check that hangs.
+    amplify.signIn.mockResolvedValue({ isSignedIn: true, nextStep: { signInStep: 'DONE' } });
+    await auth.signIn('a@example.com', 'pw');
+    vi.useFakeTimers();
+    try {
+      const user = auth.currentUser();
+      await vi.advanceTimersByTimeAsync(CALL_LIMIT_MS);
+      await expect(user).resolves.toBeNull();
     } finally {
       vi.useRealTimers();
     }

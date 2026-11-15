@@ -58,28 +58,42 @@ const KINDS: Record<string, AuthErrorKind> = {
   NetworkError: 'offline',
 };
 
-/** Runs one Amplify call, configured first, with its failure in our terms. */
-async function call<T>(work: (auth: Amplified) => Promise<T>): Promise<T> {
-  const auth = await configure();
-  // Amplify's requests have no time limit of their own: one that never answers would leave its
-  // form waiting for ever, so after 20 s it is a connection problem.
+/**
+ * Runs one Amplify call, configured first, with its failure in our terms. Amplify's requests have
+ * no time limit of their own, so loading it and its config gets one; so does the call, with
+ * `limited`, where a late answer does no harm (a new code that arrives anyway). A call that changes
+ * the account (confirming, signing in, a new password) waits for its real answer: given up on, it
+ * could still succeed and leave the form telling the person something untrue.
+ */
+async function call<T>(
+  work: (auth: Amplified) => Promise<T>,
+  { limited = false } = {},
+): Promise<T> {
+  const auth = await within(configure());
+  try {
+    return await (limited ? within(work(auth)) : work(auth));
+  } catch (error) {
+    if (error instanceof AuthError) throw error;
+    const name = (error as { name?: string } | null)?.name ?? '';
+    throw new AuthError(KINDS[name] ?? 'unknown', { cause: error });
+  }
+}
+
+/** How long a limited step may take before it counts as a connection problem. */
+export const CALL_LIMIT_MS = 20_000;
+
+/** `work`'s answer, or `offline` after the limit (the work runs on, unheeded). */
+async function within<T>(work: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const limit = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new AuthError('offline')), CALL_LIMIT_MS);
   });
   try {
-    return await Promise.race([work(auth), limit]);
-  } catch (error) {
-    if (error instanceof AuthError) throw error;
-    const name = (error as { name?: string } | null)?.name ?? '';
-    throw new AuthError(KINDS[name] ?? 'unknown', { cause: error });
+    return await Promise.race([work, limit]);
   } finally {
     clearTimeout(timer);
   }
 }
-
-/** How long one sign-in request may take before it counts as a connection problem. */
-export const CALL_LIMIT_MS = 20_000;
 
 /** The app's authentication against Cognito, through Amplify (decision on #14: Amplify Auth v6). */
 export const amplifyAuth: Auth = {
@@ -87,8 +101,9 @@ export const amplifyAuth: Auth = {
     // No session stored: nobody is signed in, and Amplify need not load.
     if (!hasStoredSession()) return null;
     try {
-      const { getCurrentUser } = await configure();
-      const user = await getCurrentUser();
+      // Limited, so a stalled check (a token refresh on bad wifi) cannot hold the page up.
+      const { getCurrentUser } = await within(configure());
+      const user = await within(getCurrentUser());
       return user.signInDetails?.loginId ?? user.username;
     } catch {
       return null;
@@ -118,9 +133,12 @@ export const amplifyAuth: Auth = {
       if (!result.isSignedIn) throw new AuthError('confirmed');
     }),
   resendSignUpCode: (email) =>
-    call(async ({ resendSignUpCode }) => {
-      await resendSignUpCode({ username: email });
-    }),
+    call(
+      async ({ resendSignUpCode }) => {
+        await resendSignUpCode({ username: email });
+      },
+      { limited: true },
+    ),
   signIn: (email, password) =>
     call(async ({ signIn, signOut }) => {
       // A session left from before (stored, but not readable at boot) would block a new sign-in:
