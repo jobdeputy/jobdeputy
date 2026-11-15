@@ -44,15 +44,17 @@ export function SignedIn({ email, onSignedOut }: { email: string; onSignedOut: (
             if (pending) return;
             setPending(true);
             setFailed(null);
+            let signedOut = false;
             try {
               await auth.signOut();
-              onSignedOut();
+              signedOut = true;
             } catch (error) {
               // Still signed in (the session is still stored): say so, rather than pretend.
               setFailed(copy.auth.errors[error instanceof AuthError ? error.kind : 'unknown']);
             } finally {
               setPending(false);
             }
+            if (signedOut) onSignedOut();
           }}
         >
           {text.signOut}

@@ -21,8 +21,11 @@ let configured: Promise<Amplified> | undefined;
 /** Loads Amplify, reads the app's config once and sets it up; `not-set-up` where there is none. */
 function configure(): Promise<Amplified> {
   configured ??= (async () => {
-    const [{ Amplify }, auth] = await amplify();
-    const response = await fetch(CONFIG_URL, { cache: 'no-store' });
+    // Amplify's code and the config load side by side; a config that does not come in 8 s fails.
+    const [[{ Amplify }, auth], response] = await Promise.all([
+      amplify(),
+      fetch(CONFIG_URL, { cache: 'no-store', signal: AbortSignal.timeout(8000) }),
+    ]);
     const config = (
       response.ok ? await response.json().catch(() => null) : null
     ) as Partial<Config> | null;
@@ -102,12 +105,12 @@ export const amplifyAuth: Auth = {
         const result = await autoSignIn().catch(() => null);
         if (result?.isSignedIn) return;
       }
-      try {
-        await signIn({ username: email, password });
-      } catch (error) {
-        // The account is confirmed now (the code cannot be used again): send them to sign in.
+      // The account is confirmed now (the code cannot be used again): if this sign-in does not
+      // finish (it fails, or asks for more), send them to sign in.
+      const result = await signIn({ username: email, password }).catch((error: unknown) => {
         throw new AuthError('confirmed', { cause: error });
-      }
+      });
+      if (!result.isSignedIn) throw new AuthError('confirmed');
     }),
   resendSignUpCode: (email) =>
     call(async ({ resendSignUpCode }) => {

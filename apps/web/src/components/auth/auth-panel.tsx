@@ -109,9 +109,14 @@ export function AuthPanel({
       if (step === 'sign-in') {
         const next = await auth.signIn(email, password);
         if (next === 'confirm') {
-          // The code from sign-up may be long gone: send a fresh one before asking for it.
-          await auth.resendSignUpCode(email);
+          // The code from sign-up may be long gone: send a fresh one before asking for it. If
+          // that fails, still go on (a code may be in the inbox), and say why there.
+          const resent = await auth.resendSignUpCode(email).then(
+            () => null,
+            (error: unknown) => text.errors[error instanceof AuthError ? error.kind : 'unknown'],
+          );
           go('confirm', { email, password });
+          if (resent) setRefusal(resent);
         } else onSignedIn(email);
       } else if (step === 'sign-up') {
         await auth.signUp(email, password);
@@ -132,7 +137,7 @@ export function AuthPanel({
       if (kind === 'confirmed') {
         // Confirmed, but not signed in: the code cannot be used again, so on to sign in.
         go('sign-in', { email });
-        setNotice(text.confirm.confirmed);
+        setNotice(text.errors.confirmed);
       } else {
         setRefusal(text.errors[kind]);
       }
@@ -143,6 +148,8 @@ export function AuthPanel({
 
   async function resend() {
     if (pending) return;
+    // A request like any other: the links and the button wait for it.
+    setPending(true);
     setRefusal(null);
     setNotice(null);
     try {
@@ -150,6 +157,8 @@ export function AuthPanel({
       setNotice(text.confirm.resent);
     } catch (error) {
       setRefusal(text.errors[error instanceof AuthError ? error.kind : 'unknown']);
+    } finally {
+      setPending(false);
     }
   }
 
@@ -230,7 +239,7 @@ export function AuthPanel({
         {/* Live regions stay in the accessibility tree when empty (visually hidden, never
             display:none), so their first words are read. */}
         <p role="status" className={cn('m-0 text-sm text-green-ink', !notice && 'sr-only')}>
-          {waiting ? action.pending : notice}
+          {pending && waiting ? action.pending : notice}
         </p>
         <p
           id={refusalId}

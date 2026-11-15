@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthPanel } from '../src/components/auth/auth-panel.tsx';
 import { Sheet, SheetContent } from '../src/components/ui/sheet.tsx';
@@ -6,6 +6,9 @@ import { createFakeAuth, FAKE_CODE } from '../src/lib/auth/fake.ts';
 import { type Auth, AuthContext, AuthError } from '../src/lib/auth/index.ts';
 
 afterEach(cleanup);
+// A loaded runner can take over the default second for a whole flow; a passing test still ends
+// as soon as its fact is true.
+configure({ asyncUtilTimeout: 3000 });
 
 /** The panel inside an open drawer (its titles need the dialog), with in-memory auth. */
 function renderPanel(start: 'sign-in' | 'sign-up', auth: Auth = createFakeAuth({ delay: 0 })) {
@@ -209,5 +212,37 @@ describe('AuthPanel', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Back to sign in' }));
     expect(screen.getByRole('status').textContent).toBe('');
+  });
+
+  it('still asks for the code when a fresh one cannot be sent, and says why', async () => {
+    const auth = createFakeAuth({ delay: 0 });
+    await auth.signUp('later@example.com', 'a long enough password');
+    vi.spyOn(auth, 'resendSignUpCode').mockRejectedValue(new AuthError('too-many-tries'));
+    renderPanel('sign-in', auth);
+    type('Email', 'later@example.com');
+    type(/^Password/, 'a long enough password');
+    submit('Sign in');
+    await screen.findByRole('heading', { name: 'Enter your code.' });
+    await expectAlert('Too many tries. Wait a few minutes, then try again.');
+  });
+
+  it('treats sending a new code as a request: the links wait for it', async () => {
+    let finish = () => {};
+    const auth = createFakeAuth({ delay: 0 });
+    renderPanel('sign-up', auth);
+    type('Email', 'new@example.com');
+    type(/^Password/, 'a long enough password');
+    submit('Create account');
+    await screen.findByRole('heading', { name: 'Enter your code.' });
+    vi.spyOn(auth, 'resendSignUpCode').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve();
+        }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Send a new code' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to sign in' }));
+    expect(screen.getByRole('heading', { name: 'Enter your code.' })).toBeTruthy();
+    finish();
   });
 });

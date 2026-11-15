@@ -91,6 +91,7 @@ describe('amplifyAuth', () => {
     expect(amplify.signIn).not.toHaveBeenCalled();
 
     amplify.autoSignIn.mockRejectedValue(new Error('no auto sign-in in this tab'));
+    amplify.signIn.mockResolvedValue({ isSignedIn: true, nextStep: { signInStep: 'DONE' } });
     await auth.confirmSignUp('a@example.com', 'pw', '123456');
     expect(amplify.signIn).toHaveBeenCalledWith({ username: 'a@example.com', password: 'pw' });
   });
@@ -131,5 +132,25 @@ describe('amplifyAuth', () => {
     await expect(auth.confirmSignUp('a@example.com', 'pw', '123456')).rejects.toMatchObject({
       kind: 'confirmed',
     });
+  });
+
+  it('sends someone on to sign in when the sign-in after the code asks for more', async () => {
+    const auth = await load();
+    amplify.confirmSignUp.mockResolvedValue({ nextStep: { signUpStep: 'DONE' } });
+    amplify.signIn.mockResolvedValue({
+      isSignedIn: false,
+      nextStep: { signInStep: 'CONFIRM_SIGN_IN_WITH_TOTP_CODE' },
+    });
+    await expect(auth.confirmSignUp('a@example.com', 'pw', '123456')).rejects.toMatchObject({
+      kind: 'confirmed',
+    });
+  });
+
+  it('gives up on a config that does not come in 8 s', async () => {
+    const auth = await load();
+    amplify.signIn.mockResolvedValue({ isSignedIn: true, nextStep: { signInStep: 'DONE' } });
+    await auth.signIn('a@example.com', 'pw');
+    const [, init] = vi.mocked(fetch).mock.calls[0] ?? [];
+    expect((init as RequestInit).signal).toBeInstanceOf(AbortSignal);
   });
 });
