@@ -166,7 +166,7 @@ describe('web app hosting (decision 0011)', () => {
     ).toContain('jobdeputy-dev-iad');
   });
 
-  it('will not sign people in to a cell elsewhere, or anywhere unknown (decision 0004)', () => {
+  it('will not sign people in to a cell in another Region or account, or an unknown one (0004)', () => {
     const app = new App();
     const india = new CellStack(app, 'jobdeputy-dev-bom', {
       stage: 'dev',
@@ -190,8 +190,23 @@ describe('web app hosting (decision 0011)', () => {
     expect(() => site('a', india, 'us-east-1')).toThrow(
       'cannot sign people in to a cell in ap-south-1',
     );
-    expect(() => site('b', india)).toThrow('cannot sign people in to a cell in ap-south-1');
+    expect(() => site('b', india)).toThrow('need a known Region');
     expect(() => site('c', personal, 'us-east-1')).toThrow('writes no sign-in config');
+    // Same Region, another account: the parameter could not be read there.
+    const elsewhere = new CellStack(app, 'jobdeputy-dev-iad', {
+      stage: 'dev',
+      cell: 'iad',
+      env: { region: 'us-east-1', account: '111111111111' },
+    });
+    expect(
+      () =>
+        new WebStack(app, 'd', {
+          domain: 'x.example',
+          zone: zone.zone,
+          env: { region: 'us-east-1', account: '222222222222' },
+          signIn: elsewhere,
+        }),
+    ).toThrow('must be in the same account');
   });
 
   it('writes no sign-in parameter from personal or PR stacks (they have no site)', () => {

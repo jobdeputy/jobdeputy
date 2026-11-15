@@ -86,21 +86,10 @@ export class WebStack extends Stack {
   constructor(scope: Construct, id: string, props: WebStackProps) {
     super(scope, id, props);
 
-    // The config is read in this stack's Region: a cell elsewhere (or a Region not known yet)
-    // could mean a hand-off across Regions, which decision 0004 rules out.
+    // The config is read in this stack's account and Region: a cell elsewhere (or a Region not
+    // known yet) could mean a hand-off across Regions, which decision 0004 rules out.
     const signIn = props.signIn;
-    if (signIn) {
-      if (!signIn.webSignInParameter) {
-        throw new Error(`${signIn.stackName} writes no sign-in config (a personal or PR stack).`);
-      }
-      if (Token.isUnresolved(this.region) || signIn.region !== this.region) {
-        throw new Error(
-          `The site in ${this.region} cannot sign people in to a cell in ${signIn.region}.`,
-        );
-      }
-      this.addDependency(signIn);
-    }
-    const signInRegion = signIn?.region;
+    const signInParameter = signIn ? checkedSignIn(this, signIn) : undefined;
     // The zone comes from the DNS stack as a strong reference on purpose: that stack can't
     // drop the zone while this one uses it (the delegation names its name servers).
     Annotations.of(this).acknowledgeWarning(
@@ -128,7 +117,7 @@ export class WebStack extends Stack {
     const headers = new ResponseHeadersPolicy(this, 'SecurityHeaders', {
       securityHeadersBehavior: {
         contentSecurityPolicy: {
-          contentSecurityPolicy: webCsp(signInRegion),
+          contentSecurityPolicy: webCsp(signIn?.region),
           override: true,
         },
         strictTransportSecurity: {
@@ -181,11 +170,11 @@ export class WebStack extends Stack {
           Source.asset(props.contentDir),
           // Fetched with cache: 'no-store' (src/lib/auth/amplify.ts), so browsers never keep it;
           // each deploy clears CloudFront's copy.
-          ...(signIn?.webSignInParameter
+          ...(signInParameter
             ? [
                 Source.data(
                   'config.json',
-                  StringParameter.valueForStringParameter(this, signIn.webSignInParameter),
+                  StringParameter.valueForStringParameter(this, signInParameter),
                 ),
               ]
             : []),
@@ -207,4 +196,31 @@ export class WebStack extends Stack {
     new CfnOutput(this, 'SiteUrl', { value: `https://${props.domain}` });
     new CfnOutput(this, 'DistributionId', { value: this.distribution.distributionId });
   }
+}
+
+/**
+ * The cell's sign-in parameter, once the site can read it: the cell writes one (a shared stack),
+ * and both stacks are in the same known Region and the same account. The site then deploys after
+ * the cell.
+ */
+function checkedSignIn(site: Stack, cell: CellStack): string {
+  if (!cell.webSignInParameter) {
+    throw new Error(`${cell.stackName} writes no sign-in config (a personal or PR stack).`);
+  }
+  if (Token.isUnresolved(site.region) || Token.isUnresolved(cell.region)) {
+    throw new Error(
+      `${site.stackName} and ${cell.stackName} need a known Region to sign people in.`,
+    );
+  }
+  if (cell.region !== site.region) {
+    throw new Error(
+      `The site in ${site.region} cannot sign people in to a cell in ${cell.region}.`,
+    );
+  }
+  const known = [site.account, cell.account].filter((account) => !Token.isUnresolved(account));
+  if (known.length === 1 || (known.length === 2 && site.account !== cell.account)) {
+    throw new Error(`${site.stackName} and ${cell.stackName} must be in the same account.`);
+  }
+  site.addDependency(cell);
+  return cell.webSignInParameter;
 }

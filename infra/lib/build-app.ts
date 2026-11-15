@@ -37,6 +37,9 @@ export interface BuildAppOptions {
 
 const OWNER_PATTERN = /^[a-z][a-z0-9-]{1,15}$/;
 
+/** The cell the site lives beside and signs people in to (US-only launch), in its account. */
+const SITE_CELL: CellId = 'iad';
+
 export function buildApp(options: BuildAppOptions): App {
   const { stage, owner } = options;
   const env = options.env ?? process.env;
@@ -94,7 +97,7 @@ function addWebStacks(
   stage: StageName,
   env: Record<string, string | undefined>,
   contentDir: string | undefined,
-  usCell: CellStack | undefined,
+  siteCell: CellStack | undefined,
 ): void {
   const site = WEB_SITES[stage];
   if (!site) return;
@@ -103,7 +106,7 @@ function addWebStacks(
       `The web app is not built (${contentDir} is missing): run pnpm --filter @jobdeputy/web build.`,
     );
   }
-  if (!usCell) {
+  if (!siteCell) {
     throw new Error(`The ${stage} site signs people in to the ${SITE_CELL} cell, which it lacks.`);
   }
   const account = env[accountEnvVar(stage, SITE_CELL)];
@@ -117,7 +120,7 @@ function addWebStacks(
     zone: dns.zone,
     env: stackEnv,
     ...(contentDir !== undefined ? { contentDir } : {}),
-    signIn: usCell,
+    signIn: siteCell,
   });
 }
 
@@ -150,5 +153,3 @@ export function parseAlertEmails(value: string | undefined): string[] {
   }
   return [...new Set(emails)];
 }
-/** The cell the site lives beside and signs people in to (US-only launch), in its account. */
-const SITE_CELL: CellId = 'iad';
