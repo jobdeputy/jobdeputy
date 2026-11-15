@@ -251,7 +251,11 @@ describe('AuthPanel', () => {
     expect(screen.getByRole('heading', { name: 'Enter your code.' })).toBeTruthy();
     // It says what it is doing, and the Confirm button does not claim to be checking.
     await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Sending a new code…'));
-    expect(screen.getByRole('button', { name: 'Confirm' })).toBeTruthy();
+    // Shown, not only read out; the Confirm button waits too.
+    expect(screen.getByRole('status').className).not.toContain('sr-only');
+    expect(screen.getByRole('button', { name: 'Confirm' }).getAttribute('aria-disabled')).toBe(
+      'true',
+    );
     finish();
   });
 });

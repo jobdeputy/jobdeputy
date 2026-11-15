@@ -21,14 +21,8 @@ let configured: Promise<Amplified> | undefined;
 /** Loads Amplify, reads the app's config once and sets it up; `not-set-up` where there is none. */
 function configure(): Promise<Amplified> {
   configured ??= (async () => {
-    // Amplify's code and the config load side by side; the config, read whole within 8 s, is null
-    // where there is none (a 404), and a failed read is the network's fault ('offline').
-    const [[{ Amplify }, auth], config] = await Promise.all([
-      amplify(),
-      fetch(CONFIG_URL, { cache: 'no-store', signal: AbortSignal.timeout(8000) }).then(
-        async (response) => (response.ok ? ((await response.json()) as Partial<Config>) : null),
-      ),
-    ]);
+    // Amplify's code and the config load side by side; the config is read whole within 8 s.
+    const [[{ Amplify }, auth], config] = await Promise.all([amplify(), readConfig()]);
     if (!config?.userPoolId || !config.userPoolClientId) throw new AuthError('not-set-up');
     Amplify.configure({
       Auth: {
@@ -154,4 +148,24 @@ function hasStoredSession(): boolean {
     // Storage unavailable: no stored session.
   }
   return false;
+}
+
+/**
+ * The deployed app's sign-in config, or null where there is none. A server error is temporary
+ * (`offline`); a body that is not JSON is the page the server sends for any unknown path (CloudFront,
+ * Vite), so there is no config: not set up.
+ */
+async function readConfig(): Promise<Partial<Config> | null> {
+  const response = await fetch(CONFIG_URL, {
+    cache: 'no-store',
+    signal: AbortSignal.timeout(8000),
+  });
+  if (response.status >= 500) throw new AuthError('offline');
+  if (!response.ok) return null;
+  const body = await response.text();
+  try {
+    return JSON.parse(body) as Partial<Config>;
+  } catch {
+    return null;
+  }
 }

@@ -18,11 +18,11 @@ vi.mock('aws-amplify/auth', () => amplify);
 const CONFIG = { userPoolId: 'us-east-1_abc', userPoolClientId: 'client' };
 
 /** A fresh adapter (it keeps its configuration for the page), with /config.json answering `body`. */
-async function load(body: unknown = CONFIG, ok = true) {
+async function load(body: unknown = CONFIG, status = 200) {
   vi.resetModules();
   vi.stubGlobal(
     'fetch',
-    vi.fn(async () => ({ ok, json: async () => body })),
+    vi.fn(async () => new Response(JSON.stringify(body), { status })),
   );
   return (await import('../src/lib/auth/amplify.ts')).amplifyAuth;
 }
@@ -53,7 +53,7 @@ describe('amplifyAuth', () => {
   });
 
   it('is not set up where the app has no config', async () => {
-    const auth = await load(null, false);
+    const auth = await load(null, 404);
     await expect(auth.signIn('a@example.com', 'pw')).rejects.toMatchObject({ kind: 'not-set-up' });
     expect(amplify.signIn).not.toHaveBeenCalled();
   });
@@ -160,7 +160,8 @@ describe('amplifyAuth', () => {
       'fetch',
       vi.fn(async () => ({
         ok: true,
-        json: async () => {
+        status: 200,
+        text: async () => {
           throw new DOMException('The operation was aborted.', 'AbortError');
         },
       })),
@@ -168,6 +169,30 @@ describe('amplifyAuth', () => {
     const { amplifyAuth } = await import('../src/lib/auth/amplify.ts');
     await expect(amplifyAuth.signIn('a@example.com', 'pw')).rejects.toMatchObject({
       kind: 'offline',
+    });
+  });
+
+  it('calls a server error on the config a network problem', async () => {
+    vi.resetModules();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { status: 503 })),
+    );
+    const { amplifyAuth } = await import('../src/lib/auth/amplify.ts');
+    await expect(amplifyAuth.signIn('a@example.com', 'pw')).rejects.toMatchObject({
+      kind: 'offline',
+    });
+  });
+
+  it('calls a page that is not JSON (the site’s answer to an unknown path) not set up', async () => {
+    vi.resetModules();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('<!doctype html><title>JobDeputy</title>', { status: 200 })),
+    );
+    const { amplifyAuth } = await import('../src/lib/auth/amplify.ts');
+    await expect(amplifyAuth.signIn('a@example.com', 'pw')).rejects.toMatchObject({
+      kind: 'not-set-up',
     });
   });
 });

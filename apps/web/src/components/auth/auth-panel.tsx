@@ -192,6 +192,10 @@ export function AuthPanel({
     reset: text.reset,
     'reset-confirm': text.resetConfirm,
   }[step];
+  // The status line, after the shared delay: a submit's wait is only read out (the button shows
+  // it); sending a new code is shown too, as nothing else on screen moves. Otherwise, the note.
+  const shown = waiting && resending ? text.confirm.resending : notice;
+  const status = waiting && pending ? action.pending : shown;
 
   return (
     <>
@@ -251,12 +255,8 @@ export function AuthPanel({
 
         {/* Live regions stay in the accessibility tree when empty (visually hidden, never
             display:none), so their first words are read. */}
-        <p role="status" className={cn('m-0 text-sm text-green-ink', !notice && 'sr-only')}>
-          {waiting && pending
-            ? action.pending
-            : waiting && resending
-              ? text.confirm.resending
-              : notice}
+        <p role="status" className={cn('m-0 text-sm text-green-ink', !shown && 'sr-only')}>
+          {status}
         </p>
         <p
           id={refusalId}
@@ -266,7 +266,14 @@ export function AuthPanel({
           {refusal}
         </p>
 
-        <Button type="submit" size="lg" pending={pending} pendingLabel={action.pending}>
+        <Button
+          type="submit"
+          size="lg"
+          pending={pending}
+          pendingLabel={action.pending}
+          // Waits, dimmed, while a new code is on its way.
+          aria-disabled={resending || undefined}
+        >
           {action.submit}
         </Button>
 
