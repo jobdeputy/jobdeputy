@@ -277,10 +277,16 @@ describe('the signed-in app', () => {
         ],
       }),
     );
+    // Focus must not land on a field still locked by the save (read-only, and on phones no keyboard).
+    let lockedAtFocus: boolean | undefined;
+    screen.getByLabelText('Last name').addEventListener('focus', (event) => {
+      lockedAtFocus = (event.target as HTMLInputElement).readOnly;
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(await screen.findByText('Check your last name.')).toBeTruthy();
     const lastName = screen.getByLabelText('Last name');
     expect(document.activeElement).toBe(lastName);
+    expect(lockedAtFocus).toBe(false);
     // Its reason was there when it took focus (tied to it), and the other refusal is said politely.
     expect(lastName.getAttribute('aria-invalid')).toBe('true');
     await waitFor(() =>
@@ -293,12 +299,10 @@ describe('the signed-in app', () => {
       ).toBe(true),
     );
     expect(alertText()).not.toContain('Part of your saved profile');
-    // The field's reason is said too, in case focus was already there.
+    // Focus moved there (from the button), which reads its reason: it isn't said twice.
     expect(
-      screen
-        .getAllByRole('status')
-        .some((status) => status.textContent === 'Check your last name.'),
-    ).toBe(true);
+      screen.getAllByRole('status').some((status) => status.textContent?.includes('Check your')),
+    ).toBe(false);
   });
 
   it('says a wait in words', async () => {
@@ -355,9 +359,15 @@ describe('the signed-in app', () => {
     fill('', 'Morgan');
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(await screen.findByText('Enter your first name.')).toBeTruthy();
-    const note = await screen.findByText(/^Part of your saved profile no longer fits the rules/);
-    // Part of the form's description, so it is there when the form is come back to.
-    expect(screen.getByRole('form').getAttribute('aria-describedby')).toContain(note.id);
+    // Shown (not a live region of its own: the status line says it), and part of the form's
+    // description, so it is there when the form is come back to.
+    await waitFor(() =>
+      expect(screen.getByRole('form').getAttribute('aria-describedby')).toBeTruthy(),
+    );
+    const noteId = screen.getByRole('form').getAttribute('aria-describedby') ?? '';
+    const note = document.getElementById(noteId) as HTMLElement;
+    expect(note.textContent).toMatch(/^Part of your saved profile no longer fits the rules/);
+    expect(note.getAttribute('role')).toBeNull();
     // Fixing the visible field does not hide it: its cause is still there.
     fill('Alex', 'Morgan');
     expect(note.textContent).toMatch(/^Part of your saved profile/);
@@ -389,8 +399,8 @@ describe('the signed-in app', () => {
     await waitFor(() =>
       expect(screen.getByLabelText('First name').hasAttribute('readonly')).toBe(true),
     );
-    // And it shows at once: the fields dim.
-    expect(screen.getByLabelText('First name').closest('.opacity-60')).toBeTruthy();
+    // And it shows at once: the inputs dim (their labels and messages stay readable).
+    expect(screen.getByLabelText('First name').closest('[class*="opacity-60"]')).toBeTruthy();
   });
 
   it('says something else was saved meanwhile when only other fields changed', async () => {
@@ -440,6 +450,30 @@ describe('the signed-in app', () => {
       expect(alertText()).toContain('That didn’t save. Check your connection, then try again.'),
     );
     expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it('says a field’s reason in the status line when Enter was pressed in that field', async () => {
+    const api = createFakeApi({ delay: 0 });
+    await toStepYou(api);
+    fill('', 'Morgan');
+    const first = screen.getByLabelText('First name');
+    first.focus();
+    fireEvent.submit(first.closest('form') as HTMLFormElement);
+    // Focus was already there, so its new description would not be read: the status line says it.
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByRole('status')
+          .some((status) => status.textContent === 'Enter your first name.'),
+      ).toBe(true),
+    );
+    // Typing clears what was said.
+    fill('A', 'Morgan');
+    expect(
+      screen
+        .getAllByRole('status')
+        .some((status) => status.textContent === 'Enter your first name.'),
+    ).toBe(false);
   });
 
   it('says it cannot tell when the answer and the check are both lost', async () => {

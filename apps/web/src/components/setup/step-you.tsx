@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button.tsx';
 import { copy, fill, plural } from '@/copy/index.ts';
 import { ApiError, DEFAULT_RETRY_AFTER_SECONDS, useApi } from '@/lib/api/index.ts';
 import type { Profile } from '@/lib/api/profile.ts';
+import { LIVE_REGION_BEAT_MS } from '@/lib/live-region.ts';
 import { useDelayedPending } from '@/lib/use-delayed-pending.ts';
 import { cn } from '@/lib/utils.ts';
 import { Fact, StepIntro } from './parts.tsx';
@@ -69,36 +70,45 @@ export function StepYou({
     name,
     value: values[name],
     error: errors[name] ?? null,
-    // Locked while saving (and dimmed at once, so it shows), so a reload can't overwrite anything
-    // typed meanwhile.
+    // Locked while saving, so a reload can't overwrite anything typed meanwhile; the input (only:
+    // its label and messages stay readable) dims at once, so the lock shows.
     readOnly: pending,
-    className: pending ? 'opacity-60' : undefined,
-    onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
-      setValues((current) => ({ ...current, [name]: event.target.value })),
+    className: pending ? '[&_input]:opacity-60' : undefined,
+    onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
+      setValues((current) => ({ ...current, [name]: event.target.value }));
+      // A reason said for this field no longer applies once it changes.
+      setSpoken('');
+    },
   });
 
   /**
-   * Sets a message a moment after it was cleared, in a task of its own: cleared and set again in
-   * one task, the same words would not change the page, and would not be read again.
+   * Says `spoken` (and shows `note`) a beat after the messages were cleared, in a task of its own:
+   * cleared and set again in one task, the same words would not change the page, and would not
+   * be read again. A newer try cancels a beat still waiting.
    */
-  function later(set: () => void) {
-    setTimeout(() => {
-      if (here.current) set();
-    }, 50);
+  const announcing = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  function later(words: string, shownNote: string | null) {
+    clearTimeout(announcing.current);
+    announcing.current = setTimeout(() => {
+      if (!here.current) return;
+      setSpoken(words);
+      setNote(shownNote);
+    }, LIVE_REGION_BEAT_MS);
   }
 
   /**
-   * Shows the field errors (already set), moves focus to the first wrong field, and says its
-   * reason in the status line too, since focus may already be there (Enter pressed in it), and a
-   * new description on a focused field is not read. A saved field this step doesn't show that is
-   * wrong too is the note, said politely beside it.
+   * Moves focus to the first wrong field (its errors already set), which reads its reason. Where
+   * focus was already there (Enter pressed in it), a new description is not read, so the reason is
+   * said in the status line. A saved field this step doesn't show that is wrong too is said there
+   * as well, in the same words as its note: one update, so both are heard.
    */
   function showFieldErrors(first: Name, reason: string | undefined, other: boolean) {
-    form.current?.querySelector<HTMLInputElement>(`[name="${first}"]`)?.focus();
-    later(() => {
-      setSpoken(reason ?? '');
-      if (other) setNote(copy.setUp.errors.cannotSave);
-    });
+    const input = form.current?.querySelector<HTMLInputElement>(`[name="${first}"]`);
+    const alreadyThere = input !== null && input === document.activeElement;
+    input?.focus();
+    const otherText = other ? copy.setUp.errors.cannotSave : null;
+    const words = [alreadyThere ? reason : undefined, otherText].filter(Boolean).join(' ');
+    later(words, otherText);
   }
 
   /** Reads the saved profile again; shows it here and returns it (null if it can't be read). */
@@ -117,6 +127,7 @@ export function StepYou({
     if (pending) return;
     // Cleared in a render of its own (and set again a moment later, see `later`), so the same
     // message again is announced again.
+    clearTimeout(announcing.current);
     flushSync(() => {
       setRefusal(null);
       setNote(null);
@@ -132,7 +143,7 @@ export function StepYou({
       return;
     }
     if (found.other) {
-      later(() => setNote(copy.setUp.errors.cannotSave));
+      later(copy.setUp.errors.cannotSave, copy.setUp.errors.cannotSave);
       return;
     }
     setPending(true);
@@ -156,9 +167,13 @@ export function StepYou({
     if (kind === 'invalid' && error instanceof ApiError && error.fieldErrors.length > 0) {
       const { fields, other } = fromApi(error);
       const first = (Object.keys(fields) as Name[])[0];
-      flushSync(() => setErrors(fields));
+      // Saving ends before focus moves, so focus never lands on a locked field.
+      flushSync(() => {
+        setErrors(fields);
+        setPending(false);
+      });
       if (first) showFieldErrors(first, fields[first], other);
-      else later(() => setNote(errorsText.cannotSave));
+      else later(errorsText.cannotSave, errorsText.cannotSave);
     } else if (kind === 'conflict' && error instanceof ApiError && error.code === 'try-again') {
       // A write that collided: nothing was saved and nothing changed. Keep what was typed.
       setRefusal(errorsText.tryLater);
@@ -228,13 +243,9 @@ export function StepYou({
         <p role="status" className="sr-only">
           {pending && waiting ? text.saving : spoken}
         </p>
-        {/* A saved field this step doesn't show that is wrong: said politely, so it doesn't cut
-            off a field's own reason, and part of the form's description until the next try. */}
-        <p
-          id={noteId}
-          role="status"
-          className={cn('m-0 text-sm font-[650] text-danger-ink', !note && 'sr-only')}
-        >
+        {/* A saved field this step doesn't show that is wrong: shown, and part of the form's
+            description until the next try (the status line above says it). */}
+        <p id={noteId} className={cn('m-0 text-sm font-[650] text-danger-ink', !note && 'hidden')}>
           {note}
         </p>
         <p
