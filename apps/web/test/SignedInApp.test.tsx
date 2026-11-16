@@ -283,14 +283,22 @@ describe('the signed-in app', () => {
     expect(document.activeElement).toBe(lastName);
     // Its reason was there when it took focus (tied to it), and the other refusal is said politely.
     expect(lastName.getAttribute('aria-invalid')).toBe('true');
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByRole('status')
+          .some((status) =>
+            status.textContent?.includes('Part of your saved profile no longer fits the rules'),
+          ),
+      ).toBe(true),
+    );
+    expect(alertText()).not.toContain('Part of your saved profile');
+    // The field's reason is said too, in case focus was already there.
     expect(
       screen
         .getAllByRole('status')
-        .some((status) =>
-          status.textContent?.includes('Part of your saved profile no longer fits the rules'),
-        ),
+        .some((status) => status.textContent === 'Check your last name.'),
     ).toBe(true);
-    expect(alertText()).not.toContain('Part of your saved profile');
   });
 
   it('says a wait in words', async () => {
@@ -347,9 +355,16 @@ describe('the signed-in app', () => {
     fill('', 'Morgan');
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(await screen.findByText('Enter your first name.')).toBeTruthy();
-    const note = screen.getByText(/^Part of your saved profile no longer fits the rules/);
+    const note = await screen.findByText(/^Part of your saved profile no longer fits the rules/);
     // Part of the form's description, so it is there when the form is come back to.
     expect(screen.getByRole('form').getAttribute('aria-describedby')).toContain(note.id);
+    // Fixing the visible field does not hide it: its cause is still there.
+    fill('Alex', 'Morgan');
+    expect(note.textContent).toMatch(/^Part of your saved profile/);
+    // Pressed again: cleared first, then said again, so it is read again.
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(note.textContent).toBe('');
+    await waitFor(() => expect(note.textContent).toMatch(/^Part of your saved profile/));
   });
 
   it('says a refused save did not save when what is saved can’t be read either', async () => {
@@ -374,6 +389,8 @@ describe('the signed-in app', () => {
     await waitFor(() =>
       expect(screen.getByLabelText('First name').hasAttribute('readonly')).toBe(true),
     );
+    // And it shows at once: the fields dim.
+    expect(screen.getByLabelText('First name').closest('.opacity-60')).toBeTruthy();
   });
 
   it('says something else was saved meanwhile when only other fields changed', async () => {

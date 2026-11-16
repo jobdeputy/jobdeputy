@@ -47,8 +47,10 @@ export function StepYou({
   const [values, setValues] = useState<Values>(() => valuesOf(profile));
   const [errors, setErrors] = useState<Errors>({});
   const [refusal, setRefusal] = useState<string | null>(null);
-  // Said politely (not an alert) beside a refused field that has taken focus.
+  // Said politely (not an alert): a saved field this step doesn't show that is wrong.
   const [note, setNote] = useState<string | null>(null);
+  // The first wrong field's reason, read out in the status line.
+  const [spoken, setSpoken] = useState('');
   const [pending, setPending] = useState(false);
   const waiting = useDelayedPending(pending);
   const refusalId = useId();
@@ -67,13 +69,37 @@ export function StepYou({
     name,
     value: values[name],
     error: errors[name] ?? null,
-    // Locked while saving, so a reload can't overwrite anything typed meanwhile.
+    // Locked while saving (and dimmed at once, so it shows), so a reload can't overwrite anything
+    // typed meanwhile.
     readOnly: pending,
-    onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
-      setValues((current) => ({ ...current, [name]: event.target.value }));
-      setNote(null);
-    },
+    className: pending ? 'opacity-60' : undefined,
+    onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+      setValues((current) => ({ ...current, [name]: event.target.value })),
   });
+
+  /**
+   * Sets a message a moment after it was cleared, in a task of its own: cleared and set again in
+   * one task, the same words would not change the page, and would not be read again.
+   */
+  function later(set: () => void) {
+    setTimeout(() => {
+      if (here.current) set();
+    }, 50);
+  }
+
+  /**
+   * Shows the field errors (already set), moves focus to the first wrong field, and says its
+   * reason in the status line too, since focus may already be there (Enter pressed in it), and a
+   * new description on a focused field is not read. A saved field this step doesn't show that is
+   * wrong too is the note, said politely beside it.
+   */
+  function showFieldErrors(first: Name, reason: string | undefined, other: boolean) {
+    form.current?.querySelector<HTMLInputElement>(`[name="${first}"]`)?.focus();
+    later(() => {
+      setSpoken(reason ?? '');
+      if (other) setNote(copy.setUp.errors.cannotSave);
+    });
+  }
 
   /** Reads the saved profile again; shows it here and returns it (null if it can't be read). */
   async function reload(): Promise<Profile | null> {
@@ -89,10 +115,12 @@ export function StepYou({
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (pending) return;
-    // Cleared in a render of its own, so the same refusal again is announced again.
+    // Cleared in a render of its own (and set again a moment later, see `later`), so the same
+    // message again is announced again.
     flushSync(() => {
       setRefusal(null);
       setNote(null);
+      setSpoken('');
     });
     const body = saveBody(profile, values);
     const found = check(body);
@@ -100,13 +128,11 @@ export function StepYou({
     flushSync(() => setErrors(found.fields));
     const first = (Object.keys(found.fields) as Name[])[0];
     if (first) {
-      // A saved field this step doesn't show is wrong too: say so now, not after the fix.
-      if (found.other) flushSync(() => setNote(copy.setUp.errors.cannotSave));
-      form.current?.querySelector<HTMLInputElement>(`[name="${first}"]`)?.focus();
+      showFieldErrors(first, found.fields[first], found.other);
       return;
     }
     if (found.other) {
-      setRefusal(copy.setUp.errors.cannotSave);
+      later(() => setNote(copy.setUp.errors.cannotSave));
       return;
     }
     setPending(true);
@@ -130,17 +156,9 @@ export function StepYou({
     if (kind === 'invalid' && error instanceof ApiError && error.fieldErrors.length > 0) {
       const { fields, other } = fromApi(error);
       const first = (Object.keys(fields) as Name[])[0];
-      if (first) {
-        // Rendered before focus moves, so the field is read with its reason; a refusal on a
-        // field this step doesn't show is said politely, so it doesn't cut that off.
-        flushSync(() => {
-          setErrors(fields);
-          if (other) setNote(errorsText.cannotSave);
-        });
-        form.current?.querySelector<HTMLInputElement>(`[name="${first}"]`)?.focus();
-      } else {
-        setRefusal(errorsText.cannotSave);
-      }
+      flushSync(() => setErrors(fields));
+      if (first) showFieldErrors(first, fields[first], other);
+      else later(() => setNote(errorsText.cannotSave));
     } else if (kind === 'conflict' && error instanceof ApiError && error.code === 'try-again') {
       // A write that collided: nothing was saved and nothing changed. Keep what was typed.
       setRefusal(errorsText.tryLater);
@@ -208,10 +226,10 @@ export function StepYou({
           <Fact label={text.country} value={copy.setUp.region} pill={copy.setUp.locked} />
         </ul>
         <p role="status" className="sr-only">
-          {pending && waiting ? text.saving : ''}
+          {pending && waiting ? text.saving : spoken}
         </p>
-        {/* Beside a refused field that has taken focus: said politely, so it doesn't cut off
-            the field's own reason, and part of the form's description. */}
+        {/* A saved field this step doesn't show that is wrong: said politely, so it doesn't cut
+            off a field's own reason, and part of the form's description until the next try. */}
         <p
           id={noteId}
           role="status"
