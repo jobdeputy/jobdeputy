@@ -82,12 +82,17 @@ function RolesForm({
   const [chosen, setChosen] = useState(before.current);
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // What is wrong with the list itself (more chosen than fit), shown under it.
+  const [listError, setListError] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [spoken, setSpoken] = useState('');
   const [pending, setPending] = useState(false);
   const waiting = useDelayedPending(pending);
   const listId = useId();
   const refusalId = useId();
+  const listErrorId = useId();
+  // A save's answer was lost and what is saved couldn't be read either: the next save reads first.
+  const unread = useRef(false);
   // A save that ends after the person has left (signed out, say) must not touch anything.
   const here = useRef(true);
   useEffect(() => {
@@ -131,6 +136,12 @@ function RolesForm({
     else say(reason);
   }
 
+  /** Shows what is wrong with the list under it; focus stays where it is, so it is said too. */
+  function failList(reason: string) {
+    setListError(reason);
+    say(reason);
+  }
+
   /**
    * Adds the typed title (a chip of its own at the front, or its chip checked), and returns the
    * chosen titles with it; null when it can't be added (the reason is shown).
@@ -166,13 +177,16 @@ function RolesForm({
     setChosen(next);
     setDraft('');
     setError(null);
+    setListError(null);
     say(fill(text.added, { title: chip, count: String(next.length), max: MAX }));
     return next;
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     // Enter adds what was typed; in an empty field it continues, as Enter does in a form.
-    if (event.key !== 'Enter' || event.nativeEvent.isComposing || !clean(draft)) return;
+    // Not the Enter that ends composing (Safari sends it with keyCode 229, not isComposing).
+    if (event.key !== 'Enter' || event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (!clean(draft)) return;
     event.preventDefault();
     if (!pending) addDraft(false);
   }
@@ -180,10 +194,11 @@ function RolesForm({
   function toggle(title: string, checked: boolean) {
     if (pending) return;
     if (checked && chosen.length >= MAX_ROLES) {
-      fail(fill(text.full, { max: MAX }), false);
+      failList(fill(text.full, { max: MAX }));
       return;
     }
     setError(null);
+    setListError(null);
     setChosen(
       checked ? [...chosen, title] : chosen.filter((chosenTitle) => !same(chosenTitle, title)),
     );
@@ -221,7 +236,10 @@ function RolesForm({
     event.preventDefault();
     if (pending) return;
     // Cleared in a render of its own, so the same refusal again is announced again.
-    flushSync(() => setRefusal(null));
+    flushSync(() => {
+      setRefusal(null);
+      setListError(null);
+    });
     // A title typed but not added yet is meant: it is added first (one already chosen just is).
     const typed = clean(draft);
     let titles: string[] | null = chosen;
@@ -232,21 +250,32 @@ function RolesForm({
       fail(text.none, true);
       return;
     }
-    // More than fit (roles taken in from elsewhere on top of these): some must go first.
-    if (titles.length > MAX_ROLES) {
-      fail(fill(text.full, { max: MAX }), true);
-      return;
-    }
+    let current = saved;
     // Roles saved elsewhere since this step opened are shown first, never removed unseen.
-    const merged = reconcile(before.current, titles, titlesOf(saved));
-    if (merged.changed) {
-      takeIn(merged.titles, titlesOf(saved));
-      return;
-    }
+    if (!unread.current && settle(titles, current)) return;
     setPending(true);
+    let sending: string | null = null;
     try {
-      const changes = plan(saved, titles);
-      let current = saved;
+      // An earlier save's answer was lost, and what is saved couldn't be read then: it is read
+      // now, before anything is sent again (sent twice, a title would be saved twice).
+      if (unread.current) {
+        const fresh = await reload();
+        if (!here.current) return;
+        if (!fresh) {
+          setRefusal(copy.setUp.errors.unknownOutcome);
+          return;
+        }
+        unread.current = false;
+        if (settle(titles, fresh)) return;
+        current = fresh;
+      }
+      const changes = plan(current, titles);
+      // The API counts roles, not titles (two saved elsewhere may share one): more than fit
+      // (roles taken in from elsewhere on top of these, say) means some must go first.
+      if (current.length - changes.remove.length + changes.add.length > MAX_ROLES) {
+        failList(fill(text.full, { max: MAX }));
+        return;
+      }
       // Removed first, so the new ones fit under the limit.
       for (const role of changes.remove) {
         try {
@@ -260,6 +289,7 @@ function RolesForm({
         saveDone(current);
       }
       for (const title of changes.add) {
+        sending = title;
         const role = await api.request<Role>('POST', '/me/roles', { title });
         if (!here.current) return;
         current = [...current, role];
@@ -268,22 +298,42 @@ function RolesForm({
       onSaved();
     } catch (error) {
       if (!here.current) return;
-      await refused(error, titles);
+      await refused(error, titles, sending);
     } finally {
       if (here.current) setPending(false);
     }
   }
 
   /**
+   * What is saved (`fresh`) checked against what this step knows: changed elsewhere, the change is
+   * taken in and shown (true); otherwise it is this step's own doing, and the next save starts
+   * from it.
+   */
+  function settle(titles: string[], fresh: Role[]): boolean {
+    const merged = reconcile(before.current, titles, titlesOf(fresh));
+    if (merged.changed) {
+      takeIn(merged.titles, titlesOf(fresh));
+      return true;
+    }
+    before.current = titlesOf(fresh);
+    return false;
+  }
+
+  /**
    * Says why saving stopped, and what to do. Whatever was done before it is kept (the next try
    * saves only what is left). Where the outcome is unclear, what is saved now says what happened.
    */
-  async function refused(error: unknown, titles: string[]) {
+  async function refused(error: unknown, titles: string[], sending: string | null) {
     const errors = copy.setUp.errors;
     const kind = error instanceof ApiError ? error.kind : 'server';
     if (kind === 'conflict' && error instanceof ApiError && error.code === 'try-again') {
       // A write that collided: nothing changed. Keep the list.
       setRefusal(errors.tryLater);
+      return;
+    }
+    if (kind === 'invalid' && error instanceof ApiError && error.status === 400 && sending) {
+      // The API refused this title (its rules, newer than this page's): only changing it helps.
+      setRefusal(fill(text.refused, { title: sending }));
       return;
     }
     if (kind !== 'unsure' && kind !== 'conflict' && kind !== 'invalid') {
@@ -294,19 +344,15 @@ function RolesForm({
     const fresh = await reload();
     if (!here.current) return;
     if (!fresh) {
+      // A lost answer may have saved: the next try reads first.
+      if (kind === 'unsure') unread.current = true;
       setRefusal(kind === 'unsure' ? errors.unknownOutcome : errors.saveFailed);
       return;
     }
-    const merged = reconcile(before.current, titles, titlesOf(fresh));
+    if (settle(titles, fresh)) return;
     const left = plan(fresh, titles);
-    if (merged.changed) {
-      takeIn(merged.titles, titlesOf(fresh));
-      return;
-    }
-    // What is saved now is this step's doing (a lost answer that went through, say): the next try
-    // starts from it.
-    before.current = titlesOf(fresh);
     if (left.add.length === 0 && left.remove.length === 0) onSaved();
+    else if (kind === 'invalid') setRefusal(fill(text.full, { max: MAX }));
     else setRefusal(kind === 'unsure' ? errors.saveFailed : errors.tryLater);
   }
 
@@ -365,7 +411,10 @@ function RolesForm({
           <option key={title} value={title} />
         ))}
       </datalist>
-      <fieldset className="m-0 flex min-w-0 flex-wrap gap-2 border-0 p-0">
+      <fieldset
+        aria-describedby={listError ? listErrorId : undefined}
+        className="m-0 flex min-w-0 flex-wrap gap-2 border-0 p-0"
+      >
         <legend className="mb-2 p-0 text-[0.8125rem] font-[680] tracking-[0.01em]">
           {text.chosen}{' '}
           {/* Beside the list, not in the field's hint: an error there would hide it. */}
@@ -381,6 +430,15 @@ function RolesForm({
           />
         ))}
       </fieldset>
+      <p
+        id={listErrorId}
+        className={cn(
+          'm-0 -mt-2 text-[0.8125rem] font-[650] text-danger-ink',
+          !listError && 'hidden',
+        )}
+      >
+        {listError}
+      </p>
       <p role="status" className="sr-only">
         {pending && waiting ? copy.setUp.saving : spoken}
       </p>

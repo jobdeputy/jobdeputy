@@ -258,6 +258,8 @@ export const en = {
       full: 'You’ve added {max} roles. Remove one to add another.',
       none: 'Add at least one role, or pick a suggestion.',
       invalid: 'Check this title.',
+      /** The API refused a title this page let through (its rules are newer). */
+      refused: '“{title}” can’t be saved as it is. Change it or remove it.',
       changedElsewhere:
         'Your roles changed somewhere else. They show here now: check them, then continue.',
       loading: 'Loading your roles',

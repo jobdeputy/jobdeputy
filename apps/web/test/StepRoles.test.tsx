@@ -272,6 +272,84 @@ describe('Set it up, step 2: target roles', () => {
     expect(await savedTitles(api)).toEqual(['Backend engineer', 'Engineering manager']);
   });
 
+  it('reads what is saved before sending again after a lost answer it couldn’t check', async () => {
+    const { api, onSaved } = await renderStep();
+    const request = api.request.bind(api);
+    let lost = true;
+    const spy = vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      if (!lost) return request(method, path, body);
+      if (method === 'POST') {
+        await request(method, path, body);
+        throw new ApiError('unsure');
+      }
+      throw new ApiError('server');
+    });
+    fireEvent.click(chip('Backend engineer'));
+    continueOn();
+    await waitFor(() => expect(alertText()).toContain('We couldn’t tell whether that saved.'));
+    lost = false;
+    spy.mockClear();
+    continueOn();
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(spy.mock.calls.map(([method]) => method)).toEqual(['GET']);
+    expect(await savedTitles(api)).toEqual(['Backend engineer']);
+  });
+
+  it('counts roles, not titles, against the limit (two saved may share one)', async () => {
+    const titles = Array.from({ length: 9 }, (_, n) => `Role ${n + 1}`);
+    const { api } = await renderStep([...titles, 'role 1']);
+    expect(screen.getByText('· 9 of 10 added')).toBeTruthy();
+    fireEvent.click(chip('Backend engineer'));
+    const request = vi.spyOn(api, 'request');
+    continueOn();
+    await waitFor(() =>
+      expect(screen.getByText('You’ve added 10 roles. Remove one to add another.')).toBeTruthy(),
+    );
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('adds nothing on the Enter that ends composing', async () => {
+    await renderStep();
+    type('ソフト');
+    fireEvent.keyDown(screen.getByLabelText('Job title'), { key: 'Enter', keyCode: 229 });
+    expect(screen.queryByRole('checkbox', { name: 'ソフト' })).toBeNull();
+    expect((screen.getByLabelText('Job title') as HTMLInputElement).value).toBe('ソフト');
+  });
+
+  it('says a full list under the list, leaving the title field alone', async () => {
+    await renderStep(Array.from({ length: 10 }, (_, n) => `Role ${n + 1}`));
+    fireEvent.click(chip('Backend engineer'));
+    const reason = screen.getByText('You’ve added 10 roles. Remove one to add another.');
+    expect(screen.getByLabelText('Job title').getAttribute('aria-invalid')).toBeNull();
+    expect(
+      screen.getByRole('group', { name: /Roles to look for/ }).getAttribute('aria-describedby'),
+    ).toBe(reason.id);
+    fireEvent.click(chip('Role 1'));
+    expect(screen.queryByText('You’ve added 10 roles. Remove one to add another.')).toBeNull();
+  });
+
+  it('names a title the API refuses, so it can be changed', async () => {
+    const { api } = await renderStep();
+    const request = api.request.bind(api);
+    vi.spyOn(api, 'request').mockImplementation((method, path, body) =>
+      method === 'POST'
+        ? Promise.reject(
+            new ApiError('invalid', {
+              status: 400,
+              fieldErrors: [{ path: 'title', message: 'x' }],
+            }),
+          )
+        : request(method, path, body),
+    );
+    fireEvent.click(chip('Backend engineer'));
+    continueOn();
+    await waitFor(() =>
+      expect(alertText()).toContain(
+        '“Backend engineer” can’t be saved as it is. Change it or remove it.',
+      ),
+    );
+  });
+
   it('moves on without a request when nothing changed', async () => {
     const { api, onSaved } = await renderStep(['Data engineer']);
     const request = vi.spyOn(api, 'request');
