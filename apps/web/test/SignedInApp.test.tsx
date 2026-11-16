@@ -110,7 +110,9 @@ describe('the signed-in app', () => {
     fireEvent.change(screen.getByLabelText('Last name'), { target: { value: 'Morgan' } });
     fireEvent.change(screen.getByLabelText('City (optional)'), { target: { value: 'Austin' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(await screen.findByRole('heading', { level: 1, name: 'What roles should I look for?' })).toBeTruthy();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'What roles should I look for?' }),
+    ).toBeTruthy();
     expect(save).toHaveBeenCalledWith(
       'PUT',
       '/me/profile',
@@ -175,7 +177,9 @@ describe('the signed-in app', () => {
       throw new ApiError('unsure');
     });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(await screen.findByRole('heading', { level: 1, name: 'What roles should I look for?' })).toBeTruthy();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'What roles should I look for?' }),
+    ).toBeTruthy();
   });
 
   it('says how long to wait, or that the account can no longer change', async () => {
@@ -233,7 +237,9 @@ describe('the signed-in app', () => {
     await screen.findByRole('heading', { level: 1, name: 'First, what should I call you?' });
     fill('Alex', 'Morgan');
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(await screen.findByRole('heading', { level: 1, name: 'What roles should I look for?' })).toBeTruthy();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'What roles should I look for?' }),
+    ).toBeTruthy();
   });
 
   it('keeps what was typed when a save only collided (try again)', async () => {
@@ -576,7 +582,9 @@ describe('the signed-in app', () => {
       throw new ApiError('conflict', { status: 409 });
     });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(await screen.findByRole('heading', { level: 1, name: 'What roles should I look for?' })).toBeTruthy();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'What roles should I look for?' }),
+    ).toBeTruthy();
   });
 
   it('goes back from step 1 to the welcome', async () => {

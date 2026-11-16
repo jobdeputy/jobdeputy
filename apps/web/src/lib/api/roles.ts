@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { ApiError, useApi } from './index.ts';
+import { type ApiClient, ApiError, useApi } from './index.ts';
 
 /**
  * A target role as the API returns it (packages/shared/src/profile.ts, plus what the server adds:
@@ -15,9 +15,16 @@ export type Role = Record<string, unknown> & { roleId: string; title: string; ve
 export function useRoles() {
   const api = useApi();
   return useQuery({
-    queryKey: ['roles'],
-    queryFn: async () => (await api.request<{ roles: Role[] }>('GET', '/me/roles')).roles,
+    ...rolesQuery(api),
     retry: (failures, error) =>
       failures < 1 && error instanceof ApiError && error.kind === 'offline',
   });
+}
+
+/** The roles' query: its key and its read (also for reading them again on demand). */
+export function rolesQuery(api: ApiClient) {
+  return {
+    queryKey: ['roles'],
+    queryFn: async () => (await api.request<{ roles: Role[] }>('GET', '/me/roles')).roles,
+  };
 }

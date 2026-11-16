@@ -118,7 +118,7 @@ describe('Set it up, step 2: target roles', () => {
     // The field keeps focus, for the next title.
     expect(document.activeElement).toBe(screen.getByLabelText('Job title'));
     await waitFor(() => expect(statusText()).toBe('Added Staff engineer. 1 of 10 roles.'));
-    expect(screen.getByText(/^1 of 10 added/)).toBeTruthy();
+    expect(screen.getByText('· 1 of 10 added')).toBeTruthy();
   });
 
   it('adds with Enter, and checks the chip a typed title already has', async () => {
@@ -208,6 +208,68 @@ describe('Set it up, step 2: target roles', () => {
     continueOn();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(await savedTitles(api)).toEqual(['Backend engineer']);
+  });
+
+  it('unticks a saved title whose case differs from its chip', async () => {
+    const { api, onSaved } = await renderStep(['backend engineer']);
+    expect(chip('Backend engineer').checked).toBe(true);
+    fireEvent.click(chip('Backend engineer'));
+    expect(chip('Backend engineer').checked).toBe(false);
+    fireEvent.click(chip('Platform engineer'));
+    continueOn();
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(await savedTitles(api)).toEqual(['Platform engineer']);
+  });
+
+  it('saves on, past a typed title already chosen', async () => {
+    const { api, onSaved } = await renderStep();
+    fireEvent.click(chip('Backend engineer'));
+    type('backend engineer');
+    continueOn();
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(await savedTitles(api)).toEqual(['Backend engineer']);
+  });
+
+  it('keeps the count in sight while a reason shows', async () => {
+    await renderStep(Array.from({ length: 10 }, (_, n) => `Role ${n + 1}`));
+    add('Role 11');
+    expect(screen.getByText('You’ve added 10 roles. Remove one to add another.')).toBeTruthy();
+    expect(screen.getByText('· 10 of 10 added')).toBeTruthy();
+  });
+
+  it('drops a reason about to be said once typing starts', async () => {
+    await renderStep(['Data engineer']);
+    type('data engineer');
+    fireEvent.keyDown(screen.getByLabelText('Job title'), { key: 'Enter' });
+    type('data engineers');
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(statusText()).toBe('');
+  });
+
+  it('takes a lost answer that went through as its own, not as a change elsewhere', async () => {
+    const { api, onSaved } = await renderStep();
+    const request = api.request.bind(api);
+    let posts = 0;
+    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      if (method !== 'POST') return request(method, path, body);
+      posts += 1;
+      if (posts === 2) {
+        await request(method, path, body);
+        throw new ApiError('unsure');
+      }
+      return request(method, path, body);
+    });
+    fireEvent.click(chip('Backend engineer'));
+    fireEvent.click(chip('Platform engineer'));
+    fireEvent.click(chip('Engineering manager'));
+    continueOn();
+    await waitFor(() => expect(alertText()).toContain('That didn’t save.'));
+    // The one whose answer was lost did save; dropping it now removes it, unasked about.
+    fireEvent.click(chip('Platform engineer'));
+    continueOn();
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(alertText()).not.toContain('changed somewhere else');
+    expect(await savedTitles(api)).toEqual(['Backend engineer', 'Engineering manager']);
   });
 
   it('moves on without a request when nothing changed', async () => {

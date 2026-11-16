@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button.tsx';
 import { QueryRegion } from '@/components/ui/query-region.tsx';
 import { copy, fill } from '@/copy/index.ts';
 import { ApiError, useApi } from '@/lib/api/index.ts';
-import { type Role, useRoles } from '@/lib/api/roles.ts';
+import { type Role, rolesQuery, useRoles } from '@/lib/api/roles.ts';
 import { LIVE_REGION_BEAT_MS } from '@/lib/live-region.ts';
 import { useDelayedPending } from '@/lib/use-delayed-pending.ts';
 import { cn } from '@/lib/utils.ts';
@@ -184,15 +184,15 @@ function RolesForm({
       return;
     }
     setError(null);
-    setChosen(checked ? [...chosen, title] : chosen.filter((chosenTitle) => chosenTitle !== title));
+    setChosen(
+      checked ? [...chosen, title] : chosen.filter((chosenTitle) => !same(chosenTitle, title)),
+    );
   }
 
   /** Reads the saved roles again; shows them here and returns them (null if they can't be read). */
   async function reload(): Promise<Role[] | null> {
     try {
-      const fresh = (await api.request<{ roles: Role[] }>('GET', '/me/roles')).roles;
-      if (here.current) queries.setQueryData(['roles'], fresh);
-      return fresh;
+      return await queries.fetchQuery({ ...rolesQuery(api), staleTime: 0 });
     } catch {
       return null;
     }
@@ -203,6 +203,8 @@ function RolesForm({
    * not take its own earlier saves for changes made elsewhere).
    */
   function saveDone(current: Role[]) {
+    // A read already on its way answers from before this change: it must not undo it.
+    void queries.cancelQueries({ queryKey: ['roles'] });
     queries.setQueryData(['roles'], current);
     before.current = titlesOf(current);
   }
@@ -220,8 +222,11 @@ function RolesForm({
     if (pending) return;
     // Cleared in a render of its own, so the same refusal again is announced again.
     flushSync(() => setRefusal(null));
-    // A title typed but not added yet is meant: it is added first.
-    const titles = clean(draft) ? addDraft(true) : chosen;
+    // A title typed but not added yet is meant: it is added first (one already chosen just is).
+    const typed = clean(draft);
+    let titles: string[] | null = chosen;
+    if (typed && includes(chosen, typed)) setDraft('');
+    else if (typed) titles = addDraft(true);
     if (!titles) return;
     if (titles.length === 0) {
       fail(text.none, true);
@@ -294,8 +299,14 @@ function RolesForm({
     }
     const merged = reconcile(before.current, titles, titlesOf(fresh));
     const left = plan(fresh, titles);
-    if (merged.changed) takeIn(merged.titles, titlesOf(fresh));
-    else if (left.add.length === 0 && left.remove.length === 0) onSaved();
+    if (merged.changed) {
+      takeIn(merged.titles, titlesOf(fresh));
+      return;
+    }
+    // What is saved now is this step's doing (a lost answer that went through, say): the next try
+    // starts from it.
+    before.current = titlesOf(fresh);
+    if (left.add.length === 0 && left.remove.length === 0) onSaved();
     else setRefusal(kind === 'unsure' ? errors.saveFailed : errors.tryLater);
   }
 
@@ -312,7 +323,7 @@ function RolesForm({
       <Field
         name="title"
         label={text.jobTitle}
-        hint={`${count} · ${text.hint}`}
+        hint={text.hint}
         error={error}
         value={draft}
         list={listId}
@@ -325,6 +336,11 @@ function RolesForm({
         className={pending ? '[&_input]:opacity-60' : undefined}
         onChange={(event) => {
           setDraft(event.target.value);
+          // A reason shown, about to be said or just said, no longer applies.
+          if (error) {
+            clearTimeout(saying.current);
+            setSpoken('');
+          }
           setError(null);
         }}
         onKeyDown={onKeyDown}
@@ -351,7 +367,9 @@ function RolesForm({
       </datalist>
       <fieldset className="m-0 flex min-w-0 flex-wrap gap-2 border-0 p-0">
         <legend className="mb-2 p-0 text-[0.8125rem] font-[680] tracking-[0.01em]">
-          {text.chosen}
+          {text.chosen}{' '}
+          {/* Beside the list, not in the field's hint: an error there would hide it. */}
+          <span className="font-[500] text-muted-foreground">· {count}</span>
         </legend>
         {chips.map((title) => (
           <Chip
