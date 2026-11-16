@@ -80,10 +80,16 @@ export function StepYou({
     onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
       setValues((current) => ({ ...current, [name]: event.target.value }));
       // A field's reason, about to be said or just said, no longer applies once a field changes;
-      // the note about a saved field this step doesn't show still does, so it is still said.
-      clearTimeout(announcing.current);
+      // the note about a saved field this step doesn't show still does, so it is still said, on
+      // the beat already running (typing doesn't put it off).
       setSpoken('');
-      if (unsaidNote.current) later(unsaidNote.current, unsaidNote.current);
+      if (unsaidWords.current !== null) {
+        if (unsaidNote.current) unsaidWords.current = unsaidNote.current;
+        else {
+          clearTimeout(announcing.current);
+          unsaidWords.current = null;
+        }
+      }
     },
   });
 
@@ -93,17 +99,22 @@ export function StepYou({
    * be read again. A newer try cancels a beat still waiting.
    */
   const announcing = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  // The note while its words wait to be said (a keystroke then must not drop them).
+  // What waits to be said on the running beat, and the note among it (a keystroke drops a
+  // field's reason from it, not the note).
+  const unsaidWords = useRef<string | null>(null);
   const unsaidNote = useRef<string | null>(null);
   function later(words: string, shownNote: string | null) {
     clearTimeout(announcing.current);
     // The note is shown at once (it is not a live region); only the words wait for the beat.
     setNote(shownNote);
     unsaidNote.current = shownNote;
+    unsaidWords.current = words;
     announcing.current = setTimeout(() => {
       if (!here.current) return;
+      const saying = unsaidWords.current ?? '';
       unsaidNote.current = null;
-      setSpoken(words);
+      unsaidWords.current = null;
+      setSpoken(saying);
       // Said, then gone from the status line, so reading through the form meets each message
       // once (the note and the field errors stay where they are).
       announcing.current = setTimeout(() => {
@@ -144,6 +155,8 @@ export function StepYou({
     // Cleared in a render of its own (and set again a moment later, see `later`), so the same
     // message again is announced again.
     clearTimeout(announcing.current);
+    unsaidWords.current = null;
+    unsaidNote.current = null;
     flushSync(() => {
       setRefusal(null);
       setNote(null);
