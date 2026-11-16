@@ -237,7 +237,7 @@ test.describe('the story, step by step', () => {
     await page.getByRole('button', { name: 'Play story' }).click();
     await expect.poll(() => breathing(page)).toBe(true);
     // Well into the step, so a bar that started over could not pass for one that went on.
-    await expect.poll(() => barTime(page)).toBeGreaterThan(1000);
+    await expect.poll(() => barTime(page)).toBeGreaterThan(1500);
     await page.getByRole('button', { name: 'Pause story' }).click();
     // Paused, the deputy stops breathing (easing back to his pose)…
     await expect.poll(() => breathing(page)).toBe(false);
@@ -259,8 +259,16 @@ test.describe('the story, step by step', () => {
     expect(await page.locator('[data-bar]').evaluate((bar) => bar.getAnimations()[0]?.id)).toBe(
       'paused-fill',
     );
-    // WebKit on Linux can read up to a frame or so behind as it resumes; empty would read near 0.
-    expect(await barTime(page)).toBeGreaterThan(stopped - 100);
+    // Read once the resumed fill is running again: WebKit on Linux can read some 100 ms behind
+    // while the resume is pending. A fill that started over reads near 0; this one went on from
+    // past 1.5 s, so 1 s leaves room for that lag on either side.
+    expect(
+      await page.locator('[data-bar]').evaluate(async (bar) => {
+        const fill = bar.getAnimations()[0];
+        await fill?.ready;
+        return Number(fill?.currentTime ?? -1);
+      }),
+    ).toBeGreaterThan(1000);
     await expect.poll(() => barTime(page)).toBeGreaterThan(stopped);
     await expect(stripSteps(page).nth(1)).toHaveAttribute('aria-current', 'step', {
       timeout: 15_000,
