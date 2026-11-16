@@ -26,3 +26,16 @@ export function fill(template: string, values: Record<string, string>): string {
   const byName = new Map(Object.entries(values));
   return template.replace(/\{(\w+)\}/g, (slot, name: string) => byName.get(name) ?? slot);
 }
+
+/**
+ * The form of a counted phrase for `count`, by the copy's own language rules (one, few, many…),
+ * filled with `{count}`: `plural(copy.setUp.errors.units.seconds, 30)` is "30 seconds". A form
+ * the language does not list falls back to `other`.
+ */
+export function plural(
+  forms: Partial<Record<Intl.LDMLPluralRule, string>> & { other: string },
+  count: number,
+): string {
+  const form = new Intl.PluralRules(copy.locale).select(count);
+  return fill(forms[form] ?? forms.other, { count: String(count) });
+}

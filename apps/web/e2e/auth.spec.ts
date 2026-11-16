@@ -37,6 +37,20 @@ test('creates an account, confirms it with the code, lands signed in, and signs 
   await expectNoAccessibilityViolations(page);
   await expectNoHorizontalScroll(page);
   await page.getByRole('button', { name: 'Let’s start' }).click();
+  // Step 1, You: saved, then on.
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'First, what should I call you?' }),
+  ).toBeFocused();
+  await expect(page.getByRole('banner')).toContainText('Step 1 of 3');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByLabel('First name')).toBeFocused();
+  await expect(page.getByText('Enter your first name.')).toBeVisible();
+  await expectNoAccessibilityViolations(page);
+  await page.getByLabel('First name').fill('Alex');
+  await page.getByLabel('Last name').fill('Morgan');
+  await page.getByLabel('City (optional)').fill('Austin');
+  await expectNoHorizontalScroll(page);
+  await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'You’re in.' })).toBeFocused();
 
   await page.getByRole('button', { name: 'Sign out' }).click();

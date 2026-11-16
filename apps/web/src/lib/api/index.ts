@@ -9,6 +9,7 @@ export {
   ApiError,
   type ApiErrorKind,
   type ApiMethod,
+  DEFAULT_RETRY_AFTER_SECONDS,
   type FieldError,
 } from './client.ts';
 

@@ -4,7 +4,7 @@ import { SignedIn } from '@/components/auth/signed-in.tsx';
 import { type AuthControl, AuthDrawer, type AuthMode } from '@/components/landing/auth-drawer.tsx';
 import { Hero } from '@/components/landing/hero.tsx';
 import { SiteHeader } from '@/components/landing/site-header.tsx';
-import { SetUp } from '@/components/setup/set-up.tsx';
+import { SetUp, type SetUpStep } from '@/components/setup/set-up.tsx';
 import { SignedInLayout } from '@/components/signed-in-layout.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { QueryRegion } from '@/components/ui/query-region.tsx';
@@ -45,12 +45,17 @@ export function App() {
 function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () => void }) {
   const profile = useProfile();
   const queryClient = useQueryClient();
-  const [started, setStarted] = useState(false);
+  // The set-up is entered when the person has no profile yet, and then stays until it is done,
+  // even once its first step has saved one. Null: not entered (or done).
+  const [setUpStep, setSetUpStep] = useState<SetUpStep | 'done' | null>(null);
   const signedOut = () => {
     queryClient.clear();
     onSignedOut();
   };
-  const settingUp = profile.data !== undefined && !hasProfile(profile.data) && !started;
+  const step =
+    setUpStep === 'done'
+      ? null
+      : (setUpStep ?? (profile.data !== undefined && !hasProfile(profile.data) ? 'welcome' : null));
   return (
     <SignedInLayout onSignedOut={signedOut}>
       {/* The shared loading states (#17): nothing for 300 ms, then a skeleton read out as
@@ -63,9 +68,17 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
         error={<ProfileFailed onRetry={() => profile.refetch()} />}
         className="mx-auto w-full max-w-[1120px] px-[17px] py-8 sm:px-[clamp(21px,4vw,55px)] md:py-14"
       >
-        {() =>
-          settingUp ? (
-            <SetUp email={email} onStart={() => setStarted(true)} />
+        {(data) =>
+          step ? (
+            <SetUp
+              // A new step is a new form, started from what is saved.
+              key={step}
+              email={email}
+              step={step}
+              profile={data}
+              onNext={() => setSetUpStep(SET_UP_NEXT[step])}
+              onBack={() => setSetUpStep(SET_UP_BACK[step])}
+            />
           ) : (
             <SignedIn email={email} />
           )
@@ -74,6 +87,10 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
     </SignedInLayout>
   );
 }
+
+/** The set-up's order (#33); the last step saved ends it. */
+const SET_UP_NEXT: Record<SetUpStep, SetUpStep | 'done'> = { welcome: 'you', you: 'done' };
+const SET_UP_BACK: Record<SetUpStep, SetUpStep> = { welcome: 'welcome', you: 'welcome' };
 
 /**
  * The profile could not be read: say so, and offer to try again (Sign out is in the header, so an

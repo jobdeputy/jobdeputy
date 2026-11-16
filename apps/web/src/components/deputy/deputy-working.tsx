@@ -3,11 +3,9 @@ import { DeputySpeech, DeputyStatus } from '@/components/deputy/deputy-speech.ts
 import { Panda } from '@/components/deputy/panda.tsx';
 import { Spinner } from '@/components/ui/spinner.tsx';
 import { copy } from '@/copy/index.ts';
+import { LIVE_REGION_BEAT_MS } from '@/lib/live-region.ts';
 import { useDelayedPending, useLongWait } from '@/lib/use-delayed-pending.ts';
 import { cn } from '@/lib/utils.ts';
-
-/** How far apart the deputy's live regions first fill, so each is read on its own. */
-const LIVE_REGION_BEAT_MS = 100;
 
 /**
  * The deputy at work on something long (#17): a crawl, a relevance run, a tailoring. The panda

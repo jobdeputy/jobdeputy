@@ -198,6 +198,50 @@ export const en = {
     locked: 'Locked',
     regionNote: 'Your profile, searches, and files stay in this Region.',
     start: 'Let’s start',
+    /** Step 1: who the person is, so the deputy can address them and fill in applications. */
+    you: {
+      eyebrow: 'You',
+      title: 'First, what should I call you?',
+      intro: 'Your name goes on the applications I prepare. You can change it later in Profile.',
+      speech: 'Nice to meet you.',
+      firstName: 'First name',
+      lastName: 'Last name',
+      city: 'City (optional)',
+      cityHint: 'Where you are based, so I look for roles near you too.',
+      country: 'Country',
+      continue: 'Continue',
+      saving: 'Saving…',
+      back: 'Back',
+    },
+    /** What is wrong with a field, or with saving. */
+    errors: {
+      firstNameMissing: 'Enter your first name.',
+      lastNameMissing: 'Enter your last name.',
+      firstNameInvalid: 'Check your first name.',
+      lastNameInvalid: 'Check your last name.',
+      cityInvalid: 'Check the city.',
+      tooLong: 'Use at most {max} characters.',
+      saveFailed: 'That didn’t save. Check your connection, then try again.',
+      tryLater: 'That didn’t save. Try again in a moment.',
+      /** Refused as out of date: something this step doesn't show was saved meanwhile. */
+      savedMeanwhile:
+        'Something else in your profile was saved meanwhile. Press Continue to save this too.',
+      /** A save's answer was lost, and what is saved can't be read either. */
+      unknownOutcome: 'We couldn’t tell whether that saved. Check your connection, then try again.',
+      tooMany: 'Too many saves for now. Try again in {wait}.',
+      /** The wait in tooMany, by count. */
+      units: {
+        seconds: { one: '{count} second', other: '{count} seconds' },
+        minutes: { one: '{count} minute', other: '{count} minutes' },
+      },
+      changedElsewhere:
+        'Your profile changed somewhere else. It shows here now: check it, then continue.',
+      /** Something saved that this step doesn't show no longer fits the rules. */
+      cannotSave:
+        'Part of your saved profile no longer fits the rules, so this can’t be saved yet.',
+      accountClosed: 'This account can’t be changed any more. Sign out to continue.',
+      signedOut: 'Your session has ended. Sign in again to continue.',
+    },
   },
   /** Loading the signed-in person's profile, and failing to. */
   profile: {
