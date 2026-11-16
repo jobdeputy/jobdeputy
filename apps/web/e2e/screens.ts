@@ -47,6 +47,8 @@ export const SCREENS: Screen[] = [
   // The guided set-up's welcome (#33), where a new account lands, and the page after it.
   { name: 'set-up', path: '/', open: 'Get started free', still: true, steps: toSetUp },
   { name: 'set-up-you', path: '/', open: 'Get started free', still: true, steps: toStepYou },
+  // Step 2 with a typed title and a picked one chosen.
+  { name: 'set-up-roles', path: '/', open: 'Get started free', still: true, steps: toStepRoles },
   { name: 'signed-in', path: '/', open: 'Get started free', still: true, steps: toSignedIn },
   // Every shared component state (#17); the pending buttons and the loading skeleton appear
   // after the 300 ms delay.
@@ -164,10 +166,22 @@ async function toStepYou(page: Page) {
   await page.getByRole('heading', { level: 1, name: 'First, what should I call you?' }).waitFor();
 }
 
-async function toSignedIn(page: Page) {
+async function toStepRoles(page: Page) {
   await toStepYou(page);
   await page.getByLabel('First name').fill('Alex');
   await page.getByLabel('Last name').fill('Morgan');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('heading', { level: 1, name: 'What roles should I look for?' }).waitFor();
+  await page.getByLabel('Job title').fill('Staff engineer');
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.getByText('Backend engineer', { exact: true }).click();
+  await page
+    .locator('input[name="role"][value="Backend engineer"]:checked')
+    .waitFor({ state: 'attached' });
+}
+
+async function toSignedIn(page: Page) {
+  await toStepRoles(page);
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByRole('heading', { level: 1, name: 'You’re in.' }).waitFor();
 }

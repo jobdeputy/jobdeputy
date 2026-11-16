@@ -1,0 +1,445 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { plan, reconcile, StepRoles } from '../src/components/setup/step-roles.tsx';
+import { ApiError } from '../src/lib/api/client.ts';
+import { createFakeApi } from '../src/lib/api/fake.ts';
+import { ApiContext } from '../src/lib/api/index.ts';
+import type { Role } from '../src/lib/api/roles.ts';
+import { createFakeAuth } from '../src/lib/auth/fake.ts';
+import { renderApp } from './render-app.tsx';
+
+afterEach(cleanup);
+
+type FakeApi = ReturnType<typeof createFakeApi>;
+
+/** Step 2 on its own, over a fake API holding these roles already. */
+async function renderStep(titles: string[] = [], api: FakeApi = createFakeApi({ delay: 0 })) {
+  for (const title of titles) await api.request('POST', '/me/roles', { title });
+  const onSaved = vi.fn();
+  const onBack = vi.fn();
+  const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(
+    <QueryClientProvider client={queries}>
+      <ApiContext.Provider value={api}>
+        <StepRoles onSaved={onSaved} onBack={onBack} />
+      </ApiContext.Provider>
+    </QueryClientProvider>,
+  );
+  await screen.findByLabelText('Job title');
+  return { api, onSaved, onBack, queries, view };
+}
+
+async function savedTitles(api: FakeApi) {
+  return (await api.request<{ roles: Role[] }>('GET', '/me/roles')).roles.map((role) => role.title);
+}
+
+function type(title: string) {
+  fireEvent.change(screen.getByLabelText('Job title'), { target: { value: title } });
+}
+
+function add(title: string) {
+  type(title);
+  fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+}
+
+function chip(title: string) {
+  return screen.getByRole('checkbox', { name: title }) as HTMLInputElement;
+}
+
+function continueOn() {
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+}
+
+/** What the status lines say (the step's own, and the loading region's). */
+function statusText(): string {
+  return screen
+    .getAllByRole('status')
+    .map((status) => status.textContent)
+    .join('');
+}
+
+function alertText(): string {
+  return screen
+    .getAllByRole('alert')
+    .map((alert) => alert.textContent)
+    .join(' ');
+}
+
+describe('Set it up, step 2: target roles', () => {
+  it('comes after step 1, saves the titles chosen, and ends the set-up', async () => {
+    const auth = createFakeAuth({ delay: 0 });
+    await auth.signUp('new@example.com', 'a long enough password');
+    await auth.confirmSignUp('new@example.com', 'a long enough password', '123456');
+    const api = createFakeApi({ delay: 0 });
+    await renderApp(auth, {}, api);
+    fireEvent.click(await screen.findByRole('button', { name: 'Let’s start' }));
+    await screen.findByRole('heading', { level: 1, name: 'First, what should I call you?' });
+    fireEvent.change(screen.getByLabelText('First name'), { target: { value: 'Alex' } });
+    fireEvent.change(screen.getByLabelText('Last name'), { target: { value: 'Morgan' } });
+    continueOn();
+    const title = await screen.findByRole('heading', {
+      level: 1,
+      name: 'What roles should I look for?',
+    });
+    expect(screen.getByText('Step 2 of 3')).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(title));
+    await screen.findByLabelText('Job title');
+    fireEvent.click(chip('Backend engineer'));
+    add('Staff engineer');
+    continueOn();
+    expect(await screen.findByRole('heading', { level: 1, name: 'You’re in.' })).toBeTruthy();
+    expect(await savedTitles(api)).toEqual(['Backend engineer', 'Staff engineer']);
+  });
+
+  it('goes back from step 2 to step 1, its answers still there', async () => {
+    const auth = createFakeAuth({ delay: 0 });
+    await auth.signUp('new@example.com', 'a long enough password');
+    await auth.confirmSignUp('new@example.com', 'a long enough password', '123456');
+    await renderApp(auth);
+    fireEvent.click(await screen.findByRole('button', { name: 'Let’s start' }));
+    await screen.findByLabelText('First name');
+    fireEvent.change(screen.getByLabelText('First name'), { target: { value: 'Alex' } });
+    fireEvent.change(screen.getByLabelText('Last name'), { target: { value: 'Morgan' } });
+    continueOn();
+    await screen.findByLabelText('Job title');
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await screen.findByRole('heading', { level: 1, name: 'First, what should I call you?' });
+    expect((screen.getByLabelText('First name') as HTMLInputElement).value).toBe('Alex');
+  });
+
+  it('adds a typed title as a chosen chip at the front, tidied, and says so', async () => {
+    await renderStep();
+    add('  Staff   engineer ');
+    expect(chip('Staff engineer').checked).toBe(true);
+    const chips = screen.getAllByRole('checkbox').map((box) => (box as HTMLInputElement).value);
+    expect(chips[0]).toBe('Staff engineer');
+    expect((screen.getByLabelText('Job title') as HTMLInputElement).value).toBe('');
+    // The field keeps focus, for the next title.
+    expect(document.activeElement).toBe(screen.getByLabelText('Job title'));
+    await waitFor(() => expect(statusText()).toBe('Added Staff engineer. 1 of 10 roles.'));
+    expect(screen.getByText(/^1 of 10 added/)).toBeTruthy();
+  });
+
+  it('adds with Enter, and checks the chip a typed title already has', async () => {
+    await renderStep();
+    type('backend engineer');
+    fireEvent.keyDown(screen.getByLabelText('Job title'), { key: 'Enter' });
+    expect(chip('Backend engineer').checked).toBe(true);
+    expect(screen.queryByRole('checkbox', { name: 'backend engineer' })).toBeNull();
+  });
+
+  it('says why a title can’t be added, beside the field', async () => {
+    await renderStep();
+    add('   ');
+    expect(screen.getByText('Type a job title first, or pick one below.')).toBeTruthy();
+    expect(screen.getByLabelText('Job title').getAttribute('aria-invalid')).toBe('true');
+    // Typing clears it.
+    type('S');
+    expect(screen.queryByText('Type a job title first, or pick one below.')).toBeNull();
+    add('Software Engineer');
+    add('software engineer');
+    expect(screen.getByText('Software engineer is already on your list.')).toBeTruthy();
+    add('x'.repeat(121));
+    expect(screen.getByText('Use at most 120 characters.')).toBeTruthy();
+  });
+
+  it('says in the status line why Enter added nothing (focus stays, so it isn’t read)', async () => {
+    await renderStep(['Data engineer']);
+    type('data engineer');
+    fireEvent.keyDown(screen.getByLabelText('Job title'), { key: 'Enter' });
+    await waitFor(() => expect(statusText()).toBe('Data engineer is already on your list.'));
+  });
+
+  it('stops at 10, from the field and from a chip', async () => {
+    await renderStep(Array.from({ length: 10 }, (_, n) => `Role ${n + 1}`));
+    add('Role 11');
+    expect(screen.getByText('You’ve added 10 roles. Remove one to add another.')).toBeTruthy();
+    expect(screen.queryByRole('checkbox', { name: 'Role 11' })).toBeNull();
+    fireEvent.click(chip('Backend engineer'));
+    expect(chip('Backend engineer').checked).toBe(false);
+    await waitFor(() =>
+      expect(statusText()).toBe('You’ve added 10 roles. Remove one to add another.'),
+    );
+  });
+
+  it('asks for at least one role', async () => {
+    const { api, onSaved } = await renderStep();
+    const request = vi.spyOn(api, 'request');
+    continueOn();
+    expect(screen.getByText('Add at least one role, or pick a suggestion.')).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByLabelText('Job title'));
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('saves a title typed but not added yet', async () => {
+    const { api, onSaved } = await renderStep();
+    type('Staff engineer');
+    continueOn();
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(await savedTitles(api)).toEqual(['Staff engineer']);
+  });
+
+  it('shows saved roles chosen, removes the ones dropped first, then adds', async () => {
+    const { api, onSaved } = await renderStep(['Data engineer', 'Backend engineer']);
+    expect(chip('Data engineer').checked).toBe(true);
+    expect(chip('Backend engineer').checked).toBe(true);
+    // A saved title of the person's own is a chip at the front; a pick stays where it was.
+    expect((screen.getAllByRole('checkbox')[0] as HTMLInputElement).value).toBe('Data engineer');
+    const request = vi.spyOn(api, 'request');
+    fireEvent.click(chip('Data engineer'));
+    fireEvent.click(chip('Platform engineer'));
+    continueOn();
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(request.mock.calls.map(([method, path]) => `${method} ${path}`)).toEqual([
+      expect.stringMatching(/^DELETE \/me\/roles\/\w{26}$/),
+      'POST /me/roles',
+    ]);
+    expect(await savedTitles(api)).toEqual(['Backend engineer', 'Platform engineer']);
+  });
+
+  it('takes a role already removed elsewhere as removed', async () => {
+    const { api, onSaved } = await renderStep(['Data engineer']);
+    const [data] = (await api.request<{ roles: Role[] }>('GET', '/me/roles')).roles;
+    await api.request('DELETE', `/me/roles/${data?.roleId}`);
+    fireEvent.click(chip('Data engineer'));
+    fireEvent.click(chip('Backend engineer'));
+    continueOn();
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(await savedTitles(api)).toEqual(['Backend engineer']);
+  });
+
+  it('moves on without a request when nothing changed', async () => {
+    const { api, onSaved } = await renderStep(['Data engineer']);
+    const request = vi.spyOn(api, 'request');
+    continueOn();
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('keeps what saved when a save stops part-way, and saves only the rest next time', async () => {
+    const { api, onSaved } = await renderStep();
+    const request = api.request.bind(api);
+    let posts = 0;
+    const spy = vi.spyOn(api, 'request').mockImplementation((method, path, body) => {
+      if (method === 'POST' && ++posts === 2) return Promise.reject(new ApiError('server'));
+      return request(method, path, body);
+    });
+    fireEvent.click(chip('Backend engineer'));
+    fireEvent.click(chip('Platform engineer'));
+    continueOn();
+    await waitFor(() => expect(alertText()).toContain('That didn’t save. Try again in a moment.'));
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(await savedTitles(api)).toEqual(['Backend engineer']);
+    spy.mockClear();
+    continueOn();
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(spy.mock.calls.filter(([method]) => method === 'POST')).toEqual([
+      ['POST', '/me/roles', { title: 'Platform engineer' }],
+    ]);
+  });
+
+  it('does not take its own earlier save for a change made elsewhere', async () => {
+    const { api, onSaved } = await renderStep();
+    const request = api.request.bind(api);
+    let posts = 0;
+    vi.spyOn(api, 'request').mockImplementation((method, path, body) => {
+      if (method === 'POST' && ++posts === 2) return Promise.reject(new ApiError('server'));
+      return request(method, path, body);
+    });
+    fireEvent.click(chip('Backend engineer'));
+    fireEvent.click(chip('Platform engineer'));
+    continueOn();
+    await waitFor(() => expect(alertText()).toContain('Try again in a moment.'));
+    // The saved one dropped after all: it is removed, not brought back as another device's.
+    fireEvent.click(chip('Backend engineer'));
+    continueOn();
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(await savedTitles(api)).toEqual(['Platform engineer']);
+  });
+
+  it('moves on when a save whose answer was lost did go through', async () => {
+    const { api, onSaved } = await renderStep();
+    const request = api.request.bind(api);
+    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      const answer = await request(method, path, body);
+      if (method === 'POST') throw new ApiError('unsure');
+      return answer;
+    });
+    fireEvent.click(chip('Backend engineer'));
+    continueOn();
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(await savedTitles(api)).toEqual(['Backend engineer']);
+  });
+
+  it('says it cannot tell when the answer and the check are both lost', async () => {
+    const { api, onSaved } = await renderStep();
+    vi.spyOn(api, 'request').mockRejectedValue(new ApiError('unsure'));
+    fireEvent.click(chip('Backend engineer'));
+    continueOn();
+    await waitFor(() =>
+      expect(alertText()).toContain(
+        'We couldn’t tell whether that saved. Check your connection, then try again.',
+      ),
+    );
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it('shows roles added elsewhere meanwhile, chosen, before saving over them', async () => {
+    const { api, onSaved, queries } = await renderStep(['Data engineer']);
+    await api.request('POST', '/me/roles', { title: 'Mobile engineer' });
+    // The list is read again (as when the tab is come back to), and the step shown with it
+    // (TanStack tells the page on a timer of its own).
+    await act(async () => {
+      await queries.refetchQueries({ queryKey: ['roles'] });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    fireEvent.click(chip('Backend engineer'));
+    const request = vi.spyOn(api, 'request');
+    continueOn();
+    await waitFor(() => expect(alertText()).toContain('Your roles changed somewhere else.'));
+    expect(chip('Mobile engineer').checked).toBe(true);
+    expect(request).not.toHaveBeenCalled();
+    continueOn();
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(await savedTitles(api)).toEqual([
+      'Data engineer',
+      'Mobile engineer',
+      'Backend engineer',
+    ]);
+  });
+
+  it('takes in a role removed elsewhere when a save is refused, and says so', async () => {
+    const { api, onSaved } = await renderStep(['Data engineer', 'Mobile engineer']);
+    // Another device removes one, and adds nine: the next add is over the limit (422).
+    const [, mobile] = (await api.request<{ roles: Role[] }>('GET', '/me/roles')).roles;
+    await api.request('DELETE', `/me/roles/${mobile?.roleId}`);
+    for (let n = 1; n <= 9; n += 1) await api.request('POST', '/me/roles', { title: `Role ${n}` });
+    fireEvent.click(chip('Backend engineer'));
+    continueOn();
+    await waitFor(() =>
+      expect(alertText()).toContain(
+        'Your roles changed somewhere else. They show here now: check them, then continue.',
+      ),
+    );
+    expect(chip('Mobile engineer').checked).toBe(false);
+    expect(chip('Role 9').checked).toBe(true);
+    expect(chip('Backend engineer').checked).toBe(true);
+    expect(onSaved).not.toHaveBeenCalled();
+    // Eleven now: one must go before saving.
+    continueOn();
+    expect(screen.getByText('You’ve added 10 roles. Remove one to add another.')).toBeTruthy();
+    fireEvent.click(chip('Role 9'));
+    continueOn();
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(await savedTitles(api)).toHaveLength(10);
+    expect(await savedTitles(api)).not.toContain('Role 9');
+  });
+
+  it('says how long to wait, or that the session ended', async () => {
+    const { api } = await renderStep();
+    const spy = vi
+      .spyOn(api, 'request')
+      .mockRejectedValue(new ApiError('too-many', { status: 429, retryAfterSeconds: 30 }));
+    fireEvent.click(chip('Backend engineer'));
+    continueOn();
+    await waitFor(() =>
+      expect(alertText()).toContain('Too many saves for now. Try again in 30 seconds.'),
+    );
+    spy.mockRejectedValue(new ApiError('signed-out', { status: 401 }));
+    continueOn();
+    await waitFor(() =>
+      expect(alertText()).toContain('Your session has ended. Sign in again to continue.'),
+    );
+  });
+
+  it('locks the list while saving', async () => {
+    const { api } = await renderStep();
+    let answer: () => void = () => {};
+    vi.spyOn(api, 'request').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = () => resolve({ roleId: 'x'.repeat(26), title: 'Backend engineer', version: 1 });
+        }),
+    );
+    fireEvent.click(chip('Backend engineer'));
+    continueOn();
+    expect((screen.getByLabelText('Job title') as HTMLInputElement).readOnly).toBe(true);
+    expect((screen.getByRole('button', { name: 'Add' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(chip('Platform engineer'));
+    expect(chip('Platform engineer').checked).toBe(false);
+    answer();
+  });
+
+  it('touches nothing once the step is gone (signed out mid-save)', async () => {
+    const { api, queries, view } = await renderStep();
+    let answer: () => void = () => {};
+    vi.spyOn(api, 'request').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = () => resolve({ roleId: 'x'.repeat(26), title: 'Backend engineer', version: 1 });
+        }),
+    );
+    fireEvent.click(chip('Backend engineer'));
+    continueOn();
+    view.unmount();
+    queries.clear();
+    answer();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(queries.getQueryData(['roles'])).toBeUndefined();
+  });
+
+  it('says when the roles could not be read, and tries again', async () => {
+    const api = createFakeApi({ delay: 0 });
+    const request = api.request.bind(api);
+    const spy = vi.spyOn(api, 'request').mockRejectedValueOnce(new ApiError('server'));
+    const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queries}>
+        <ApiContext.Provider value={api}>
+          <StepRoles onSaved={() => {}} onBack={() => {}} />
+        </ApiContext.Provider>
+      </QueryClientProvider>,
+    );
+    expect(
+      (await screen.findByRole('alert')).textContent?.startsWith('Your roles didn’t load.'),
+    ).toBe(true);
+    spy.mockImplementation(request);
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByLabelText('Job title')).toBeTruthy();
+  });
+});
+
+describe('plan', () => {
+  const role = (title: string, roleId = title) => ({ roleId, title, version: 1 });
+  it('removes the roles no longer chosen and adds the new titles, case aside', () => {
+    expect(plan([role('A'), role('b')], ['B', 'c'])).toEqual({ remove: [role('A')], add: ['c'] });
+    expect(plan([], [])).toEqual({ remove: [], add: [] });
+  });
+});
+
+describe('reconcile', () => {
+  it('sees nothing changed elsewhere when the saved roles are what this step made', () => {
+    // Saved as chosen; nothing saved yet; or part-way (a lost answer that went through).
+    expect(reconcile(['A'], ['A', 'B'], ['A', 'B'])).toEqual({
+      titles: ['A', 'B'],
+      changed: false,
+    });
+    expect(reconcile(['A'], ['B'], ['A'])).toEqual({ titles: ['B'], changed: false });
+    expect(reconcile(['A'], ['B'], ['B'])).toEqual({ titles: ['B'], changed: false });
+  });
+
+  it('takes in roles added or removed elsewhere, keeping the person’s choices', () => {
+    expect(reconcile(['A'], ['A', 'B'], ['A', 'C'])).toEqual({
+      titles: ['A', 'B', 'C'],
+      changed: true,
+    });
+    expect(reconcile(['A', 'B'], ['A', 'B', 'D'], ['b'])).toEqual({
+      titles: ['B', 'D'],
+      changed: true,
+    });
+    // A role removed here and elsewhere is no change.
+    expect(reconcile(['A', 'B'], ['B'], ['B'])).toEqual({ titles: ['B'], changed: false });
+  });
+});
