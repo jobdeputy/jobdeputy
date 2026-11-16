@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StepYou, saveBody } from '../src/components/setup/step-you.tsx';
@@ -467,13 +467,49 @@ describe('the signed-in app', () => {
           .some((status) => status.textContent === 'Enter your first name.'),
       ).toBe(true),
     );
-    // Typing clears what was said.
+    // Typing clears what was said (and anything about to be).
     fill('A', 'Morgan');
     expect(
       screen
         .getAllByRole('status')
         .some((status) => status.textContent === 'Enter your first name.'),
     ).toBe(false);
+  });
+
+  it('says a reason once: typing cancels one about to be said, and said words clear', () => {
+    vi.useFakeTimers();
+    try {
+      const api = createFakeApi({ delay: 0 });
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ApiContext.Provider value={api}>
+            <StepYou
+              profile={{ version: 0, firstName: '', lastName: 'Morgan' }}
+              onSaved={() => {}}
+              onBack={() => {}}
+            />
+          </ApiContext.Provider>
+        </QueryClientProvider>,
+      );
+      const said = () =>
+        screen.getAllByRole('status').some((s) => s.textContent === 'Enter your first name.');
+      const first = screen.getByLabelText('First name');
+      first.focus();
+      fireEvent.submit(first.closest('form') as HTMLFormElement);
+      // Typing straight away: the reason, about to be said, is not.
+      fireEvent.change(first, { target: { value: 'A' } });
+      act(() => vi.advanceTimersByTime(200));
+      expect(said()).toBe(false);
+      // Said (Enter again with it empty), then gone from the status line a few seconds later.
+      fireEvent.change(first, { target: { value: '' } });
+      fireEvent.submit(first.closest('form') as HTMLFormElement);
+      act(() => vi.advanceTimersByTime(200));
+      expect(said()).toBe(true);
+      act(() => vi.advanceTimersByTime(5000));
+      expect(said()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('says it cannot tell when the answer and the check are both lost', async () => {

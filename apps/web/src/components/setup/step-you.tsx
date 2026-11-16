@@ -19,6 +19,9 @@ type Errors = Partial<Record<Name, string>>;
 /** What a save may carry: the API's schema is strict and refuses anything else it is sent. */
 const INPUT_KEYS: readonly string[] = profileInput.keyof().options;
 
+/** How long words stay in the status line after being said (they are read when they arrive). */
+const SPOKEN_FOR_MS = 5000;
+
 /** The country a new profile gets: the US (the only Region, US-only launch). */
 const COUNTRY = 'US';
 
@@ -76,7 +79,8 @@ export function StepYou({
     className: pending ? '[&_input]:opacity-60' : undefined,
     onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
       setValues((current) => ({ ...current, [name]: event.target.value }));
-      // A reason said for this field no longer applies once it changes.
+      // Whatever was about to be said, or was just said, may no longer apply once a field changes.
+      clearTimeout(announcing.current);
       setSpoken('');
     },
   });
@@ -93,6 +97,11 @@ export function StepYou({
       if (!here.current) return;
       setSpoken(words);
       setNote(shownNote);
+      // Said, then gone from the status line, so reading through the form meets each message
+      // once (the note and the field errors stay where they are).
+      announcing.current = setTimeout(() => {
+        if (here.current) setSpoken('');
+      }, SPOKEN_FOR_MS);
     }, LIVE_REGION_BEAT_MS);
   }
 
