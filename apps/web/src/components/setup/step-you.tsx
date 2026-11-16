@@ -86,17 +86,18 @@ export function StepYou({
   });
 
   /**
-   * Says `spoken` (and shows `note`) a beat after the messages were cleared, in a task of its own:
+   * Shows `note` now and says `spoken` a beat after the messages were cleared, in a task of its own:
    * cleared and set again in one task, the same words would not change the page, and would not
    * be read again. A newer try cancels a beat still waiting.
    */
   const announcing = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   function later(words: string, shownNote: string | null) {
     clearTimeout(announcing.current);
+    // The note is shown at once (it is not a live region); only the words wait for the beat.
+    setNote(shownNote);
     announcing.current = setTimeout(() => {
       if (!here.current) return;
       setSpoken(words);
-      setNote(shownNote);
       // Said, then gone from the status line, so reading through the form meets each message
       // once (the note and the field errors stay where they are).
       announcing.current = setTimeout(() => {

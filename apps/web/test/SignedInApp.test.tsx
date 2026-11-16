@@ -371,10 +371,16 @@ describe('the signed-in app', () => {
     // Fixing the visible field does not hide it: its cause is still there.
     fill('Alex', 'Morgan');
     expect(note.textContent).toMatch(/^Part of your saved profile/);
-    // Pressed again: cleared first, then said again, so it is read again.
+    // Pressed again: still shown, and said again in the status line (cleared, then said), so it
+    // is read again.
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(note.textContent).toBe('');
-    await waitFor(() => expect(note.textContent).toMatch(/^Part of your saved profile/));
+    const saying = () =>
+      screen
+        .getAllByRole('status')
+        .some((status) => status.textContent?.startsWith('Part of your saved profile'));
+    expect(saying()).toBe(false);
+    await waitFor(() => expect(saying()).toBe(true));
+    expect(note.textContent).toMatch(/^Part of your saved profile/);
   });
 
   it('says a refused save did not save when what is saved can’t be read either', async () => {
@@ -507,6 +513,32 @@ describe('the signed-in app', () => {
       expect(said()).toBe(true);
       act(() => vi.advanceTimersByTime(5000));
       expect(said()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows the hidden-field note even when typing starts at once', () => {
+    vi.useFakeTimers();
+    try {
+      const api = createFakeApi({ delay: 0 });
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ApiContext.Provider value={api}>
+            <StepYou
+              profile={{ version: 1, firstName: '', lastName: 'Morgan', headline: 'x'.repeat(201) }}
+              onSaved={() => {}}
+              onBack={() => {}}
+            />
+          </ApiContext.Provider>
+        </QueryClientProvider>,
+      );
+      const first = screen.getByLabelText('First name');
+      first.focus();
+      fireEvent.submit(first.closest('form') as HTMLFormElement);
+      fireEvent.change(first, { target: { value: 'A' } });
+      act(() => vi.advanceTimersByTime(200));
+      expect(screen.getByText(/^Part of your saved profile no longer fits the rules/)).toBeTruthy();
     } finally {
       vi.useRealTimers();
     }
