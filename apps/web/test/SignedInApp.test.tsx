@@ -518,7 +518,7 @@ describe('the signed-in app', () => {
     }
   });
 
-  it('shows the hidden-field note even when typing starts at once', () => {
+  it('shows and says the hidden-field note even when typing starts at once', () => {
     vi.useFakeTimers();
     try {
       const api = createFakeApi({ delay: 0 });
@@ -538,7 +538,12 @@ describe('the signed-in app', () => {
       fireEvent.submit(first.closest('form') as HTMLFormElement);
       fireEvent.change(first, { target: { value: 'A' } });
       act(() => vi.advanceTimersByTime(200));
-      expect(screen.getByText(/^Part of your saved profile no longer fits the rules/)).toBeTruthy();
+      // Shown, and still said (a screen reader hears it nowhere else while in a field).
+      expect(
+        screen
+          .getAllByText(/^Part of your saved profile no longer fits the rules/)
+          .some((element) => element.getAttribute('role') === 'status'),
+      ).toBe(true);
     } finally {
       vi.useRealTimers();
     }

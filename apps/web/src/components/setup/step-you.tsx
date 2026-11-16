@@ -79,9 +79,11 @@ export function StepYou({
     className: pending ? '[&_input]:opacity-60' : undefined,
     onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
       setValues((current) => ({ ...current, [name]: event.target.value }));
-      // Whatever was about to be said, or was just said, may no longer apply once a field changes.
+      // A field's reason, about to be said or just said, no longer applies once a field changes;
+      // the note about a saved field this step doesn't show still does, so it is still said.
       clearTimeout(announcing.current);
       setSpoken('');
+      if (unsaidNote.current) later(unsaidNote.current, unsaidNote.current);
     },
   });
 
@@ -91,12 +93,16 @@ export function StepYou({
    * be read again. A newer try cancels a beat still waiting.
    */
   const announcing = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // The note while its words wait to be said (a keystroke then must not drop them).
+  const unsaidNote = useRef<string | null>(null);
   function later(words: string, shownNote: string | null) {
     clearTimeout(announcing.current);
     // The note is shown at once (it is not a live region); only the words wait for the beat.
     setNote(shownNote);
+    unsaidNote.current = shownNote;
     announcing.current = setTimeout(() => {
       if (!here.current) return;
+      unsaidNote.current = null;
       setSpoken(words);
       // Said, then gone from the status line, so reading through the form meets each message
       // once (the note and the field errors stay where they are).
