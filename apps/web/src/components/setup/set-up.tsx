@@ -1,11 +1,13 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { DeputySpeech, DeputyStatus } from '@/components/deputy/deputy-speech.tsx';
 import { Panda, type PandaPose } from '@/components/deputy/panda.tsx';
 import { HeaderAside } from '@/components/header-aside.tsx';
 import { Button } from '@/components/ui/button.tsx';
+import { Spinner } from '@/components/ui/spinner.tsx';
 import { copy, fill } from '@/copy/index.ts';
 import type { Profile } from '@/lib/api/profile.ts';
 import { Fact, StepIntro } from './parts.tsx';
+import { type ResumeMood, StepResume } from './step-resume.tsx';
 import { StepRoles } from './step-roles.tsx';
 import { StepYou } from './step-you.tsx';
 
@@ -13,7 +15,7 @@ import { StepYou } from './step-you.tsx';
 const STEPS = 3;
 
 /** Where the set-up is: the welcome, or one of its steps (each saved as you go). */
-export type SetUpStep = 'welcome' | 'you' | 'roles';
+export type SetUpStep = 'welcome' | 'you' | 'roles' | 'resume';
 
 /**
  * The guided set-up after the first sign-in (#33), from the round 7 prototype's onboarding: the
@@ -34,6 +36,7 @@ export function SetUp({
   onNext: () => void;
   onBack: () => void;
 }) {
+  if (step === 'resume') return <ResumeFrame onDone={onNext} onBack={onBack} />;
   if (step === 'roles') {
     // The deputy searches, as he will for these titles (the prototype's pose for this step).
     return (
@@ -57,6 +60,26 @@ export function SetUp({
 }
 
 /**
+ * Step 3's frame: the deputy works while the file goes up and is checked (the prototype's pending
+ * pose, his line, a turning dot on his pill), and is pleased with it once it is ready.
+ */
+function ResumeFrame({ onDone, onBack }: { onDone: () => void; onBack: () => void }) {
+  const text = copy.setUp.resume;
+  const [mood, setMood] = useState<ResumeMood>('idle');
+  const working = mood === 'working';
+  return (
+    <SetUpFrame
+      current={2}
+      speech={working ? text.workingSpeech : mood === 'ready' ? text.readySpeech : text.speech}
+      pose={working ? 'pending' : 'apply'}
+      status={working ? text.workingStatus : undefined}
+    >
+      <StepResume onDone={onDone} onBack={onBack} onMood={setMood} />
+    </SetUpFrame>
+  );
+}
+
+/**
  * Every step's frame: the step bar in the header, the deputy and what he says, and the step's
  * card. On phones the deputy sits small beside his words, so the step stays near the top; from md
  * up he stands large, centred over them, beside the step.
@@ -65,12 +88,15 @@ function SetUpFrame({
   current,
   speech,
   pose = 'setup',
+  status,
   children,
 }: {
   /** The step (0-based), or null on the welcome. */
   current: number | null;
   speech: string;
   pose?: PandaPose;
+  /** What the deputy is busy with, on his pill with a turning dot; at rest, he is Ready. */
+  status?: string | undefined;
   children: ReactNode;
 }) {
   return (
@@ -82,7 +108,12 @@ function SetUpFrame({
         <Panda pose={pose} className="w-[92px] shrink-0 md:w-[220px]" />
         <div className="grid justify-items-start gap-2 md:justify-items-center">
           <DeputySpeech className="px-4 py-2.5 text-lg">{speech}</DeputySpeech>
-          <DeputyStatus>{copy.setUp.status}</DeputyStatus>
+          <DeputyStatus
+            className="whitespace-normal"
+            dot={status ? <Spinner className="size-2.5 text-green" /> : undefined}
+          >
+            {status ?? copy.setUp.status}
+          </DeputyStatus>
         </div>
       </div>
       <section

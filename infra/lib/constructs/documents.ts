@@ -77,7 +77,8 @@ export class Documents extends Construct {
             cors: [
               {
                 allowedOrigins: [props.siteOrigin],
-                // A form POST: no preflight, no headers of its own.
+                // A form POST with no headers of its own. The site follows its progress, which
+                // makes the browser ask first (a preflight for POST); this rule answers both.
                 allowedMethods: [HttpMethods.POST],
                 maxAge: 3600,
               },

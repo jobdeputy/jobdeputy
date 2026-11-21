@@ -60,7 +60,10 @@ describe('concurrent requests (deployed)', () => {
 
   it('starts one crawl for the same page submitted in parallel, and returns it to the others', async () => {
     const user = await newUser();
-    const url = new URL('test-site/jobs?same=1', testSite).href;
+    // A page whose crawl stays in progress (its site is down, so it waits to retry), as above:
+    // a fast page's crawl can finish before a late duplicate lands (one request's Lambda cold
+    // starting after a deploy), and that one then rightly starts a new crawl (seen on dev, 2026-11-21).
+    const url = new URL('test-site/unavailable?same=1', testSite).href;
     const results = await Promise.all(
       [1, 2, 3, 4].map(() =>
         callApi(api, 'POST', 'me/crawls', user.accessToken, { url, aiSource: 'none' }),
@@ -76,6 +79,7 @@ describe('concurrent requests (deployed)', () => {
     ).toBe(true);
     const ids = new Set(results.filter((r) => r.status !== 409).map((r) => r.body.crawlId));
     expect(ids.size).toBe(1);
+    // Left in progress on purpose: deleting the account afterwards stops it (T12).
   });
 
   it('saves one of several simultaneous saves and answers the others with 409 (a double-click)', async () => {

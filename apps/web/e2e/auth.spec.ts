@@ -72,6 +72,43 @@ test('creates an account, confirms it with the code, lands signed in, and signs 
   await expectNoAccessibilityViolations(page);
   await expectNoHorizontalScroll(page);
   await page.getByRole('button', { name: 'Continue' }).click();
+  // Step 3, the résumé: a wrong file is refused before anything is sent; a PDF goes up, is
+  // checked, and is ready; then the set-up ends.
+  await expect(page.getByRole('heading', { level: 1, name: 'Add your résumé.' })).toBeFocused();
+  await expect(page.getByRole('banner')).toContainText('Step 3 of 3');
+  const picker = page.locator('input[type="file"]');
+  await page.getByRole('button', { name: 'Choose a file' }).waitFor();
+  await picker.setInputFiles({
+    name: 'notes.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('x'),
+  });
+  await expect(
+    page.getByText('notes.txt isn’t a PDF or DOCX file.', { exact: false }),
+  ).toBeVisible();
+  await expectNoAccessibilityViolations(page);
+  // Dropped on the zone, as a person would drag it in.
+  const dropped = await page.evaluateHandle(() => {
+    const transfer = new DataTransfer();
+    transfer.items.add(
+      new File(['%PDF-1.7 a résumé'], 'Alex_Morgan_Resume.pdf', { type: 'application/pdf' }),
+    );
+    return transfer;
+  });
+  const zone = page.getByText('Drop your résumé here');
+  for (const type of ['dragenter', 'dragover', 'drop']) {
+    await zone.dispatchEvent(type, { dataTransfer: dropped });
+  }
+  const resume = page.getByRole('list', { name: 'Your résumé' });
+  await expect(resume).toContainText('Checking it for malware');
+  await expect(page.getByText('Checking your file')).toBeVisible();
+  await expectNoAccessibilityViolations(page);
+  // The fake's check takes 3 s, asked about every 2 s.
+  await expect(resume.getByText('Ready', { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText('I’ll tailor from this one.')).toBeVisible();
+  await expectNoAccessibilityViolations(page);
+  await expectNoHorizontalScroll(page);
+  await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'You’re in.' })).toBeFocused();
 
   await page.getByRole('button', { name: 'Sign out' }).click();

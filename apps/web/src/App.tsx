@@ -92,12 +92,14 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
 const SET_UP_NEXT: Record<SetUpStep, SetUpStep | 'done'> = {
   welcome: 'you',
   you: 'roles',
-  roles: 'done',
+  roles: 'resume',
+  resume: 'done',
 };
 const SET_UP_BACK: Record<SetUpStep, SetUpStep> = {
   welcome: 'welcome',
   you: 'welcome',
   roles: 'you',
+  resume: 'roles',
 };
 
 /**
