@@ -36,10 +36,13 @@ export function StepResume({
   onDone,
   onBack,
   onMood,
+  checkEvery,
 }: {
   onDone: () => void;
   onBack: () => void;
   onMood: (mood: ResumeMood) => void;
+  /** How often a résumé being checked is asked about (2 s; the tests ask faster). */
+  checkEvery?: number;
 }) {
   const text = copy.setUp.resume;
   const documents = useDocuments();
@@ -59,7 +62,15 @@ export function StepResume({
           />
         }
       >
-        {(saved) => <ResumeForm saved={saved} onDone={onDone} onBack={onBack} onMood={onMood} />}
+        {(saved) => (
+          <ResumeForm
+            saved={saved}
+            onDone={onDone}
+            onBack={onBack}
+            onMood={onMood}
+            checkEvery={checkEvery}
+          />
+        )}
       </QueryRegion>
     </>
   );
@@ -76,12 +87,14 @@ function ResumeForm({
   onDone,
   onBack,
   onMood,
+  checkEvery,
 }: {
   /** The person's résumés, newest first; the step starts from `startingDocument`'s pick. */
   saved: Document[];
   onDone: () => void;
   onBack: () => void;
   onMood: (mood: ResumeMood) => void;
+  checkEvery: number | undefined;
 }) {
   const text = copy.setUp.resume;
   const api = useApi();
@@ -139,7 +152,7 @@ function ResumeForm({
     setError(reason);
   }
 
-  const polled = useDocument(held.kind === 'document' ? held.document : null);
+  const polled = useDocument(held.kind === 'document' ? held.document : null, checkEvery);
   const document = held.kind === 'document' ? (polled.data ?? held.document) : null;
   const checking = document !== null && isChecking(document);
   const unusable = document?.status === 'rejected' || document?.status === 'failed';

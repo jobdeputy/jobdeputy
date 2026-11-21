@@ -6,7 +6,7 @@ import {
   type DocumentStatus,
   MAX_UPLOAD_BYTES,
 } from '@jobdeputy/shared/documents';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ApiClient, ApiError, isFinal, type UploadForm, useApi } from './index.ts';
 
 /**
@@ -131,13 +131,21 @@ export function documentsQuery(api: ApiClient) {
  * checking it. A failed read keeps the last answer on screen and is asked again on the next beat,
  * unless asking again can't help (signed out, account closed, or the résumé is gone).
  */
-export function useDocument(initial: Document | null) {
+export function useDocument(initial: Document | null, checkEvery = CHECK_EVERY_MS) {
   const api = useApi();
+  const queries = useQueryClient();
   const documentId = initial?.documentId;
   return useQuery({
     queryKey: ['documents', documentId ?? 'none'],
-    // A step that opens again finds the last answer here (its key outlives the step).
-    queryFn: () => api.request<Document>('GET', `/me/documents/${documentId}`),
+    queryFn: async () => {
+      const latest = await api.request<Document>('GET', `/me/documents/${documentId}`);
+      // The list gets each answer too: a step that opens again starts from the list, which is kept
+      // longer than this query (gone 5 minutes after the step closes).
+      queries.setQueryData<Document[]>(['documents'], (all) =>
+        all?.map((each) => (each.documentId === latest.documentId ? latest : each)),
+      );
+      return latest;
+    },
     enabled: initial !== null,
     initialData: initial ?? undefined,
     // A done résumé doesn't change by itself, so the list's copy stands; one being checked is read.
@@ -146,7 +154,7 @@ export function useDocument(initial: Document | null) {
       isFinal(error) || (error instanceof ApiError && error.kind === 'not-found')
         ? false
         : data && isChecking(data)
-          ? CHECK_EVERY_MS
+          ? checkEvery
           : false,
     // Polled: a failed read is simply asked again on the next beat.
     retry: false,

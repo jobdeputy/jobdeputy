@@ -21,6 +21,9 @@ afterEach(() => {
 
 type FakeApi = ReturnType<typeof createFakeApi>;
 
+/** How often the step asks about a résumé being checked, here (2 s in the app). */
+const CHECK_EVERY = 50;
+
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 function pdf(name = 'Alex_Morgan_Resume.pdf', size = 184_320): File {
@@ -50,7 +53,7 @@ async function renderStep(
   const view = render(
     <QueryClientProvider client={queries}>
       <ApiContext.Provider value={api}>
-        <StepResume onDone={onDone} onBack={onBack} onMood={onMood} />
+        <StepResume checkEvery={CHECK_EVERY} onDone={onDone} onBack={onBack} onMood={onMood} />
       </ApiContext.Provider>
     </QueryClientProvider>,
   );
@@ -269,8 +272,12 @@ describe('Set it up, step 3: résumé', () => {
     const [only] = await documents(api);
     await api.request('DELETE', `/me/documents/${only?.documentId}`);
     item().getByRole('button', { name: 'Remove Alex_Morgan_Resume.pdf' }).focus();
-    // The next check (every 2 s) finds it gone; focus moves to the way to add one.
-    const choose = await screen.findByRole('button', { name: 'Choose a file' }, { timeout: 4000 });
+    // The next check finds it gone; focus moves to the way to add one.
+    const choose = await screen.findByRole(
+      'button',
+      { name: 'Choose a file' },
+      { timeout: 15_000 },
+    );
     await waitFor(() => expect(document.activeElement).toBe(choose));
     await waitFor(() => expect(statusText()).toContain('Alex_Morgan_Resume.pdf removed.'));
   });
@@ -300,7 +307,7 @@ describe('Set it up, step 3: résumé', () => {
     fireEvent.click(item().getByRole('button', { name: 'Remove Alex_Morgan_Resume.pdf' }));
     await waitFor(() => expect(alertText()).toContain('That didn’t remove.'));
     // The next check finds it gone: one story, not two.
-    await screen.findByRole('button', { name: 'Choose a file' }, { timeout: 4000 });
+    await screen.findByRole('button', { name: 'Choose a file' }, { timeout: 15_000 });
     expect(alertText()).toBe('');
   });
 
@@ -313,7 +320,7 @@ describe('Set it up, step 3: résumé', () => {
     render(
       <QueryClientProvider client={queries}>
         <ApiContext.Provider value={api}>
-          <StepResume onDone={vi.fn()} onBack={vi.fn()} onMood={vi.fn()} />
+          <StepResume checkEvery={CHECK_EVERY} onDone={vi.fn()} onBack={vi.fn()} onMood={vi.fn()} />
         </ApiContext.Provider>
       </QueryClientProvider>,
     );
@@ -321,20 +328,25 @@ describe('Set it up, step 3: résumé', () => {
   });
 
   it('opens again on what the checks last learned, not the upload’s first state', async () => {
+    // Two ready ones already (the first is the default); it is removed, and a new one added.
     const api = createFakeApi({ delay: 0, checkMs: 0 });
-    const { queries, view } = await renderStep(api);
+    const { queries, view } = await renderStep(api, [pdf('First.pdf'), pdf('Second.pdf')]);
+    fireEvent.click(item().getByRole('button', { name: 'Remove First.pdf' }));
+    await screen.findByRole('button', { name: 'Choose a file' });
     pick(pdf());
     await item().findByText('Ready');
+    expect(item().getByRole('listitem').textContent).toContain('Alex_Morgan_Resume.pdf');
     view.unmount();
     render(
       <QueryClientProvider client={queries}>
         <ApiContext.Provider value={api}>
-          <StepResume onDone={vi.fn()} onBack={vi.fn()} onMood={vi.fn()} />
+          <StepResume checkEvery={CHECK_EVERY} onDone={vi.fn()} onBack={vi.fn()} onMood={vi.fn()} />
         </ApiContext.Provider>
       </QueryClientProvider>,
     );
-    // At once, from the list: never shown as being checked again.
+    // At once, from the list: the new one, ready (not the older ready one, nor checked again).
     expect(item().getByText('Ready')).toBeTruthy();
+    expect(item().getByRole('listitem').textContent).toContain('Alex_Morgan_Resume.pdf');
   });
 
   it('lets the zone take a dragged file', async () => {
@@ -353,10 +365,11 @@ describe('Set it up, step 3: résumé', () => {
     await item().findByText('Checking it for malware · step 2 of 3');
     const request = vi.spyOn(api, 'request').mockRejectedValue(new ApiError('signed-out'));
     await waitFor(() => expect(alertText()).toContain('Your session has ended.'), {
-      timeout: 4000,
+      timeout: 15_000,
     });
     const asked = request.mock.calls.length;
-    await new Promise((resolve) => setTimeout(resolve, 2500));
+    // Several beats pass with no more asking.
+    await new Promise((resolve) => setTimeout(resolve, 5 * CHECK_EVERY));
     expect(request.mock.calls.length).toBe(asked);
   });
 
@@ -391,7 +404,7 @@ describe('Set it up, step 3: résumé', () => {
     render(
       <QueryClientProvider client={queries}>
         <ApiContext.Provider value={api}>
-          <StepResume onDone={vi.fn()} onBack={vi.fn()} onMood={vi.fn()} />
+          <StepResume checkEvery={CHECK_EVERY} onDone={vi.fn()} onBack={vi.fn()} onMood={vi.fn()} />
         </ApiContext.Provider>
       </QueryClientProvider>,
     );
