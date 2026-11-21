@@ -367,11 +367,48 @@ export const en = {
       'Check your connection, then try again. If it still won’t open, sign out and back in.',
     retry: 'Try again',
   },
-  /** The page a signed-in person sees until the app's own screens arrive. */
+  /** The signed-in app's page list (the sidebar; across the top on phones). */
+  nav: {
+    label: 'Primary',
+    profile: 'Profile',
+  },
+  /** The Profile page: what the deputy knows about the person (#33). */
+  profilePage: {
+    eyebrow: 'Profile',
+    title: 'What your deputy knows about you.',
+    intro: 'Everything your deputy uses to apply. Nothing reaches an employer without you.',
+    /** A fact with nothing saved yet. */
+    notAdded: 'Not added',
+    about: {
+      title: 'About you',
+      line: 'How you introduce yourself on drafts and application forms.',
+      name: {
+        title: 'Name and headline',
+        firstName: 'First name',
+        lastName: 'Last name',
+        preferredName: 'Preferred name',
+        headline: 'Headline',
+      },
+      contact: {
+        title: 'Contact and location',
+        email: 'Email',
+        phone: 'Phone',
+        city: 'City',
+        country: 'Country',
+      },
+      links: {
+        title: 'Links',
+        linkedin: 'LinkedIn',
+        github: 'GitHub',
+        portfolio: 'Portfolio',
+        other: 'Other links',
+      },
+    },
+    /** Country codes as shown (the US-only launch). */
+    countries: { US: 'United States' } as Record<string, string>,
+  },
+  /** Signing out (the header's button, on every signed-in page). */
   signedIn: {
-    kicker: 'Signed in',
-    title: 'You’re in.',
-    body: 'Signed in as {email}. Your search desk is on its way.',
     signOut: 'Sign out',
     signingOut: 'Signing out…',
   },

@@ -1,17 +1,19 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-import { SignedIn } from '@/components/auth/signed-in.tsx';
+import { AppShell, PAGES } from '@/components/app-shell.tsx';
 import { type AuthControl, AuthDrawer, type AuthMode } from '@/components/landing/auth-drawer.tsx';
 import { Hero } from '@/components/landing/hero.tsx';
 import { SiteHeader } from '@/components/landing/site-header.tsx';
+import { ProfilePage } from '@/components/profile/profile-page.tsx';
 import { SetUp, type SetUpStep } from '@/components/setup/set-up.tsx';
 import { SignedInLayout } from '@/components/signed-in-layout.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { QueryRegion } from '@/components/ui/query-region.tsx';
 import { copy } from '@/copy/index.ts';
-import { hasProfile, useProfile } from '@/lib/api/profile.ts';
+import { hasProfile, type Profile, useProfile } from '@/lib/api/profile.ts';
 import { useAuth } from '@/lib/auth/index.ts';
 import { useFinishBoot } from '@/lib/boot-loader.ts';
+import { navigate, usePath } from '@/lib/router.ts';
 
 /**
  * The app: the public landing page (the story of what the deputy does, and the way in), or, for a
@@ -66,7 +68,13 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
         skeleton={{ kind: 'block', rows: 4 }}
         label={copy.profile.loading}
         error={<ProfileFailed onRetry={() => profile.refetch()} />}
-        className="mx-auto w-full max-w-[1120px] px-[17px] py-8 sm:px-[clamp(21px,4vw,55px)] md:py-14"
+        // The set-up and the loading states sit in the page's width and gutters; the app's pages
+        // fill it, with the sidebar at its edge.
+        className={
+          step || profile.data === undefined
+            ? 'mx-auto w-full max-w-[1120px] px-[17px] py-8 sm:px-[clamp(21px,4vw,55px)] md:py-14'
+            : 'w-full'
+        }
       >
         {(data) =>
           step ? (
@@ -80,11 +88,27 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
               onBack={() => setSetUpStep(SET_UP_BACK[step])}
             />
           ) : (
-            <SignedIn email={email} />
+            <SignedInPages profile={data} />
           )
         }
       </QueryRegion>
     </SignedInLayout>
+  );
+}
+
+/**
+ * The app's pages once the set-up is done (#33): each by its path, in the app shell. Any other
+ * path (the landing's `/`, an old link) goes to the Profile page, the only page so far.
+ */
+function SignedInPages({ profile }: { profile: Profile }) {
+  const path = usePath();
+  useEffect(() => {
+    if (!PAGES.some((page) => page.path === path)) navigate('/profile', { replace: true });
+  }, [path]);
+  return (
+    <AppShell path={path}>
+      <ProfilePage profile={profile} />
+    </AppShell>
   );
 }
 

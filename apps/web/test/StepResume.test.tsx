@@ -127,7 +127,9 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     expect(item().getByText('PDF · 180 kB')).toBeTruthy();
     await waitFor(() => expect(statusText()).toContain('Alex_Morgan_Resume.pdf is ready.'));
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(await screen.findByRole('heading', { level: 1, name: 'You’re in.' })).toBeTruthy();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'What your deputy knows about you.' }),
+    ).toBeTruthy();
     expect((await documents(api)).map((each) => each.status)).toEqual(['ready']);
   });
 
