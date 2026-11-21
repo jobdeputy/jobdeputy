@@ -132,9 +132,10 @@ export function documentsQuery(api: ApiClient) {
   return {
     queryKey: ['documents'],
     // Kept only while a screen shows them (see useDocuments), whoever asks for them; read when it
-    // opens, not again on returning to the tab (only the opening read is used).
+    // opens, not again on returning to the tab or the network (only the opening read is used).
     gcTime: 0,
     refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     queryFn: async () =>
       (await api.request<{ documents: Document[] }>('GET', '/me/documents')).documents,
   };

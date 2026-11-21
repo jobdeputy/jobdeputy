@@ -46,10 +46,17 @@ export function StepResume({
 }) {
   const text = copy.setUp.resume;
   const documents = useDocuments();
-  // What the footer offers, from the form; until the résumés are read (or if they can't be), the
-  // step can still be skipped or left: it is optional.
-  const [form, setForm] = useState<FormState>({ mood: 'idle', canContinue: false, busy: false });
-  useEffect(() => onMood(form.mood), [form.mood, onMood]);
+  // What the form says, once it is on screen (null before, and after it goes).
+  const [form, setForm] = useState<FormState | null>(null);
+  const mood = form?.mood ?? 'idle';
+  useEffect(() => onMood(mood), [mood, onMood]);
+  // The footer: the form's, once it is on screen; without a form, only where the step would
+  // otherwise be a dead end (it is optional): its résumés can't be read for now, or wait for a
+  // connection. Never once the session or account has ended (Sign out is in the header).
+  const footer = form
+    ? !form.ended
+    : (documents.isError && !isFinal(documents.error)) ||
+      (documents.isPaused && documents.data === undefined);
   return (
     <>
       <StepIntro eyebrow={text.eyebrow} title={text.title} intro={text.intro} />
@@ -68,20 +75,16 @@ export function StepResume({
       >
         {(saved) => <ResumeForm saved={saved} onState={setForm} checkEvery={checkEvery} />}
       </QueryRegion>
-      {/* Once the résumés are in, or can't be read, or wait for a connection (not during a short
-          load, where Skip would turn into Continue under the person); never once the session or
-          account has ended (Sign out is in the header). */}
-      {(documents.data !== undefined || documents.isError || documents.isPaused) &&
-        !isFinal(documents.error) && (
-          <div className="flex flex-wrap items-center gap-3">
-            <Button size="lg" onClick={onDone} disabled={form.busy}>
-              {form.canContinue ? copy.setUp.continue : text.skip}
-            </Button>
-            <Button variant="outline" size="lg" onClick={onBack} disabled={form.busy}>
-              {copy.setUp.back}
-            </Button>
-          </div>
-        )}
+      {footer && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button size="lg" onClick={onDone} disabled={form?.busy}>
+            {form?.canContinue ? copy.setUp.continue : text.skip}
+          </Button>
+          <Button variant="outline" size="lg" onClick={onBack} disabled={form?.busy}>
+            {copy.setUp.back}
+          </Button>
+        </div>
+      )}
     </>
   );
 }
@@ -93,6 +96,8 @@ interface FormState {
   canContinue: boolean;
   /** An upload or a removal is under way: the footer waits (Cancel stops an upload). */
   busy: boolean;
+  /** The session or account ended while following the résumé: there is no way on here. */
+  ended: boolean;
 }
 
 /** What the step holds: nothing yet, a file on its way up, or a résumé the API has. */
@@ -108,7 +113,7 @@ function ResumeForm({
 }: {
   /** The person's résumés, newest first; the step starts from `startingDocument`'s pick. */
   saved: Document[];
-  onState: (state: FormState) => void;
+  onState: (state: FormState | null) => void;
   checkEvery: number | undefined;
 }) {
   const text = copy.setUp.resume;
@@ -300,7 +305,17 @@ function ResumeForm({
   const busy = uploading || removing;
   // A file is in (being checked, or ready): the server carries on if the person moves on.
   const canContinue = document !== null && !unusable;
-  useEffect(() => onState({ mood, canContinue, busy }), [mood, canContinue, busy, onState]);
+  const ended = pollEnded !== null;
+  useEffect(
+    () => onState({ mood, canContinue, busy, ended }),
+    [mood, canContinue, busy, ended, onState],
+  );
+  useEffect(() => () => onState(null), [onState]);
+  // The footer goes when it ends: focus moves to why, rather than to nowhere.
+  const alertLine = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (ended) alertLine.current?.focus();
+  }, [ended]);
   const alert = error ?? pollEnded ?? (unusable ? (document?.error ?? text.unusable) : null);
   return (
     <div className="grid gap-6">
@@ -435,7 +450,12 @@ function ResumeForm({
       <p role="status" className="sr-only">
         {spoken}
       </p>
-      <p role="alert" className={cn('m-0 text-sm font-[650] text-danger-ink', !alert && 'sr-only')}>
+      <p
+        ref={alertLine}
+        role="alert"
+        tabIndex={-1}
+        className={cn('m-0 text-sm font-[650] text-danger-ink outline-none', !alert && 'sr-only')}
+      >
         {alert}
       </p>
     </div>
