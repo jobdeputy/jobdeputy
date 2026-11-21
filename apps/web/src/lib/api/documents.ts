@@ -37,6 +37,11 @@ export interface StartedUpload {
 /** How often a résumé being checked is asked about again. */
 export const CHECK_EVERY_MS = 2000;
 
+/** The server couldn't use it (failed the scan, or couldn't be read). */
+export function isUnusable(document: Pick<Document, 'status'>): boolean {
+  return document.status === 'rejected' || document.status === 'failed';
+}
+
 /** Whether the server is still working on it (checking it, or reading it). */
 export function isChecking(document: Pick<Document, 'status'>): boolean {
   return document.status === 'pending' || document.status === 'processing';
@@ -52,7 +57,7 @@ export function markUploadedHere(documentId: string): void {
 
 /**
  * The résumé the set-up shows from what is saved (newest first): the newest one whose file was
- * sent from this page, whatever its state (what the person just did); else a ready one (the default
+ * sent from this page, ready or being checked (what the person just did); else a ready one (the default
  * first); else one being read; else the newest the server couldn't use, so the person knows. Any
  * other `pending` one is left out: the server shows the same for a file being scanned and for an
  * upload that never came (a closed tab; it forgets those after a day), so the step can't tell.
@@ -66,7 +71,7 @@ export function startingDocument(
   );
   const ready = known.filter((document) => document.status === 'ready');
   return (
-    known.find((document) => sentHere.has(document.documentId)) ??
+    known.find((document) => sentHere.has(document.documentId) && !isUnusable(document)) ??
     ready.find((document) => document.isDefault) ??
     ready[0] ??
     known.find(isChecking) ??
@@ -118,7 +123,6 @@ export function useDocuments() {
   const api = useApi();
   return useQuery({
     ...documentsQuery(api),
-    gcTime: 0,
     retry: (failures, error) =>
       failures < 1 && error instanceof ApiError && error.kind === 'offline',
   });
@@ -127,6 +131,8 @@ export function useDocuments() {
 export function documentsQuery(api: ApiClient) {
   return {
     queryKey: ['documents'],
+    // Kept only while a screen shows them (see useDocuments), whoever asks for them.
+    gcTime: 0,
     queryFn: async () =>
       (await api.request<{ documents: Document[] }>('GET', '/me/documents')).documents,
   };

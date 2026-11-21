@@ -57,7 +57,13 @@ async function renderStep(
       </ApiContext.Provider>
     </QueryClientProvider>,
   );
-  await screen.findByRole('button', { name: /Skip for now|Continue/ });
+  // The form, once the résumés are read: the way to add one, or the one held.
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('button', { name: 'Choose a file' }) ??
+        screen.queryByRole('list', { name: 'Your résumé' }),
+    ).toBeTruthy(),
+  );
   return { api, onDone, onBack, onMood, queries, view };
 }
 
@@ -116,7 +122,7 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     pick(pdf());
     await waitFor(() => expect(item().getByText('Ready')).toBeTruthy());
     // Pleased with it, beside the step.
-    expect(screen.getByText('I’ll tailor from this one.')).toBeTruthy();
+    expect(await screen.findByText('I’ll tailor from this one.')).toBeTruthy();
     expect(item().getByText('PDF · 180 kB')).toBeTruthy();
     await waitFor(() => expect(statusText()).toContain('Alex_Morgan_Resume.pdf is ready.'));
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
@@ -138,7 +144,7 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     await waitFor(() =>
       expect(item().getByText('Checking it for malware · step 2 of 3')).toBeTruthy(),
     );
-    expect(onMood).toHaveBeenLastCalledWith('working');
+    await waitFor(() => expect(onMood).toHaveBeenLastCalledWith('working'));
     await waitFor(() =>
       expect(statusText()).toContain(
         'Alex_Morgan_Resume.pdf is uploaded. Checking it for malware.',
@@ -156,7 +162,7 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     const progress = await screen.findByRole('progressbar', { name: 'Uploading résumé' });
     expect(progress).toBeTruthy();
     expect(item().getByText('Uploading · step 1 of 3')).toBeTruthy();
-    expect(onMood).toHaveBeenLastCalledWith('working');
+    await waitFor(() => expect(onMood).toHaveBeenLastCalledWith('working'));
     // Leaving mid-upload is Cancel's job: the footer waits.
     expect((screen.getByRole('button', { name: 'Back' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(await item().findByRole('button', { name: 'Cancel Alex_Morgan_Resume.pdf' }));
@@ -166,7 +172,7 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
       expect(statusText()).toContain('Upload of Alex_Morgan_Resume.pdf cancelled.'),
     );
     await waitFor(async () => expect(await documents(api)).toEqual([]));
-    expect(onMood).toHaveBeenLastCalledWith('idle');
+    await waitFor(() => expect(onMood).toHaveBeenLastCalledWith('idle'));
   });
 
   it.each([
@@ -190,7 +196,7 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
       expect(alertText()).toContain('This file failed the malware scan and was deleted.'),
     );
     expect(item().getByText('Couldn’t be used')).toBeTruthy();
-    expect(onMood).toHaveBeenLastCalledWith('idle');
+    await waitFor(() => expect(onMood).toHaveBeenLastCalledWith('idle'));
     expect(screen.getByRole('button', { name: 'Skip for now' })).toBeTruthy();
     fireEvent.click(item().getByRole('button', { name: 'Remove malware.pdf' }));
     const choose = await screen.findByRole('button', { name: 'Choose a file' });
@@ -320,6 +326,9 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     pick(pdf('still-checking.pdf'));
     await item().findByText('Checking it for malware · step 2 of 3');
     view.unmount();
+    // Closed for real: what it kept is let go before it opens again (as Back, then Continue).
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const reads = vi.spyOn(api, 'request');
     render(
       <QueryClientProvider client={queries}>
         <ApiContext.Provider value={api}>
@@ -327,14 +336,40 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
         </ApiContext.Provider>
       </QueryClientProvider>,
     );
+    await screen.findByRole('list', { name: 'Your résumé' });
+    expect(reads).toHaveBeenCalledWith('GET', '/me/documents');
     expect(await item().findByText('Checking it for malware · step 2 of 3')).toBeTruthy();
     expect(item().getByRole('listitem').textContent).toContain('still-checking.pdf');
+  });
+
+  it('opens again on a résumé that got ready meanwhile, without saying it again', async () => {
+    const api = createFakeApi({ delay: 0, checkMs: 150 });
+    const { queries, view } = await renderStep(api);
+    pick(pdf());
+    await item().findByText('Checking it for malware · step 2 of 3');
+    view.unmount();
+    // Ready on the server while the step was closed.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    render(
+      <QueryClientProvider client={queries}>
+        <ApiContext.Provider value={api}>
+          <StepResume checkEvery={CHECK_EVERY} onDone={vi.fn()} onBack={vi.fn()} onMood={vi.fn()} />
+        </ApiContext.Provider>
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText('Ready')).toBeTruthy();
+    // Not news: it was ready when the step opened.
+    await new Promise((resolve) => setTimeout(resolve, 10 * CHECK_EVERY));
+    expect(statusText()).not.toContain('is ready');
   });
 
   it('opens again without a résumé removed elsewhere meanwhile', async () => {
     const api = createFakeApi({ delay: 0, checkMs: 0 });
     const { queries, view } = await renderStep(api, [pdf('Earlier.pdf')]);
     view.unmount();
+    // Closed for real: what it kept is let go before it opens again (as Back, then Continue).
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const reads = vi.spyOn(api, 'request');
     const [only] = await documents(api);
     await api.request('DELETE', `/me/documents/${only?.documentId}`);
     render(
@@ -345,6 +380,7 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
       </QueryClientProvider>,
     );
     expect(await screen.findByRole('button', { name: 'Choose a file' })).toBeTruthy();
+    expect(reads).toHaveBeenCalledWith('GET', '/me/documents');
   });
 
   it('opens again on its own upload still being checked (Back, then Continue on step 2)', async () => {
@@ -353,6 +389,9 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     pick(pdf());
     await item().findByText('Checking it for malware · step 2 of 3');
     view.unmount();
+    // Closed for real: what it kept is let go before it opens again (as Back, then Continue).
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const reads = vi.spyOn(api, 'request');
     render(
       <QueryClientProvider client={queries}>
         <ApiContext.Provider value={api}>
@@ -360,6 +399,8 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
         </ApiContext.Provider>
       </QueryClientProvider>,
     );
+    await screen.findByRole('list', { name: 'Your résumé' });
+    expect(reads).toHaveBeenCalledWith('GET', '/me/documents');
     expect(await item().findByText('Checking it for malware · step 2 of 3')).toBeTruthy();
   });
 
@@ -373,6 +414,9 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     await item().findByText('Ready');
     expect(item().getByRole('listitem').textContent).toContain('Alex_Morgan_Resume.pdf');
     view.unmount();
+    // Closed for real: what it kept is let go before it opens again (as Back, then Continue).
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const reads = vi.spyOn(api, 'request');
     render(
       <QueryClientProvider client={queries}>
         <ApiContext.Provider value={api}>
@@ -380,6 +424,8 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
         </ApiContext.Provider>
       </QueryClientProvider>,
     );
+    await screen.findByRole('list', { name: 'Your résumé' });
+    expect(reads).toHaveBeenCalledWith('GET', '/me/documents');
     // Read afresh: the new one, ready (not the older ready one).
     expect(await item().findByText('Ready')).toBeTruthy();
     expect(item().getByRole('listitem').textContent).toContain('Alex_Morgan_Resume.pdf');
@@ -447,8 +493,11 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
         </ApiContext.Provider>
       </QueryClientProvider>,
     );
+    // Optional: it can be skipped, or left, even when its résumés can't be read.
+    expect(screen.getByRole('button', { name: 'Skip for now' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
-    expect(await screen.findByRole('button', { name: 'Skip for now' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Choose a file' })).toBeTruthy();
   });
 });
 
@@ -475,6 +524,9 @@ describe('startingDocument', () => {
     // What was just sent from here comes first, even over a ready default.
     const chosen = doc('default', 'ready', true);
     expect(startingDocument([mine, chosen], new Set(['mine']))).toBe(mine);
+    // Unless the server couldn't use it: a ready one is still there to continue with.
+    const refused = doc('refused', 'rejected');
+    expect(startingDocument([refused, chosen], new Set(['refused']))).toBe(chosen);
     const failed = doc('failed', 'failed');
     expect(startingDocument([doc('pending', 'pending'), failed], new Set())).toBe(failed);
   });

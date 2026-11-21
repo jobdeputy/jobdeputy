@@ -1,5 +1,4 @@
 import { MAX_DOCUMENTS } from '@jobdeputy/shared/documents';
-import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { type DragEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button.tsx';
 import { Progress } from '@/components/ui/progress.tsx';
@@ -10,6 +9,7 @@ import {
   checkFile,
   type Document,
   isChecking,
+  isUnusable,
   markUploadedHere,
   type StartedUpload,
   startingDocument,
@@ -46,6 +46,10 @@ export function StepResume({
 }) {
   const text = copy.setUp.resume;
   const documents = useDocuments();
+  // What the footer offers, from the form; until the résumés are read (or if they can't be), the
+  // step can still be skipped or left: it is optional.
+  const [form, setForm] = useState<FormState>({ mood: 'idle', canContinue: false, busy: false });
+  useEffect(() => onMood(form.mood), [form.mood, onMood]);
   return (
     <>
       <StepIntro eyebrow={text.eyebrow} title={text.title} intro={text.intro} />
@@ -62,18 +66,27 @@ export function StepResume({
           />
         }
       >
-        {(saved) => (
-          <ResumeForm
-            saved={saved}
-            onDone={onDone}
-            onBack={onBack}
-            onMood={onMood}
-            checkEvery={checkEvery}
-          />
-        )}
+        {(saved) => <ResumeForm saved={saved} onState={setForm} checkEvery={checkEvery} />}
       </QueryRegion>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button size="lg" onClick={onDone} disabled={form.busy}>
+          {form.canContinue ? copy.setUp.continue : text.skip}
+        </Button>
+        <Button variant="outline" size="lg" onClick={onBack} disabled={form.busy}>
+          {copy.setUp.back}
+        </Button>
+      </div>
     </>
   );
+}
+
+/** What the form tells the step: the deputy's mood, and what the footer offers. */
+interface FormState {
+  mood: ResumeMood;
+  /** A file is in (being checked, or ready): Continue; otherwise Skip for now. */
+  canContinue: boolean;
+  /** An upload or a removal is under way: the footer waits (Cancel stops an upload). */
+  busy: boolean;
 }
 
 /** What the step holds: nothing yet, a file on its way up, or a résumé the API has. */
@@ -84,21 +97,16 @@ type Held =
 
 function ResumeForm({
   saved,
-  onDone,
-  onBack,
-  onMood,
+  onState,
   checkEvery,
 }: {
   /** The person's résumés, newest first; the step starts from `startingDocument`'s pick. */
   saved: Document[];
-  onDone: () => void;
-  onBack: () => void;
-  onMood: (mood: ResumeMood) => void;
+  onState: (state: FormState) => void;
   checkEvery: number | undefined;
 }) {
   const text = copy.setUp.resume;
   const api = useApi();
-  const queries = useQueryClient();
   const [held, setHeld] = useState<Held>(() => {
     const document = startingDocument(saved);
     return document ? { kind: 'document', document } : { kind: 'none' };
@@ -155,7 +163,7 @@ function ResumeForm({
   const polled = useDocument(held.kind === 'document' ? held.document : null, checkEvery);
   const document = held.kind === 'document' ? (polled.data ?? held.document) : null;
   const checking = document !== null && isChecking(document);
-  const unusable = document?.status === 'rejected' || document?.status === 'failed';
+  const unusable = document !== null && isUnusable(document);
   // The polling stopped because asking again can't help.
   const pollEnded = isFinal(polled.error) ? refusalText(polled.error) : null;
   const long = useLongWait(checking);
@@ -166,7 +174,6 @@ function ResumeForm({
       : document?.status === 'ready'
         ? 'ready'
         : 'idle';
-  useEffect(() => onMood(mood), [mood, onMood]);
 
   // Each stage the server's check reaches is said as it comes (a file already done when the step
   // opened is not news). A failure is said by the alert below the list.
@@ -194,13 +201,12 @@ function ResumeForm({
   /** The résumé is gone (removed here, or elsewhere): forgotten, the step starts over, and says so. */
   const cleared = useCallback(
     (document: Document, focus: boolean) => {
-      forget(queries, document.documentId);
       setError(null);
       setRemoving(false);
       startOver(focus);
       say(fill(text.said.removed, { name: document.fileName }));
     },
-    [queries, say, startOver, text],
+    [say, startOver, text],
   );
 
   // Removed somewhere else while being followed here (a Remove under way here settles it itself).
@@ -256,7 +262,6 @@ function ResumeForm({
     // In: the server checks it now (the API's next read says so too).
     const document: Document = { ...started.document, status: 'pending', sizeBytes: file.size };
     markUploadedHere(document.documentId);
-    queries.setQueryData<Document[]>(['documents'], (all) => [document, ...(all ?? [])]);
     setHeld({ kind: 'document', document });
     say(fill(text.said.checking, { name }));
   }
@@ -275,11 +280,7 @@ function ResumeForm({
         return;
       }
     }
-    if (!here.current) {
-      forget(queries, document.documentId);
-      return;
-    }
-    cleared(document, true);
+    if (here.current) cleared(document, true);
   }
 
   function onDrop(event: DragEvent) {
@@ -293,6 +294,7 @@ function ResumeForm({
   const busy = uploading || removing;
   // A file is in (being checked, or ready): the server carries on if the person moves on.
   const canContinue = document !== null && !unusable;
+  useEffect(() => onState({ mood, canContinue, busy }), [mood, canContinue, busy, onState]);
   const alert = error ?? pollEnded ?? (unusable ? (document?.error ?? text.unusable) : null);
   return (
     <div className="grid gap-6">
@@ -430,24 +432,8 @@ function ResumeForm({
       <p role="alert" className={cn('m-0 text-sm font-[650] text-danger-ink', !alert && 'sr-only')}>
         {alert}
       </p>
-      <div className="flex flex-wrap items-center gap-3">
-        <Button size="lg" onClick={onDone} disabled={busy}>
-          {canContinue ? copy.setUp.continue : text.skip}
-        </Button>
-        <Button variant="outline" size="lg" onClick={onBack} disabled={busy}>
-          {copy.setUp.back}
-        </Button>
-      </div>
     </div>
   );
-}
-
-/** Drops a résumé from what the app has loaded (it is gone from the API). */
-function forget(queries: QueryClient, documentId: string) {
-  queries.setQueryData<Document[]>(['documents'], (list) =>
-    list?.filter((each) => each.documentId !== documentId),
-  );
-  queries.removeQueries({ queryKey: ['documents', documentId], exact: true });
 }
 
 /** Why a picked file can't be used, by what `checkFile` found. */
