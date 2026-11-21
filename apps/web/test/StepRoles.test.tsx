@@ -631,6 +631,18 @@ describe('Set it up, step 2: target roles', () => {
     expect(screen.queryByText(/Remove one to add another/)).toBeNull();
   });
 
+  it('gives a full list’s reason once, wherever it was last asked', async () => {
+    const titles = Array.from({ length: 10 }, (_, n) => `Role ${n + 1}`);
+    await renderStep(titles);
+    fireEvent.click(chip('Backend engineer'));
+    add('Data engineer');
+    expect(
+      screen.getAllByText('You can add up to 10 roles. Remove one to add another.', {
+        ignore: '[role=status]',
+      }),
+    ).toHaveLength(1);
+  });
+
   it('asks to try again when the API finds the list full but it fits', async () => {
     const { api } = await renderStep();
     const request = api.request.bind(api);

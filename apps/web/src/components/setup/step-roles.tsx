@@ -192,7 +192,11 @@ function RolesForm({
       if (now > MAX_ROLES) {
         setError(null);
         failOver(now);
-      } else fail(fill(text.full, { max: MAX }), moveFocus);
+      } else {
+        // Said beside the field now: not under the list as well.
+        setListError(null);
+        fail(fill(text.full, { max: MAX }), moveFocus);
+      }
       return null;
     }
     const checked = TITLE.safeParse(title);
