@@ -154,12 +154,12 @@ describe('Set it up, step 2: target roles', () => {
   it('stops at 10, from the field and from a chip', async () => {
     await renderStep(Array.from({ length: 10 }, (_, n) => `Role ${n + 1}`));
     add('Role 11');
-    expect(screen.getByText('You’ve added 10 roles. Remove one to add another.')).toBeTruthy();
+    expect(screen.getByText('You can add up to 10 roles. Remove one to add another.')).toBeTruthy();
     expect(screen.queryByRole('checkbox', { name: 'Role 11' })).toBeNull();
     fireEvent.click(chip('Backend engineer'));
     expect(chip('Backend engineer').checked).toBe(false);
     await waitFor(() =>
-      expect(statusText()).toBe('You’ve added 10 roles. Remove one to add another.'),
+      expect(statusText()).toBe('You can add up to 10 roles. Remove one to add another.'),
     );
   });
 
@@ -238,7 +238,7 @@ describe('Set it up, step 2: target roles', () => {
   it('keeps the count in sight while a reason shows', async () => {
     await renderStep(Array.from({ length: 10 }, (_, n) => `Role ${n + 1}`));
     add('Role 11');
-    expect(screen.getByText('You’ve added 10 roles. Remove one to add another.')).toBeTruthy();
+    expect(screen.getByText('You can add up to 10 roles. Remove one to add another.')).toBeTruthy();
     expect(screen.getByText('· 10 of 10 added')).toBeTruthy();
   });
 
@@ -296,7 +296,7 @@ describe('Set it up, step 2: target roles', () => {
     });
     fireEvent.click(chip('Backend engineer'));
     continueOn();
-    await waitFor(() => expect(alertText()).toMatch(/That didn’t save|couldn’t tell/));
+    await waitFor(() => expect(alertText()).toContain('We couldn’t tell whether that saved.'));
     spy.mockClear();
     spy.mockImplementation(request);
     continueOn();
@@ -313,7 +313,7 @@ describe('Set it up, step 2: target roles', () => {
     expect(screen.getByText('· 10 of 10 added')).toBeTruthy();
     fireEvent.click(chip('Backend engineer'));
     expect(chip('Backend engineer').checked).toBe(false);
-    expect(screen.getByText('You’ve added 10 roles. Remove one to add another.')).toBeTruthy();
+    expect(screen.getByText('You can add up to 10 roles. Remove one to add another.')).toBeTruthy();
   });
 
   it('won’t re-check a title past the limit when it names more than one saved role', async () => {
@@ -327,7 +327,7 @@ describe('Set it up, step 2: target roles', () => {
     fireEvent.click(chip('Role 1'));
     expect(chip('Role 1').checked).toBe(false);
     expect(screen.getByText('· 9 of 10 added')).toBeTruthy();
-    expect(screen.getByText('You’ve added 10 roles. Remove one to add another.')).toBeTruthy();
+    expect(screen.getByText('You can add up to 10 roles. Remove one to add another.')).toBeTruthy();
   });
 
   it('adds nothing on the Enter that ends composing', async () => {
@@ -341,13 +341,13 @@ describe('Set it up, step 2: target roles', () => {
   it('says a full list under the list, leaving the title field alone', async () => {
     await renderStep(Array.from({ length: 10 }, (_, n) => `Role ${n + 1}`));
     fireEvent.click(chip('Backend engineer'));
-    const reason = screen.getByText('You’ve added 10 roles. Remove one to add another.');
+    const reason = screen.getByText('You can add up to 10 roles. Remove one to add another.');
     expect(screen.getByLabelText('Job title').getAttribute('aria-invalid')).toBeNull();
     expect(
       screen.getByRole('group', { name: /Roles to look for/ }).getAttribute('aria-describedby'),
     ).toBe(reason.id);
     fireEvent.click(chip('Role 1'));
-    expect(screen.queryByText('You’ve added 10 roles. Remove one to add another.')).toBeNull();
+    expect(screen.queryByText('You can add up to 10 roles. Remove one to add another.')).toBeNull();
   });
 
   it('names a title the API refuses, so it can be changed', async () => {
@@ -392,7 +392,9 @@ describe('Set it up, step 2: target roles', () => {
     fireEvent.click(chip('Backend engineer'));
     fireEvent.click(chip('Platform engineer'));
     continueOn();
-    await waitFor(() => expect(alertText()).toContain('That didn’t save'));
+    await waitFor(() =>
+      expect(alertText()).toContain('We couldn’t tell whether that saved. Try again in a moment.'),
+    );
     spy.mockImplementation(request);
     // It did save; dropping it now removes it, unasked about.
     fireEvent.click(chip('Platform engineer'));
@@ -413,7 +415,9 @@ describe('Set it up, step 2: target roles', () => {
     fireEvent.click(chip('Backend engineer'));
     fireEvent.click(chip('Platform engineer'));
     continueOn();
-    await waitFor(() => expect(alertText()).toContain('That didn’t save. Try again in a moment.'));
+    await waitFor(() =>
+      expect(alertText()).toContain('We couldn’t tell whether that saved. Try again in a moment.'),
+    );
     expect(onSaved).not.toHaveBeenCalled();
     expect(await savedTitles(api)).toEqual(['Backend engineer']);
     spy.mockClear();
@@ -498,7 +502,7 @@ describe('Set it up, step 2: target roles', () => {
     // Eleven now: one must go before saving.
     continueOn();
     expect(
-      await screen.findByText('You’ve added 10 roles. Remove one to add another.'),
+      await screen.findByText('You can add up to 10 roles. Remove one to add another.'),
     ).toBeTruthy();
     fireEvent.click(chip('Role 9'));
     continueOn();
@@ -522,6 +526,22 @@ describe('Set it up, step 2: target roles', () => {
     expect(chip('Backend engineer').checked).toBe(true);
   });
 
+  it('says at once when roles taken in from elsewhere fill the list past the limit', async () => {
+    const titles = Array.from({ length: 9 }, (_, n) => `Role ${n + 1}`);
+    const { api } = await renderStep(titles);
+    const request = api.request.bind(api);
+    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      if (method !== 'POST') return request(method, path, body);
+      await request('POST', '/me/roles', { title: 'Elsewhere 1' });
+      await request('POST', '/me/roles', { title: 'Elsewhere 2' });
+      throw new ApiError('invalid', { status: 422 });
+    });
+    fireEvent.click(chip('Backend engineer'));
+    continueOn();
+    await waitFor(() => expect(alertText()).toContain('changed somewhere else'));
+    expect(screen.getByText('You can add up to 10 roles. Remove one to add another.')).toBeTruthy();
+  });
+
   it('says the list is full when the API finds it full', async () => {
     const { api } = await renderStep();
     const request = api.request.bind(api);
@@ -533,7 +553,7 @@ describe('Set it up, step 2: target roles', () => {
     fireEvent.click(chip('Backend engineer'));
     continueOn();
     await waitFor(() =>
-      expect(alertText()).toContain('You’ve added 10 roles. Remove one to add another.'),
+      expect(alertText()).toContain('You can add up to 10 roles. Remove one to add another.'),
     );
   });
 

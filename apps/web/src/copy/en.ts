@@ -255,7 +255,7 @@ export const en = {
       ],
       empty: 'Type a job title first, or pick one below.',
       duplicate: '{title} is already on your list.',
-      full: 'You’ve added {max} roles. Remove one to add another.',
+      full: 'You can add up to {max} roles. Remove one to add another.',
       none: 'Add at least one role, or pick a suggestion.',
       invalid: 'Check this title.',
       /** The API refused a title this page let through (its rules are newer). */
@@ -284,6 +284,7 @@ export const en = {
         'Something else in your profile was saved meanwhile. Press Continue to save this too.',
       /** A save's answer was lost, and what is saved can't be read either. */
       unknownOutcome: 'We couldn’t tell whether that saved. Check your connection, then try again.',
+      unknownOutcomeLater: 'We couldn’t tell whether that saved. Try again in a moment.',
       tooMany: 'Too many saves for now. Try again in {wait}.',
       /** The wait in tooMany, by count. */
       units: {

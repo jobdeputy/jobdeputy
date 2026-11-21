@@ -265,12 +265,8 @@ function RolesForm({
       return;
     }
     // Nothing to save, and no earlier save left in doubt: nothing to read either (offline, say).
-    const unchanged = plan(saved, titles);
-    if (
-      unsure.current.length === 0 &&
-      unchanged.add.length === 0 &&
-      unchanged.remove.length === 0
-    ) {
+    const toSave = plan(saved, titles);
+    if (unsure.current.length === 0 && toSave.add.length === 0 && toSave.remove.length === 0) {
       onSaved();
       return;
     }
@@ -321,7 +317,7 @@ function RolesForm({
       )
         unsure.current.push(doing.title);
       // The limit, reached by roles added elsewhere since the read: they are shown at once.
-      if (error instanceof ApiError && error.status === 422) {
+      if (isFull(error)) {
         try {
           const fresh = await readSaved();
           if (!here.current) return;
@@ -346,6 +342,8 @@ function RolesForm({
     unsure.current = [];
     if (merged.changed) {
       takeIn(merged.titles, titlesOf(fresh));
+      // Taken in, there may be more than fit: said now, not on the next try.
+      if (inUse(fresh, merged.titles) > MAX_ROLES) setListError(fill(text.full, { max: MAX }));
       return true;
     }
     before.current = titlesOf(fresh);
@@ -358,9 +356,11 @@ function RolesForm({
    */
   function refusalFor(error: unknown, doing: { title: string; post: boolean } | null): string {
     if (error instanceof ApiError) {
+      // Its answer lost, or failed on the server's side: it may have saved.
       if (error.kind === 'unsure') return copy.setUp.errors.unknownOutcome;
+      if (doing && error.kind === 'server') return copy.setUp.errors.unknownOutcomeLater;
       // The limit, reached by roles added elsewhere since the read.
-      if (error.status === 422) return fill(text.full, { max: MAX });
+      if (isFull(error)) return fill(text.full, { max: MAX });
       // The API refused this title (its rules, newer than this page's): only changing it helps.
       if (error.status === 400 && doing?.post) return fill(text.refused, { title: doing.title });
     }
@@ -591,4 +591,9 @@ function inUse(saved: readonly Role[], titles: readonly string[]): number {
     else firsts.push(role.title);
   }
   return titles.length + repeats;
+}
+
+/** The API's answer when the roles are at its limit. */
+function isFull(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 422;
 }
