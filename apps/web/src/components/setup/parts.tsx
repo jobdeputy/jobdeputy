@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+import { copy, fill, plural } from '@/copy/index.ts';
+import { ApiError, DEFAULT_RETRY_AFTER_SECONDS } from '@/lib/api/index.ts';
 
 /**
  * A step's heading: its eyebrow, its title (which takes focus when the step comes on, so the
@@ -50,4 +52,30 @@ export function Fact({ label, value, pill }: { label: string; value: string; pil
       )}
     </li>
   );
+}
+
+/**
+ * Why a step's save was refused, in the person's words, for the refusals every step meets the
+ * same way (a step reads conflicts, lost answers and wrong fields itself first).
+ */
+export function refusalText(error: unknown): string {
+  const errors = copy.setUp.errors;
+  const kind = error instanceof ApiError ? error.kind : 'server';
+  if (kind === 'too-many' && error instanceof ApiError) {
+    return fill(errors.tooMany, {
+      wait: waitText(error.retryAfterSeconds ?? DEFAULT_RETRY_AFTER_SECONDS),
+    });
+  }
+  if (kind === 'forbidden') return errors.accountClosed;
+  if (kind === 'signed-out') return errors.signedOut;
+  if (kind === 'offline') return errors.saveFailed;
+  return errors.tryLater;
+}
+
+/** A wait in words: "1 second", "30 seconds", "2 minutes". */
+function waitText(seconds: number): string {
+  const units = copy.setUp.errors.units;
+  return seconds < 60
+    ? plural(units.seconds, seconds)
+    : plural(units.minutes, Math.ceil(seconds / 60));
 }

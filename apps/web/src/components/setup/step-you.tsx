@@ -4,13 +4,13 @@ import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { Field } from '@/components/auth/fields.tsx';
 import { Button } from '@/components/ui/button.tsx';
-import { copy, fill, plural } from '@/copy/index.ts';
-import { ApiError, DEFAULT_RETRY_AFTER_SECONDS, useApi } from '@/lib/api/index.ts';
+import { copy, fill } from '@/copy/index.ts';
+import { ApiError, useApi } from '@/lib/api/index.ts';
 import type { Profile } from '@/lib/api/profile.ts';
 import { LIVE_REGION_BEAT_MS } from '@/lib/live-region.ts';
 import { useDelayedPending } from '@/lib/use-delayed-pending.ts';
 import { cn } from '@/lib/utils.ts';
-import { Fact, StepIntro } from './parts.tsx';
+import { Fact, refusalText, StepIntro } from './parts.tsx';
 
 type Name = 'firstName' | 'lastName' | 'city';
 type Values = Record<Name, string>;
@@ -226,20 +226,8 @@ export function StepYou({
         setValues(valuesOf(fresh));
         setRefusal(errorsText.changedElsewhere);
       }
-    } else if (kind === 'too-many' && error instanceof ApiError) {
-      setRefusal(
-        fill(errorsText.tooMany, {
-          wait: waitText(error.retryAfterSeconds ?? DEFAULT_RETRY_AFTER_SECONDS),
-        }),
-      );
-    } else if (kind === 'forbidden') {
-      setRefusal(errorsText.accountClosed);
-    } else if (kind === 'signed-out') {
-      setRefusal(errorsText.signedOut);
-    } else if (kind === 'offline') {
-      setRefusal(errorsText.saveFailed);
     } else {
-      setRefusal(errorsText.tryLater);
+      setRefusal(refusalText(error));
     }
   }
 
@@ -270,7 +258,7 @@ export function StepYou({
           <Fact label={text.country} value={copy.setUp.region} pill={copy.setUp.locked} />
         </ul>
         <p role="status" className="sr-only">
-          {pending && waiting ? text.saving : spoken}
+          {pending && waiting ? copy.setUp.saving : spoken}
         </p>
         {/* A saved field this step doesn't show that is wrong: shown, and part of the form's
             description until the next try (the status line above says it). */}
@@ -285,11 +273,11 @@ export function StepYou({
           {refusal}
         </p>
         <div className="flex flex-wrap items-center gap-3">
-          <Button type="submit" size="lg" pending={pending} pendingLabel={text.saving}>
-            {text.continue}
+          <Button type="submit" size="lg" pending={pending} pendingLabel={copy.setUp.saving}>
+            {copy.setUp.continue}
           </Button>
           <Button type="button" variant="outline" size="lg" onClick={onBack} disabled={pending}>
-            {text.back}
+            {copy.setUp.back}
           </Button>
         </div>
       </form>
@@ -372,14 +360,6 @@ function sameAnswers(saved: Values, sent: Values): boolean {
   return (['firstName', 'lastName', 'city'] as const).every(
     (name) => saved[name] === sent[name].trim(),
   );
-}
-
-/** A wait in words: "1 second", "30 seconds", "2 minutes". */
-function waitText(seconds: number): string {
-  const units = copy.setUp.errors.units;
-  return seconds < 60
-    ? plural(units.seconds, seconds)
-    : plural(units.minutes, Math.ceil(seconds / 60));
 }
 
 function invalid(name: Name): string {
