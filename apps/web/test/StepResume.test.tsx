@@ -285,6 +285,25 @@ describe('Set it up, step 3: résumé', () => {
     expect(screen.getByRole('button', { name: 'Choose a file' })).toBeTruthy();
   });
 
+  it('clears an earlier failure once the résumé turns out to be gone', async () => {
+    const api = createFakeApi({ delay: 0, checkMs: 60_000 });
+    await renderStep(api);
+    pick(pdf());
+    await item().findByText('Checking it for malware · step 2 of 3');
+    // The removal goes through, but its answer is lost.
+    const real = api.request.bind(api);
+    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      const answer = await real(method, path, body);
+      if (method === 'DELETE') throw new ApiError('unsure');
+      return answer;
+    });
+    fireEvent.click(item().getByRole('button', { name: 'Remove Alex_Morgan_Resume.pdf' }));
+    await waitFor(() => expect(alertText()).toContain('That didn’t remove.'));
+    // The next check finds it gone: one story, not two.
+    await screen.findByRole('button', { name: 'Choose a file' }, { timeout: 4000 });
+    expect(alertText()).toBe('');
+  });
+
   it('opens again on its own upload still being checked (Back, then Continue on step 2)', async () => {
     const api = createFakeApi({ delay: 0, checkMs: 60_000 });
     const { queries, view } = await renderStep(api);
@@ -299,6 +318,23 @@ describe('Set it up, step 3: résumé', () => {
       </QueryClientProvider>,
     );
     expect(await item().findByText('Checking it for malware · step 2 of 3')).toBeTruthy();
+  });
+
+  it('opens again on what the checks last learned, not the upload’s first state', async () => {
+    const api = createFakeApi({ delay: 0, checkMs: 0 });
+    const { queries, view } = await renderStep(api);
+    pick(pdf());
+    await item().findByText('Ready');
+    view.unmount();
+    render(
+      <QueryClientProvider client={queries}>
+        <ApiContext.Provider value={api}>
+          <StepResume onDone={vi.fn()} onBack={vi.fn()} onMood={vi.fn()} />
+        </ApiContext.Provider>
+      </QueryClientProvider>,
+    );
+    // At once, from the list: never shown as being checked again.
+    expect(item().getByText('Ready')).toBeTruthy();
   });
 
   it('lets the zone take a dragged file', async () => {

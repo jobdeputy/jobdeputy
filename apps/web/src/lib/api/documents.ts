@@ -136,6 +136,7 @@ export function useDocument(initial: Document | null) {
   const documentId = initial?.documentId;
   return useQuery({
     queryKey: ['documents', documentId ?? 'none'],
+    // A step that opens again finds the last answer here (its key outlives the step).
     queryFn: () => api.request<Document>('GET', `/me/documents/${documentId}`),
     enabled: initial !== null,
     initialData: initial ?? undefined,

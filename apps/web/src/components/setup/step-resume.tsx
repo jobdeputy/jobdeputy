@@ -1,7 +1,6 @@
 import { MAX_DOCUMENTS } from '@jobdeputy/shared/documents';
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
-import { type DragEvent, useEffect, useRef, useState } from 'react';
-import { flushSync } from 'react-dom';
+import { type DragEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button.tsx';
 import { Progress } from '@/components/ui/progress.tsx';
 import { QueryRegion } from '@/components/ui/query-region.tsx';
@@ -98,7 +97,8 @@ function ResumeForm({
   const picker = useRef<HTMLInputElement>(null);
   const zone = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLOListElement>(null);
-  // Focus was on the résumé when it went (removed elsewhere): it moves to the way to add one.
+  // The step went back to choosing a file and focus moves to its button once it is there (always
+  // after the person's own Cancel or Remove; after a removal elsewhere, only if it was on the résumé).
   const refocus = useRef(false);
   const choose = useRef<HTMLButtonElement>(null);
   // The upload under way, stopped by Cancel or by leaving the step.
@@ -167,36 +167,35 @@ function ResumeForm({
     if (document.status === 'ready') say(fill(text.said.ready, { name }));
   }, [document, say, text]);
 
-  // Removed somewhere else while being followed here: it is gone, so the step starts over.
-  const followed = held.kind === 'document' ? held.document.documentId : null;
-  const gone = polled.error instanceof ApiError && polled.error.kind === 'not-found';
-  useEffect(() => {
-    if (!gone || followed === null || held.kind !== 'document') return;
-    refocus.current = list.current?.contains(globalThis.document.activeElement) ?? false;
-    forget(queries, followed);
+  /** Puts the step back to choosing a file; focus goes to its button once it is back (`focus`). */
+  const startOver = useCallback((focus = true) => {
+    refocus.current = focus;
     setHeld({ kind: 'none' });
-    say(fill(text.said.removed, { name: held.document.fileName }));
-  }, [gone, followed, held, queries, say, text]);
+  }, []);
   useEffect(() => {
     if (held.kind !== 'none' || !refocus.current) return;
     refocus.current = false;
     choose.current?.focus();
   }, [held]);
 
-  // What the polling learns goes into the list too, so the step opens on it if it comes back.
-  const latest = polled.data;
-  useEffect(() => {
-    if (!latest) return;
-    queries.setQueryData<Document[]>(['documents'], (all) =>
-      all?.map((each) => (each.documentId === latest.documentId ? latest : each)),
-    );
-  }, [latest, queries]);
+  /** The résumé is gone (removed here, or elsewhere): forgotten, the step starts over, and says so. */
+  const cleared = useCallback(
+    (document: Document, focus: boolean) => {
+      forget(queries, document.documentId);
+      setError(null);
+      setRemoving(false);
+      startOver(focus);
+      say(fill(text.said.removed, { name: document.fileName }));
+    },
+    [queries, say, startOver, text],
+  );
 
-  /** Puts the step back to choosing a file, with focus on its button. */
-  function startOver() {
-    flushSync(() => setHeld({ kind: 'none' }));
-    choose.current?.focus();
-  }
+  // Removed somewhere else while being followed here (a Remove under way here settles it itself).
+  const gone = polled.error instanceof ApiError && polled.error.kind === 'not-found';
+  useEffect(() => {
+    if (!gone || removing || held.kind !== 'document') return;
+    cleared(held.document, list.current?.contains(globalThis.document.activeElement) ?? false);
+  }, [gone, removing, held, cleared]);
 
   async function add(file: File) {
     setError(null);
@@ -263,11 +262,11 @@ function ResumeForm({
         return;
       }
     }
-    forget(queries, document.documentId);
-    if (!here.current) return;
-    setRemoving(false);
-    startOver();
-    say(fill(text.said.removed, { name: document.fileName }));
+    if (!here.current) {
+      forget(queries, document.documentId);
+      return;
+    }
+    cleared(document, true);
   }
 
   function onDrop(event: DragEvent) {
