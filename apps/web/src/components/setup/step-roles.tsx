@@ -231,17 +231,18 @@ function RolesForm({
       : chosen.filter((chosenTitle) => !same(chosenTitle, title));
     const now = inUse(saved, chosen);
     const count = inUse(saved, next);
+    // A change to the list ends any reason given before it, shown or said.
+    setError(null);
     if (checked && count > MAX_ROLES) {
       if (now > MAX_ROLES) failOver(now);
       else failFull();
       return;
     }
-    setError(null);
     setListError(null);
     setChosen(next);
     // Still more than fit: what is left to remove is said; fitting again, the reason is gone.
     if (count > MAX_ROLES) failOver(count);
-    else if (now > MAX_ROLES || listError) quiet();
+    else quiet();
   }
 
   /**

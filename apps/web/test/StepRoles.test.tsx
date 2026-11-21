@@ -620,6 +620,17 @@ describe('Set it up, step 2: target roles', () => {
     expect(screen.queryByText(/Remove one to add another/)).toBeNull();
   });
 
+  it('stops saying a full list, given beside the title, once a chip makes room', async () => {
+    const titles = Array.from({ length: 10 }, (_, n) => `Role ${n + 1}`);
+    await renderStep(titles);
+    type('Data engineer');
+    fireEvent.keyDown(screen.getByLabelText('Job title'), { key: 'Enter' });
+    await waitFor(() => expect(statusText()).toContain('Remove one to add another.'));
+    fireEvent.click(chip('Role 1'));
+    expect(statusText()).toBe('');
+    expect(screen.queryByText(/Remove one to add another/)).toBeNull();
+  });
+
   it('asks to try again when the API finds the list full but it fits', async () => {
     const { api } = await renderStep();
     const request = api.request.bind(api);
