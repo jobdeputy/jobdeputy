@@ -193,6 +193,8 @@ describe('Set it up, step 2: target roles', () => {
     continueOn();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(request.mock.calls.map(([method, path]) => `${method} ${path}`)).toEqual([
+      // What is saved is read first, then changed.
+      'GET /me/roles',
       expect.stringMatching(/^DELETE \/me\/roles\/\w{26}$/),
       'POST /me/roles',
     ]);
@@ -221,11 +223,14 @@ describe('Set it up, step 2: target roles', () => {
     expect(await savedTitles(api)).toEqual(['Platform engineer']);
   });
 
-  it('saves on, past a typed title already chosen', async () => {
+  it('saves on, past a typed title already chosen (its reason gone too)', async () => {
     const { api, onSaved } = await renderStep();
     fireEvent.click(chip('Backend engineer'));
     type('backend engineer');
+    fireEvent.keyDown(screen.getByLabelText('Job title'), { key: 'Enter' });
+    expect(screen.getByText('Backend engineer is already on your list.')).toBeTruthy();
     continueOn();
+    expect(screen.queryByText('Backend engineer is already on your list.')).toBeNull();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(await savedTitles(api)).toEqual(['Backend engineer']);
   });
@@ -239,11 +244,17 @@ describe('Set it up, step 2: target roles', () => {
 
   it('drops a reason about to be said once typing starts', async () => {
     await renderStep(['Data engineer']);
-    type('data engineer');
-    fireEvent.keyDown(screen.getByLabelText('Job title'), { key: 'Enter' });
-    type('data engineers');
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    expect(statusText()).toBe('');
+    vi.useFakeTimers();
+    try {
+      type('data engineer');
+      fireEvent.keyDown(screen.getByLabelText('Job title'), { key: 'Enter' });
+      type('data engineers');
+      // Past the beat the reason would have been said on.
+      act(() => vi.advanceTimersByTime(1000));
+      expect(statusText()).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('takes a lost answer that went through as its own, not as a change elsewhere', async () => {
@@ -263,7 +274,7 @@ describe('Set it up, step 2: target roles', () => {
     fireEvent.click(chip('Platform engineer'));
     fireEvent.click(chip('Engineering manager'));
     continueOn();
-    await waitFor(() => expect(alertText()).toContain('That didn’t save.'));
+    await waitFor(() => expect(alertText()).toContain('We couldn’t tell whether that saved.'));
     // The one whose answer was lost did save; dropping it now removes it, unasked about.
     fireEvent.click(chip('Platform engineer'));
     continueOn();
@@ -272,40 +283,37 @@ describe('Set it up, step 2: target roles', () => {
     expect(await savedTitles(api)).toEqual(['Backend engineer', 'Engineering manager']);
   });
 
-  it('reads what is saved before sending again after a lost answer it couldn’t check', async () => {
+  it.each([
+    ['its answer was lost', new ApiError('unsure')],
+    ['the server failed after saving', new ApiError('server', { status: 503 })],
+  ])('never sends a title twice when %s', async (_, failure) => {
     const { api, onSaved } = await renderStep();
     const request = api.request.bind(api);
-    let lost = true;
     const spy = vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
-      if (!lost) return request(method, path, body);
-      if (method === 'POST') {
-        await request(method, path, body);
-        throw new ApiError('unsure');
-      }
-      throw new ApiError('server');
+      const answer = await request(method, path, body);
+      if (method === 'POST') throw failure;
+      return answer;
     });
     fireEvent.click(chip('Backend engineer'));
     continueOn();
-    await waitFor(() => expect(alertText()).toContain('We couldn’t tell whether that saved.'));
-    lost = false;
+    await waitFor(() => expect(alertText()).toMatch(/That didn’t save|couldn’t tell/));
     spy.mockClear();
+    spy.mockImplementation(request);
     continueOn();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    // Read, found saved: nothing sent again.
     expect(spy.mock.calls.map(([method]) => method)).toEqual(['GET']);
     expect(await savedTitles(api)).toEqual(['Backend engineer']);
   });
 
   it('counts roles, not titles, against the limit (two saved may share one)', async () => {
     const titles = Array.from({ length: 9 }, (_, n) => `Role ${n + 1}`);
-    const { api } = await renderStep([...titles, 'role 1']);
-    expect(screen.getByText('· 9 of 10 added')).toBeTruthy();
+    await renderStep([...titles, 'role 1']);
+    // Nine chips, ten roles: the count says what the limit counts.
+    expect(screen.getByText('· 10 of 10 added')).toBeTruthy();
     fireEvent.click(chip('Backend engineer'));
-    const request = vi.spyOn(api, 'request');
-    continueOn();
-    await waitFor(() =>
-      expect(screen.getByText('You’ve added 10 roles. Remove one to add another.')).toBeTruthy(),
-    );
-    expect(request).not.toHaveBeenCalled();
+    expect(chip('Backend engineer').checked).toBe(false);
+    expect(screen.getByText('You’ve added 10 roles. Remove one to add another.')).toBeTruthy();
   });
 
   it('adds nothing on the Enter that ends composing', async () => {
@@ -350,12 +358,12 @@ describe('Set it up, step 2: target roles', () => {
     );
   });
 
-  it('moves on without a request when nothing changed', async () => {
+  it('moves on, changing nothing, when nothing changed', async () => {
     const { api, onSaved } = await renderStep(['Data engineer']);
     const request = vi.spyOn(api, 'request');
     continueOn();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
-    expect(request).not.toHaveBeenCalled();
+    expect(request.mock.calls.map(([method]) => method)).toEqual(['GET']);
   });
 
   it('keeps what saved when a save stops part-way, and saves only the rest next time', async () => {
@@ -399,23 +407,12 @@ describe('Set it up, step 2: target roles', () => {
     expect(await savedTitles(api)).toEqual(['Platform engineer']);
   });
 
-  it('moves on when a save whose answer was lost did go through', async () => {
+  it('says it cannot tell when the answer was lost', async () => {
     const { api, onSaved } = await renderStep();
     const request = api.request.bind(api);
-    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
-      const answer = await request(method, path, body);
-      if (method === 'POST') throw new ApiError('unsure');
-      return answer;
-    });
-    fireEvent.click(chip('Backend engineer'));
-    continueOn();
-    await waitFor(() => expect(onSaved).toHaveBeenCalled());
-    expect(await savedTitles(api)).toEqual(['Backend engineer']);
-  });
-
-  it('says it cannot tell when the answer and the check are both lost', async () => {
-    const { api, onSaved } = await renderStep();
-    vi.spyOn(api, 'request').mockRejectedValue(new ApiError('unsure'));
+    vi.spyOn(api, 'request').mockImplementation((method, path, body) =>
+      method === 'POST' ? Promise.reject(new ApiError('unsure')) : request(method, path, body),
+    );
     fireEvent.click(chip('Backend engineer'));
     continueOn();
     await waitFor(() =>
@@ -427,20 +424,15 @@ describe('Set it up, step 2: target roles', () => {
   });
 
   it('shows roles added elsewhere meanwhile, chosen, before saving over them', async () => {
-    const { api, onSaved, queries } = await renderStep(['Data engineer']);
+    const { api, onSaved } = await renderStep(['Data engineer']);
+    // Another device adds one after this step opened (read when Continue is pressed).
     await api.request('POST', '/me/roles', { title: 'Mobile engineer' });
-    // The list is read again (as when the tab is come back to), and the step shown with it
-    // (TanStack tells the page on a timer of its own).
-    await act(async () => {
-      await queries.refetchQueries({ queryKey: ['roles'] });
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
     fireEvent.click(chip('Backend engineer'));
     const request = vi.spyOn(api, 'request');
     continueOn();
     await waitFor(() => expect(alertText()).toContain('Your roles changed somewhere else.'));
     expect(chip('Mobile engineer').checked).toBe(true);
-    expect(request).not.toHaveBeenCalled();
+    expect(request.mock.calls.map(([method]) => method)).toEqual(['GET']);
     continueOn();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(await savedTitles(api)).toEqual([
@@ -450,9 +442,9 @@ describe('Set it up, step 2: target roles', () => {
     ]);
   });
 
-  it('takes in a role removed elsewhere when a save is refused, and says so', async () => {
+  it('takes in roles removed and added elsewhere, then asks for room', async () => {
     const { api, onSaved } = await renderStep(['Data engineer', 'Mobile engineer']);
-    // Another device removes one, and adds nine: the next add is over the limit (422).
+    // Another device removes one, and adds nine.
     const [, mobile] = (await api.request<{ roles: Role[] }>('GET', '/me/roles')).roles;
     await api.request('DELETE', `/me/roles/${mobile?.roleId}`);
     for (let n = 1; n <= 9; n += 1) await api.request('POST', '/me/roles', { title: `Role ${n}` });
@@ -469,12 +461,29 @@ describe('Set it up, step 2: target roles', () => {
     expect(onSaved).not.toHaveBeenCalled();
     // Eleven now: one must go before saving.
     continueOn();
-    expect(screen.getByText('You’ve added 10 roles. Remove one to add another.')).toBeTruthy();
+    expect(
+      await screen.findByText('You’ve added 10 roles. Remove one to add another.'),
+    ).toBeTruthy();
     fireEvent.click(chip('Role 9'));
     continueOn();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(await savedTitles(api)).toHaveLength(10);
     expect(await savedTitles(api)).not.toContain('Role 9');
+  });
+
+  it('says the list is full when the API finds it full', async () => {
+    const { api } = await renderStep();
+    const request = api.request.bind(api);
+    vi.spyOn(api, 'request').mockImplementation((method, path, body) =>
+      method === 'POST'
+        ? Promise.reject(new ApiError('invalid', { status: 422 }))
+        : request(method, path, body),
+    );
+    fireEvent.click(chip('Backend engineer'));
+    continueOn();
+    await waitFor(() =>
+      expect(alertText()).toContain('You’ve added 10 roles. Remove one to add another.'),
+    );
   });
 
   it('says how long to wait, or that the session ended', async () => {
@@ -497,11 +506,14 @@ describe('Set it up, step 2: target roles', () => {
   it('locks the list while saving', async () => {
     const { api } = await renderStep();
     let answer: () => void = () => {};
-    vi.spyOn(api, 'request').mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          answer = () => resolve({ roleId: 'x'.repeat(26), title: 'Backend engineer', version: 1 });
-        }),
+    const request = api.request.bind(api);
+    vi.spyOn(api, 'request').mockImplementation((method, path, body) =>
+      method === 'POST'
+        ? new Promise((resolve) => {
+            answer = () =>
+              resolve({ roleId: 'x'.repeat(26), title: 'Backend engineer', version: 1 } as never);
+          })
+        : request(method, path, body),
     );
     fireEvent.click(chip('Backend engineer'));
     continueOn();
@@ -509,24 +521,30 @@ describe('Set it up, step 2: target roles', () => {
     expect((screen.getByRole('button', { name: 'Add' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(chip('Platform engineer'));
     expect(chip('Platform engineer').checked).toBe(false);
-    answer();
+    await act(async () => answer());
   });
 
   it('touches nothing once the step is gone (signed out mid-save)', async () => {
     const { api, queries, view } = await renderStep();
     let answer: () => void = () => {};
-    vi.spyOn(api, 'request').mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          answer = () => resolve({ roleId: 'x'.repeat(26), title: 'Backend engineer', version: 1 });
-        }),
+    const request = api.request.bind(api);
+    vi.spyOn(api, 'request').mockImplementation((method, path, body) =>
+      method === 'POST'
+        ? new Promise((resolve) => {
+            answer = () =>
+              resolve({ roleId: 'x'.repeat(26), title: 'Backend engineer', version: 1 } as never);
+          })
+        : request(method, path, body),
     );
     fireEvent.click(chip('Backend engineer'));
     continueOn();
+    // Sent (after the read): the step goes while its answer is on its way.
+    await waitFor(() =>
+      expect(api.request).toHaveBeenCalledWith('POST', '/me/roles', expect.anything()),
+    );
     view.unmount();
     queries.clear();
-    answer();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await act(async () => answer());
     expect(queries.getQueryData(['roles'])).toBeUndefined();
   });
 
@@ -548,6 +566,24 @@ describe('Set it up, step 2: target roles', () => {
     spy.mockImplementation(request);
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByLabelText('Job title')).toBeTruthy();
+  });
+
+  it('says the session ended (no Try again) when that is why the roles could not be read', async () => {
+    const api = createFakeApi({ delay: 0 });
+    vi.spyOn(api, 'request').mockRejectedValue(new ApiError('signed-out', { status: 401 }));
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <ApiContext.Provider value={api}>
+          <StepRoles onSaved={() => {}} onBack={() => {}} />
+        </ApiContext.Provider>
+      </QueryClientProvider>,
+    );
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Your session has ended. Sign in again to continue.',
+    );
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
   });
 });
 

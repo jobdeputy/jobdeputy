@@ -37,7 +37,7 @@ export function StepRoles({ onSaved, onBack }: { onSaved: () => void; onBack: ()
         query={roles}
         skeleton={{ kind: 'block', rows: 3 }}
         label={text.loading}
-        error={<RolesFailed onRetry={() => roles.refetch()} />}
+        error={<RolesFailed error={roles.error} onRetry={() => roles.refetch()} />}
       >
         {(saved) => <RolesForm saved={saved} onSaved={onSaved} onBack={onBack} />}
       </QueryRegion>
@@ -45,17 +45,24 @@ export function StepRoles({ onSaved, onBack }: { onSaved: () => void; onBack: ()
   );
 }
 
-/** The roles could not be read: say so, and offer to try again. */
-function RolesFailed({ onRetry }: { onRetry: () => void }) {
+/**
+ * The roles could not be read: say why, and offer to try again where that can help (not once the
+ * session has ended or the account is closed; Sign out is in the header).
+ */
+function RolesFailed({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   const text = copy.setUp.roles;
+  const kind = error instanceof ApiError ? error.kind : 'server';
+  const final = kind === 'signed-out' || kind === 'forbidden';
   return (
     <div className="grid justify-items-start gap-3">
       <p role="alert" className="m-0 text-sm font-[650] text-danger-ink">
-        {text.loadFailed}
+        {final ? refusalText(error) : text.loadFailed}
       </p>
-      <Button variant="outline" onClick={onRetry}>
-        {text.retry}
-      </Button>
+      {!final && (
+        <Button variant="outline" onClick={onRetry}>
+          {text.retry}
+        </Button>
+      )}
     </div>
   );
 }
@@ -91,8 +98,9 @@ function RolesForm({
   const listId = useId();
   const refusalId = useId();
   const listErrorId = useId();
-  // A save's answer was lost and what is saved couldn't be read either: the next save reads first.
-  const unread = useRef(false);
+  // Titles whose save or removal lost its answer: either way is this step's doing, not a change
+  // made elsewhere.
+  const unsure = useRef<string[]>([]);
   // A save that ends after the person has left (signed out, say) must not touch anything.
   const here = useRef(true);
   useEffect(() => {
@@ -157,7 +165,7 @@ function RolesForm({
       fail(fill(text.duplicate, { title: chip }), moveFocus);
       return null;
     }
-    if (chosen.length >= MAX_ROLES) {
+    if (inUse(saved, chosen) >= MAX_ROLES) {
       fail(fill(text.full, { max: MAX }), moveFocus);
       return null;
     }
@@ -178,7 +186,7 @@ function RolesForm({
     setDraft('');
     setError(null);
     setListError(null);
-    say(fill(text.added, { title: chip, count: String(next.length), max: MAX }));
+    say(fill(text.added, { title: chip, count: String(inUse(saved, next)), max: MAX }));
     return next;
   }
 
@@ -193,7 +201,7 @@ function RolesForm({
 
   function toggle(title: string, checked: boolean) {
     if (pending) return;
-    if (checked && chosen.length >= MAX_ROLES) {
+    if (checked && inUse(saved, chosen) >= MAX_ROLES) {
       failList(fill(text.full, { max: MAX }));
       return;
     }
@@ -204,13 +212,15 @@ function RolesForm({
     );
   }
 
-  /** Reads the saved roles again; shows them here and returns them (null if they can't be read). */
-  async function reload(): Promise<Role[] | null> {
-    try {
-      return await queries.fetchQuery({ ...rolesQuery(api), staleTime: 0 });
-    } catch {
-      return null;
-    }
+  /**
+   * Reads what is saved now, before anything is sent: a save whose answer was lost, or that failed
+   * on the server's side, may have gone through, and sent again it would be saved twice. A read
+   * already on its way may be from before it, so it is cancelled; offline, this read fails at once
+   * rather than waiting for the connection.
+   */
+  async function readSaved(): Promise<Role[]> {
+    await queries.cancelQueries({ queryKey: ['roles'] });
+    return queries.fetchQuery({ ...rolesQuery(api), staleTime: 0, networkMode: 'always' });
   }
 
   /**
@@ -243,41 +253,33 @@ function RolesForm({
     // A title typed but not added yet is meant: it is added first (one already chosen just is).
     const typed = clean(draft);
     let titles: string[] | null = chosen;
-    if (typed && includes(chosen, typed)) setDraft('');
-    else if (typed) titles = addDraft(true);
+    if (typed && includes(chosen, typed)) {
+      setDraft('');
+      setError(null);
+    } else if (typed) titles = addDraft(true);
     if (!titles) return;
     if (titles.length === 0) {
       fail(text.none, true);
       return;
     }
-    let current = saved;
-    // Roles saved elsewhere since this step opened are shown first, never removed unseen.
-    if (!unread.current && settle(titles, current)) return;
     setPending(true);
-    let sending: string | null = null;
+    // The change on its way, if its answer is lost or refused.
+    let doing: { title: string; post: boolean } | null = null;
     try {
-      // An earlier save's answer was lost, and what is saved couldn't be read then: it is read
-      // now, before anything is sent again (sent twice, a title would be saved twice).
-      if (unread.current) {
-        const fresh = await reload();
-        if (!here.current) return;
-        if (!fresh) {
-          setRefusal(copy.setUp.errors.unknownOutcome);
-          return;
-        }
-        unread.current = false;
-        if (settle(titles, fresh)) return;
-        current = fresh;
-      }
+      let current = await readSaved();
+      if (!here.current) return;
+      // Roles saved elsewhere since this step opened are shown first, never removed unseen.
+      if (settle(titles, current)) return;
       const changes = plan(current, titles);
-      // The API counts roles, not titles (two saved elsewhere may share one): more than fit
-      // (roles taken in from elsewhere on top of these, say) means some must go first.
+      // The API counts roles, not titles (two saved may share one): more than fit (roles taken
+      // in from elsewhere on top of these, say) means some must go first.
       if (current.length - changes.remove.length + changes.add.length > MAX_ROLES) {
         failList(fill(text.full, { max: MAX }));
         return;
       }
       // Removed first, so the new ones fit under the limit.
       for (const role of changes.remove) {
+        doing = { title: role.title, post: false };
         try {
           await api.request('DELETE', `/me/roles/${encodeURIComponent(role.roleId)}`);
         } catch (error) {
@@ -289,7 +291,7 @@ function RolesForm({
         saveDone(current);
       }
       for (const title of changes.add) {
-        sending = title;
+        doing = { title, post: true };
         const role = await api.request<Role>('POST', '/me/roles', { title });
         if (!here.current) return;
         current = [...current, role];
@@ -298,7 +300,11 @@ function RolesForm({
       onSaved();
     } catch (error) {
       if (!here.current) return;
-      await refused(error, titles, sending);
+      // Its answer lost, this change may or may not be saved: the next read doesn't take either
+      // for a change made elsewhere.
+      if (doing && error instanceof ApiError && error.kind === 'unsure')
+        unsure.current.push(doing.title);
+      setRefusal(refusalFor(error, doing));
     } finally {
       if (here.current) setPending(false);
     }
@@ -310,7 +316,8 @@ function RolesForm({
    * from it.
    */
   function settle(titles: string[], fresh: Role[]): boolean {
-    const merged = reconcile(before.current, titles, titlesOf(fresh));
+    const merged = reconcile(before.current, titles, titlesOf(fresh), unsure.current);
+    unsure.current = [];
     if (merged.changed) {
       takeIn(merged.titles, titlesOf(fresh));
       return true;
@@ -320,43 +327,21 @@ function RolesForm({
   }
 
   /**
-   * Says why saving stopped, and what to do. Whatever was done before it is kept (the next try
-   * saves only what is left). Where the outcome is unclear, what is saved now says what happened.
+   * Why saving stopped, and what to do. Whatever was done before it is kept; the next try reads
+   * what is saved first, so it saves only what is left.
    */
-  async function refused(error: unknown, titles: string[], sending: string | null) {
-    const errors = copy.setUp.errors;
-    const kind = error instanceof ApiError ? error.kind : 'server';
-    if (kind === 'conflict' && error instanceof ApiError && error.code === 'try-again') {
-      // A write that collided: nothing changed. Keep the list.
-      setRefusal(errors.tryLater);
-      return;
-    }
-    if (kind === 'invalid' && error instanceof ApiError && error.status === 400 && sending) {
+  function refusalFor(error: unknown, doing: { title: string; post: boolean } | null): string {
+    if (error instanceof ApiError) {
+      if (error.kind === 'unsure') return copy.setUp.errors.unknownOutcome;
+      // The limit, reached by roles added elsewhere since the read.
+      if (error.status === 422) return fill(text.full, { max: MAX });
       // The API refused this title (its rules, newer than this page's): only changing it helps.
-      setRefusal(fill(text.refused, { title: sending }));
-      return;
+      if (error.status === 400 && doing?.post) return fill(text.refused, { title: doing.title });
     }
-    if (kind !== 'unsure' && kind !== 'conflict' && kind !== 'invalid') {
-      setRefusal(refusalText(error));
-      return;
-    }
-    // A lost answer, or a refusal (the limit, reached by roles added elsewhere): read the roles.
-    const fresh = await reload();
-    if (!here.current) return;
-    if (!fresh) {
-      // A lost answer may have saved: the next try reads first.
-      if (kind === 'unsure') unread.current = true;
-      setRefusal(kind === 'unsure' ? errors.unknownOutcome : errors.saveFailed);
-      return;
-    }
-    if (settle(titles, fresh)) return;
-    const left = plan(fresh, titles);
-    if (left.add.length === 0 && left.remove.length === 0) onSaved();
-    else if (kind === 'invalid') setRefusal(fill(text.full, { max: MAX }));
-    else setRefusal(kind === 'unsure' ? errors.saveFailed : errors.tryLater);
+    return refusalText(error);
   }
 
-  const count = fill(text.count, { count: String(chosen.length), max: MAX });
+  const count = fill(text.count, { count: String(inUse(saved, chosen)), max: MAX });
   return (
     <form
       ref={form}
@@ -552,15 +537,32 @@ export function reconcile(
   before: readonly string[],
   chosen: readonly string[],
   saved: readonly string[],
+  /** Titles this step changed whose answer was lost: saved or not, neither is a change elsewhere. */
+  unsure: readonly string[] = [],
 ): { titles: string[]; changed: boolean } {
   const addedElsewhere = saved.filter(
-    (title) => !includes(before, title) && !includes(chosen, title),
+    (title) => !includes(before, title) && !includes(chosen, title) && !includes(unsure, title),
   );
   const removedElsewhere = before.filter(
-    (title) => includes(chosen, title) && !includes(saved, title),
+    (title) => includes(chosen, title) && !includes(saved, title) && !includes(unsure, title),
   );
   return {
     titles: [...chosen.filter((title) => !includes(removedElsewhere, title)), ...addedElsewhere],
     changed: addedElsewhere.length > 0 || removedElsewhere.length > 0,
   };
+}
+
+/**
+ * How many roles these titles take: one each, plus any further saved roles sharing a chosen title
+ * (saved elsewhere; shown as one chip, but the API counts each against its limit).
+ */
+function inUse(saved: readonly Role[], titles: readonly string[]): number {
+  const firsts: string[] = [];
+  let repeats = 0;
+  for (const role of saved) {
+    if (!includes(titles, role.title)) continue;
+    if (includes(firsts, role.title)) repeats += 1;
+    else firsts.push(role.title);
+  }
+  return titles.length + repeats;
 }
