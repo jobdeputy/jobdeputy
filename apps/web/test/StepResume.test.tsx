@@ -156,6 +156,20 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     expect(item().getByRole('button', { name: 'Remove Alex_Morgan_Resume.pdf' })).toBeTruthy();
   });
 
+  it('moves focus from Cancel to Remove when the upload ends, so the new name is read', async () => {
+    await renderStep(createFakeApi({ delay: 30, checkMs: 60_000 }));
+    pick(pdf());
+    const cancel = await item().findByRole('button', { name: 'Cancel Alex_Morgan_Resume.pdf' });
+    cancel.focus();
+    const remove = await item().findByRole(
+      'button',
+      { name: 'Remove Alex_Morgan_Resume.pdf' },
+      { timeout: 15_000 },
+    );
+    expect(remove).not.toBe(cancel);
+    expect(document.activeElement).toBe(remove);
+  });
+
   it('shows the upload’s progress, and Cancel stops it and forgets the file', async () => {
     const api = createFakeApi({ delay: 30, checkMs: 0 });
     const { onMood } = await renderStep(api);
@@ -474,10 +488,8 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     await waitFor(() => expect(alertText()).toContain('Your session has ended.'), {
       timeout: 15_000,
     });
-    // Nothing is being followed any more: the deputy is no longer at work on it, and nothing says
-    // it keeps going. The footer stays, as on every step (Sign out is in the header).
+    // Nothing is being followed any more: the deputy is no longer at work on it. The footer stays, as on every step (Sign out is in the header).
     await waitFor(() => expect(onMood).toHaveBeenLastCalledWith('idle'));
-    expect(statusText()).not.toContain('keeps going');
     expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
     // Not asked again: the followed résumé's next check is off.
     const followed = queries

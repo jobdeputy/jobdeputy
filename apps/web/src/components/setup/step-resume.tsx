@@ -1,5 +1,6 @@
 import { MAX_DOCUMENTS } from '@jobdeputy/shared/documents';
 import { type DragEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { Button } from '@/components/ui/button.tsx';
 import { Progress } from '@/components/ui/progress.tsx';
 import { QueryRegion } from '@/components/ui/query-region.tsx';
@@ -119,6 +120,8 @@ function ResumeForm({
   const [dragging, setDragging] = useState(false);
   const { spoken, say, hush } = useSaying();
   const picker = useRef<HTMLInputElement>(null);
+  const cancelButton = useRef<HTMLButtonElement>(null);
+  const removeButton = useRef<HTMLButtonElement>(null);
   const zone = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLOListElement>(null);
   // The step went back to choosing a file and focus moves to its button once it is there (always
@@ -265,7 +268,10 @@ function ResumeForm({
     // In: the server checks it now (the API's next read says so too).
     const document: Document = { ...started.document, status: 'pending', sizeBytes: file.size };
     markUploadedHere(document.documentId);
-    setHeld({ kind: 'document', document });
+    // Focus on Cancel goes on to Remove, which takes its place: moved there, its name is read.
+    const onCancel = globalThis.document.activeElement === cancelButton.current;
+    flushSync(() => setHeld({ kind: 'document', document }));
+    if (onCancel) removeButton.current?.focus();
     say(fill(text.said.checking, { name }));
   }
 
@@ -396,13 +402,21 @@ function ResumeForm({
                 </span>
               )}
               {uploading ? (
-                <Button variant="outline" onClick={() => sending.current?.abort()}>
+                // Its own button, not Remove relabelled: Enter meant for Cancel must never remove.
+                <Button
+                  key="cancel"
+                  ref={cancelButton}
+                  variant="outline"
+                  onClick={() => sending.current?.abort()}
+                >
                   {text.cancel}
                   <span className="sr-only"> {held.name}</span>
                 </Button>
               ) : (
                 document && (
                   <Button
+                    key="remove"
+                    ref={removeButton}
                     variant="outline"
                     pending={removing}
                     pendingLabel={text.removing}
