@@ -371,6 +371,8 @@ export const en = {
   nav: {
     label: 'Primary',
     profile: 'Profile',
+    /** The browser tab's title on a page: "Profile · JobDeputy". */
+    pageTitle: '{page} · JobDeputy',
   },
   /** The Profile page: what the deputy knows about the person (#33). */
   profilePage: {

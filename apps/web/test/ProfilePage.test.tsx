@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { AppShell } from '../src/components/app-shell.tsx';
+import { AppNav } from '../src/components/app-shell.tsx';
 import { ProfilePage } from '../src/components/profile/profile-page.tsx';
 import { createFakeApi } from '../src/lib/api/fake.ts';
 import type { Profile } from '../src/lib/api/profile.ts';
@@ -63,14 +63,10 @@ describe('ProfilePage', () => {
   });
 });
 
-describe('AppShell', () => {
+describe('AppNav', () => {
   it('marks the current page, and goes to a page without reloading', () => {
     window.history.replaceState(null, '', '/elsewhere');
-    render(
-      <AppShell path="/profile">
-        <p>page</p>
-      </AppShell>,
-    );
+    render(<AppNav path="/profile" />);
     const nav = screen.getByRole('navigation', { name: 'Primary' });
     const link = within(nav).getByRole('link', { name: 'Profile' });
     expect(link.getAttribute('aria-current')).toBe('page');
@@ -80,11 +76,7 @@ describe('AppShell', () => {
 
   it('leaves a click with a modifier (a new tab) to the browser', () => {
     window.history.replaceState(null, '', '/elsewhere');
-    render(
-      <AppShell path="/elsewhere">
-        <p>page</p>
-      </AppShell>,
-    );
+    render(<AppNav path="/elsewhere" />);
     const link = screen.getByRole('link', { name: 'Profile' });
     expect(link.getAttribute('aria-current')).toBeNull();
     const event = fireEvent.click(link, { metaKey: true });
@@ -101,13 +93,27 @@ describe('the signed-in app’s pages', () => {
     const api = createFakeApi({ delay: 0 });
     await api.request('PUT', '/me/profile', { version: 0, firstName: 'Alex', lastName: 'Morgan' });
     window.history.replaceState(null, '', '/somewhere-old');
+    // The landing page's title (index.html).
+    document.title = 'JobDeputy';
     await renderApp(auth, {}, api);
     expect(
       await screen.findByRole('heading', { level: 1, name: 'What your deputy knows about you.' }),
     ).toBeTruthy();
     expect(window.location.pathname).toBe('/profile');
-    // Back to an unknown path (as Back would): it goes to the Profile page again.
+    expect(document.title).toBe('Profile · JobDeputy');
+    // The page list is a landmark of its own, beside the page's main content, not inside it.
+    const nav = screen.getByRole('navigation', { name: 'Primary' });
+    expect(screen.getByRole('main').contains(nav)).toBe(false);
+    // Later (Back to an entry from before), the address is left alone: Profile still shows.
     act(() => navigate('/nowhere'));
-    expect(window.location.pathname).toBe('/profile');
+    expect(window.location.pathname).toBe('/nowhere');
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'What your deputy knows about you.' }),
+    ).toBeTruthy();
+    // Signing out goes back to the landing page's address, and its title.
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await screen.findByRole('heading', { level: 1, name: 'You set it up. Your deputy applies.' });
+    expect(window.location.pathname).toBe('/');
+    expect(document.title).toBe('JobDeputy');
   });
 });

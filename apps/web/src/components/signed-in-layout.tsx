@@ -10,9 +10,12 @@ import { HeaderAsideSlot } from '@/components/header-aside.tsx';
  */
 export function SignedInLayout({
   onSignedOut,
+  nav,
   children,
 }: {
   onSignedOut: () => void;
+  /** The app's page list, beside `main` (not inside it): a landmark of its own. */
+  nav?: ReactNode;
   children: ReactNode;
 }) {
   // Pages put their header extras here with HeaderAside (the set-up's step bar).
@@ -28,9 +31,18 @@ export function SignedInLayout({
           <SignOutButton onSignedOut={onSignedOut} messageClassName="basis-full text-end" />
         </div>
       </header>
-      <main className="grid grid-cols-[minmax(0,1fr)]">
-        <HeaderAsideSlot.Provider value={aside}>{children}</HeaderAsideSlot.Provider>
-      </main>
+      <div
+        className={
+          nav
+            ? 'grid grid-cols-[minmax(0,1fr)] content-start md:grid-cols-[233px_minmax(0,1fr)] md:content-stretch'
+            : 'grid grid-cols-[minmax(0,1fr)]'
+        }
+      >
+        {nav}
+        <main className="grid min-w-0 grid-cols-[minmax(0,1fr)]">
+          <HeaderAsideSlot.Provider value={aside}>{children}</HeaderAsideSlot.Provider>
+        </main>
+      </div>
     </div>
   );
 }

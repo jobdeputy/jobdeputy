@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-import { AppShell, PAGES } from '@/components/app-shell.tsx';
+import { AppNav, PAGES } from '@/components/app-shell.tsx';
 import { type AuthControl, AuthDrawer, type AuthMode } from '@/components/landing/auth-drawer.tsx';
 import { Hero } from '@/components/landing/hero.tsx';
 import { SiteHeader } from '@/components/landing/site-header.tsx';
@@ -9,8 +9,8 @@ import { SetUp, type SetUpStep } from '@/components/setup/set-up.tsx';
 import { SignedInLayout } from '@/components/signed-in-layout.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { QueryRegion } from '@/components/ui/query-region.tsx';
-import { copy } from '@/copy/index.ts';
-import { hasProfile, type Profile, useProfile } from '@/lib/api/profile.ts';
+import { copy, fill } from '@/copy/index.ts';
+import { hasProfile, useProfile } from '@/lib/api/profile.ts';
 import { useAuth } from '@/lib/auth/index.ts';
 import { useFinishBoot } from '@/lib/boot-loader.ts';
 import { navigate, usePath } from '@/lib/router.ts';
@@ -52,14 +52,20 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
   const [setUpStep, setSetUpStep] = useState<SetUpStep | 'done' | null>(null);
   const signedOut = () => {
     queryClient.clear();
+    // The landing page is at /, not at the page the person was on.
+    navigate('/', { replace: true });
     onSignedOut();
   };
   const step =
     setUpStep === 'done'
       ? null
       : (setUpStep ?? (profile.data !== undefined && !hasProfile(profile.data) ? 'welcome' : null));
+  // The app's pages, once the profile is read and the set-up is done.
+  const pages = !step && profile.data !== undefined;
+  const path = usePath();
+  usePageAddress(pages, path);
   return (
-    <SignedInLayout onSignedOut={signedOut}>
+    <SignedInLayout onSignedOut={signedOut} nav={pages ? <AppNav path={path} /> : undefined}>
       {/* The shared loading states (#17): nothing for 300 ms, then a skeleton read out as
           "Opening your search desk", "Still working…" after 8 s, "Waiting for a connection…"
           while offline. The region holds the page's width and gutters. */}
@@ -68,13 +74,7 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
         skeleton={{ kind: 'block', rows: 4 }}
         label={copy.profile.loading}
         error={<ProfileFailed onRetry={() => profile.refetch()} />}
-        // The set-up and the loading states sit in the page's width and gutters; the app's pages
-        // fill it, with the sidebar at its edge.
-        className={
-          step || profile.data === undefined
-            ? 'mx-auto w-full max-w-[1120px] px-[17px] py-8 sm:px-[clamp(21px,4vw,55px)] md:py-14'
-            : 'w-full'
-        }
+        className="mx-auto w-full max-w-[1120px] px-[17px] py-8 sm:px-[clamp(21px,4vw,55px)] md:py-14"
       >
         {(data) =>
           step ? (
@@ -88,7 +88,7 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
               onBack={() => setSetUpStep(SET_UP_BACK[step])}
             />
           ) : (
-            <SignedInPages profile={data} />
+            <ProfilePage profile={data} />
           )
         }
       </QueryRegion>
@@ -97,19 +97,25 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
 }
 
 /**
- * The app's pages once the set-up is done (#33): each by its path, in the app shell. Any other
- * path (the landing's `/`, an old link) goes to the Profile page, the only page so far.
+ * The address and title of the app's pages (#33), once they are shown: arriving at a path that is
+ * no page (the landing's `/`, an old link) goes to the Profile page, the only page so far, once
+ * (Back past it later is left alone, and still shows Profile); the tab's title names the page.
  */
-function SignedInPages({ profile }: { profile: Profile }) {
-  const path = usePath();
+function usePageAddress(pages: boolean, path: string) {
+  const arrived = useRef(false);
   useEffect(() => {
+    if (!pages || arrived.current) return;
+    arrived.current = true;
     if (!PAGES.some((page) => page.path === path)) navigate('/profile', { replace: true });
-  }, [path]);
-  return (
-    <AppShell path={path}>
-      <ProfilePage profile={profile} />
-    </AppShell>
-  );
+  }, [pages, path]);
+  useEffect(() => {
+    if (!pages) return;
+    const before = document.title;
+    document.title = fill(copy.nav.pageTitle, { page: copy.nav.profile });
+    return () => {
+      document.title = before;
+    };
+  }, [pages]);
 }
 
 /** The set-up's order (#33); the last step saved ends it. */

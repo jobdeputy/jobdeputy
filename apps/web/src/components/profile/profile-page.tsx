@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { PersonIcon } from '@/components/icons.tsx';
+import { PageIntro } from '@/components/page-intro.tsx';
 import { copy } from '@/copy/index.ts';
 import type { Profile } from '@/lib/api/profile.ts';
 
@@ -11,26 +12,9 @@ import type { Profile } from '@/lib/api/profile.ts';
  */
 export function ProfilePage({ profile }: { profile: Profile }) {
   const text = copy.profilePage;
-  // The page's title takes focus when it opens, so the change of page is announced.
-  const title = useRef<HTMLHeadingElement>(null);
-  useEffect(() => {
-    title.current?.focus();
-  }, []);
   return (
-    <div className="mx-auto grid w-full max-w-[880px] content-start gap-8 px-[17px] py-8 sm:px-[clamp(21px,4vw,55px)] md:py-14">
-      <div className="grid gap-2">
-        <p className="m-0 flex items-center gap-2 text-xs font-[750] tracking-[0.12em] uppercase before:block before:h-[3px] before:w-[13px] before:rounded-full before:bg-green">
-          {text.eyebrow}
-        </p>
-        <h1
-          ref={title}
-          tabIndex={-1}
-          className="m-0 font-display text-[clamp(2.25rem,8vw,3rem)] leading-none font-medium tracking-[-0.05em] text-balance outline-none"
-        >
-          {text.title}
-        </h1>
-        <p className="m-0 text-[0.9375rem] text-muted-foreground">{text.intro}</p>
-      </div>
+    <div className="grid w-full max-w-[880px] content-start gap-8">
+      <PageIntro id="profile-title" eyebrow={text.eyebrow} title={text.title} intro={text.intro} />
       <AboutYou profile={profile} />
     </div>
   );
@@ -49,7 +33,7 @@ function AboutYou({ profile }: { profile: Profile }) {
           aria-hidden="true"
           className="grid size-11 place-items-center rounded-full bg-paper-deep text-ink-soft"
         >
-          <PersonIcon />
+          <PersonIcon className="size-[22px]" />
         </span>
         <div className="grid gap-1">
           <h2 id="about-title" className="m-0 text-xl font-[700] tracking-[-0.02em]">
@@ -74,7 +58,7 @@ function Group({ id, title, facts }: { id: string; title: string; facts: readonl
       <h3 id={`${id}-title`} className="m-0 text-base font-[700]">
         {title}
       </h3>
-      <dl aria-labelledby={`${id}-title`} className="m-0 grid">
+      <dl className="m-0 grid">
         {facts.map(([label, value]) => (
           <div
             key={label}
@@ -136,23 +120,4 @@ export function factsOf(profile: Profile) {
       [about.links.other, links.other?.length ? links.other.join(', ') : undefined],
     ],
   } satisfies Record<string, Fact[]>;
-}
-
-function PersonIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      focusable="false"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="size-[22px]"
-    >
-      <circle cx="12" cy="8.25" r="3.75" />
-      <path d="M4.75 20c.6-3.75 3.4-6 7.25-6s6.65 2.25 7.25 6" />
-    </svg>
-  );
 }
