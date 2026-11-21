@@ -544,11 +544,46 @@ describe('Set it up, step 2: target roles', () => {
       screen.getByText('Up to 10 roles fit, and 12 are chosen. Remove 2 to continue.'),
     ).toBeTruthy();
     await waitFor(() => expect(statusText()).toContain('Remove 2 to continue.'));
+    // Checking one more refuses with the same reason (not 'remove one').
+    fireEvent.click(chip('Product engineer'));
+    expect(chip('Product engineer').checked).toBe(false);
+    expect(screen.queryByText(/Remove one to add another/)).toBeNull();
+    // A Continue that can't reach the API leaves the reason in place.
+    const spy = vi.spyOn(api, 'request').mockRejectedValue(new ApiError('offline'));
+    continueOn();
+    await waitFor(() => expect(alertText()).toContain('Check your connection'));
+    expect(
+      screen.getByText('Up to 10 roles fit, and 12 are chosen. Remove 2 to continue.'),
+    ).toBeTruthy();
+    spy.mockRestore();
     // One removed, still too many: the reason stays, with what is left.
     fireEvent.click(chip('Elsewhere 1'));
     expect(
       screen.getByText('Up to 10 roles fit, and 11 are chosen. Remove 1 to continue.'),
     ).toBeTruthy();
+    await waitFor(() => expect(statusText()).toContain('Remove 1 to continue.'));
+    // Fitting again: the reason is gone, and no longer said.
+    fireEvent.click(chip('Elsewhere 2'));
+    expect(screen.queryByText(/Up to 10 roles fit/)).toBeNull();
+    expect(statusText()).toBe('');
+  });
+
+  it('says the session ended when the read after a full list finds it so', async () => {
+    const { api } = await renderStep();
+    const request = api.request.bind(api);
+    let reads = 0;
+    vi.spyOn(api, 'request').mockImplementation((method, path, body) => {
+      if (method === 'POST') return Promise.reject(new ApiError('invalid', { status: 422 }));
+      // The read before saving works; the one after the refusal finds the session ended.
+      reads += 1;
+      if (reads > 1) return Promise.reject(new ApiError('signed-out', { status: 401 }));
+      return request(method, path, body);
+    });
+    fireEvent.click(chip('Backend engineer'));
+    continueOn();
+    await waitFor(() =>
+      expect(alertText()).toContain('Your session has ended. Sign in again to continue.'),
+    );
   });
 
   it('says the list is full when the API finds it full', async () => {

@@ -51,8 +51,7 @@ export function StepRoles({ onSaved, onBack }: { onSaved: () => void; onBack: ()
  */
 function RolesFailed({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   const text = copy.setUp.roles;
-  const kind = error instanceof ApiError ? error.kind : 'server';
-  const final = kind === 'signed-out' || kind === 'forbidden';
+  const final = isFinal(error);
   return (
     <div className="grid justify-items-start gap-3">
       <p role="alert" className="m-0 text-sm font-[650] text-danger-ink">
@@ -155,11 +154,19 @@ function RolesForm({
     failList(fill(text.full, { max: MAX }));
   }
 
-  /** More roles are chosen than fit (`count`, taken in from elsewhere, say): some must go. */
+  /**
+   * More roles are chosen than fit (taken in from elsewhere, say): the reason under the list
+   * follows from the list itself (see `overText`); this says it, with how many are `count` now.
+   */
   function failOver(count: number) {
-    failList(
-      fill(text.tooMany, { max: MAX, count: String(count), extra: String(count - MAX_ROLES) }),
-    );
+    setListError(null);
+    say(overText(count));
+  }
+
+  /** Nothing to say any more: a reason said earlier no longer holds. */
+  function quiet() {
+    clearTimeout(saying.current);
+    setSpoken('');
   }
 
   /**
@@ -180,7 +187,8 @@ function RolesForm({
     // Checked, a title takes every saved role it names (saved twice elsewhere, say).
     const next = [...chosen, chip];
     if (inUse(saved, next) > MAX_ROLES) {
-      fail(fill(text.full, { max: MAX }), moveFocus);
+      const now = inUse(saved, chosen);
+      fail(now > MAX_ROLES ? overText(now) : fill(text.full, { max: MAX }), moveFocus);
       return null;
     }
     const checked = TITLE.safeParse(title);
@@ -217,16 +225,19 @@ function RolesForm({
     const next = checked
       ? [...chosen, title]
       : chosen.filter((chosenTitle) => !same(chosenTitle, title));
+    const now = inUse(saved, chosen);
     const count = inUse(saved, next);
     if (checked && count > MAX_ROLES) {
-      failFull();
+      if (now > MAX_ROLES) failOver(now);
+      else failFull();
       return;
     }
     setError(null);
+    setListError(null);
     setChosen(next);
-    // Still more than fit (taken in from elsewhere): the reason stays, with what is left to remove.
+    // Still more than fit: what is left to remove is said; fitting again, the reason is gone.
     if (count > MAX_ROLES) failOver(count);
-    else setListError(null);
+    else if (now > MAX_ROLES) quiet();
   }
 
   /**
@@ -334,14 +345,21 @@ function RolesForm({
         unsure.current.push(doing.title);
       // The limit, reached by roles added elsewhere since the read: they are shown at once.
       if (isFull(error)) {
+        let fresh: Role[];
         try {
-          const fresh = await readSaved();
+          fresh = await readSaved();
+        } catch (readError) {
           if (!here.current) return;
-          if (settle(titles, fresh)) return;
-        } catch {
-          // Unread, the limit is still the reason.
+          // Unread, the limit is still the reason, unless nothing more can be done here.
+          if (isFinal(readError)) setRefusal(refusalText(readError));
+          else failFull();
+          return;
         }
-        failFull();
+        if (!here.current || settle(titles, fresh)) return;
+        // A role saved elsewhere under a chosen title is no change to show, but it counts.
+        const count = inUse(fresh, titles);
+        if (count > MAX_ROLES) failOver(count);
+        else failFull();
         return;
       }
       setRefusal(refusalFor(error, doing));
@@ -384,7 +402,10 @@ function RolesForm({
     return refusalText(error);
   }
 
-  const count = fill(text.count, { count: String(inUse(saved, chosen)), max: MAX });
+  const roles = inUse(saved, chosen);
+  const count = fill(text.count, { count: String(roles), max: MAX });
+  // More chosen than fit is always said under the list, for as long as it is so.
+  const listReason = roles > MAX_ROLES ? overText(roles) : listError;
   return (
     <form
       ref={form}
@@ -440,7 +461,7 @@ function RolesForm({
         ))}
       </datalist>
       <fieldset
-        aria-describedby={listError ? listErrorId : undefined}
+        aria-describedby={listReason ? listErrorId : undefined}
         className="m-0 flex min-w-0 flex-wrap gap-2 border-0 p-0"
       >
         <legend className="mb-2 p-0 text-[0.8125rem] font-[680] tracking-[0.01em]">
@@ -462,10 +483,10 @@ function RolesForm({
         id={listErrorId}
         className={cn(
           'm-0 -mt-2 text-[0.8125rem] font-[650] text-danger-ink',
-          !listError && 'hidden',
+          !listReason && 'hidden',
         )}
       >
-        {listError}
+        {listReason}
       </p>
       <p role="status" className="sr-only">
         {pending && waiting ? copy.setUp.saving : spoken}
@@ -613,4 +634,15 @@ function inUse(saved: readonly Role[], titles: readonly string[]): number {
 /** The API's answer when the roles are at its limit. */
 function isFull(error: unknown): boolean {
   return error instanceof ApiError && error.status === 422;
+}
+
+/** Why a list with `count` roles can't be saved: more than fit. */
+function overText(count: number): string {
+  const text = copy.setUp.roles;
+  return fill(text.tooMany, { max: MAX, count: String(count), extra: String(count - MAX_ROLES) });
+}
+
+/** The session has ended or the account is closed: trying again here can't help. */
+function isFinal(error: unknown): boolean {
+  return error instanceof ApiError && (error.kind === 'signed-out' || error.kind === 'forbidden');
 }
