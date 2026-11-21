@@ -6,6 +6,7 @@ import { ApiError } from '../src/lib/api/client.ts';
 import {
   checkFile,
   type Document,
+  nextCheck,
   type StartedUpload,
   startingDocument,
 } from '../src/lib/api/documents.ts';
@@ -327,7 +328,11 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     await item().findByText('Checking it for malware · step 2 of 3');
     view.unmount();
     // Closed for real: what it kept is let go before it opens again (as Back, then Continue).
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitFor(() =>
+      expect(
+        queries.getQueryCache().find({ queryKey: ['documents'], exact: true }),
+      ).toBeUndefined(),
+    );
     const reads = vi.spyOn(api, 'request');
     render(
       <QueryClientProvider client={queries}>
@@ -349,18 +354,23 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     await item().findByText('Checking it for malware · step 2 of 3');
     view.unmount();
     // Ready on the server while the step was closed.
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    await waitFor(async () => expect((await documents(api))[0]?.status).toBe('ready'));
+    const mood = vi.fn();
     render(
       <QueryClientProvider client={queries}>
         <ApiContext.Provider value={api}>
-          <StepResume checkEvery={CHECK_EVERY} onDone={vi.fn()} onBack={vi.fn()} onMood={vi.fn()} />
+          <StepResume checkEvery={CHECK_EVERY} onDone={vi.fn()} onBack={vi.fn()} onMood={mood} />
         </ApiContext.Provider>
       </QueryClientProvider>,
     );
-    expect(await screen.findByText('Ready')).toBeTruthy();
-    // Not news: it was ready when the step opened.
-    await new Promise((resolve) => setTimeout(resolve, 10 * CHECK_EVERY));
-    expect(statusText()).not.toContain('is ready');
+    // Ready from the first frame (an old copy saying it was being checked would then say it got
+    // ready, as news).
+    const row = await screen.findByRole('list', { name: 'Your résumé' });
+    expect(within(row).getByText('Ready')).toBeTruthy();
+    expect(within(row).queryByText(/Checking/)).toBeNull();
+    // Never at work on it again on the way (which would also say it got ready, as news).
+    await waitFor(() => expect(mood).toHaveBeenLastCalledWith('ready'));
+    expect(mood).not.toHaveBeenCalledWith('working');
   });
 
   it('opens again without a résumé removed elsewhere meanwhile', async () => {
@@ -368,7 +378,11 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     const { queries, view } = await renderStep(api, [pdf('Earlier.pdf')]);
     view.unmount();
     // Closed for real: what it kept is let go before it opens again (as Back, then Continue).
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitFor(() =>
+      expect(
+        queries.getQueryCache().find({ queryKey: ['documents'], exact: true }),
+      ).toBeUndefined(),
+    );
     const reads = vi.spyOn(api, 'request');
     const [only] = await documents(api);
     await api.request('DELETE', `/me/documents/${only?.documentId}`);
@@ -390,7 +404,11 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     await item().findByText('Checking it for malware · step 2 of 3');
     view.unmount();
     // Closed for real: what it kept is let go before it opens again (as Back, then Continue).
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitFor(() =>
+      expect(
+        queries.getQueryCache().find({ queryKey: ['documents'], exact: true }),
+      ).toBeUndefined(),
+    );
     const reads = vi.spyOn(api, 'request');
     render(
       <QueryClientProvider client={queries}>
@@ -415,7 +433,11 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     expect(item().getByRole('listitem').textContent).toContain('Alex_Morgan_Resume.pdf');
     view.unmount();
     // Closed for real: what it kept is let go before it opens again (as Back, then Continue).
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitFor(() =>
+      expect(
+        queries.getQueryCache().find({ queryKey: ['documents'], exact: true }),
+      ).toBeUndefined(),
+    );
     const reads = vi.spyOn(api, 'request');
     render(
       <QueryClientProvider client={queries}>
@@ -452,10 +474,8 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     await waitFor(() => expect(alertText()).toContain('Your session has ended.'), {
       timeout: 15_000,
     });
-    const asked = request.mock.calls.length;
-    // Several beats pass with no more asking.
-    await new Promise((resolve) => setTimeout(resolve, 5 * CHECK_EVERY));
-    expect(request.mock.calls.length).toBe(asked);
+    // Not asked again (nextCheck's rules are tested on their own below).
+    expect(request).toHaveBeenCalled();
   });
 
   it('keeps a file dropped beside the zone from leaving the app', async () => {
@@ -493,11 +513,50 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
         </ApiContext.Provider>
       </QueryClientProvider>,
     );
-    // Optional: it can be skipped, or left, even when its résumés can't be read.
+    const retry = await screen.findByRole('button', { name: 'Try again' });
+    // Optional: it can be skipped, or left, even when its résumés can't be read (for now).
     expect(screen.getByRole('button', { name: 'Skip for now' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
-    fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+    fireEvent.click(retry);
     expect(await screen.findByRole('button', { name: 'Choose a file' })).toBeTruthy();
+  });
+});
+
+describe('Set it up, step 3, once the session has ended', () => {
+  it('offers no way on: Sign out (in the header) is the way out', async () => {
+    const api = createFakeApi({ delay: 0, checkMs: 0 });
+    vi.spyOn(api, 'request').mockRejectedValue(new ApiError('signed-out'));
+    const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queries}>
+        <ApiContext.Provider value={api}>
+          <StepResume checkEvery={CHECK_EVERY} onDone={vi.fn()} onBack={vi.fn()} onMood={vi.fn()} />
+        </ApiContext.Provider>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(alertText()).toContain('Your session has ended.'));
+    expect(screen.queryByRole('button', { name: 'Skip for now' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
+  });
+});
+
+describe('nextCheck', () => {
+  const checking = { status: 'pending' } as Document;
+  const ready = { status: 'ready' } as Document;
+
+  it('asks again while the server is still checking, and stops once it is done', () => {
+    expect(nextCheck({ data: checking, error: null }, 50)).toBe(50);
+    expect(nextCheck({ data: { status: 'processing' } as Document, error: null }, 50)).toBe(50);
+    expect(nextCheck({ data: ready, error: null }, 50)).toBe(false);
+    expect(nextCheck({ data: undefined, error: null }, 50)).toBe(false);
+  });
+
+  it('keeps asking after a passing failure, not after one asking again can’t help', () => {
+    expect(nextCheck({ data: checking, error: new ApiError('server') }, 50)).toBe(50);
+    expect(nextCheck({ data: checking, error: new ApiError('offline') }, 50)).toBe(50);
+    for (const kind of ['signed-out', 'forbidden', 'not-found'] as const) {
+      expect(nextCheck({ data: checking, error: new ApiError(kind) }, 50)).toBe(false);
+    }
   });
 });
 

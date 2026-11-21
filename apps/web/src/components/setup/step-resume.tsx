@@ -68,14 +68,20 @@ export function StepResume({
       >
         {(saved) => <ResumeForm saved={saved} onState={setForm} checkEvery={checkEvery} />}
       </QueryRegion>
-      <div className="flex flex-wrap items-center gap-3">
-        <Button size="lg" onClick={onDone} disabled={form.busy}>
-          {form.canContinue ? copy.setUp.continue : text.skip}
-        </Button>
-        <Button variant="outline" size="lg" onClick={onBack} disabled={form.busy}>
-          {copy.setUp.back}
-        </Button>
-      </div>
+      {/* Once the résumés are in, or can't be read, or wait for a connection (not during a short
+          load, where Skip would turn into Continue under the person); never once the session or
+          account has ended (Sign out is in the header). */}
+      {(documents.data !== undefined || documents.isError || documents.isPaused) &&
+        !isFinal(documents.error) && (
+          <div className="flex flex-wrap items-center gap-3">
+            <Button size="lg" onClick={onDone} disabled={form.busy}>
+              {form.canContinue ? copy.setUp.continue : text.skip}
+            </Button>
+            <Button variant="outline" size="lg" onClick={onBack} disabled={form.busy}>
+              {copy.setUp.back}
+            </Button>
+          </div>
+        )}
     </>
   );
 }

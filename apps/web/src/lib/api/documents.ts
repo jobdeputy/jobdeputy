@@ -131,11 +131,25 @@ export function useDocuments() {
 export function documentsQuery(api: ApiClient) {
   return {
     queryKey: ['documents'],
-    // Kept only while a screen shows them (see useDocuments), whoever asks for them.
+    // Kept only while a screen shows them (see useDocuments), whoever asks for them; read when it
+    // opens, not again on returning to the tab (only the opening read is used).
     gcTime: 0,
+    refetchOnWindowFocus: false,
     queryFn: async () =>
       (await api.request<{ documents: Document[] }>('GET', '/me/documents')).documents,
   };
+}
+
+/**
+ * When to ask about a followed résumé again: while the server is still checking it, unless asking
+ * again can't help (signed out, account closed, or the résumé is gone). False: not again.
+ */
+export function nextCheck(
+  { data, error }: { data: Document | undefined; error: unknown },
+  every: number,
+): number | false {
+  if (isFinal(error) || (error instanceof ApiError && error.kind === 'not-found')) return false;
+  return data && isChecking(data) ? every : false;
 }
 
 /**
@@ -155,12 +169,7 @@ export function useDocument(initial: Document | null, checkEvery = CHECK_EVERY_M
     initialData: initial ?? undefined,
     // A done résumé doesn't change by itself, so the list's copy stands; one being checked is read.
     staleTime: (query) => (query.state.data && isChecking(query.state.data) ? 0 : Infinity),
-    refetchInterval: ({ state: { data, error } }) =>
-      isFinal(error) || (error instanceof ApiError && error.kind === 'not-found')
-        ? false
-        : data && isChecking(data)
-          ? checkEvery
-          : false,
+    refetchInterval: ({ state }) => nextCheck(state, checkEvery),
     // Polled: a failed read is simply asked again on the next beat.
     retry: false,
   });
