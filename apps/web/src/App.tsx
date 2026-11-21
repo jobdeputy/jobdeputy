@@ -52,8 +52,6 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
   const [setUpStep, setSetUpStep] = useState<SetUpStep | 'done' | null>(null);
   const signedOut = () => {
     queryClient.clear();
-    // The landing page is at /, not at the page the person was on.
-    navigate('/', { replace: true });
     onSignedOut();
   };
   const step =
@@ -65,7 +63,8 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
   const path = usePath();
   usePageAddress(pages, path);
   return (
-    <SignedInLayout onSignedOut={signedOut} nav={pages ? <AppNav path={path} /> : undefined}>
+    // The page shown is the one marked: Profile, also at an address that is no page.
+    <SignedInLayout onSignedOut={signedOut} nav={pages ? <AppNav path="/profile" /> : undefined}>
       {/* The shared loading states (#17): nothing for 300 ms, then a skeleton read out as
           "Opening your search desk", "Still working…" after 8 s, "Waiting for a connection…"
           while offline. The region holds the page's width and gutters. */}
@@ -169,6 +168,9 @@ function ProfileFailed({ onRetry }: { onRetry: () => void }) {
 function Landing({ onSignedIn }: { onSignedIn: (email: string) => void }) {
   const [authMode, setAuthMode] = useState<AuthMode>('sign-up');
   const [authOpen, setAuthOpen] = useState(false);
+  // The landing page is at /: after signing out, or opening a signed-in page's address while
+  // signed out, the address says so.
+  useEffect(() => navigate('/', { replace: true }), []);
   // Four buttons open the drawer; focus returns to whichever one did.
   const opener = useRef<HTMLElement | null>(null);
 

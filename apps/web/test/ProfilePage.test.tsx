@@ -85,6 +85,14 @@ describe('AppNav', () => {
   });
 });
 
+describe('the landing page’s address', () => {
+  it('is / when a signed-in page’s address is opened while signed out', async () => {
+    window.history.replaceState(null, '', '/profile');
+    await renderApp(createFakeAuth({ delay: 0 }));
+    expect(window.location.pathname).toBe('/');
+  });
+});
+
 describe('the signed-in app’s pages', () => {
   it('opens the Profile page at /profile once the set-up is done, whatever the path was', async () => {
     const auth = createFakeAuth({ delay: 0 });
@@ -110,6 +118,7 @@ describe('the signed-in app’s pages', () => {
     expect(
       screen.getByRole('heading', { level: 1, name: 'What your deputy knows about you.' }),
     ).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Profile' }).getAttribute('aria-current')).toBe('page');
     // Signing out goes back to the landing page's address, and its title.
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
     await screen.findByRole('heading', { level: 1, name: 'You set it up. Your deputy applies.' });
