@@ -1,18 +1,19 @@
 import type { ReactNode } from 'react';
 import { DeputySpeech, DeputyStatus } from '@/components/deputy/deputy-speech.tsx';
-import { Panda } from '@/components/deputy/panda.tsx';
+import { Panda, type PandaPose } from '@/components/deputy/panda.tsx';
 import { HeaderAside } from '@/components/header-aside.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { copy, fill } from '@/copy/index.ts';
 import type { Profile } from '@/lib/api/profile.ts';
 import { Fact, StepIntro } from './parts.tsx';
+import { StepRoles } from './step-roles.tsx';
 import { StepYou } from './step-you.tsx';
 
 /** The set-up's steps after the welcome (#33): you, your target roles, your résumé. */
 const STEPS = 3;
 
 /** Where the set-up is: the welcome, or one of its steps (each saved as you go). */
-export type SetUpStep = 'welcome' | 'you';
+export type SetUpStep = 'welcome' | 'you' | 'roles';
 
 /**
  * The guided set-up after the first sign-in (#33), from the round 7 prototype's onboarding: the
@@ -33,6 +34,14 @@ export function SetUp({
   onNext: () => void;
   onBack: () => void;
 }) {
+  if (step === 'roles') {
+    // The deputy searches, as he will for these titles (the prototype's pose for this step).
+    return (
+      <SetUpFrame current={1} speech={copy.setUp.roles.speech} pose="search">
+        <StepRoles onSaved={onNext} onBack={onBack} />
+      </SetUpFrame>
+    );
+  }
   if (step === 'you') {
     return (
       <SetUpFrame current={0} speech={copy.setUp.you.speech}>
@@ -55,11 +64,13 @@ export function SetUp({
 function SetUpFrame({
   current,
   speech,
+  pose = 'setup',
   children,
 }: {
   /** The step (0-based), or null on the welcome. */
   current: number | null;
   speech: string;
+  pose?: PandaPose;
   children: ReactNode;
 }) {
   return (
@@ -68,7 +79,7 @@ function SetUpFrame({
         <StepProgress current={current} />
       </HeaderAside>
       <div className="flex items-center gap-4 md:sticky md:top-8 md:grid md:justify-items-center md:gap-3">
-        <Panda pose="setup" className="w-[92px] shrink-0 md:w-[220px]" />
+        <Panda pose={pose} className="w-[92px] shrink-0 md:w-[220px]" />
         <div className="grid justify-items-start gap-2 md:justify-items-center">
           <DeputySpeech className="px-4 py-2.5 text-lg">{speech}</DeputySpeech>
           <DeputyStatus>{copy.setUp.status}</DeputyStatus>

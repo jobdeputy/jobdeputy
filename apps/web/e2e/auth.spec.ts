@@ -51,6 +51,27 @@ test('creates an account, confirms it with the code, lands signed in, and signs 
   await page.getByLabel('City (optional)').fill('Austin');
   await expectNoHorizontalScroll(page);
   await page.getByRole('button', { name: 'Continue' }).click();
+  // Step 2, target roles: at least one, then saved and the set-up ends.
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'What roles should I look for?' }),
+  ).toBeFocused();
+  await expect(page.getByRole('banner')).toContainText('Step 2 of 3');
+  const jobTitle = page.getByLabel('Job title');
+  await jobTitle.waitFor();
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(jobTitle).toBeFocused();
+  await expect(page.getByText('Add at least one role, or pick a suggestion.')).toBeVisible();
+  await expectNoAccessibilityViolations(page);
+  await jobTitle.fill('Staff engineer');
+  await jobTitle.press('Enter');
+  await expect(page.getByRole('checkbox', { name: 'Staff engineer' })).toBeChecked();
+  await expect(jobTitle).toBeFocused();
+  await page.getByText('Backend engineer', { exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: 'Backend engineer' })).toBeChecked();
+  await expect(page.getByText('2 of 10 added', { exact: false })).toBeVisible();
+  await expectNoAccessibilityViolations(page);
+  await expectNoHorizontalScroll(page);
+  await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'You’re in.' })).toBeFocused();
 
   await page.getByRole('button', { name: 'Sign out' }).click();

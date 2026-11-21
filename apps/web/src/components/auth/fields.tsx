@@ -14,6 +14,7 @@ export function Field({
   error,
   className,
   children,
+  action,
   ...input
 }: Omit<ComponentProps<'input'>, 'children'> & {
   label: string;
@@ -21,6 +22,8 @@ export function Field({
   error?: string | null;
   /** Inside the input's box, at its end (the password toggle). */
   children?: React.ReactNode;
+  /** Beside the input, at its end (a button that acts on what was typed, such as Add). */
+  action?: React.ReactNode;
 }) {
   const id = useId();
   const hintId = `${id}-hint`;
@@ -33,7 +36,7 @@ export function Field({
       <label htmlFor={id} className="text-[0.8125rem] font-[680] tracking-[0.01em]">
         {label}
       </label>
-      <div className="relative">
+      <div className={cn('relative', action && 'flex gap-2')}>
         <input
           id={id}
           aria-invalid={error ? true : undefined}
@@ -41,10 +44,12 @@ export function Field({
           className={cn(
             'min-h-13 w-full rounded-[14px] border border-line bg-surface px-[15px] text-[0.9375rem] text-ink shadow-[inset_0_1px_0_var(--color-surface-strong)] outline-none transition-[border-color,box-shadow,background-color] duration-[180ms] placeholder:text-muted-foreground hover:border-line-strong hover:bg-surface-strong focus:border-green focus:bg-white focus:shadow-[0_0_0_4px_var(--color-green-wash)] motion-reduce:transition-none forced-colors:focus:outline-2 forced-colors:focus:outline-solid aria-invalid:border-orange',
             children && 'pe-[67px]',
+            action && 'min-w-0 flex-1',
           )}
           {...input}
         />
         {children}
+        {action}
       </div>
       {showHint && (
         <p id={hintId} className="m-0 text-[0.8125rem] text-muted-foreground">
