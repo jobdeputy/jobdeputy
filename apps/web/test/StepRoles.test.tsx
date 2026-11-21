@@ -499,12 +499,12 @@ describe('Set it up, step 2: target roles', () => {
     expect(chip('Role 9').checked).toBe(true);
     expect(chip('Backend engineer').checked).toBe(true);
     expect(onSaved).not.toHaveBeenCalled();
-    // Eleven now: one must go before saving.
-    continueOn();
+    // Eleven now: said at once, one must go before saving.
     expect(
-      await screen.findByText('You can add up to 10 roles. Remove one to add another.'),
+      screen.getByText('Up to 10 roles fit, and 11 are chosen. Remove 1 to continue.'),
     ).toBeTruthy();
     fireEvent.click(chip('Role 9'));
+    expect(screen.queryByText(/Up to 10 roles fit/)).toBeNull();
     continueOn();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(await savedTitles(api)).toHaveLength(10);
@@ -527,7 +527,7 @@ describe('Set it up, step 2: target roles', () => {
   });
 
   it('says at once when roles taken in from elsewhere fill the list past the limit', async () => {
-    const titles = Array.from({ length: 9 }, (_, n) => `Role ${n + 1}`);
+    const titles = Array.from({ length: 8 }, (_, n) => `Role ${n + 1}`);
     const { api } = await renderStep(titles);
     const request = api.request.bind(api);
     vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
@@ -537,9 +537,18 @@ describe('Set it up, step 2: target roles', () => {
       throw new ApiError('invalid', { status: 422 });
     });
     fireEvent.click(chip('Backend engineer'));
+    fireEvent.click(chip('Platform engineer'));
     continueOn();
     await waitFor(() => expect(alertText()).toContain('changed somewhere else'));
-    expect(screen.getByText('You can add up to 10 roles. Remove one to add another.')).toBeTruthy();
+    expect(
+      screen.getByText('Up to 10 roles fit, and 12 are chosen. Remove 2 to continue.'),
+    ).toBeTruthy();
+    await waitFor(() => expect(statusText()).toContain('Remove 2 to continue.'));
+    // One removed, still too many: the reason stays, with what is left.
+    fireEvent.click(chip('Elsewhere 1'));
+    expect(
+      screen.getByText('Up to 10 roles fit, and 11 are chosen. Remove 1 to continue.'),
+    ).toBeTruthy();
   });
 
   it('says the list is full when the API finds it full', async () => {
@@ -552,9 +561,12 @@ describe('Set it up, step 2: target roles', () => {
     );
     fireEvent.click(chip('Backend engineer'));
     continueOn();
-    await waitFor(() =>
-      expect(alertText()).toContain('You can add up to 10 roles. Remove one to add another.'),
-    );
+    // Under the list, and said: not a refusal of the save as a whole.
+    expect(
+      await screen.findByText('You can add up to 10 roles. Remove one to add another.'),
+    ).toBeTruthy();
+    await waitFor(() => expect(statusText()).toContain('Remove one to add another.'));
+    expect(alertText()).not.toContain('You can add up to 10 roles.');
   });
 
   it('says how long to wait, or that the session ended', async () => {

@@ -256,6 +256,7 @@ export const en = {
       empty: 'Type a job title first, or pick one below.',
       duplicate: '{title} is already on your list.',
       full: 'You can add up to {max} roles. Remove one to add another.',
+      tooMany: 'Up to {max} roles fit, and {count} are chosen. Remove {extra} to continue.',
       none: 'Add at least one role, or pick a suggestion.',
       invalid: 'Check this title.',
       /** The API refused a title this page let through (its rules are newer). */

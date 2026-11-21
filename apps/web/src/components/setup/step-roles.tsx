@@ -150,6 +150,18 @@ function RolesForm({
     say(reason);
   }
 
+  /** The list is at the limit: nothing more can be added. */
+  function failFull() {
+    failList(fill(text.full, { max: MAX }));
+  }
+
+  /** More roles are chosen than fit (`count`, taken in from elsewhere, say): some must go. */
+  function failOver(count: number) {
+    failList(
+      fill(text.tooMany, { max: MAX, count: String(count), extra: String(count - MAX_ROLES) }),
+    );
+  }
+
   /**
    * Adds the typed title (a chip of its own at the front, or its chip checked), and returns the
    * chosen titles with it; null when it can't be added (the reason is shown).
@@ -205,13 +217,16 @@ function RolesForm({
     const next = checked
       ? [...chosen, title]
       : chosen.filter((chosenTitle) => !same(chosenTitle, title));
-    if (checked && inUse(saved, next) > MAX_ROLES) {
-      failList(fill(text.full, { max: MAX }));
+    const count = inUse(saved, next);
+    if (checked && count > MAX_ROLES) {
+      failFull();
       return;
     }
     setError(null);
-    setListError(null);
     setChosen(next);
+    // Still more than fit (taken in from elsewhere): the reason stays, with what is left to remove.
+    if (count > MAX_ROLES) failOver(count);
+    else setListError(null);
   }
 
   /**
@@ -281,8 +296,9 @@ function RolesForm({
       const changes = plan(current, titles);
       // The API counts roles, not titles (two saved may share one): more than fit (roles taken
       // in from elsewhere on top of these, say) means some must go first.
-      if (current.length - changes.remove.length + changes.add.length > MAX_ROLES) {
-        failList(fill(text.full, { max: MAX }));
+      const count = current.length - changes.remove.length + changes.add.length;
+      if (count > MAX_ROLES) {
+        failOver(count);
         return;
       }
       // Removed first, so the new ones fit under the limit.
@@ -325,6 +341,8 @@ function RolesForm({
         } catch {
           // Unread, the limit is still the reason.
         }
+        failFull();
+        return;
       }
       setRefusal(refusalFor(error, doing));
     } finally {
@@ -343,7 +361,8 @@ function RolesForm({
     if (merged.changed) {
       takeIn(merged.titles, titlesOf(fresh));
       // Taken in, there may be more than fit: said now, not on the next try.
-      if (inUse(fresh, merged.titles) > MAX_ROLES) setListError(fill(text.full, { max: MAX }));
+      const count = inUse(fresh, merged.titles);
+      if (count > MAX_ROLES) failOver(count);
       return true;
     }
     before.current = titlesOf(fresh);
@@ -359,8 +378,6 @@ function RolesForm({
       // Its answer lost, or failed on the server's side: it may have saved.
       if (error.kind === 'unsure') return copy.setUp.errors.unknownOutcome;
       if (doing && error.kind === 'server') return copy.setUp.errors.unknownOutcomeLater;
-      // The limit, reached by roles added elsewhere since the read.
-      if (isFull(error)) return fill(text.full, { max: MAX });
       // The API refused this title (its rules, newer than this page's): only changing it helps.
       if (error.status === 400 && doing?.post) return fill(text.refused, { title: doing.title });
     }
