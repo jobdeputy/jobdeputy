@@ -50,13 +50,9 @@ export function StepResume({
   const [form, setForm] = useState<FormState | null>(null);
   const mood = form?.mood ?? 'idle';
   useEffect(() => onMood(mood), [mood, onMood]);
-  // The footer: the form's, once it is on screen; without a form, only where the step would
-  // otherwise be a dead end (it is optional): its résumés can't be read for now, or wait for a
-  // connection. Never once the session or account has ended (Sign out is in the header).
-  const footer = form
-    ? !form.ended
-    : (documents.isError && !isFinal(documents.error)) ||
-      (documents.isPaused && documents.data === undefined);
+  // The footer is always there (the step is optional, so it never traps anyone): Skip for now
+  // until the form shows a résumé to continue with.
+  const canContinue = form?.canContinue ?? false;
   return (
     <>
       <StepIntro eyebrow={text.eyebrow} title={text.title} intro={text.intro} />
@@ -75,16 +71,14 @@ export function StepResume({
       >
         {(saved) => <ResumeForm saved={saved} onState={setForm} checkEvery={checkEvery} />}
       </QueryRegion>
-      {footer && (
-        <div className="flex flex-wrap items-center gap-3">
-          <Button size="lg" onClick={onDone} disabled={form?.busy}>
-            {form?.canContinue ? copy.setUp.continue : text.skip}
-          </Button>
-          <Button variant="outline" size="lg" onClick={onBack} disabled={form?.busy}>
-            {copy.setUp.back}
-          </Button>
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button size="lg" onClick={onDone} disabled={form?.busy}>
+          {canContinue ? copy.setUp.continue : text.skip}
+        </Button>
+        <Button variant="outline" size="lg" onClick={onBack} disabled={form?.busy}>
+          {copy.setUp.back}
+        </Button>
+      </div>
     </>
   );
 }
@@ -96,8 +90,6 @@ interface FormState {
   canContinue: boolean;
   /** An upload or a removal is under way: the footer waits (Cancel stops an upload). */
   busy: boolean;
-  /** The session or account ended while following the résumé: there is no way on here. */
-  ended: boolean;
 }
 
 /** What the step holds: nothing yet, a file on its way up, or a résumé the API has. */
@@ -173,10 +165,10 @@ function ResumeForm({
 
   const polled = useDocument(held.kind === 'document' ? held.document : null, checkEvery);
   const document = held.kind === 'document' ? (polled.data ?? held.document) : null;
-  const checking = document !== null && isChecking(document);
-  const unusable = document !== null && isUnusable(document);
-  // The polling stopped because asking again can't help.
+  // The polling stopped because asking again can't help: nothing is being followed any more.
   const pollEnded = isFinal(polled.error) ? refusalText(polled.error) : null;
+  const checking = document !== null && isChecking(document) && pollEnded === null;
+  const unusable = document !== null && isUnusable(document);
   const long = useLongWait(checking);
 
   const mood: ResumeMood =
@@ -305,17 +297,8 @@ function ResumeForm({
   const busy = uploading || removing;
   // A file is in (being checked, or ready): the server carries on if the person moves on.
   const canContinue = document !== null && !unusable;
-  const ended = pollEnded !== null;
-  useEffect(
-    () => onState({ mood, canContinue, busy, ended }),
-    [mood, canContinue, busy, ended, onState],
-  );
+  useEffect(() => onState({ mood, canContinue, busy }), [mood, canContinue, busy, onState]);
   useEffect(() => () => onState(null), [onState]);
-  // The footer goes when it ends: focus moves to why, rather than to nowhere.
-  const alertLine = useRef<HTMLParagraphElement>(null);
-  useEffect(() => {
-    if (ended) alertLine.current?.focus();
-  }, [ended]);
   const alert = error ?? pollEnded ?? (unusable ? (document?.error ?? text.unusable) : null);
   return (
     <div className="grid gap-6">
@@ -450,12 +433,7 @@ function ResumeForm({
       <p role="status" className="sr-only">
         {spoken}
       </p>
-      <p
-        ref={alertLine}
-        role="alert"
-        tabIndex={-1}
-        className={cn('m-0 text-sm font-[650] text-danger-ink outline-none', !alert && 'sr-only')}
-      >
+      <p role="alert" className={cn('m-0 text-sm font-[650] text-danger-ink', !alert && 'sr-only')}>
         {alert}
       </p>
     </div>

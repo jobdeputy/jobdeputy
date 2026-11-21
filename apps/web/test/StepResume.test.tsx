@@ -207,34 +207,6 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     expect(await documents(api)).toEqual([]);
   });
 
-  it('offers its way on only with the form, already right (no Skip turning into Continue)', async () => {
-    const api = createFakeApi({ delay: 0, checkMs: 0 });
-    await upload(api, pdf('Earlier.pdf'));
-    const slow = createFakeApi({ delay: 0, checkMs: 0 });
-    // The same résumé, read slowly enough for the loading skeleton to show and hold.
-    vi.spyOn(slow, 'request').mockImplementation(async (method, path, body) => {
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      return api.request(method, path, body);
-    });
-    const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
-      <QueryClientProvider client={queries}>
-        <ApiContext.Provider value={slow}>
-          <StepResume checkEvery={CHECK_EVERY} onDone={vi.fn()} onBack={vi.fn()} onMood={vi.fn()} />
-        </ApiContext.Provider>
-      </QueryClientProvider>,
-    );
-    const first = await screen.findByRole(
-      'button',
-      { name: /Continue|Skip for now/ },
-      {
-        timeout: 15_000,
-      },
-    );
-    expect(first.textContent).toBe('Continue');
-    expect(screen.getByRole('list', { name: 'Your résumé' })).toBeTruthy();
-  });
-
   it('opens on the résumé already added, ready to continue', async () => {
     const api = createFakeApi({ delay: 0, checkMs: 0 });
     const { onDone } = await renderStep(api, [pdf('Earlier.pdf')]);
@@ -495,17 +467,18 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
 
   it('stops following a résumé once the session has ended, and says so', async () => {
     const api = createFakeApi({ delay: 0, checkMs: 60_000 });
-    const { queries } = await renderStep(api);
+    const { queries, onMood } = await renderStep(api);
     pick(pdf());
     await item().findByText('Checking it for malware · step 2 of 3');
     vi.spyOn(api, 'request').mockRejectedValue(new ApiError('signed-out'));
     await waitFor(() => expect(alertText()).toContain('Your session has ended.'), {
       timeout: 15_000,
     });
-    // No way on (Sign out is in the header), and focus is on why.
-    expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
-    expect(document.activeElement?.textContent).toContain('Your session has ended.');
+    // Nothing is being followed any more: the deputy is no longer at work on it, and nothing says
+    // it keeps going. The footer stays, as on every step (Sign out is in the header).
+    await waitFor(() => expect(onMood).toHaveBeenLastCalledWith('idle'));
+    expect(statusText()).not.toContain('keeps going');
+    expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
     // Not asked again: the followed résumé's next check is off.
     const followed = queries
       .getQueryCache()
@@ -556,24 +529,6 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
     fireEvent.click(retry);
     expect(await screen.findByRole('button', { name: 'Choose a file' })).toBeTruthy();
-  });
-});
-
-describe('Set it up, step 3, once the session has ended', () => {
-  it('offers no way on: Sign out (in the header) is the way out', async () => {
-    const api = createFakeApi({ delay: 0, checkMs: 0 });
-    vi.spyOn(api, 'request').mockRejectedValue(new ApiError('signed-out'));
-    const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
-      <QueryClientProvider client={queries}>
-        <ApiContext.Provider value={api}>
-          <StepResume checkEvery={CHECK_EVERY} onDone={vi.fn()} onBack={vi.fn()} onMood={vi.fn()} />
-        </ApiContext.Provider>
-      </QueryClientProvider>,
-    );
-    await waitFor(() => expect(alertText()).toContain('Your session has ended.'));
-    expect(screen.queryByRole('button', { name: 'Skip for now' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
   });
 });
 
