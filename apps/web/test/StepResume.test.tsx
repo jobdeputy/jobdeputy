@@ -237,9 +237,7 @@ describe('Set it up, step 3: résumé', () => {
     await screen.findByRole('button', { name: 'Choose a file' });
     await upload(api, pdf('Elsewhere.pdf'));
     pick(pdf());
-    await waitFor(() =>
-      expect(alertText()).toContain('You can keep up to 10 résumés. Remove one to add another.'),
-    );
+    await waitFor(() => expect(alertText()).toContain('You’ve reached the limit of 10 résumés.'));
   });
 
   it('keeps the résumé when removing it fails, and says so', async () => {
@@ -270,10 +268,11 @@ describe('Set it up, step 3: résumé', () => {
     await item().findByText('Checking it for malware · step 2 of 3');
     const [only] = await documents(api);
     await api.request('DELETE', `/me/documents/${only?.documentId}`);
-    // The next check (every 2 s) finds it gone.
-    expect(
-      await screen.findByRole('button', { name: 'Choose a file' }, { timeout: 4000 }),
-    ).toBeTruthy();
+    item().getByRole('button', { name: 'Remove Alex_Morgan_Resume.pdf' }).focus();
+    // The next check (every 2 s) finds it gone; focus moves to the way to add one.
+    const choose = await screen.findByRole('button', { name: 'Choose a file' }, { timeout: 4000 });
+    await waitFor(() => expect(document.activeElement).toBe(choose));
+    await waitFor(() => expect(statusText()).toContain('Alex_Morgan_Resume.pdf removed.'));
   });
 
   it('leaves out a résumé still waiting from an earlier visit (it can’t tell if its file came)', async () => {
@@ -284,6 +283,31 @@ describe('Set it up, step 3: résumé', () => {
     });
     await renderStep(api);
     expect(screen.getByRole('button', { name: 'Choose a file' })).toBeTruthy();
+  });
+
+  it('opens again on its own upload still being checked (Back, then Continue on step 2)', async () => {
+    const api = createFakeApi({ delay: 0, checkMs: 60_000 });
+    const { queries, view } = await renderStep(api);
+    pick(pdf());
+    await item().findByText('Checking it for malware · step 2 of 3');
+    view.unmount();
+    render(
+      <QueryClientProvider client={queries}>
+        <ApiContext.Provider value={api}>
+          <StepResume onDone={vi.fn()} onBack={vi.fn()} onMood={vi.fn()} />
+        </ApiContext.Provider>
+      </QueryClientProvider>,
+    );
+    expect(await item().findByText('Checking it for malware · step 2 of 3')).toBeTruthy();
+  });
+
+  it('lets the zone take a dragged file', async () => {
+    await renderStep();
+    const transfer = { types: ['Files'], dropEffect: 'copy', files: [] };
+    const over = new Event('dragover', { cancelable: true, bubbles: true });
+    Object.defineProperty(over, 'dataTransfer', { value: transfer });
+    screen.getByText('Drop your résumé here').dispatchEvent(over);
+    expect(transfer.dropEffect).toBe('copy');
   });
 
   it('stops following a résumé once the session has ended, and says so', async () => {
@@ -302,15 +326,15 @@ describe('Set it up, step 3: résumé', () => {
 
   it('keeps a file dropped beside the zone from leaving the app', async () => {
     await renderStep();
-    const drop = new Event('drop', { cancelable: true });
+    const drop = new Event('drop', { cancelable: true, bubbles: true });
     Object.defineProperty(drop, 'dataTransfer', { value: { types: ['Files'] } });
-    window.dispatchEvent(drop);
+    document.body.dispatchEvent(drop);
     expect(drop.defaultPrevented).toBe(true);
     // Dragged over, it shows as not allowed rather than seeming to be taken.
-    const over = new Event('dragover', { cancelable: true });
+    const over = new Event('dragover', { cancelable: true, bubbles: true });
     const transfer = { types: ['Files'], dropEffect: 'copy' };
     Object.defineProperty(over, 'dataTransfer', { value: transfer });
-    window.dispatchEvent(over);
+    document.body.dispatchEvent(over);
     expect(over.defaultPrevented).toBe(true);
     expect(transfer.dropEffect).toBe('none');
   });
@@ -351,15 +375,17 @@ describe('startingDocument', () => {
     const rejected = doc('rejected', 'rejected');
     expect(startingDocument([rejected, reading, ready, chosen])).toBe(chosen);
     expect(startingDocument([rejected, reading, ready])).toBe(ready);
-    expect(startingDocument([reading, rejected])).toBe(reading);
+    expect(startingDocument([rejected, reading])).toBe(reading);
     expect(startingDocument([rejected])).toBe(rejected);
     expect(startingDocument([])).toBeNull();
   });
 
-  it('leaves out one still pending (being scanned and never uploaded look the same)', () => {
-    expect(startingDocument([doc('pending', 'pending')])).toBeNull();
+  it('leaves out one still pending unless its file was sent from this page', () => {
+    expect(startingDocument([doc('pending', 'pending')], new Set())).toBeNull();
+    const mine = doc('mine', 'pending');
+    expect(startingDocument([mine], new Set(['mine']))).toBe(mine);
     const failed = doc('failed', 'failed');
-    expect(startingDocument([doc('pending', 'pending'), failed])).toBe(failed);
+    expect(startingDocument([doc('pending', 'pending'), failed], new Set())).toBe(failed);
   });
 });
 

@@ -87,11 +87,18 @@ test('creates an account, confirms it with the code, lands signed in, and signs 
     page.getByText('notes.txt isn’t a PDF or DOCX file.', { exact: false }),
   ).toBeVisible();
   await expectNoAccessibilityViolations(page);
-  await picker.setInputFiles({
-    name: 'Alex_Morgan_Resume.pdf',
-    mimeType: 'application/pdf',
-    buffer: Buffer.from('%PDF-1.7 a résumé'),
+  // Dropped on the zone, as a person would drag it in.
+  const dropped = await page.evaluateHandle(() => {
+    const transfer = new DataTransfer();
+    transfer.items.add(
+      new File(['%PDF-1.7 a résumé'], 'Alex_Morgan_Resume.pdf', { type: 'application/pdf' }),
+    );
+    return transfer;
   });
+  const zone = page.getByText('Drop your résumé here');
+  for (const type of ['dragenter', 'dragover', 'drop']) {
+    await zone.dispatchEvent(type, { dataTransfer: dropped });
+  }
   const resume = page.getByRole('list', { name: 'Your résumé' });
   await expect(resume).toContainText('Checking it for malware');
   await expect(page.getByText('Checking your file')).toBeVisible();

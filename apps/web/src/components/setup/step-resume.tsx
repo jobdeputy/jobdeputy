@@ -11,6 +11,7 @@ import {
   checkFile,
   type Document,
   isChecking,
+  markUploadedHere,
   type StartedUpload,
   startingDocument,
   useDocument,
@@ -95,6 +96,10 @@ function ResumeForm({
   const [dragging, setDragging] = useState(false);
   const { spoken, say, hush } = useSaying();
   const picker = useRef<HTMLInputElement>(null);
+  const zone = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLOListElement>(null);
+  // Focus was on the résumé when it went (removed elsewhere): it moves to the way to add one.
+  const refocus = useRef(false);
   const choose = useRef<HTMLButtonElement>(null);
   // The upload under way, stopped by Cancel or by leaving the step.
   const sending = useRef<AbortController | null>(null);
@@ -113,16 +118,18 @@ function ResumeForm({
   // on the page, a drop does nothing.
   useEffect(() => {
     const refuse = (event: globalThis.DragEvent) => {
+      // The zone takes its own drops.
+      if (zone.current?.contains(event.target as Node | null)) return;
       if (!event.dataTransfer?.types.includes('Files')) return;
       event.preventDefault();
       // Shown as not allowed here (the zone takes it), rather than seeming to take it.
       event.dataTransfer.dropEffect = 'none';
     };
-    window.addEventListener('dragover', refuse);
-    window.addEventListener('drop', refuse);
+    globalThis.document.addEventListener('dragover', refuse);
+    globalThis.document.addEventListener('drop', refuse);
     return () => {
-      window.removeEventListener('dragover', refuse);
-      window.removeEventListener('drop', refuse);
+      globalThis.document.removeEventListener('dragover', refuse);
+      globalThis.document.removeEventListener('drop', refuse);
     };
   }, []);
 
@@ -134,7 +141,6 @@ function ResumeForm({
 
   const polled = useDocument(held.kind === 'document' ? held.document : null);
   const document = held.kind === 'document' ? (polled.data ?? held.document) : null;
-  // Judged at the time of the last answer, as the polling is (it stops there).
   const checking = document !== null && isChecking(document);
   const unusable = document?.status === 'rejected' || document?.status === 'failed';
   // The polling stopped because asking again can't help.
@@ -165,10 +171,26 @@ function ResumeForm({
   const followed = held.kind === 'document' ? held.document.documentId : null;
   const gone = polled.error instanceof ApiError && polled.error.kind === 'not-found';
   useEffect(() => {
-    if (!gone || followed === null) return;
+    if (!gone || followed === null || held.kind !== 'document') return;
+    refocus.current = list.current?.contains(globalThis.document.activeElement) ?? false;
     forget(queries, followed);
     setHeld({ kind: 'none' });
-  }, [gone, followed, queries]);
+    say(fill(text.said.removed, { name: held.document.fileName }));
+  }, [gone, followed, held, queries, say, text]);
+  useEffect(() => {
+    if (held.kind !== 'none' || !refocus.current) return;
+    refocus.current = false;
+    choose.current?.focus();
+  }, [held]);
+
+  // What the polling learns goes into the list too, so the step opens on it if it comes back.
+  const latest = polled.data;
+  useEffect(() => {
+    if (!latest) return;
+    queries.setQueryData<Document[]>(['documents'], (all) =>
+      all?.map((each) => (each.documentId === latest.documentId ? latest : each)),
+    );
+  }, [latest, queries]);
 
   /** Puts the step back to choosing a file, with focus on its button. */
   function startOver() {
@@ -221,7 +243,8 @@ function ResumeForm({
     if (!here.current) return;
     // In: the server checks it now (the API's next read says so too).
     const document: Document = { ...started.document, status: 'pending', sizeBytes: file.size };
-    queries.setQueryData<Document[]>(['documents'], (list) => [document, ...(list ?? [])]);
+    markUploadedHere(document.documentId);
+    queries.setQueryData<Document[]>(['documents'], (all) => [document, ...(all ?? [])]);
     setHeld({ kind: 'document', document });
     say(fill(text.said.checking, { name }));
   }
@@ -266,6 +289,7 @@ function ResumeForm({
         // everyone else, so the zone itself is not a control.
         // biome-ignore lint/a11y/noStaticElementInteractions: a drop target; the button inside is the control.
         <div
+          ref={zone}
           data-dragging={dragging || undefined}
           onDragEnter={(event) => {
             event.preventDefault();
@@ -319,7 +343,11 @@ function ResumeForm({
           />
         </div>
       ) : (
-        <ol aria-label={text.listName} className="@container m-0 grid list-none gap-2 p-0">
+        <ol
+          ref={list}
+          aria-label={text.listName}
+          className="@container m-0 grid list-none gap-2 p-0"
+        >
           <li
             data-state={uploading ? 'uploading' : document?.status}
             // On a narrow card the actions go under the name, so a long name keeps its width.

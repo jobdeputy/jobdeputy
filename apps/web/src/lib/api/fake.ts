@@ -29,6 +29,9 @@ const OUTCOMES = [
   },
 ] as const;
 
+/** Counted across every fake, so a résumé's ID is never reused on a page (as ULIDs aren't). */
+let lastDocument = 0;
+
 interface FakeDocument {
   view: Record<string, unknown> & { documentId: string; fileName: string };
   /** When its file arrived; the server check runs from then. */
@@ -62,7 +65,6 @@ export function createFakeApi({
   const roles = new Map<string, Record<string, unknown>[]>();
   const documents = new Map<string, FakeDocument[]>();
   let lastRole = 0;
-  let lastDocument = 0;
 
   /** A résumé as the API shows it now: its status moves on with time once its file is in. */
   function documentView({ view, uploadedAt }: FakeDocument): Record<string, unknown> {

@@ -315,7 +315,8 @@ export const en = {
       badName: 'Rename {name} to a plain file name (5 to 200 characters, no slashes or quotes).',
       /** The server couldn't use it and gave no reason. */
       unusable: 'This file couldn’t be used. Remove it, then choose another.',
-      full: 'You can keep up to {max} résumés. Remove one to add another.',
+      /** At the API's limit (unfinished uploads count until the server clears them, within a day). */
+      full: 'You’ve reached the limit of {max} résumés. Unfinished uploads count until they clear, within a day.',
       uploadFailed: 'The upload didn’t finish. Check your connection, then try again.',
       uploadRefused: 'The upload was refused. Try again.',
       removeFailed: 'That didn’t remove. Check your connection, then try again.',

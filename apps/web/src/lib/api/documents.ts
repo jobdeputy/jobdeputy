@@ -42,17 +42,36 @@ export function isChecking(document: Pick<Document, 'status'>): boolean {
   return document.status === 'pending' || document.status === 'processing';
 }
 
+/** Résumés whose file this page sent since it loaded: their `pending` is known to be the scan. */
+const uploadedHere = new Set<string>();
+
+/** Notes that this résumé's file was sent from this page. */
+export function markUploadedHere(documentId: string): void {
+  uploadedHere.add(documentId);
+}
+
 /**
  * The résumé the set-up shows from what is saved (newest first): a ready one (the default first);
- * else one being read; else the newest the server couldn't use, so the person knows. One still
- * `pending` from an earlier visit is left out: the server shows the same for a file being scanned
- * and for an upload that never came (a closed tab; it forgets those after a day), so the step can't
- * tell which. Its own uploads it follows from the start.
+ * else one still being checked; else the newest the server couldn't use, so the person knows. One
+ * `pending` whose file was not sent from this page is left out: the server shows the same for a
+ * file being scanned and for an upload that never came (a closed tab; it forgets those after a
+ * day), so the step can't tell which.
  */
-export function startingDocument(saved: readonly Document[]): Document | null {
-  const known = saved.filter((document) => document.status !== 'pending');
+export function startingDocument(
+  saved: readonly Document[],
+  sentHere: ReadonlySet<string> = uploadedHere,
+): Document | null {
+  const known = saved.filter(
+    (document) => document.status !== 'pending' || sentHere.has(document.documentId),
+  );
   const ready = known.filter((document) => document.status === 'ready');
-  return ready.find((document) => document.isDefault) ?? ready[0] ?? known[0] ?? null;
+  return (
+    ready.find((document) => document.isDefault) ??
+    ready[0] ??
+    known.find(isChecking) ??
+    known[0] ??
+    null
+  );
 }
 
 /** The file picker's types: each type's extension and its MIME type, as the API pairs them. */
