@@ -313,8 +313,6 @@ export const en = {
       empty: '{name} is empty. Choose a PDF or DOCX file under 5 MB.',
       tooLarge: '{name} is larger than 5 MB. Choose a smaller PDF or DOCX file.',
       badName: 'Rename {name} to a plain file name (5 to 200 characters, no slashes or quotes).',
-      /** Its file never arrived (the upload was stopped, say by closing the tab). */
-      abandoned: 'This file didn’t finish uploading. Remove it, then choose another.',
       /** The server couldn't use it and gave no reason. */
       unusable: 'This file couldn’t be used. Remove it, then choose another.',
       full: 'You can keep up to {max} résumés. Remove one to add another.',

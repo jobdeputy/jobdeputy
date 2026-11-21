@@ -66,11 +66,13 @@ export class ApiError extends Error {
   }
 }
 
+/** The session has ended or the account is closed: asking again can't help. */
+export function isFinal(error: unknown): boolean {
+  return error instanceof ApiError && (error.kind === 'signed-out' || error.kind === 'forbidden');
+}
+
 /** How long a read may take before it counts as `offline`. */
 export const READ_LIMIT_MS = 20_000;
-
-/** How long an upload may go without sending anything before it counts as `offline`. */
-export const UPLOAD_STALL_MS = 30_000;
 
 /**
  * Used when a 429 does not say how long to wait: API Gateway's own throttle sends no
@@ -99,8 +101,7 @@ export interface ApiClient {
   /**
    * Sends a file to a presigned form (S3's browser POST: the form's fields, then the file); no
    * token, the form is its own permission. Resolves once it is stored, or throws `ApiError`:
-   * `offline` when it didn't get through, or sent nothing for 30 s (sending it again is safe: it
-   * replaces the same file),
+   * `offline` when it didn't get through (sending it again is safe: it replaces the same file),
    * `invalid` when the form refused it (too large, or the form ran out), `server` otherwise.
    */
   upload(form: UploadForm, file: Blob, options?: UploadOptions): Promise<void>;
@@ -180,24 +181,9 @@ function sendForm(form: UploadForm, file: Blob, options: UploadOptions = {}): Pr
     body.append('file', file);
     const request = new XMLHttpRequest();
     const abort = () => request.abort();
-    // A connection that stops sending but stays open would never end: after 30 s without a byte
-    // sent, it is given up on. Each byte sent starts the wait again.
-    let stalled = false;
-    let stall: ReturnType<typeof setTimeout> | undefined;
-    const watch = () => {
-      clearTimeout(stall);
-      stall = setTimeout(() => {
-        stalled = true;
-        request.abort();
-      }, UPLOAD_STALL_MS);
-    };
-    const done = () => {
-      clearTimeout(stall);
-      signal?.removeEventListener('abort', abort);
-    };
+    const done = () => signal?.removeEventListener('abort', abort);
     signal?.addEventListener('abort', abort, { once: true });
     request.upload.addEventListener('progress', (event) => {
-      watch();
       if (event.lengthComputable && event.total > 0) onProgress?.(event.loaded / event.total);
     });
     request.addEventListener('load', () => {
@@ -217,12 +203,10 @@ function sendForm(form: UploadForm, file: Blob, options: UploadOptions = {}): Pr
     });
     request.addEventListener('abort', () => {
       done();
-      if (stalled) reject(new ApiError('offline'));
-      else reject(signal?.reason ?? new DOMException('The upload was stopped.', 'AbortError'));
+      reject(signal?.reason ?? new DOMException('The upload was stopped.', 'AbortError'));
     });
     request.open('POST', form.url);
     request.send(body);
-    watch();
   });
 }
 

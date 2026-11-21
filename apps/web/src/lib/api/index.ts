@@ -11,6 +11,7 @@ export {
   type ApiMethod,
   DEFAULT_RETRY_AFTER_SECONDS,
   type FieldError,
+  isFinal,
   type UploadForm,
   type UploadOptions,
 } from './client.ts';

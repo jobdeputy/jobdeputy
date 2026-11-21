@@ -6,11 +6,11 @@ import { Field } from '@/components/auth/fields.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { QueryRegion } from '@/components/ui/query-region.tsx';
 import { copy, fill } from '@/copy/index.ts';
-import { ApiError, useApi } from '@/lib/api/index.ts';
+import { ApiError, isFinal, useApi } from '@/lib/api/index.ts';
 import { type Role, rolesQuery, useRoles } from '@/lib/api/roles.ts';
 import { useDelayedPending } from '@/lib/use-delayed-pending.ts';
 import { cn } from '@/lib/utils.ts';
-import { isFinal, LoadFailed, refusalText, StepIntro, useSaying } from './parts.tsx';
+import { LoadFailed, refusalText, StepIntro, useSaying } from './parts.tsx';
 
 /** A role's title as the API checks it (trimmed, 1 to 120 characters). */
 const TITLE = createRoleInput.shape.title;

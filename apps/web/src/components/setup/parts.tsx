@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button.tsx';
 import { copy, fill, plural } from '@/copy/index.ts';
-import { ApiError, DEFAULT_RETRY_AFTER_SECONDS } from '@/lib/api/index.ts';
+import { ApiError, DEFAULT_RETRY_AFTER_SECONDS, isFinal } from '@/lib/api/index.ts';
 import { LIVE_REGION_BEAT_MS } from '@/lib/live-region.ts';
 
 /** How long words stay in a step's status line after being said (they are read when they arrive). */
@@ -143,9 +143,4 @@ export function LoadFailed({
       )}
     </div>
   );
-}
-
-/** The session has ended or the account is closed: trying again here can't help. */
-export function isFinal(error: unknown): boolean {
-  return error instanceof ApiError && (error.kind === 'signed-out' || error.kind === 'forbidden');
 }

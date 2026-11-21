@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StepResume, sizeText } from '../src/components/setup/step-resume.tsx';
 import { ApiError } from '../src/lib/api/client.ts';
 import {
-  ABANDONED_AFTER_MS,
   checkFile,
   type Document,
   type StartedUpload,
@@ -277,15 +276,12 @@ describe('Set it up, step 3: résumé', () => {
     ).toBeTruthy();
   });
 
-  it('leaves out a résumé whose file never came, and says when one stops coming', async () => {
+  it('leaves out a résumé still waiting from an earlier visit (it can’t tell if its file came)', async () => {
     const api = createFakeApi({ delay: 0, checkMs: 0 });
-    // Started, then the tab was closed: no file ever followed.
     await api.request('POST', '/me/documents', {
       fileName: 'Closed.pdf',
       contentType: 'application/pdf',
     });
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(Date.now() + ABANDONED_AFTER_MS + 1000);
     await renderStep(api);
     expect(screen.getByRole('button', { name: 'Choose a file' })).toBeTruthy();
   });
@@ -304,26 +300,19 @@ describe('Set it up, step 3: résumé', () => {
     expect(request.mock.calls.length).toBe(asked);
   });
 
-  it('removes the résumé a lost answer may have started', async () => {
-    const api = createFakeApi({ delay: 0, checkMs: 0 });
-    await renderStep(api);
-    const real = api.request.bind(api);
-    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
-      const answer = await real(method, path, body);
-      if (method === 'POST') throw new ApiError('unsure');
-      return answer;
-    });
-    pick(pdf());
-    await waitFor(() => expect(alertText()).toContain('The upload didn’t finish.'));
-    await waitFor(async () => expect(await documents(api)).toEqual([]));
-  });
-
   it('keeps a file dropped beside the zone from leaving the app', async () => {
     await renderStep();
     const drop = new Event('drop', { cancelable: true });
     Object.defineProperty(drop, 'dataTransfer', { value: { types: ['Files'] } });
     window.dispatchEvent(drop);
     expect(drop.defaultPrevented).toBe(true);
+    // Dragged over, it shows as not allowed rather than seeming to be taken.
+    const over = new Event('dragover', { cancelable: true });
+    const transfer = { types: ['Files'], dropEffect: 'copy' };
+    Object.defineProperty(over, 'dataTransfer', { value: transfer });
+    window.dispatchEvent(over);
+    expect(over.defaultPrevented).toBe(true);
+    expect(transfer.dropEffect).toBe('none');
   });
 
   it('stops saying something that no longer holds when a pick is refused', async () => {
@@ -352,27 +341,25 @@ describe('Set it up, step 3: résumé', () => {
 });
 
 describe('startingDocument', () => {
-  const now = Date.parse('2026-11-21T12:00:00Z');
-  const at = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString();
-  const doc = (documentId: string, status: Document['status'], minutesAgo = 1, isDefault = false) =>
-    ({ documentId, status, createdAt: at(minutesAgo), isDefault }) as Document;
+  const doc = (documentId: string, status: Document['status'], isDefault = false) =>
+    ({ documentId, status, isDefault }) as Document;
 
-  it('prefers a ready résumé (the default first), then one being checked, then the newest', () => {
-    const ready = doc('ready', 'ready', 30);
-    const chosen = doc('default', 'ready', 60, true);
-    const checking = doc('checking', 'processing');
+  it('prefers a ready résumé (the default first), then one being read, then the newest', () => {
+    const ready = doc('ready', 'ready');
+    const chosen = doc('default', 'ready', true);
+    const reading = doc('reading', 'processing');
     const rejected = doc('rejected', 'rejected');
-    expect(startingDocument([rejected, checking, ready, chosen], now)).toBe(chosen);
-    expect(startingDocument([rejected, checking, ready], now)).toBe(ready);
-    expect(startingDocument([rejected, checking], now)).toBe(checking);
-    expect(startingDocument([rejected], now)).toBe(rejected);
-    expect(startingDocument([], now)).toBeNull();
+    expect(startingDocument([rejected, reading, ready, chosen])).toBe(chosen);
+    expect(startingDocument([rejected, reading, ready])).toBe(ready);
+    expect(startingDocument([reading, rejected])).toBe(reading);
+    expect(startingDocument([rejected])).toBe(rejected);
+    expect(startingDocument([])).toBeNull();
   });
 
-  it('leaves out one still waiting for its file after 15 minutes', () => {
-    const waiting = doc('waiting', 'pending', 14);
-    expect(startingDocument([waiting], now)).toBe(waiting);
-    expect(startingDocument([doc('gone', 'pending', 16)], now)).toBeNull();
+  it('leaves out one still pending (being scanned and never uploaded look the same)', () => {
+    expect(startingDocument([doc('pending', 'pending')])).toBeNull();
+    const failed = doc('failed', 'failed');
+    expect(startingDocument([doc('pending', 'pending'), failed])).toBe(failed);
   });
 });
 
