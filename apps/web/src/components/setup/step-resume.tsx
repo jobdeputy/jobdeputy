@@ -7,24 +7,23 @@ import { Progress } from '@/components/ui/progress.tsx';
 import { QueryRegion } from '@/components/ui/query-region.tsx';
 import { copy, fill } from '@/copy/index.ts';
 import {
+  ACCEPT,
   checkFile,
   type Document,
+  isAbandoned,
   isChecking,
   type StartedUpload,
+  startingDocument,
   useDocument,
   useDocuments,
 } from '@/lib/api/documents.ts';
-import { ApiError, useApi } from '@/lib/api/index.ts';
+import { type ApiClient, ApiError, useApi } from '@/lib/api/index.ts';
 import { useLongWait } from '@/lib/use-delayed-pending.ts';
 import { cn } from '@/lib/utils.ts';
 import { isFinal, LoadFailed, refusalText, StepIntro, useSaying } from './parts.tsx';
 
 /** What the deputy beside the step shows: at rest, at work on the file, or pleased with it. */
 export type ResumeMood = 'idle' | 'working' | 'ready';
-
-/** What the file picker offers: the API's two types, by extension and by type. */
-const ACCEPT =
-  '.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 /**
  * Set it up, step 3 (#33): the résumé, optional. A PDF or DOCX file is dropped or chosen, checked
@@ -79,7 +78,7 @@ function ResumeForm({
   onBack,
   onMood,
 }: {
-  /** The person's résumés, newest first; the step starts from the newest. */
+  /** The person's résumés, newest first; the step starts from `startingDocument`'s pick. */
   saved: Document[];
   onDone: () => void;
   onBack: () => void;
@@ -88,13 +87,14 @@ function ResumeForm({
   const text = copy.setUp.resume;
   const api = useApi();
   const queries = useQueryClient();
-  const [held, setHeld] = useState<Held>(() =>
-    saved[0] ? { kind: 'document', document: saved[0] } : { kind: 'none' },
-  );
+  const [held, setHeld] = useState<Held>(() => {
+    const document = startingDocument(saved, Date.now());
+    return document ? { kind: 'document', document } : { kind: 'none' };
+  });
   const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const { spoken, say } = useSaying();
+  const { spoken, say, hush } = useSaying();
   const picker = useRef<HTMLInputElement>(null);
   const choose = useRef<HTMLButtonElement>(null);
   // The upload under way, stopped by Cancel or by leaving the step.
@@ -110,10 +110,34 @@ function ResumeForm({
     };
   }, []);
 
+  // A file dropped beside the zone would be opened by the browser, leaving the app: anywhere else
+  // on the page, a drop does nothing.
+  useEffect(() => {
+    const refuse = (event: globalThis.DragEvent) => {
+      if (event.dataTransfer?.types.includes('Files')) event.preventDefault();
+    };
+    window.addEventListener('dragover', refuse);
+    window.addEventListener('drop', refuse);
+    return () => {
+      window.removeEventListener('dragover', refuse);
+      window.removeEventListener('drop', refuse);
+    };
+  }, []);
+
+  /** Shows why something didn't work; a line still to be said no longer holds. */
+  function fail(reason: string) {
+    hush();
+    setError(reason);
+  }
+
   const polled = useDocument(held.kind === 'document' ? held.document : null);
   const document = held.kind === 'document' ? (polled.data ?? held.document) : null;
-  const checking = document !== null && isChecking(document);
-  const unusable = document?.status === 'rejected' || document?.status === 'failed';
+  // Judged at the time of the last answer, as the polling is (it stops there).
+  const abandoned = document !== null && isAbandoned(document, polled.dataUpdatedAt || Date.now());
+  const checking = document !== null && isChecking(document) && !abandoned;
+  const unusable = abandoned || document?.status === 'rejected' || document?.status === 'failed';
+  // The polling stopped because asking again can't help.
+  const pollEnded = isFinal(polled.error) ? refusalText(polled.error) : null;
   const long = useLongWait(checking);
 
   const mood: ResumeMood =
@@ -155,7 +179,7 @@ function ResumeForm({
     setError(null);
     const checked = checkFile(file);
     if (!checked.ok) {
-      setError(fill(PICK_REFUSALS[checked.reason], { name: file.name }));
+      fail(fill(PICK_REFUSALS[checked.reason], { name: file.name }));
       return;
     }
     const name = checked.input.fileName;
@@ -164,6 +188,7 @@ function ResumeForm({
     setHeld({ kind: 'uploading', name, progress: 0 });
     say(fill(text.said.uploading, { name }));
     let started: StartedUpload | undefined;
+    const asked = Date.now();
     try {
       started = await api.request<StartedUpload>('POST', '/me/documents', checked.input);
       if (controller.signal.aborted) throw controller.signal.reason;
@@ -181,6 +206,9 @@ function ResumeForm({
       if (started) {
         const { documentId } = started.document;
         api.request('DELETE', `/me/documents/${documentId}`).catch(() => undefined);
+      } else if (failure instanceof ApiError && failure.kind === 'unsure') {
+        // Its answer was lost, so it may have been started all the same.
+        void dropUnstarted(api, name, asked);
       }
       if (!here.current) return;
       if (controller.signal.aborted) {
@@ -188,7 +216,7 @@ function ResumeForm({
         say(fill(text.said.cancelled, { name }));
         return;
       }
-      setError(uploadRefusal(failure, started === undefined));
+      fail(uploadRefusal(failure, started === undefined));
       startOver();
       return;
     }
@@ -211,7 +239,7 @@ function ResumeForm({
       if (!(failure instanceof ApiError && failure.kind === 'not-found')) {
         if (!here.current) return;
         setRemoving(false);
-        setError(isFinal(failure) ? refusalText(failure) : text.removeFailed);
+        fail(isFinal(failure) ? refusalText(failure) : text.removeFailed);
         return;
       }
     }
@@ -233,7 +261,10 @@ function ResumeForm({
   const busy = uploading || removing;
   // A file is in (being checked, or ready): the server carries on if the person moves on.
   const canContinue = document !== null && !unusable;
-  const alert = error ?? (unusable ? (document?.error ?? text.unusable) : null);
+  const alert =
+    error ??
+    pollEnded ??
+    (abandoned ? text.abandoned : unusable ? (document?.error ?? text.unusable) : null);
   return (
     <div className="grid gap-6">
       {held.kind === 'none' ? (
@@ -315,7 +346,11 @@ function ResumeForm({
                 {held.kind === 'uploading' ? held.name : document?.fileName}
               </span>
               <span className="text-[0.8125rem] text-muted-foreground">
-                {document ? statusLine(document) : stageLine('uploading')}
+                {abandoned
+                  ? text.notUsed
+                  : document
+                    ? statusLine(document)
+                    : stageLine('uploading')}
               </span>
             </span>
             <span className="col-start-2 flex flex-wrap items-center gap-2 @sm:col-start-auto @sm:justify-end">
@@ -375,6 +410,30 @@ function ResumeForm({
       </div>
     </div>
   );
+}
+
+/**
+ * Removes a résumé this step may have started though the answer was lost: one waiting for this
+ * file, with no file yet, started about when it was asked for (best effort; one left behind is
+ * forgotten by the server after a day).
+ */
+async function dropUnstarted(api: ApiClient, fileName: string, asked: number) {
+  try {
+    const { documents } = await api.request<{ documents: Document[] }>('GET', '/me/documents');
+    const near = (at: string) => Math.abs(Date.parse(at) - asked) < 5 * 60 * 1000;
+    const strays = documents.filter(
+      (each) =>
+        each.fileName === fileName &&
+        each.status === 'pending' &&
+        each.sizeBytes === undefined &&
+        near(each.createdAt),
+    );
+    await Promise.all(
+      strays.map((each) => api.request('DELETE', `/me/documents/${each.documentId}`)),
+    );
+  } catch {
+    // Best effort.
+  }
 }
 
 /** Drops a résumé from what the app has loaded (it is gone from the API). */

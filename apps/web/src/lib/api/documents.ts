@@ -37,10 +37,47 @@ export interface StartedUpload {
 /** How often a résumé being checked is asked about again. */
 export const CHECK_EVERY_MS = 2000;
 
+/**
+ * How long a résumé may wait for its file before it counts as abandoned: an upload stopped by a
+ * closed tab leaves one waiting (the server forgets it after a day), and a real file is in and
+ * checked within minutes.
+ */
+export const ABANDONED_AFTER_MS = 15 * 60 * 1000;
+
 /** Whether the server is still working on it (checking it, or reading it). */
 export function isChecking(document: Pick<Document, 'status'>): boolean {
   return document.status === 'pending' || document.status === 'processing';
 }
+
+/** Still waiting for a file that is not coming (see ABANDONED_AFTER_MS). */
+export function isAbandoned(
+  document: Pick<Document, 'status' | 'createdAt'>,
+  now: number,
+): boolean {
+  return document.status === 'pending' && now - Date.parse(document.createdAt) > ABANDONED_AFTER_MS;
+}
+
+/**
+ * The résumé the set-up shows from what is saved (newest first): a ready one (the default first);
+ * else one the server is still checking; else the newest it couldn't use, so the person knows. One
+ * whose file never came is left out.
+ */
+export function startingDocument(saved: readonly Document[], now: number): Document | null {
+  const live = saved.filter((document) => !isAbandoned(document, now));
+  const ready = live.filter((document) => document.status === 'ready');
+  return (
+    ready.find((document) => document.isDefault) ??
+    ready[0] ??
+    live.find(isChecking) ??
+    live[0] ??
+    null
+  );
+}
+
+/** The file picker's types: each type's extension and its MIME type, as the API pairs them. */
+export const ACCEPT = Object.entries(DOCUMENT_TYPES)
+  .flatMap(([type, { extension }]) => [extension, type])
+  .join(',');
 
 /**
  * Why this file can't be a résumé, before anything is sent: not a PDF or DOCX, empty, over the
@@ -91,7 +128,8 @@ export function documentsQuery(api: ApiClient) {
 
 /**
  * One résumé (none: nothing to follow), asked about again every 2 s while the server is still
- * checking it. A failed read keeps the last answer on screen and is asked again on the next beat.
+ * checking it, until its file counts as abandoned. A failed read keeps the last answer on screen
+ * and is asked again on the next beat, unless asking again can't help (signed out, account closed).
  */
 export function useDocument(initial: Document | null) {
   const api = useApi();
@@ -101,11 +139,22 @@ export function useDocument(initial: Document | null) {
     queryFn: () => api.request<Document>('GET', `/me/documents/${documentId}`),
     enabled: initial !== null,
     initialData: initial ?? undefined,
-    // The list's copy is as good as a fresh read only if it is done; one being checked is read now.
-    initialDataUpdatedAt: initial && isChecking(initial) ? 0 : Date.now(),
-    refetchInterval: (query) =>
-      query.state.data && isChecking(query.state.data) ? CHECK_EVERY_MS : false,
+    // A done résumé doesn't change by itself, so the list's copy stands; one being checked is read.
+    staleTime: (query) => (query.state.data && isChecking(query.state.data) ? 0 : Infinity),
+    refetchInterval: (query) => {
+      const { data, error } = query.state;
+      if (isEnded(error) || !data || !isChecking(data)) return false;
+      return isAbandoned(data, query.state.dataUpdatedAt) ? false : CHECK_EVERY_MS;
+    },
     // Polled: a failed read is simply asked again on the next beat.
     retry: false,
   });
+}
+
+/** Asking again can't help: the session has ended, the account is closed, or it is gone. */
+function isEnded(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    (error.kind === 'signed-out' || error.kind === 'forbidden' || error.kind === 'not-found')
+  );
 }

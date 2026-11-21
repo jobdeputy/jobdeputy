@@ -338,6 +338,25 @@ describe('the API client’s upload', () => {
     expect(FakeXhr.last).toBeUndefined();
   });
 
+  it('gives up on an upload that sends nothing for 30 s, counting from each byte sent', async () => {
+    vi.useFakeTimers();
+    try {
+      const xhr = sending();
+      const done = client().upload(FORM, new Blob(['x']));
+      const settled = vi.fn();
+      done.then(settled, settled);
+      await vi.advanceTimersByTimeAsync(20_000);
+      xhr().progress(1, 2);
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(settled).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(10_001);
+      expect(xhr().aborted).toBe(true);
+      expect((await failure(done)).kind).toBe('offline');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('sends nothing while the browser is offline', async () => {
     sending();
     vi.stubGlobal('navigator', { onLine: false });

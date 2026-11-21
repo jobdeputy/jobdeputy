@@ -3,13 +3,22 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StepResume, sizeText } from '../src/components/setup/step-resume.tsx';
 import { ApiError } from '../src/lib/api/client.ts';
-import { checkFile, type Document, type StartedUpload } from '../src/lib/api/documents.ts';
+import {
+  ABANDONED_AFTER_MS,
+  checkFile,
+  type Document,
+  type StartedUpload,
+  startingDocument,
+} from '../src/lib/api/documents.ts';
 import { createFakeApi } from '../src/lib/api/fake.ts';
 import { ApiContext } from '../src/lib/api/index.ts';
 import { createFakeAuth } from '../src/lib/auth/fake.ts';
 import { renderApp } from './render-app.tsx';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 type FakeApi = ReturnType<typeof createFakeApi>;
 
@@ -225,7 +234,7 @@ describe('Set it up, step 3: résumé', () => {
     const api = createFakeApi({ delay: 0, checkMs: 0 });
     const files = Array.from({ length: 10 }, (_, n) => pdf(`Resume ${n}.pdf`));
     await renderStep(api, files);
-    fireEvent.click(item().getByRole('button', { name: 'Remove Resume 9.pdf' }));
+    fireEvent.click(item().getByRole('button', { name: 'Remove Resume 0.pdf' }));
     await screen.findByRole('button', { name: 'Choose a file' });
     await upload(api, pdf('Elsewhere.pdf'));
     pick(pdf());
@@ -268,6 +277,64 @@ describe('Set it up, step 3: résumé', () => {
     ).toBeTruthy();
   });
 
+  it('leaves out a résumé whose file never came, and says when one stops coming', async () => {
+    const api = createFakeApi({ delay: 0, checkMs: 0 });
+    // Started, then the tab was closed: no file ever followed.
+    await api.request('POST', '/me/documents', {
+      fileName: 'Closed.pdf',
+      contentType: 'application/pdf',
+    });
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + ABANDONED_AFTER_MS + 1000);
+    await renderStep(api);
+    expect(screen.getByRole('button', { name: 'Choose a file' })).toBeTruthy();
+  });
+
+  it('stops following a résumé once the session has ended, and says so', async () => {
+    const api = createFakeApi({ delay: 0, checkMs: 60_000 });
+    await renderStep(api);
+    pick(pdf());
+    await item().findByText('Checking it for malware · step 2 of 3');
+    const request = vi.spyOn(api, 'request').mockRejectedValue(new ApiError('signed-out'));
+    await waitFor(() => expect(alertText()).toContain('Your session has ended.'), {
+      timeout: 4000,
+    });
+    const asked = request.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    expect(request.mock.calls.length).toBe(asked);
+  });
+
+  it('removes the résumé a lost answer may have started', async () => {
+    const api = createFakeApi({ delay: 0, checkMs: 0 });
+    await renderStep(api);
+    const real = api.request.bind(api);
+    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      const answer = await real(method, path, body);
+      if (method === 'POST') throw new ApiError('unsure');
+      return answer;
+    });
+    pick(pdf());
+    await waitFor(() => expect(alertText()).toContain('The upload didn’t finish.'));
+    await waitFor(async () => expect(await documents(api)).toEqual([]));
+  });
+
+  it('keeps a file dropped beside the zone from leaving the app', async () => {
+    await renderStep();
+    const drop = new Event('drop', { cancelable: true });
+    Object.defineProperty(drop, 'dataTransfer', { value: { types: ['Files'] } });
+    window.dispatchEvent(drop);
+    expect(drop.defaultPrevented).toBe(true);
+  });
+
+  it('stops saying something that no longer holds when a pick is refused', async () => {
+    await renderStep(createFakeApi({ delay: 0, checkMs: 0 }), [pdf('Earlier.pdf')]);
+    fireEvent.click(item().getByRole('button', { name: 'Remove Earlier.pdf' }));
+    await waitFor(() => expect(statusText()).toContain('Earlier.pdf removed.'));
+    pick(pdf('notes.txt'));
+    await waitFor(() => expect(alertText()).toContain('notes.txt isn’t a PDF or DOCX file.'));
+    expect(statusText()).not.toContain('removed');
+  });
+
   it('says when the résumés could not be read, and tries again', async () => {
     const api = createFakeApi({ delay: 0, checkMs: 0 });
     vi.spyOn(api, 'request').mockRejectedValueOnce(new ApiError('server', { status: 500 }));
@@ -281,6 +348,31 @@ describe('Set it up, step 3: résumé', () => {
     );
     fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
     expect(await screen.findByRole('button', { name: 'Skip for now' })).toBeTruthy();
+  });
+});
+
+describe('startingDocument', () => {
+  const now = Date.parse('2026-11-21T12:00:00Z');
+  const at = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString();
+  const doc = (documentId: string, status: Document['status'], minutesAgo = 1, isDefault = false) =>
+    ({ documentId, status, createdAt: at(minutesAgo), isDefault }) as Document;
+
+  it('prefers a ready résumé (the default first), then one being checked, then the newest', () => {
+    const ready = doc('ready', 'ready', 30);
+    const chosen = doc('default', 'ready', 60, true);
+    const checking = doc('checking', 'processing');
+    const rejected = doc('rejected', 'rejected');
+    expect(startingDocument([rejected, checking, ready, chosen], now)).toBe(chosen);
+    expect(startingDocument([rejected, checking, ready], now)).toBe(ready);
+    expect(startingDocument([rejected, checking], now)).toBe(checking);
+    expect(startingDocument([rejected], now)).toBe(rejected);
+    expect(startingDocument([], now)).toBeNull();
+  });
+
+  it('leaves out one still waiting for its file after 15 minutes', () => {
+    const waiting = doc('waiting', 'pending', 14);
+    expect(startingDocument([waiting], now)).toBe(waiting);
+    expect(startingDocument([doc('gone', 'pending', 16)], now)).toBeNull();
   });
 });
 
