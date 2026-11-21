@@ -232,3 +232,116 @@ describe('the API client', () => {
     expect(dated).toBeLessThanOrEqual(31);
   });
 });
+
+/**
+ * A stand-in for the browser's XMLHttpRequest: records what is sent, then `finish` ends it the way
+ * S3 would (a status), or the network would (`error`), reporting progress first.
+ */
+class FakeXhr {
+  static last: FakeXhr | undefined;
+  readonly upload = new EventTarget();
+  readonly events = new EventTarget();
+  method = '';
+  url = '';
+  body: FormData | undefined;
+  status = 0;
+  aborted = false;
+  constructor() {
+    FakeXhr.last = this;
+  }
+  addEventListener(type: string, listener: EventListener) {
+    this.events.addEventListener(type, listener);
+  }
+  open(method: string, url: string) {
+    this.method = method;
+    this.url = url;
+  }
+  send(body: FormData) {
+    this.body = body;
+  }
+  abort() {
+    this.aborted = true;
+    this.events.dispatchEvent(new Event('abort'));
+  }
+  progress(loaded: number, total: number) {
+    const event = Object.assign(new Event('progress'), { lengthComputable: true, loaded, total });
+    this.upload.dispatchEvent(event);
+  }
+  finish(status: number | 'error') {
+    if (status === 'error') {
+      this.events.dispatchEvent(new Event('error'));
+      return;
+    }
+    this.status = status;
+    this.events.dispatchEvent(new Event('load'));
+  }
+}
+
+function sending() {
+  vi.stubGlobal('XMLHttpRequest', FakeXhr);
+  FakeXhr.last = undefined;
+  const xhr = () => {
+    if (!FakeXhr.last) throw new Error('Nothing sent');
+    return FakeXhr.last;
+  };
+  return xhr;
+}
+
+const FORM = {
+  url: 'https://bucket.s3.us-east-1.amazonaws.com/',
+  fields: { key: 'k', policy: 'p' },
+};
+
+describe('the API client’s upload', () => {
+  it('posts the form’s fields, then the file, with no token, and reports progress', async () => {
+    const xhr = sending();
+    const file = new File(['%PDF'], 'cv.pdf', { type: 'application/pdf' });
+    const progress: number[] = [];
+    const done = client().upload(FORM, file, { onProgress: (fraction) => progress.push(fraction) });
+    expect(xhr().method).toBe('POST');
+    expect(xhr().url).toBe(FORM.url);
+    expect([...(xhr().body?.keys() ?? [])]).toEqual(['key', 'policy', 'file']);
+    expect(xhr().body?.get('policy')).toBe('p');
+    xhr().progress(50, 100);
+    xhr().progress(0, 0);
+    xhr().finish(204);
+    await expect(done).resolves.toBeUndefined();
+    expect(progress).toEqual([0.5, 1]);
+  });
+
+  it('calls a refusal by the form invalid, S3 failing a server error, and no answer offline', async () => {
+    const xhr = sending();
+    const file = new Blob(['x']);
+    let done = client().upload(FORM, file);
+    xhr().finish(403);
+    expect((await failure(done)).kind).toBe('invalid');
+    done = client().upload(FORM, file);
+    xhr().finish(503);
+    expect(await failure(done)).toMatchObject({ kind: 'server', status: 503 });
+    done = client().upload(FORM, file);
+    xhr().finish('error');
+    expect((await failure(done)).kind).toBe('offline');
+  });
+
+  it('stops when asked, rejecting with the signal’s reason', async () => {
+    const xhr = sending();
+    const stop = new AbortController();
+    const done = client().upload(FORM, new Blob(['x']), { signal: stop.signal });
+    stop.abort(new Error('cancelled'));
+    expect(xhr().aborted).toBe(true);
+    await expect(done).rejects.toThrow('cancelled');
+    // Already stopped: nothing is sent.
+    FakeXhr.last = undefined;
+    await expect(client().upload(FORM, new Blob(['x']), { signal: stop.signal })).rejects.toThrow(
+      'cancelled',
+    );
+    expect(FakeXhr.last).toBeUndefined();
+  });
+
+  it('sends nothing while the browser is offline', async () => {
+    sending();
+    vi.stubGlobal('navigator', { onLine: false });
+    expect((await failure(client().upload(FORM, new Blob(['x'])))).kind).toBe('offline');
+    expect(FakeXhr.last).toBeUndefined();
+  });
+});

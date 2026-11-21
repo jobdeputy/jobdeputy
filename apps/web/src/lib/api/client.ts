@@ -77,9 +77,29 @@ export const DEFAULT_RETRY_AFTER_SECONDS = 5;
 
 export type ApiMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
+/** A presigned form to send one file to (the API's answer to `POST /me/documents`). */
+export interface UploadForm {
+  url: string;
+  fields: Record<string, string>;
+}
+
+export interface UploadOptions {
+  /** How much has been sent so far, 0 to 1. */
+  onProgress?: (fraction: number) => void;
+  /** Stops the upload; it then rejects with the signal's reason. */
+  signal?: AbortSignal;
+}
+
 export interface ApiClient {
   /** Calls the API; resolves with its JSON body (undefined for an empty one), or throws `ApiError`. */
   request<T = unknown>(method: ApiMethod, path: `/${string}`, body?: unknown): Promise<T>;
+  /**
+   * Sends a file to a presigned form (S3's browser POST: the form's fields, then the file); no
+   * token, the form is its own permission. Resolves once it is stored, or throws `ApiError`:
+   * `offline` when it didn't get through (sending it again is safe: it replaces the same file),
+   * `invalid` when the form refused it (too large, or the form ran out), `server` otherwise.
+   */
+  upload(form: UploadForm, file: Blob, options?: UploadOptions): Promise<void>;
 }
 
 export function createApiClient(deps: {
@@ -134,7 +154,55 @@ export function createApiClient(deps: {
       if (json === NOT_JSON) throw new ApiError('offline', { status: response.status });
       return json as T;
     },
+    upload: sendForm,
   };
+}
+
+/** The browser POST, through XMLHttpRequest: fetch can't tell how much of a body has been sent. */
+function sendForm(form: UploadForm, file: Blob, options: UploadOptions = {}): Promise<void> {
+  const { onProgress, signal } = options;
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    if (globalThis.navigator?.onLine === false) {
+      reject(new ApiError('offline'));
+      return;
+    }
+    const body = new FormData();
+    for (const [name, value] of Object.entries(form.fields)) body.append(name, value);
+    // S3 reads every field before the file, so the file goes last.
+    body.append('file', file);
+    const request = new XMLHttpRequest();
+    const abort = () => request.abort();
+    const done = () => signal?.removeEventListener('abort', abort);
+    signal?.addEventListener('abort', abort, { once: true });
+    request.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable && event.total > 0) onProgress?.(event.loaded / event.total);
+    });
+    request.addEventListener('load', () => {
+      done();
+      const { status } = request;
+      if (status >= 200 && status < 300) {
+        onProgress?.(1);
+        resolve();
+      } else {
+        // S3 answers in XML; its refusals are the form's rules (size, type, time), not the person's.
+        reject(new ApiError(status >= 500 ? 'server' : 'invalid', { status }));
+      }
+    });
+    request.addEventListener('error', () => {
+      done();
+      reject(new ApiError('offline'));
+    });
+    request.addEventListener('abort', () => {
+      done();
+      reject(signal?.reason ?? new DOMException('The upload was stopped.', 'AbortError'));
+    });
+    request.open('POST', form.url);
+    request.send(body);
+  });
 }
 
 /** Reads one of the client's inputs; a failure there is a connection problem, never a raw error. */

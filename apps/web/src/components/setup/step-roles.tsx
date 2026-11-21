@@ -8,13 +8,9 @@ import { QueryRegion } from '@/components/ui/query-region.tsx';
 import { copy, fill } from '@/copy/index.ts';
 import { ApiError, useApi } from '@/lib/api/index.ts';
 import { type Role, rolesQuery, useRoles } from '@/lib/api/roles.ts';
-import { LIVE_REGION_BEAT_MS } from '@/lib/live-region.ts';
 import { useDelayedPending } from '@/lib/use-delayed-pending.ts';
 import { cn } from '@/lib/utils.ts';
-import { refusalText, StepIntro } from './parts.tsx';
-
-/** How long words stay in the status line after being said (they are read when they arrive). */
-const SPOKEN_FOR_MS = 5000;
+import { isFinal, LoadFailed, refusalText, StepIntro, useSaying } from './parts.tsx';
 
 /** A role's title as the API checks it (trimmed, 1 to 120 characters). */
 const TITLE = createRoleInput.shape.title;
@@ -37,32 +33,18 @@ export function StepRoles({ onSaved, onBack }: { onSaved: () => void; onBack: ()
         query={roles}
         skeleton={{ kind: 'block', rows: 3 }}
         label={text.loading}
-        error={<RolesFailed error={roles.error} onRetry={() => roles.refetch()} />}
+        error={
+          <LoadFailed
+            error={roles.error}
+            message={text.loadFailed}
+            retry={text.retry}
+            onRetry={() => roles.refetch()}
+          />
+        }
       >
         {(saved) => <RolesForm saved={saved} onSaved={onSaved} onBack={onBack} />}
       </QueryRegion>
     </>
-  );
-}
-
-/**
- * The roles could not be read: say why, and offer to try again where that can help (not once the
- * session has ended or the account is closed; Sign out is in the header).
- */
-function RolesFailed({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const text = copy.setUp.roles;
-  const final = isFinal(error);
-  return (
-    <div className="grid justify-items-start gap-3">
-      <p role="alert" className="m-0 text-sm font-[650] text-danger-ink">
-        {final ? refusalText(error) : text.loadFailed}
-      </p>
-      {!final && (
-        <Button variant="outline" onClick={onRetry}>
-          {text.retry}
-        </Button>
-      )}
-    </div>
   );
 }
 
@@ -91,7 +73,7 @@ function RolesForm({
   // What is wrong with the list itself (more chosen than fit), shown under it.
   const [listError, setListError] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
-  const [spoken, setSpoken] = useState('');
+  const { spoken, say, hush } = useSaying();
   const [pending, setPending] = useState(false);
   const waiting = useDelayedPending(pending);
   const listId = useId();
@@ -109,24 +91,6 @@ function RolesForm({
       here.current = false;
     };
   }, []);
-
-  /**
-   * Says `words` in the status line a beat after clearing it, so the same words said again are
-   * read again; then clears it, so reading through the form doesn't meet them twice.
-   */
-  const saying = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  function say(words: string) {
-    clearTimeout(saying.current);
-    setSpoken('');
-    saying.current = setTimeout(() => {
-      if (!here.current) return;
-      setSpoken(words);
-      saying.current = setTimeout(() => {
-        if (here.current) setSpoken('');
-      }, SPOKEN_FOR_MS);
-    }, LIVE_REGION_BEAT_MS);
-  }
-  useEffect(() => () => clearTimeout(saying.current), []);
 
   function titleInput() {
     return form.current?.querySelector<HTMLInputElement>('[name="title"]') ?? null;
@@ -161,12 +125,6 @@ function RolesForm({
   function failOver(count: number) {
     setListError(null);
     say(overText(count));
-  }
-
-  /** Nothing to say any more: a reason said earlier no longer holds. */
-  function quiet() {
-    clearTimeout(saying.current);
-    setSpoken('');
   }
 
   /**
@@ -246,7 +204,7 @@ function RolesForm({
     setChosen(next);
     // Still more than fit: what is left to remove is said; fitting again, the reason is gone.
     if (count > MAX_ROLES) failOver(count);
-    else quiet();
+    else hush();
   }
 
   /**
@@ -448,10 +406,7 @@ function RolesForm({
         onChange={(event) => {
           setDraft(event.target.value);
           // A reason shown, about to be said or just said, no longer applies.
-          if (error) {
-            clearTimeout(saying.current);
-            setSpoken('');
-          }
+          if (error) hush();
           setError(null);
         }}
         onKeyDown={onKeyDown}
@@ -656,9 +611,4 @@ function isFull(error: unknown): boolean {
 function overText(count: number): string {
   const text = copy.setUp.roles;
   return fill(text.tooMany, { max: MAX, count: String(count), extra: String(count - MAX_ROLES) });
-}
-
-/** The session has ended or the account is closed: trying again here can't help. */
-function isFinal(error: unknown): boolean {
-  return error instanceof ApiError && (error.kind === 'signed-out' || error.kind === 'forbidden');
 }

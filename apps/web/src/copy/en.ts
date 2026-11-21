@@ -267,6 +267,63 @@ export const en = {
       loadFailed: 'Your roles didn’t load. Check your connection, then try again.',
       retry: 'Try again',
     },
+    /** Step 3: the résumé the deputy reads (optional; uploaded, then checked by the server). */
+    resume: {
+      eyebrow: 'Your résumé',
+      title: 'Add your résumé.',
+      intro: 'I read it to judge fit and draft tailored versions. You can skip this for now.',
+      speech: 'I check every file first.',
+      /** While the file is sent and checked: the deputy's line and status pill. */
+      workingSpeech: 'I check it before reading.',
+      workingStatus: 'Checking your file',
+      readySpeech: 'I’ll tailor from this one.',
+      dropTitle: 'Drop your résumé here',
+      dropMeta: 'PDF or DOCX, up to 5 MB, kept in your United States home Region.',
+      choose: 'Choose a file',
+      /** The list holding the one résumé. */
+      listName: 'Your résumé',
+      /** The upload's progress bar (read out at each quarter: "Uploading résumé, 50%"). */
+      uploading: 'Uploading résumé',
+      /** Where the file is in its three stages, under its name. */
+      stage: '{stage} · step {current} of 3',
+      stages: {
+        uploading: 'Uploading',
+        checking: 'Checking it for malware',
+        reading: 'Reading the text',
+      },
+      /** Under a ready file's name: "PDF · 180 KB". */
+      readyLine: '{format} · {size}',
+      ready: 'Ready',
+      /** Under the name of a file the server couldn't use (the reason is said below the list). */
+      notUsed: 'Couldn’t be used',
+      cancel: 'Cancel',
+      remove: 'Remove',
+      removing: 'Removing…',
+      /** What the status line says as things happen. */
+      said: {
+        uploading: 'Uploading {name}.',
+        checking: '{name} is uploaded. Checking it for malware.',
+        reading: 'Checking done. Reading the text of {name}.',
+        ready: '{name} is ready.',
+        cancelled: 'Upload of {name} cancelled.',
+        removed: '{name} removed.',
+      },
+      /** Why a file can't be used, before it is sent. */
+      wrongType: '{name} isn’t a PDF or DOCX file. Choose a PDF or DOCX file under 5 MB.',
+      empty: '{name} is empty. Choose a PDF or DOCX file under 5 MB.',
+      tooLarge: '{name} is larger than 5 MB. Choose a smaller PDF or DOCX file.',
+      badName: 'Rename {name} to a plain file name (5 to 200 characters, no slashes or quotes).',
+      /** The server couldn't use it and gave no reason. */
+      unusable: 'This file couldn’t be used. Remove it, then choose another.',
+      full: 'You can keep up to {max} résumés. Remove one to add another.',
+      uploadFailed: 'The upload didn’t finish. Check your connection, then try again.',
+      uploadRefused: 'The upload was refused. Try again.',
+      removeFailed: 'That didn’t remove. Check your connection, then try again.',
+      loading: 'Loading your résumé',
+      loadFailed: 'Your résumé didn’t load. Check your connection, then try again.',
+      retry: 'Try again',
+      skip: 'Skip for now',
+    },
     continue: 'Continue',
     saving: 'Saving…',
     back: 'Back',

@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./documents": "./src/documents.ts",
     "./profile": "./src/profile.ts"
   },
   "scripts": {

@@ -1,6 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Button } from '@/components/ui/button.tsx';
 import { copy, fill, plural } from '@/copy/index.ts';
 import { ApiError, DEFAULT_RETRY_AFTER_SECONDS } from '@/lib/api/index.ts';
+import { LIVE_REGION_BEAT_MS } from '@/lib/live-region.ts';
+
+/** How long words stay in a step's status line after being said (they are read when they arrive). */
+const SPOKEN_FOR_MS = 5000;
 
 /**
  * A step's heading: its eyebrow, its title (which takes focus when the step comes on, so the
@@ -78,4 +83,69 @@ function waitText(seconds: number): string {
   return seconds < 60
     ? plural(units.seconds, seconds)
     : plural(units.minutes, Math.ceil(seconds / 60));
+}
+
+/**
+ * A step's status line: `say(words)` clears it, then says `words` a beat later, so the same words
+ * said again are read again; then clears it, so reading through the step doesn't meet them twice.
+ * `hush()` clears it now (what was said, or about to be, no longer holds). `spoken` is what the
+ * line says now.
+ */
+export function useSaying(): {
+  spoken: string;
+  say: (words: string) => void;
+  hush: () => void;
+} {
+  const [spoken, setSpoken] = useState('');
+  const saying = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(saying.current), []);
+  const say = useCallback((words: string) => {
+    clearTimeout(saying.current);
+    setSpoken('');
+    saying.current = setTimeout(() => {
+      setSpoken(words);
+      saying.current = setTimeout(() => setSpoken(''), SPOKEN_FOR_MS);
+    }, LIVE_REGION_BEAT_MS);
+  }, []);
+  const hush = useCallback(() => {
+    clearTimeout(saying.current);
+    setSpoken('');
+  }, []);
+  return { spoken, say, hush };
+}
+
+/**
+ * What a step loaded could not be read: say why, and offer to try again where that can help (not
+ * once the session has ended or the account is closed; Sign out is in the header).
+ */
+export function LoadFailed({
+  error,
+  message,
+  retry,
+  onRetry,
+}: {
+  error: unknown;
+  /** Why, when trying again can help. */
+  message: string;
+  retry: string;
+  onRetry: () => void;
+}) {
+  const final = isFinal(error);
+  return (
+    <div className="grid justify-items-start gap-3">
+      <p role="alert" className="m-0 text-sm font-[650] text-danger-ink">
+        {final ? refusalText(error) : message}
+      </p>
+      {!final && (
+        <Button variant="outline" onClick={onRetry}>
+          {retry}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** The session has ended or the account is closed: trying again here can't help. */
+export function isFinal(error: unknown): boolean {
+  return error instanceof ApiError && (error.kind === 'signed-out' || error.kind === 'forbidden');
 }

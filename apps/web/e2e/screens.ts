@@ -49,6 +49,22 @@ export const SCREENS: Screen[] = [
   { name: 'set-up-you', path: '/', open: 'Get started free', still: true, steps: toStepYou },
   // Step 2 with a typed title and a picked one chosen.
   { name: 'set-up-roles', path: '/', open: 'Get started free', still: true, steps: toStepRoles },
+  // Step 3: the drop zone; a file being checked (the deputy at work); a ready résumé.
+  { name: 'set-up-resume', path: '/', open: 'Get started free', still: true, steps: toStepResume },
+  {
+    name: 'set-up-resume-checking',
+    path: '/',
+    open: 'Get started free',
+    still: true,
+    steps: (page) => uploadResume(page, 'still-checking.pdf', 'Checking it for malware'),
+  },
+  {
+    name: 'set-up-resume-ready',
+    path: '/',
+    open: 'Get started free',
+    still: true,
+    steps: (page) => uploadResume(page, 'Alex_Morgan_Resume.pdf', 'Ready'),
+  },
   { name: 'signed-in', path: '/', open: 'Get started free', still: true, steps: toSignedIn },
   // Every shared component state (#17); the pending buttons and the loading skeleton appear
   // after the 300 ms delay.
@@ -180,8 +196,28 @@ async function toStepRoles(page: Page) {
     .waitFor({ state: 'attached' });
 }
 
-async function toSignedIn(page: Page) {
+async function toStepResume(page: Page) {
   await toStepRoles(page);
   await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('heading', { level: 1, name: 'Add your résumé.' }).waitFor();
+  await page.getByRole('button', { name: 'Choose a file' }).waitFor();
+}
+
+/** Step 3 with this PDF chosen, once its line shows `stage`. */
+async function uploadResume(page: Page, name: string, stage: string) {
+  await toStepResume(page);
+  await page
+    .locator('input[type="file"]')
+    .setInputFiles({ name, mimeType: 'application/pdf', buffer: Buffer.alloc(184_320, 'a') });
+  await page
+    .getByRole('list', { name: 'Your résumé' })
+    .getByText(stage)
+    .first()
+    .waitFor({ timeout: 15_000 });
+}
+
+async function toSignedIn(page: Page) {
+  await toStepResume(page);
+  await page.getByRole('button', { name: 'Skip for now' }).click();
   await page.getByRole('heading', { level: 1, name: 'You’re in.' }).waitFor();
 }
