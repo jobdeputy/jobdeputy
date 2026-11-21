@@ -316,6 +316,20 @@ describe('Set it up, step 2: target roles', () => {
     expect(screen.getByText('You’ve added 10 roles. Remove one to add another.')).toBeTruthy();
   });
 
+  it('won’t re-check a title past the limit when it names more than one saved role', async () => {
+    const titles = Array.from({ length: 8 }, (_, n) => `Role ${n + 1}`);
+    await renderStep([...titles, 'role 1']);
+    fireEvent.click(chip('Role 1'));
+    fireEvent.click(chip('Backend engineer'));
+    fireEvent.click(chip('Platform engineer'));
+    expect(screen.getByText('· 9 of 10 added')).toBeTruthy();
+    // Role 1 is two saved roles: checked again, it would make 11.
+    fireEvent.click(chip('Role 1'));
+    expect(chip('Role 1').checked).toBe(false);
+    expect(screen.getByText('· 9 of 10 added')).toBeTruthy();
+    expect(screen.getByText('You’ve added 10 roles. Remove one to add another.')).toBeTruthy();
+  });
+
   it('adds nothing on the Enter that ends composing', async () => {
     await renderStep();
     type('ソフト');
@@ -358,12 +372,34 @@ describe('Set it up, step 2: target roles', () => {
     );
   });
 
-  it('moves on, changing nothing, when nothing changed', async () => {
+  it('moves on, sending and reading nothing, when nothing changed (offline too)', async () => {
     const { api, onSaved } = await renderStep(['Data engineer']);
-    const request = vi.spyOn(api, 'request');
+    const request = vi.spyOn(api, 'request').mockRejectedValue(new ApiError('offline'));
     continueOn();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
-    expect(request.mock.calls.map(([method]) => method)).toEqual(['GET']);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('takes a server failure that saved as its own, not as a change elsewhere', async () => {
+    const { api, onSaved } = await renderStep();
+    const request = api.request.bind(api);
+    const spy = vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      const answer = await request(method, path, body);
+      if (method === 'POST' && (body as { title: string }).title === 'Platform engineer')
+        throw new ApiError('server', { status: 504 });
+      return answer;
+    });
+    fireEvent.click(chip('Backend engineer'));
+    fireEvent.click(chip('Platform engineer'));
+    continueOn();
+    await waitFor(() => expect(alertText()).toContain('That didn’t save'));
+    spy.mockImplementation(request);
+    // It did save; dropping it now removes it, unasked about.
+    fireEvent.click(chip('Platform engineer'));
+    continueOn();
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(alertText()).not.toContain('changed somewhere else');
+    expect(await savedTitles(api)).toEqual(['Backend engineer']);
   });
 
   it('keeps what saved when a save stops part-way, and saves only the rest next time', async () => {
@@ -469,6 +505,21 @@ describe('Set it up, step 2: target roles', () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(await savedTitles(api)).toHaveLength(10);
     expect(await savedTitles(api)).not.toContain('Role 9');
+  });
+
+  it('shows the roles that filled the list elsewhere when the API finds it full', async () => {
+    const { api } = await renderStep();
+    const request = api.request.bind(api);
+    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      if (method !== 'POST') return request(method, path, body);
+      await request('POST', '/me/roles', { title: 'Added elsewhere' });
+      throw new ApiError('invalid', { status: 422 });
+    });
+    fireEvent.click(chip('Backend engineer'));
+    continueOn();
+    await waitFor(() => expect(alertText()).toContain('changed somewhere else'));
+    expect(chip('Added elsewhere').checked).toBe(true);
+    expect(chip('Backend engineer').checked).toBe(true);
   });
 
   it('says the list is full when the API finds it full', async () => {

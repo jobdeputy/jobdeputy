@@ -165,7 +165,9 @@ function RolesForm({
       fail(fill(text.duplicate, { title: chip }), moveFocus);
       return null;
     }
-    if (inUse(saved, chosen) >= MAX_ROLES) {
+    // Checked, a title takes every saved role it names (saved twice elsewhere, say).
+    const next = [...chosen, chip];
+    if (inUse(saved, next) > MAX_ROLES) {
       fail(fill(text.full, { max: MAX }), moveFocus);
       return null;
     }
@@ -180,7 +182,6 @@ function RolesForm({
       );
       return null;
     }
-    const next = [...chosen, chip];
     if (!includes(chips, chip)) setChips([chip, ...chips]);
     setChosen(next);
     setDraft('');
@@ -201,15 +202,16 @@ function RolesForm({
 
   function toggle(title: string, checked: boolean) {
     if (pending) return;
-    if (checked && inUse(saved, chosen) >= MAX_ROLES) {
+    const next = checked
+      ? [...chosen, title]
+      : chosen.filter((chosenTitle) => !same(chosenTitle, title));
+    if (checked && inUse(saved, next) > MAX_ROLES) {
       failList(fill(text.full, { max: MAX }));
       return;
     }
     setError(null);
     setListError(null);
-    setChosen(
-      checked ? [...chosen, title] : chosen.filter((chosenTitle) => !same(chosenTitle, title)),
-    );
+    setChosen(next);
   }
 
   /**
@@ -262,6 +264,16 @@ function RolesForm({
       fail(text.none, true);
       return;
     }
+    // Nothing to save, and no earlier save left in doubt: nothing to read either (offline, say).
+    const unchanged = plan(saved, titles);
+    if (
+      unsure.current.length === 0 &&
+      unchanged.add.length === 0 &&
+      unchanged.remove.length === 0
+    ) {
+      onSaved();
+      return;
+    }
     setPending(true);
     // The change on its way, if its answer is lost or refused.
     let doing: { title: string; post: boolean } | null = null;
@@ -300,10 +312,24 @@ function RolesForm({
       onSaved();
     } catch (error) {
       if (!here.current) return;
-      // Its answer lost, this change may or may not be saved: the next read doesn't take either
-      // for a change made elsewhere.
-      if (doing && error instanceof ApiError && error.kind === 'unsure')
+      // Its answer lost, or failed on the server's side, this change may or may not be saved: the
+      // next read doesn't take either for a change made elsewhere.
+      if (
+        doing &&
+        error instanceof ApiError &&
+        (error.kind === 'unsure' || error.kind === 'server')
+      )
         unsure.current.push(doing.title);
+      // The limit, reached by roles added elsewhere since the read: they are shown at once.
+      if (error instanceof ApiError && error.status === 422) {
+        try {
+          const fresh = await readSaved();
+          if (!here.current) return;
+          if (settle(titles, fresh)) return;
+        } catch {
+          // Unread, the limit is still the reason.
+        }
+      }
       setRefusal(refusalFor(error, doing));
     } finally {
       if (here.current) setPending(false);
