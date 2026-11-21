@@ -188,7 +188,11 @@ function RolesForm({
     const next = [...chosen, chip];
     if (inUse(saved, next) > MAX_ROLES) {
       const now = inUse(saved, chosen);
-      fail(now > MAX_ROLES ? overText(now) : fill(text.full, { max: MAX }), moveFocus);
+      // Already more than fit: a reason about the list, shown under it, not about this title.
+      if (now > MAX_ROLES) {
+        setError(null);
+        failOver(now);
+      } else fail(fill(text.full, { max: MAX }), moveFocus);
       return null;
     }
     const checked = TITLE.safeParse(title);
@@ -237,7 +241,7 @@ function RolesForm({
     setChosen(next);
     // Still more than fit: what is left to remove is said; fitting again, the reason is gone.
     if (count > MAX_ROLES) failOver(count);
-    else if (now > MAX_ROLES) quiet();
+    else if (now > MAX_ROLES || listError) quiet();
   }
 
   /**
@@ -288,6 +292,12 @@ function RolesForm({
     if (!titles) return;
     if (titles.length === 0) {
       fail(text.none, true);
+      return;
+    }
+    // More chosen than fit (said under the list): some must go first, saved or not.
+    const roles = inUse(saved, titles);
+    if (roles > MAX_ROLES) {
+      failOver(roles);
       return;
     }
     // Nothing to save, and no earlier save left in doubt: nothing to read either (offline, say).
@@ -359,7 +369,8 @@ function RolesForm({
         // A role saved elsewhere under a chosen title is no change to show, but it counts.
         const count = inUse(fresh, titles);
         if (count > MAX_ROLES) failOver(count);
-        else failFull();
+        // They fit after all (one added elsewhere has gone again, say): the next try may work.
+        else setRefusal(copy.setUp.errors.tryLater);
         return;
       }
       setRefusal(refusalFor(error, doing));

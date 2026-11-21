@@ -544,18 +544,25 @@ describe('Set it up, step 2: target roles', () => {
       screen.getByText('Up to 10 roles fit, and 12 are chosen. Remove 2 to continue.'),
     ).toBeTruthy();
     await waitFor(() => expect(statusText()).toContain('Remove 2 to continue.'));
+    // Typing one more: a reason about the list, under it once, not on the title field.
+    type('Data engineer');
+    fireEvent.keyDown(screen.getByLabelText('Job title'), { key: 'Enter' });
+    expect(screen.getAllByText(/Up to 10 roles fit/)).toHaveLength(1);
+    expect(screen.getByLabelText('Job title').getAttribute('aria-invalid')).not.toBe('true');
     // Checking one more refuses with the same reason (not 'remove one').
     fireEvent.click(chip('Product engineer'));
     expect(chip('Product engineer').checked).toBe(false);
     expect(screen.queryByText(/Remove one to add another/)).toBeNull();
-    // A Continue that can't reach the API leaves the reason in place.
-    const spy = vi.spyOn(api, 'request').mockRejectedValue(new ApiError('offline'));
+    // Continue stops before sending anything, the reason still in place, and says it.
+    const calls = vi.mocked(api.request).mock.calls.length;
     continueOn();
-    await waitFor(() => expect(alertText()).toContain('Check your connection'));
+    await waitFor(() => expect(statusText()).toContain('Remove 2 to continue.'));
+    expect(vi.mocked(api.request).mock.calls.length).toBe(calls);
     expect(
-      screen.getByText('Up to 10 roles fit, and 12 are chosen. Remove 2 to continue.'),
+      screen.getByText('Up to 10 roles fit, and 12 are chosen. Remove 2 to continue.', {
+        ignore: '[role=status]',
+      }),
     ).toBeTruthy();
-    spy.mockRestore();
     // One removed, still too many: the reason stays, with what is left.
     fireEvent.click(chip('Elsewhere 1'));
     expect(
@@ -586,7 +593,34 @@ describe('Set it up, step 2: target roles', () => {
     );
   });
 
-  it('says the list is full when the API finds it full', async () => {
+  it('won’t move on, unchanged, while more are saved than fit', async () => {
+    const api = createFakeApi({ delay: 0 });
+    for (let n = 1; n <= 10; n += 1) await api.request('POST', '/me/roles', { title: `Role ${n}` });
+    const request = api.request.bind(api);
+    // An eleventh, saved past the limit elsewhere (a race the API lost).
+    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      const answer = await request(method, path, body);
+      if (method !== 'GET') return answer;
+      const { roles } = answer as { roles: Role[] };
+      return { roles: [...roles, { ...roles[0], roleId: 'extra', title: 'Role 11' }] };
+    });
+    const { onSaved } = await renderStep([], api);
+    continueOn();
+    await waitFor(() => expect(statusText()).toContain('Remove 1 to continue.'));
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it('stops saying the list is full once there is room again', async () => {
+    const titles = Array.from({ length: 10 }, (_, n) => `Role ${n + 1}`);
+    await renderStep(titles);
+    fireEvent.click(chip('Backend engineer'));
+    await waitFor(() => expect(statusText()).toContain('Remove one to add another.'));
+    fireEvent.click(chip('Role 1'));
+    expect(statusText()).toBe('');
+    expect(screen.queryByText(/Remove one to add another/)).toBeNull();
+  });
+
+  it('asks to try again when the API finds the list full but it fits', async () => {
     const { api } = await renderStep();
     const request = api.request.bind(api);
     vi.spyOn(api, 'request').mockImplementation((method, path, body) =>
@@ -596,12 +630,9 @@ describe('Set it up, step 2: target roles', () => {
     );
     fireEvent.click(chip('Backend engineer'));
     continueOn();
-    // Under the list, and said: not a refusal of the save as a whole.
-    expect(
-      await screen.findByText('You can add up to 10 roles. Remove one to add another.'),
-    ).toBeTruthy();
-    await waitFor(() => expect(statusText()).toContain('Remove one to add another.'));
-    expect(alertText()).not.toContain('You can add up to 10 roles.');
+    // One role fits: nothing to remove, only to try again.
+    await waitFor(() => expect(alertText()).toContain('Try again in a moment.'));
+    expect(screen.queryByText(/Remove one to add another/)).toBeNull();
   });
 
   it('says how long to wait, or that the session ended', async () => {
