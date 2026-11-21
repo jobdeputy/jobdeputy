@@ -73,10 +73,16 @@ export function StepResume({
         {(saved) => <ResumeForm saved={saved} onState={setForm} checkEvery={checkEvery} />}
       </QueryRegion>
       <div className="flex flex-wrap items-center gap-3">
-        <Button size="lg" onClick={onDone} disabled={form?.busy}>
+        {/* Waiting while busy (aria-disabled: presses are ignored, focus stays). */}
+        <Button size="lg" onClick={onDone} aria-disabled={form?.busy || undefined}>
           {canContinue ? copy.setUp.continue : text.skip}
         </Button>
-        <Button variant="outline" size="lg" onClick={onBack} disabled={form?.busy}>
+        <Button
+          variant="outline"
+          size="lg"
+          onClick={onBack}
+          aria-disabled={form?.busy || undefined}
+        >
           {copy.setUp.back}
         </Button>
       </div>
@@ -120,7 +126,6 @@ function ResumeForm({
   const [dragging, setDragging] = useState(false);
   const { spoken, say, hush } = useSaying();
   const picker = useRef<HTMLInputElement>(null);
-  const cancelButton = useRef<HTMLButtonElement>(null);
   const fileLine = useRef<HTMLSpanElement>(null);
   const zone = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLOListElement>(null);
@@ -232,7 +237,8 @@ function ResumeForm({
     const name = checked.input.fileName;
     const controller = new AbortController();
     sending.current = controller;
-    setHeld({ kind: 'uploading', name, progress: 0 });
+    flushSync(() => setHeld({ kind: 'uploading', name, progress: 0 }));
+    keepFocus();
     say(fill(text.said.uploading, { name }));
     let started: StartedUpload | undefined;
     try {
@@ -268,12 +274,20 @@ function ResumeForm({
     // In: the server checks it now (the API's next read says so too).
     const document: Document = { ...started.document, status: 'pending', sizeBytes: file.size };
     markUploadedHere(document.documentId);
-    // Focus on Cancel (which goes) moves to the file's name and stage, which say what happened;
-    // never to Remove, where an Enter meant for Cancel would remove the file.
-    const onCancel = globalThis.document.activeElement === cancelButton.current;
     flushSync(() => setHeld({ kind: 'document', document }));
-    if (onCancel) fileLine.current?.focus();
-    else say(fill(text.said.checking, { name }));
+    keepFocus();
+    say(fill(text.said.checking, { name }));
+  }
+
+  /**
+   * Where focus goes when a change took away the control that had it (Choose a file as the upload
+   * starts, Cancel as it ends): the file's line, which says what is happening, and where Enter does
+   * nothing (never Remove: an Enter meant for Cancel must not remove the file). Focus anywhere else
+   * stays put.
+   */
+  function keepFocus() {
+    const focused = globalThis.document.activeElement;
+    if (!focused || focused === globalThis.document.body) fileLine.current?.focus();
   }
 
   async function remove(document: Document) {
@@ -388,7 +402,11 @@ function ResumeForm({
             >
               {unusable ? <AlertIcon /> : <DocumentIcon />}
             </span>
-            <span ref={fileLine} tabIndex={-1} className="grid min-w-0 gap-0.5 outline-none">
+            <span
+              ref={fileLine}
+              tabIndex={-1}
+              className="grid min-w-0 gap-0.5 rounded-[6px] outline-none focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ring focus-visible:outline-solid"
+            >
               <span className="text-[0.9375rem] font-[650] wrap-anywhere">
                 {held.kind === 'uploading' ? held.name : document?.fileName}
               </span>
@@ -404,12 +422,7 @@ function ResumeForm({
               )}
               {uploading ? (
                 // Its own button, not Remove relabelled: Enter meant for Cancel must never remove.
-                <Button
-                  key="cancel"
-                  ref={cancelButton}
-                  variant="outline"
-                  onClick={() => sending.current?.abort()}
-                >
+                <Button key="cancel" variant="outline" onClick={() => sending.current?.abort()}>
                   {text.cancel}
                   <span className="sr-only"> {held.name}</span>
                 </Button>

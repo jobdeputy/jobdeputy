@@ -156,7 +156,7 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     expect(item().getByRole('button', { name: 'Remove Alex_Morgan_Resume.pdf' })).toBeTruthy();
   });
 
-  it('moves focus from Cancel to the file’s line when the upload ends, never to Remove', async () => {
+  it('moves focus to the file’s line when the focused control goes, never to Remove', async () => {
     await renderStep(createFakeApi({ delay: 30, checkMs: 60_000 }));
     pick(pdf());
     const cancel = await item().findByRole('button', { name: 'Cancel Alex_Morgan_Resume.pdf' });
@@ -183,7 +183,8 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     expect(item().getByText('Uploading · step 1 of 3')).toBeTruthy();
     await waitFor(() => expect(onMood).toHaveBeenLastCalledWith('working'));
     // Leaving mid-upload is Cancel's job: the footer waits.
-    expect((screen.getByRole('button', { name: 'Back' }) as HTMLButtonElement).disabled).toBe(true);
+    // (aria-disabled: presses are ignored, and focus on it stays).
+    expect(screen.getByRole('button', { name: 'Back' }).getAttribute('aria-disabled')).toBe('true');
     fireEvent.click(await item().findByRole('button', { name: 'Cancel Alex_Morgan_Resume.pdf' }));
     const choose = await screen.findByRole('button', { name: 'Choose a file' });
     expect(document.activeElement).toBe(choose);
