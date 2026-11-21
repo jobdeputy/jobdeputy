@@ -121,7 +121,7 @@ function ResumeForm({
   const { spoken, say, hush } = useSaying();
   const picker = useRef<HTMLInputElement>(null);
   const cancelButton = useRef<HTMLButtonElement>(null);
-  const removeButton = useRef<HTMLButtonElement>(null);
+  const fileLine = useRef<HTMLSpanElement>(null);
   const zone = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLOListElement>(null);
   // The step went back to choosing a file and focus moves to its button once it is there (always
@@ -268,11 +268,12 @@ function ResumeForm({
     // In: the server checks it now (the API's next read says so too).
     const document: Document = { ...started.document, status: 'pending', sizeBytes: file.size };
     markUploadedHere(document.documentId);
-    // Focus on Cancel goes on to Remove, which takes its place: moved there, its name is read.
+    // Focus on Cancel (which goes) moves to the file's name and stage, which say what happened;
+    // never to Remove, where an Enter meant for Cancel would remove the file.
     const onCancel = globalThis.document.activeElement === cancelButton.current;
     flushSync(() => setHeld({ kind: 'document', document }));
-    if (onCancel) removeButton.current?.focus();
-    say(fill(text.said.checking, { name }));
+    if (onCancel) fileLine.current?.focus();
+    else say(fill(text.said.checking, { name }));
   }
 
   async function remove(document: Document) {
@@ -387,7 +388,7 @@ function ResumeForm({
             >
               {unusable ? <AlertIcon /> : <DocumentIcon />}
             </span>
-            <span className="grid min-w-0 gap-0.5">
+            <span ref={fileLine} tabIndex={-1} className="grid min-w-0 gap-0.5 outline-none">
               <span className="text-[0.9375rem] font-[650] wrap-anywhere">
                 {held.kind === 'uploading' ? held.name : document?.fileName}
               </span>
@@ -416,7 +417,6 @@ function ResumeForm({
                 document && (
                   <Button
                     key="remove"
-                    ref={removeButton}
                     variant="outline"
                     pending={removing}
                     pendingLabel={text.removing}

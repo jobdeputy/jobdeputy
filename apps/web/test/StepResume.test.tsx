@@ -156,18 +156,22 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     expect(item().getByRole('button', { name: 'Remove Alex_Morgan_Resume.pdf' })).toBeTruthy();
   });
 
-  it('moves focus from Cancel to Remove when the upload ends, so the new name is read', async () => {
+  it('moves focus from Cancel to the file’s line when the upload ends, never to Remove', async () => {
     await renderStep(createFakeApi({ delay: 30, checkMs: 60_000 }));
     pick(pdf());
     const cancel = await item().findByRole('button', { name: 'Cancel Alex_Morgan_Resume.pdf' });
     cancel.focus();
-    const remove = await item().findByRole(
+    await item().findByRole(
       'button',
       { name: 'Remove Alex_Morgan_Resume.pdf' },
       { timeout: 15_000 },
     );
-    expect(remove).not.toBe(cancel);
-    expect(document.activeElement).toBe(remove);
+    // On what happened (its name and stage), where Enter does nothing.
+    const focused = document.activeElement;
+    expect(focused?.tagName).not.toBe('BUTTON');
+    expect(focused !== document.body && item().getByRole('listitem').contains(focused)).toBe(true);
+    expect(document.activeElement?.textContent).toContain('Alex_Morgan_Resume.pdf');
+    expect(document.activeElement?.textContent).toContain('Checking it for malware');
   });
 
   it('shows the upload’s progress, and Cancel stops it and forgets the file', async () => {
