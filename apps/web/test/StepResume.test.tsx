@@ -92,7 +92,8 @@ function item() {
   return within(screen.getByRole('list', { name: 'Your résumé' }));
 }
 
-describe('Set it up, step 3: résumé', () => {
+// Generous: some tests wait on the step's checks (on a 50 ms beat here).
+describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
   it('comes after step 2, uploads a résumé, and ends the set-up', async () => {
     const auth = createFakeAuth({ delay: 0 });
     await auth.signUp('new@example.com', 'a long enough password');
@@ -311,6 +312,41 @@ describe('Set it up, step 3: résumé', () => {
     expect(alertText()).toBe('');
   });
 
+  it('opens again on its own upload still being checked, over an older ready one', async () => {
+    const api = createFakeApi({ delay: 0, checkMs: 0 });
+    const { queries, view } = await renderStep(api, [pdf('First.pdf'), pdf('Second.pdf')]);
+    fireEvent.click(item().getByRole('button', { name: 'Remove First.pdf' }));
+    await screen.findByRole('button', { name: 'Choose a file' });
+    pick(pdf('still-checking.pdf'));
+    await item().findByText('Checking it for malware · step 2 of 3');
+    view.unmount();
+    render(
+      <QueryClientProvider client={queries}>
+        <ApiContext.Provider value={api}>
+          <StepResume checkEvery={CHECK_EVERY} onDone={vi.fn()} onBack={vi.fn()} onMood={vi.fn()} />
+        </ApiContext.Provider>
+      </QueryClientProvider>,
+    );
+    expect(await item().findByText('Checking it for malware · step 2 of 3')).toBeTruthy();
+    expect(item().getByRole('listitem').textContent).toContain('still-checking.pdf');
+  });
+
+  it('opens again without a résumé removed elsewhere meanwhile', async () => {
+    const api = createFakeApi({ delay: 0, checkMs: 0 });
+    const { queries, view } = await renderStep(api, [pdf('Earlier.pdf')]);
+    view.unmount();
+    const [only] = await documents(api);
+    await api.request('DELETE', `/me/documents/${only?.documentId}`);
+    render(
+      <QueryClientProvider client={queries}>
+        <ApiContext.Provider value={api}>
+          <StepResume checkEvery={CHECK_EVERY} onDone={vi.fn()} onBack={vi.fn()} onMood={vi.fn()} />
+        </ApiContext.Provider>
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByRole('button', { name: 'Choose a file' })).toBeTruthy();
+  });
+
   it('opens again on its own upload still being checked (Back, then Continue on step 2)', async () => {
     const api = createFakeApi({ delay: 0, checkMs: 60_000 });
     const { queries, view } = await renderStep(api);
@@ -344,9 +380,12 @@ describe('Set it up, step 3: résumé', () => {
         </ApiContext.Provider>
       </QueryClientProvider>,
     );
-    // At once, from the list: the new one, ready (not the older ready one, nor checked again).
-    expect(item().getByText('Ready')).toBeTruthy();
+    // Read afresh: the new one, ready (not the older ready one).
+    expect(await item().findByText('Ready')).toBeTruthy();
     expect(item().getByRole('listitem').textContent).toContain('Alex_Morgan_Resume.pdf');
+    // As the API does: with the default gone, the new one is the default.
+    const defaults = (await documents(api)).filter((each) => each.isDefault);
+    expect(defaults.map((each) => each.fileName)).toEqual(['Alex_Morgan_Resume.pdf']);
   });
 
   it('lets the zone take a dragged file', async () => {
@@ -433,6 +472,9 @@ describe('startingDocument', () => {
     expect(startingDocument([doc('pending', 'pending')], new Set())).toBeNull();
     const mine = doc('mine', 'pending');
     expect(startingDocument([mine], new Set(['mine']))).toBe(mine);
+    // What was just sent from here comes first, even over a ready default.
+    const chosen = doc('default', 'ready', true);
+    expect(startingDocument([mine, chosen], new Set(['mine']))).toBe(mine);
     const failed = doc('failed', 'failed');
     expect(startingDocument([doc('pending', 'pending'), failed], new Set())).toBe(failed);
   });

@@ -6,7 +6,7 @@ import {
   type DocumentStatus,
   MAX_UPLOAD_BYTES,
 } from '@jobdeputy/shared/documents';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { type ApiClient, ApiError, isFinal, type UploadForm, useApi } from './index.ts';
 
 /**
@@ -51,11 +51,11 @@ export function markUploadedHere(documentId: string): void {
 }
 
 /**
- * The résumé the set-up shows from what is saved (newest first): a ready one (the default first);
- * else one still being checked; else the newest the server couldn't use, so the person knows. One
- * `pending` whose file was not sent from this page is left out: the server shows the same for a
- * file being scanned and for an upload that never came (a closed tab; it forgets those after a
- * day), so the step can't tell which.
+ * The résumé the set-up shows from what is saved (newest first): the newest one whose file was
+ * sent from this page, whatever its state (what the person just did); else a ready one (the default
+ * first); else one being read; else the newest the server couldn't use, so the person knows. Any
+ * other `pending` one is left out: the server shows the same for a file being scanned and for an
+ * upload that never came (a closed tab; it forgets those after a day), so the step can't tell.
  */
 export function startingDocument(
   saved: readonly Document[],
@@ -66,6 +66,7 @@ export function startingDocument(
   );
   const ready = known.filter((document) => document.status === 'ready');
   return (
+    known.find((document) => sentHere.has(document.documentId)) ??
     ready.find((document) => document.isDefault) ??
     ready[0] ??
     known.find(isChecking) ??
@@ -108,11 +109,16 @@ function contentTypeOf(file: Pick<File, 'name'>): DocumentContentType | null {
   return null;
 }
 
-/** The signed-in person's résumés, newest first (as the API lists them). */
+/**
+ * The signed-in person's résumés, newest first (as the API lists them), read afresh each time a
+ * screen using them opens: kept only while one is open (a copy kept from before could show a
+ * résumé removed meanwhile, or one at an old stage).
+ */
 export function useDocuments() {
   const api = useApi();
   return useQuery({
     ...documentsQuery(api),
+    gcTime: 0,
     retry: (failures, error) =>
       failures < 1 && error instanceof ApiError && error.kind === 'offline',
   });
@@ -133,19 +139,12 @@ export function documentsQuery(api: ApiClient) {
  */
 export function useDocument(initial: Document | null, checkEvery = CHECK_EVERY_MS) {
   const api = useApi();
-  const queries = useQueryClient();
   const documentId = initial?.documentId;
   return useQuery({
     queryKey: ['documents', documentId ?? 'none'],
-    queryFn: async () => {
-      const latest = await api.request<Document>('GET', `/me/documents/${documentId}`);
-      // The list gets each answer too: a step that opens again starts from the list, which is kept
-      // longer than this query (gone 5 minutes after the step closes).
-      queries.setQueryData<Document[]>(['documents'], (all) =>
-        all?.map((each) => (each.documentId === latest.documentId ? latest : each)),
-      );
-      return latest;
-    },
+    queryFn: () => api.request<Document>('GET', `/me/documents/${documentId}`),
+    // Kept only while followed, as the list is: a screen that opens again starts from a fresh list.
+    gcTime: 0,
     enabled: initial !== null,
     initialData: initial ?? undefined,
     // A done résumé doesn't change by itself, so the list's copy stands; one being checked is read.

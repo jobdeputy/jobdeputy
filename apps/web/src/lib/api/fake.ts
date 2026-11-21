@@ -170,7 +170,8 @@ export function createFakeApi({
           fileName,
           format: DOCUMENT_TYPES[contentType].format,
           status: 'pending',
-          isDefault: myDocuments.length === 0,
+          // As the API: the default when there is none (the first, or after the default went).
+          isDefault: !myDocuments.some(({ view }) => view.isDefault),
           version: 1,
           createdAt: now,
           updatedAt: now,
