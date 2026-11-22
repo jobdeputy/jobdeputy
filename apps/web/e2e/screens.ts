@@ -95,6 +95,32 @@ export const SCREENS: Screen[] = [
       await page.getByRole('button', { name: 'Keep it' }).waitFor();
     },
   },
+  // Adding on the Résumés page: one in, being checked; one not added (not a PDF or DOCX).
+  {
+    name: 'resumes-adding',
+    path: '/',
+    open: 'Get started free',
+    still: true,
+    steps: async (page) => {
+      await toResumes(page);
+      await page.locator('input[type="file"]').setInputFiles([
+        {
+          name: 'still-checking.pdf',
+          mimeType: 'application/pdf',
+          buffer: Buffer.alloc(184_320, 'a'),
+        },
+        { name: 'Cover letter.txt', mimeType: 'text/plain', buffer: Buffer.alloc(2_048, 'a') },
+      ]);
+      await page
+        .getByRole('list', { name: 'Your résumés' })
+        .getByText('Checking it for malware')
+        .waitFor({ timeout: 15_000 });
+      await page
+        .getByRole('list', { name: 'Files you are adding' })
+        .getByText('Not added')
+        .waitFor();
+    },
+  },
   // Every shared component state (#17); the pending buttons and the loading skeleton appear
   // after the 300 ms delay.
   {

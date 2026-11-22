@@ -1,8 +1,13 @@
-import { MAX_DOCUMENTS } from '@jobdeputy/shared/documents';
-import { type DragEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { AlertIcon, DocumentIcon, UploadIcon } from '@/components/icons.tsx';
 import { stageLine, statusLine } from '@/components/resumes/document-status.ts';
+import {
+  pickRefusal,
+  sendResume,
+  useDropOnlyOn,
+  useFileDrop,
+} from '@/components/resumes/send-resume.ts';
 import { Button } from '@/components/ui/button.tsx';
 import { Progress } from '@/components/ui/progress.tsx';
 import { QueryRegion } from '@/components/ui/query-region.tsx';
@@ -13,8 +18,6 @@ import {
   type Document,
   isChecking,
   isUnusable,
-  markUploadedHere,
-  type StartedUpload,
   startingDocument,
   useDocument,
   useDocuments,
@@ -32,7 +35,7 @@ export type ResumeMood = 'idle' | 'working' | 'ready';
  * here first (type, size, name), then started with the API (`POST /me/documents`), sent to the
  * presigned form with its progress shown, and followed while the server checks it for malware and
  * reads its text, until it is ready (or not, with the server's reason). The step holds one résumé:
- * to change it, remove it first (more are managed on the Profile page). Continue is offered once a
+ * to change it, remove it first (more are managed on the Résumés page). Continue is offered once a
  * file is in (the server's check carries on if the person moves on); until then, Skip for now.
  */
 export function StepResume({
@@ -125,7 +128,6 @@ function ResumeForm({
   });
   const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
-  const [dragging, setDragging] = useState(false);
   const { spoken, say, hush } = useSaying();
   const picker = useRef<HTMLInputElement>(null);
   const fileLine = useRef<HTMLSpanElement>(null);
@@ -148,24 +150,10 @@ function ResumeForm({
     };
   }, []);
 
-  // A file dropped beside the zone would be opened by the browser, leaving the app: anywhere else
-  // on the page, a drop does nothing.
-  useEffect(() => {
-    const refuse = (event: globalThis.DragEvent) => {
-      // The zone takes its own drops.
-      if (zone.current?.contains(event.target as Node | null)) return;
-      if (!event.dataTransfer?.types.includes('Files')) return;
-      event.preventDefault();
-      // Shown as not allowed here (the zone takes it), rather than seeming to take it.
-      event.dataTransfer.dropEffect = 'none';
-    };
-    globalThis.document.addEventListener('dragover', refuse);
-    globalThis.document.addEventListener('drop', refuse);
-    return () => {
-      globalThis.document.removeEventListener('dragover', refuse);
-      globalThis.document.removeEventListener('drop', refuse);
-    };
-  }, []);
+  useDropOnlyOn(zone);
+  const drop = useFileDrop(([file]) => {
+    if (file) void add(file);
+  });
 
   /** Shows why something didn't work; a line still to be said no longer holds. */
   function fail(reason: string) {
@@ -233,7 +221,7 @@ function ResumeForm({
     setError(null);
     const checked = checkFile(file);
     if (!checked.ok) {
-      fail(fill(PICK_REFUSALS[checked.reason], { name: file.name }));
+      fail(pickRefusal(checked.reason, file.name));
       return;
     }
     const name = checked.input.fileName;
@@ -242,41 +230,28 @@ function ResumeForm({
     flushSync(() => setHeld({ kind: 'uploading', name, progress: 0 }));
     keepFocus();
     say(fill(text.said.uploading, { name }));
-    let started: StartedUpload | undefined;
-    try {
-      started = await api.request<StartedUpload>('POST', '/me/documents', checked.input);
-      if (controller.signal.aborted) throw controller.signal.reason;
-      await api.upload(started.upload, file, {
-        signal: controller.signal,
-        onProgress: (fraction) => {
-          if (here.current) {
-            setHeld((now) => (now.kind === 'uploading' ? { ...now, progress: fraction } : now));
-          }
-        },
-      });
-    } catch (failure) {
-      sending.current = null;
-      // Started but never finished: it would wait a day as an upload that never came, so it goes.
-      if (started) {
-        const { documentId } = started.document;
-        api.request('DELETE', `/me/documents/${documentId}`).catch(() => undefined);
-      }
-      if (!here.current) return;
-      if (controller.signal.aborted) {
-        startOver();
-        say(fill(text.said.cancelled, { name }));
-        return;
-      }
-      fail(uploadRefusal(failure, started === undefined));
+    const sent = await sendResume(api, file, checked.input, {
+      signal: controller.signal,
+      onProgress: (fraction) => {
+        if (here.current) {
+          setHeld((now) => (now.kind === 'uploading' ? { ...now, progress: fraction } : now));
+        }
+      },
+    });
+    sending.current = null;
+    if (!here.current) return;
+    if (sent.kind === 'cancelled') {
+      startOver();
+      say(fill(text.said.cancelled, { name }));
+      return;
+    }
+    if (sent.kind === 'failed') {
+      fail(sent.reason);
       startOver();
       return;
     }
-    sending.current = null;
-    if (!here.current) return;
     // In: the server checks it now (the API's next read says so too).
-    const document: Document = { ...started.document, status: 'pending', sizeBytes: file.size };
-    markUploadedHere(document.documentId);
-    flushSync(() => setHeld({ kind: 'document', document }));
+    flushSync(() => setHeld({ kind: 'document', document: sent.document }));
     keepFocus();
     say(fill(text.said.checking, { name }));
   }
@@ -309,13 +284,6 @@ function ResumeForm({
     if (here.current) cleared(document, true);
   }
 
-  function onDrop(event: DragEvent) {
-    event.preventDefault();
-    setDragging(false);
-    const [file] = event.dataTransfer.files;
-    if (file) void add(file);
-  }
-
   const uploading = held.kind === 'uploading';
   const busy = uploading || removing;
   // A file is in (being checked, or ready): the server carries on if the person moves on.
@@ -328,22 +296,10 @@ function ResumeForm({
       {held.kind === 'none' ? (
         // The zone takes a dropped file; its button (and the hidden picker) is the way in for
         // everyone else, so the zone itself is not a control.
-        // biome-ignore lint/a11y/noStaticElementInteractions: a drop target; the button inside is the control.
         <div
           ref={zone}
-          data-dragging={dragging || undefined}
-          onDragEnter={(event) => {
-            event.preventDefault();
-            setDragging(true);
-          }}
-          onDragOver={(event) => event.preventDefault()}
-          onDragLeave={(event) => {
-            // Leaving for one of its own children is still over the zone.
-            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-              setDragging(false);
-            }
-          }}
-          onDrop={onDrop}
+          data-dragging={drop.dragging || undefined}
+          {...drop.handlers}
           className="group grid justify-items-center gap-2 rounded-[22px] border-[1.5px] border-dashed border-line-strong bg-surface p-[21px] text-center transition-colors duration-180 data-dragging:border-green-line data-dragging:bg-green-wash sm:p-[34px]"
         >
           <span
@@ -467,23 +423,4 @@ function ResumeForm({
       </p>
     </div>
   );
-}
-
-/** Why a picked file can't be used, by what `checkFile` found. */
-const PICK_REFUSALS = {
-  type: copy.setUp.resume.wrongType,
-  empty: copy.setUp.resume.empty,
-  size: copy.setUp.resume.tooLarge,
-  name: copy.setUp.resume.badName,
-} as const;
-
-/** Why an upload didn't happen: refused when starting it (`starting`), or while sending it. */
-function uploadRefusal(failure: unknown, starting: boolean): string {
-  const text = copy.setUp.resume;
-  if (!(failure instanceof ApiError)) return text.uploadFailed;
-  if (starting && failure.status === 422) return fill(text.full, { max: String(MAX_DOCUMENTS) });
-  if (starting && failure.kind === 'invalid') return text.badName;
-  if (!starting && failure.kind === 'invalid') return text.uploadRefused;
-  if (isFinal(failure) || failure.kind === 'too-many') return refusalText(failure);
-  return text.uploadFailed;
 }

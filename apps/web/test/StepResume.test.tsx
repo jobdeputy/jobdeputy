@@ -190,7 +190,8 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     expect(screen.getByRole('button', { name: 'Back' }).getAttribute('aria-disabled')).toBe('true');
     fireEvent.click(await item().findByRole('button', { name: 'Cancel Alex_Morgan_Resume.pdf' }));
     const choose = await screen.findByRole('button', { name: 'Choose a file' });
-    expect(document.activeElement).toBe(choose);
+    // Focus moves in an effect just after the button is back (an async update's effects can wait).
+    await waitFor(() => expect(document.activeElement).toBe(choose));
     await waitFor(() =>
       expect(statusText()).toContain('Upload of Alex_Morgan_Resume.pdf cancelled.'),
     );
@@ -223,7 +224,8 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     expect(screen.getByRole('button', { name: 'Skip for now' })).toBeTruthy();
     fireEvent.click(item().getByRole('button', { name: 'Remove malware.pdf' }));
     const choose = await screen.findByRole('button', { name: 'Choose a file' });
-    expect(document.activeElement).toBe(choose);
+    // Focus moves in an effect just after the button is back (an async update's effects can wait).
+    await waitFor(() => expect(document.activeElement).toBe(choose));
     expect(alertText()).toBe('');
     await waitFor(() => expect(statusText()).toContain('malware.pdf removed.'));
     expect(await documents(api)).toEqual([]);
@@ -250,7 +252,9 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
         'The upload didn’t finish. Check your connection, then try again.',
       ),
     );
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Choose a file' }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Choose a file' })),
+    );
     await waitFor(async () => expect(await documents(api)).toEqual([]));
   });
 

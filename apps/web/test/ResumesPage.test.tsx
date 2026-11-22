@@ -28,14 +28,16 @@ async function upload(api: FakeApi, fileName: string) {
   return started.document;
 }
 
-async function renderPage(names: string[] = ['First.pdf', 'Second.pdf']) {
-  const api = createFakeApi({ delay: 0, checkMs: 0 });
+async function renderPage(
+  names: string[] = ['First.pdf', 'Second.pdf'],
+  api: FakeApi = createFakeApi({ delay: 0, checkMs: 0 }),
+) {
   for (const name of names) await upload(api, name);
   const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queries}>
       <ApiContext.Provider value={api}>
-        <ResumesPage />
+        <ResumesPage checkEvery={50} />
       </ApiContext.Provider>
     </QueryClientProvider>,
   );
@@ -93,7 +95,7 @@ describe('ResumesPage', () => {
     render(
       <QueryClientProvider client={queries}>
         <ApiContext.Provider value={api}>
-          <ResumesPage />
+          <ResumesPage checkEvery={50} />
         </ApiContext.Provider>
       </QueryClientProvider>,
     );
@@ -246,6 +248,147 @@ describe('ResumesPage', () => {
     fireEvent.click(within(sheet).getByRole('button', { name: 'Delete résumé' }));
     await waitFor(() => expect(statusText()).toContain('Second deleted.'));
     expect(rows()).toEqual(['FirstDefaultPDF · 180 kBDelete First']);
+  });
+});
+
+function pdf(name: string, size = 184_320): File {
+  const file = new File(['%PDF'], name, { type: 'application/pdf' });
+  Object.defineProperty(file, 'size', { value: size });
+  return file;
+}
+
+/** Puts files in the Library's picker, as choosing them in the browser's dialog does. */
+function pick(...files: File[]) {
+  const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+  if (!input) throw new Error('No file picker on screen');
+  Object.defineProperty(input, 'files', { value: files, configurable: true });
+  fireEvent.change(input);
+}
+
+const adding = () => within(screen.getByRole('list', { name: 'Files you are adding' }));
+
+describe('adding résumés on the Résumés page', { timeout: 30_000 }, () => {
+  it('uploads a chosen file with its progress, then follows it in the library until ready', async () => {
+    await renderPage(['First.pdf'], createFakeApi({ delay: 30, checkMs: 100 }));
+    pick(pdf('Second.pdf'));
+    expect(await screen.findByRole('progressbar', { name: 'Uploading Second.pdf' })).toBeTruthy();
+    expect(adding().getByText('Uploading · step 1 of 3')).toBeTruthy();
+    expect(adding().getByRole('button', { name: 'Cancel Second.pdf' })).toBeTruthy();
+    await waitFor(() => expect(statusText()).toContain('Second.pdf is uploaded.'));
+    expect(screen.queryByRole('list', { name: 'Files you are adding' })).toBeNull();
+    expect(rows()[0]).toBe('SecondChecking it for malware · step 2 of 3Delete Second');
+    expect(screen.getByText('2 of 10')).toBeTruthy();
+    await waitFor(() => expect(statusText()).toContain('Second is ready.'));
+    expect(rows()[0]).toBe('SecondPDF · 180 kBDelete Second');
+  });
+
+  it('takes several files at once', async () => {
+    await renderPage([]);
+    pick(pdf('One.pdf'), pdf('Two.pdf'));
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    expect(screen.getByText('2 of 10')).toBeTruthy();
+  });
+
+  it('takes dropped files', async () => {
+    await renderPage([]);
+    fireEvent.drop(screen.getByRole('button', { name: 'Choose files' }).parentElement as Element, {
+      dataTransfer: { files: [pdf('Dropped.pdf')], types: ['Files'] },
+    });
+    await waitFor(() => expect(rows()).toHaveLength(1));
+  });
+
+  it('shows why a file can’t be added before sending it; Dismiss clears it', async () => {
+    const api = await renderPage([]);
+    const request = vi.spyOn(api, 'request');
+    pick(pdf('notes.txt'));
+    expect(await adding().findByText('Not added')).toBeTruthy();
+    expect(adding().getByText(/notes\.txt isn’t a PDF or DOCX file\./)).toBeTruthy();
+    expect(adding().queryByRole('button', { name: /Try again/ })).toBeNull();
+    expect(request).not.toHaveBeenCalled();
+    const dismiss = adding().getByRole('button', { name: 'Dismiss notes.txt' });
+    dismiss.focus();
+    fireEvent.click(dismiss);
+    expect(screen.queryByRole('list', { name: 'Files you are adding' })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Choose files' }));
+    await waitFor(() => expect(statusText()).toContain('notes.txt dismissed.'));
+  });
+
+  it('keeps a file whose upload didn’t get through, to send again', async () => {
+    const api = createFakeApi({ delay: 0, checkMs: 0 });
+    vi.spyOn(api, 'upload').mockRejectedValueOnce(new ApiError('offline'));
+    await renderPage([], api);
+    pick(pdf('Flaky.pdf'));
+    expect(
+      await adding().findByText('The upload didn’t finish. Check your connection, then try again.'),
+    ).toBeTruthy();
+    // The started résumé is forgotten: nothing waits a day for a file that never came.
+    await waitFor(async () => expect(await documents(api)).toEqual([]));
+    fireEvent.click(adding().getByRole('button', { name: 'Try again Flaky.pdf' }));
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(screen.queryByRole('list', { name: 'Files you are adding' })).toBeNull();
+  });
+
+  it('says what happened to each file in a batch', async () => {
+    await renderPage([], createFakeApi({ delay: 30, checkMs: 0 }));
+    pick(pdf('notes.txt'), pdf('Good.pdf'));
+    await waitFor(() => expect(statusText()).toContain('notes.txt isn’t a PDF or DOCX file.'));
+    expect(statusText()).toContain('Uploading Good.pdf.');
+  });
+
+  it('offers no Try again when sending the same file can’t help', async () => {
+    const api = createFakeApi({ delay: 0, checkMs: 0 });
+    vi.spyOn(api, 'upload').mockRejectedValueOnce(new ApiError('invalid', { status: 403 }));
+    await renderPage([], api);
+    pick(pdf('Refused.pdf'));
+    expect(await adding().findByText('The upload was refused. Try again.')).toBeTruthy();
+    expect(adding().queryByRole('button', { name: 'Try again Refused.pdf' })).toBeNull();
+    expect(adding().getByRole('button', { name: 'Dismiss Refused.pdf' })).toBeTruthy();
+  });
+
+  it('stops an upload on Cancel and keeps nothing', async () => {
+    const api = await renderPage([], createFakeApi({ delay: 30, checkMs: 0 }));
+    pick(pdf('Stop.pdf'));
+    fireEvent.click(await adding().findByRole('button', { name: 'Cancel Stop.pdf' }));
+    await waitFor(() => expect(statusText()).toContain('Upload of Stop.pdf cancelled.'));
+    expect(screen.queryByRole('list', { name: 'Files you are adding' })).toBeNull();
+    await waitFor(async () => expect(await documents(api)).toEqual([]));
+  });
+
+  it('adds only what fits in the 10, and says when the library is full', async () => {
+    const names = Array.from({ length: 9 }, (_, n) => `Resume ${n}.pdf`);
+    const api = await renderPage(names);
+    pick(pdf('Tenth.pdf'), pdf('Eleventh.pdf'));
+    expect(
+      await adding().findByText(
+        'There’s no room for Eleventh.pdf. Your deputy keeps up to 10 résumés.',
+      ),
+    ).toBeTruthy();
+    await waitFor(() => expect(statusText()).toContain('Tenth is ready.'));
+    expect(screen.getByText('10 of 10')).toBeTruthy();
+    expect(screen.getByText('Your library is full')).toBeTruthy();
+    const choose = screen.getByRole('button', { name: 'Choose files' });
+    expect(choose.getAttribute('aria-disabled')).toBe('true');
+    const opened = vi.spyOn(HTMLInputElement.prototype, 'click');
+    fireEvent.click(choose);
+    expect(opened).not.toHaveBeenCalled();
+    // A file dropped anyway is refused, and the page says why.
+    const request = vi.spyOn(api, 'request');
+    fireEvent.drop(choose.parentElement as Element, {
+      dataTransfer: { files: [pdf('Twelfth.pdf')], types: ['Files'] },
+    });
+    await waitFor(() =>
+      expect(statusText()).toContain('Your library is full. Delete a résumé to add another.'),
+    );
+    expect(request).not.toHaveBeenCalled();
+    request.mockRestore();
+    // With room again, the file that didn't fit goes in on Try again.
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Resume 0' }));
+    const sheet = await screen.findByRole('alertdialog');
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Delete résumé' }));
+    await waitFor(() => expect(screen.getByText('9 of 10')).toBeTruthy());
+    fireEvent.click(adding().getByRole('button', { name: 'Try again Eleventh.pdf' }));
+    await waitFor(() => expect(screen.getByText('10 of 10')).toBeTruthy());
+    expect(rows()[0]).toContain('Eleventh');
   });
 });
 
