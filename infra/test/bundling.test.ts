@@ -115,3 +115,20 @@ describe('Lambda bundling (#51)', () => {
     }
   }, 120_000);
 });
+
+describe('AppFunction banner', () => {
+  it('refuses a banner that does not define require', async () => {
+    const { App, Duration, RemovalPolicy, Stack } = await import('aws-cdk-lib');
+    const { AppFunction } = await import('../lib/constructs/node-function.js');
+    const stack = new Stack(new App(), 'BannerTest');
+    expect(
+      () =>
+        new AppFunction(stack, 'Bad', {
+          entry: 'apps/worker/src/ping-worker.ts',
+          timeout: Duration.seconds(5),
+          removalPolicy: RemovalPolicy.DESTROY,
+          banner: 'const x = 1;',
+        }),
+    ).toThrow('a banner must define require');
+  });
+});

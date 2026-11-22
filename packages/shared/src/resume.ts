@@ -124,6 +124,9 @@ export type ResumeBlock =
   /** A skills line: "Languages: TypeScript, SQL". */
   | { kind: 'skills'; group: string; items: string };
 
+/** The name a résumé shows when it has no usable one (neither the résumé's nor the profile's). */
+export const FALLBACK_RESUME_NAME = 'Résumé';
+
 /** The section headings, in order; ATSs look for these words. */
 export const RESUME_HEADINGS = {
   summary: 'Summary',
@@ -165,12 +168,18 @@ function degreeText(degree?: string, field?: string): string {
 /** The résumé as the template's blocks; empty sections are left out. */
 export function resumeBlocks(resume: StructuredResume): ResumeBlock[] {
   const c = resume.contact;
-  const blocks: ResumeBlock[] = [{ kind: 'name', text: joined('', c.name) || 'Résumé' }];
+  const blocks: ResumeBlock[] = [
+    { kind: 'name', text: joined('', c.name) || FALLBACK_RESUME_NAME },
+  ];
   const headline = joined('', c.headline);
   if (headline) blocks.push({ kind: 'line', text: headline });
   const contact = joined(' | ', c.email, c.phone, c.location, ...c.links);
   if (contact) blocks.push({ kind: 'line', text: contact });
-  /** A section, without blocks left empty by `printable` (and without its heading when none are left). */
+  /**
+   * A section, without blocks left empty by `printable` (and without its heading when none
+   * are left). An entry whose own line is empty goes with its place, dates, and bullets
+   * (`entry`), so they never show under the entry before it.
+   */
   const section = (heading: string, body: ResumeBlock[]) => {
     const kept = body.filter((b) => (b.kind === 'skills' ? b.items : b.text) !== '');
     if (kept.length > 0) blocks.push({ kind: 'heading', text: heading }, ...kept);
@@ -180,6 +189,8 @@ export function resumeBlocks(resume: StructuredResume): ResumeBlock[] {
     const text = joined(' | ', ...values);
     return text ? [{ kind: 'meta', text }] : [];
   };
+  const entry = (text: string, ...rest: ResumeBlock[]): ResumeBlock[] =>
+    text === '' ? [] : [{ kind: 'entry', text }, ...rest];
   const bullets = (items: string[]): ResumeBlock[] =>
     items
       .map((item) => joined('', item))
@@ -200,19 +211,23 @@ export function resumeBlocks(resume: StructuredResume): ResumeBlock[] {
   );
   section(
     RESUME_HEADINGS.experience,
-    resume.experience.flatMap((e) => [
-      { kind: 'entry', text: joined(', ', e.title, e.employer) } as const,
-      ...meta(e.location, dates(e.start, e.end)),
-      ...bullets(e.bullets),
-    ]),
+    resume.experience.flatMap((e) =>
+      entry(
+        joined(', ', e.title, e.employer),
+        ...meta(e.location, dates(e.start, e.end)),
+        ...bullets(e.bullets),
+      ),
+    ),
   );
   section(
     RESUME_HEADINGS.education,
-    resume.education.flatMap((d) => [
-      { kind: 'entry', text: joined(', ', degreeText(d.degree, d.field), d.school) } as const,
-      ...meta(dates(d.start, d.end)),
-      ...bullets(d.details),
-    ]),
+    resume.education.flatMap((d) =>
+      entry(
+        joined(', ', degreeText(d.degree, d.field), d.school),
+        ...meta(dates(d.start, d.end)),
+        ...bullets(d.details),
+      ),
+    ),
   );
   section(
     RESUME_HEADINGS.certifications,
@@ -223,11 +238,9 @@ export function resumeBlocks(resume: StructuredResume): ResumeBlock[] {
   );
   section(
     RESUME_HEADINGS.projects,
-    resume.projects.flatMap((p) => [
-      { kind: 'entry', text: joined('', p.name) } as const,
-      ...meta(p.link),
-      ...bullets(p.bullets),
-    ]),
+    resume.projects.flatMap((p) =>
+      entry(joined('', p.name), ...meta(p.link), ...bullets(p.bullets)),
+    ),
   );
   return blocks;
 }

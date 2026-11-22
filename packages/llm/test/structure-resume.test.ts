@@ -1,11 +1,10 @@
-import { structuredResume } from '@jobdeputy/shared';
+import { FALLBACK_RESUME_NAME, structuredResume } from '@jobdeputy/shared';
 import { describe, expect, it } from 'vitest';
 import { extractedText, longResume, structureCases } from '../eval/cases/structure.js';
 import { stubSource } from '../src/stub-model.js';
 import {
   coverageOf,
   DEFAULT_SKILL_GROUP,
-  FALLBACK_NAME,
   groundStructured,
   STRUCTURE_RESUME_CHARS,
   type StructureResumeOutput,
@@ -256,7 +255,7 @@ describe('groundStructured: limits, names, and plain text (review fixes)', () =>
     for (const written of [
       '555\u00a0010\u00a01234',
       '555/010/1234',
-      '555–010–1234',
+      '+1 555 010 1234',
       '555-010-1234 123 Main St',
     ]) {
       const resume = groundStructured(output, `Sam Example\n${written}\n${text}`, 'P').resume;
@@ -268,9 +267,11 @@ describe('groundStructured: limits, names, and plain text (review fixes)', () =>
     const link = `github.com/${'a'.repeat(310)}`;
     const output = copied();
     output.contact.links = [link];
-    const { resume, rejections } = groundStructured(output, `${text}\n${link}`, 'P');
+    const { resume, rejections, trimmed } = groundStructured(output, `${text}\n${link}`, 'P');
     expect(resume.contact.links).toEqual([]);
-    expect(rejections).toBe(1);
+    // In the text, so not a rejection: left out for its length.
+    expect(rejections).toBe(0);
+    expect(trimmed).toBe(1);
   });
 
   it('merges skills that differ only in case, and counts what the limits leave out', () => {
@@ -297,6 +298,39 @@ describe('groundStructured: limits, names, and plain text (review fixes)', () =>
     ]);
   });
 
+  it('never builds a phone from dates: not across lines, dashes, or a year range', () => {
+    const dated = `${text}\nJan 2019 – Mar 2021\n2021 – 2023\n2019-2021`;
+    const output = copied();
+    for (const fake of ['(021) 202-1202', '(201) 920-2120', '201-9202', '2021-2023']) {
+      output.contact.phone = fake;
+      expect(groundStructured(output, dated, 'P').resume.contact.phone, fake).toBeUndefined();
+    }
+  });
+
+  it('checks a long name whole, then cuts it: the entry stays', () => {
+    const school = `University of ${'Example '.repeat(30).trim()}`;
+    const output = copied();
+    output.education = [{ school }];
+    const g = groundStructured(output, `${text}\n${school}`, 'P');
+    expect(g.resume.education[0]?.school.length).toBeLessThanOrEqual(160);
+    expect(g.resume.education[0]?.school.startsWith('University of Example')).toBe(true);
+  });
+
+  it('counts every skill in a group past the group limit as trimmed', () => {
+    const output = copied();
+    output.skills = Array.from({ length: 10 }, (_, i) => ({
+      group: 'Languages',
+      items: ['TypeScript'],
+    })).map((g, i) => ({
+      group: i === 0 ? g.group : `G${i}`,
+      items: [`Skill${i}a`, `Skill${i}b`],
+    }));
+    const all = output.skills.flatMap((g) => [g.group, ...(g.items ?? [])]);
+    const g = groundStructured(output, `${text}\n${all.join(', ')}`, 'P');
+    expect(g.resume.skills).toHaveLength(8);
+    expect(g.trimmed).toBe(4);
+  });
+
   it('keeps a phone only when the text writes it as one number, not digits joined across dates', () => {
     const dated = `${text}\nJan 2019 – Mar 2021\n2021 – 2023`;
     const output = copied();
@@ -309,7 +343,7 @@ describe('groundStructured: limits, names, and plain text (review fixes)', () =>
   it('falls back to a name that always fits, whatever the profile gives', () => {
     const output = copied();
     output.contact.name = 'N/A';
-    expect(groundStructured(output, text, '  ').resume.contact.name).toBe(FALLBACK_NAME);
+    expect(groundStructured(output, text, '  ').resume.contact.name).toBe(FALLBACK_RESUME_NAME);
     expect(groundStructured(output, text, 'x'.repeat(300)).resume.contact.name).toHaveLength(120);
   });
 

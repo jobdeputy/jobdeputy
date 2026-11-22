@@ -1,4 +1,10 @@
-import { cutAtWord, resumeText, type StructuredResume, structuredResume } from '@jobdeputy/shared';
+import {
+  cutAtWord,
+  FALLBACK_RESUME_NAME,
+  resumeText,
+  type StructuredResume,
+  structuredResume,
+} from '@jobdeputy/shared';
 import { z } from 'zod';
 import type { ModelSource } from '../models.js';
 import { dataBlock } from '../prompt.js';
@@ -173,10 +179,12 @@ class Source {
     this.folded = fold(text);
     this.words = new Set(this.folded.trim().split(' '));
     this.lower = text.toLowerCase();
-    // Separators PDF text layers use: spaces of any width, dots, dashes, slashes, brackets.
-    this.phones = (text.match(/\+?\d[\d\s()./\u2010-\u2015-]{5,}\d/g) ?? []).map((run) =>
-      run.replace(/\D/g, ''),
-    );
+    // Separators PDF text layers use inside a phone: spaces of any width (never a line
+    // break), dots, hyphens, slashes, brackets. Not en or em dashes, which join date ranges,
+    // and not a run that is only a year range ("2019-2021").
+    this.phones = (text.match(/\+?\d[\d \t\u00a0\u2009\u202f()./\u2010-\u2012-]{5,}\d/g) ?? [])
+      .filter((run) => !/^\d{4}\s*[-\u2010-\u2012]\s*\d{4}$/.test(run))
+      .map((run) => run.replace(/\D/g, ''));
     this.numbers = numbersIn(text);
   }
 
@@ -205,16 +213,19 @@ class Source {
   }
 
   /**
-   * A phone number the text writes inside one run of digits and separators, with or without
-   * a country code: "+1 555 010 1234" for "(555) 010-1234" (the last 10 digits, the national
-   * number), also when another number follows it in the run ("555-010-1234 123 Main St").
-   * Digits joined across separate numbers, such as two dates, never match.
+   * A phone number a run of digits and separators starts with, with or without a country
+   * code of 1 to 3 digits: "+1 555 010 1234" for "(555) 010-1234" (the national number is
+   * the last 10 digits), also when another number follows it in the run ("555-010-1234 123
+   * Main St"). Only at the run's start, so digits inside other numbers never match.
    */
   hasPhone(value: string): boolean {
     const digits = value.replace(/\D/g, '');
     if (digits.length < 7) return false;
     const national = digits.slice(-10);
-    return this.phones.some((run) => run.includes(digits) || run.includes(national));
+    return this.phones.some(
+      (run) =>
+        run.startsWith(digits) || [0, 1, 2, 3].some((k) => run.slice(k).startsWith(national)),
+    );
   }
 }
 
@@ -285,9 +296,6 @@ export function coverageOf(resume: StructuredResume, text: string): number {
   return total === 0 ? 1 : covered / total;
 }
 
-/** The name used when neither the model's nor the profile's is usable. */
-export const FALLBACK_NAME = 'Résumé';
-
 /**
  * Prompt-injection rule 4 (decision 0010) for a structured résumé: keeps only what the
  * résumé's text (what was sent of it) contains. An entry whose employer, title, school, or
@@ -307,9 +315,10 @@ export function groundStructured(
   let trimmed = 0;
   const has = (v: string) => source.has(v);
   /**
-   * A field the model filled: absent when empty or a placeholder, dropped when not in the
-   * text. Text is cut to `max` at a word; an `exact` value (an email, a link, a phone) is
-   * never cut, since a cut one is still in the text but no longer works: one too long goes.
+   * A field the model filled: absent when empty or a placeholder, dropped (a rejection) when
+   * not in the text. The whole value is checked, then cut to `max` at a word; an `exact`
+   * value (an email, a link, a phone) is never cut, since a cut one would still be in the
+   * text but no longer work: one too long is left out (`trimmed`).
    */
   const keep = (
     value: string | undefined,
@@ -319,14 +328,18 @@ export function groundStructured(
   ): string | undefined => {
     const whole = plainText(value ?? '');
     if (blank(whole)) return undefined;
-    const v = exact ? whole : cutAtWord(whole, max);
-    if (v.length <= max && ok(v)) return v;
-    rejections += 1;
+    if (!ok(whole)) {
+      rejections += 1;
+      return undefined;
+    }
+    if (!exact) return cutAtWord(whole, max);
+    if (whole.length <= max) return whole;
+    trimmed += 1;
     return undefined;
   };
   /**
    * Lines (bullets, details, skills, links) the text supports, at most `count` of them (the
-   * rest counted in `trimmed`); `exact` lines (links) are never cut, as in `keep`.
+   * rest counted in `trimmed`); checked whole, then cut, as in `keep`.
    */
   const lines = (
     items: string[] | undefined,
@@ -335,46 +348,53 @@ export function groundStructured(
     ok = (v: string) => source.supports(v),
     exact = false,
   ) => {
-    const kept = (items ?? [])
-      .map((item) => plainText(item))
-      .filter((line) => !blank(line))
-      .map((line) => (exact ? line : cutAtWord(line, max)))
-      .filter((line) => {
-        if (line.length <= max && ok(line)) return true;
-        rejections += 1;
-        return false;
-      });
+    const kept: string[] = [];
+    for (const line of (items ?? []).map((item) => plainText(item))) {
+      if (blank(line)) continue;
+      if (!ok(line)) rejections += 1;
+      else if (!exact) kept.push(cutAtWord(line, max));
+      else if (line.length <= max) kept.push(line);
+      else trimmed += 1;
+    }
     trimmed += Math.max(0, kept.length - count);
     return kept.slice(0, count);
   };
   const defined = <T extends object>(value: T) =>
     Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as T;
-  /** Entries whose required names (plain, fitted) the text has, at most `count`, with IDs. */
+  /**
+   * Entries whose required names the text has (checked whole), at most `count`, with IDs;
+   * `map` gets the names plain and cut to their limits (`cuts`).
+   */
   const entries = <T, U>(
     list: T[] | undefined,
     prefix: string,
     count: number,
     names: (e: T) => string[],
+    cuts: number[],
     map: (e: T, names: string[]) => U,
   ) => {
     const kept = (list ?? [])
-      .map((e) => ({ e, names: names(e) }))
+      .map((e) => ({ e, names: names(e).map((n) => plainText(n)) }))
       .filter(({ names }) => {
         if (names.every((n) => !blank(n) && has(n))) return true;
         rejections += 1;
         return false;
       });
     trimmed += Math.max(0, kept.length - count);
-    return kept
-      .slice(0, count)
-      .map(({ e, names }, i) => ({ id: `${prefix}${i + 1}`, ...map(e, names) }));
+    return kept.slice(0, count).map(({ e, names }, i) => ({
+      id: `${prefix}${i + 1}`,
+      ...map(
+        e,
+        names.map((n, k) => cutAtWord(n, cuts[k] ?? n.length)),
+      ),
+    }));
   };
   const plain = (value: string, max: number) => cutAtWord(plainText(value), max);
 
   const c = output.contact;
   const profileName = plain(name, CAPS.name);
   const contact = defined({
-    name: keep(c.name, CAPS.name) ?? (blank(profileName) ? FALLBACK_NAME : profileName),
+    name: keep(c.name, CAPS.name) ?? (blank(profileName) ? FALLBACK_RESUME_NAME : profileName),
     headline: keep(c.headline, CAPS.headline),
     email: keep(c.email, CAPS.email, (v) => source.hasVerbatim(v), true),
     phone: keep(c.phone, CAPS.phone, (v) => source.hasPhone(v), true),
@@ -386,8 +406,9 @@ export function groundStructured(
   // and "sql" one skill), the first spelling kept.
   const groups = new Map<string, { group: string; items: string[] }>();
   for (const g of output.skills ?? []) {
-    const written = plain(g.group ?? '', CAPS.group);
-    const group = !blank(written) && has(written) ? written : DEFAULT_SKILL_GROUP;
+    const written = plainText(g.group ?? '');
+    const group =
+      !blank(written) && has(written) ? cutAtWord(written, CAPS.group) : DEFAULT_SKILL_GROUP;
     const known = groups.get(group.toLowerCase()) ?? { group, items: [] };
     const seen = new Set(known.items.map((i) => i.toLowerCase()));
     for (const item of lines(g.items, Number.POSITIVE_INFINITY, CAPS.skill, has)) {
@@ -398,7 +419,8 @@ export function groundStructured(
     }
     if (known.items.length > 0) groups.set(group.toLowerCase(), known);
   }
-  trimmed += Math.max(0, groups.size - CAPS.groups);
+  // Groups past the limit go with every skill in them.
+  for (const dropped of [...groups.values()].slice(CAPS.groups)) trimmed += dropped.items.length;
 
   const resume: StructuredResume = defined({
     contact,
@@ -408,7 +430,8 @@ export function groundStructured(
       output.experience,
       'e',
       CAPS.jobs,
-      (e) => [plain(e.employer, CAPS.employer), plain(e.title, CAPS.employer)],
+      (e) => [e.employer, e.title],
+      [CAPS.employer, CAPS.employer],
       (e, [employer = '', title = '']) =>
         defined({
           employer: withoutTitle(employer, title),
@@ -423,7 +446,8 @@ export function groundStructured(
       output.education,
       'd',
       CAPS.schools,
-      (d) => [plain(d.school, CAPS.school)],
+      (d) => [d.school],
+      [CAPS.school],
       (d, [school = '']) =>
         defined({
           school,
@@ -438,7 +462,8 @@ export function groundStructured(
       output.certifications,
       'c',
       CAPS.certifications,
-      (x) => [plain(x.name, CAPS.certification)],
+      (x) => [x.name],
+      [CAPS.certification],
       (x, [certification = '']) =>
         defined({
           name: certification,
@@ -450,7 +475,8 @@ export function groundStructured(
       output.projects,
       'p',
       CAPS.projects,
-      (p) => [plain(p.name, CAPS.project)],
+      (p) => [p.name],
+      [CAPS.project],
       (p, [project = '']) =>
         defined({
           name: project,

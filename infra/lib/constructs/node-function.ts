@@ -58,6 +58,13 @@ export function renderFiles(): string[] {
   ];
 }
 
+/**
+ * #51: what a function that renders résumés needs, both together: spread it into its
+ * AppFunction props (`...RENDERS_RESUMES`). pdfkit reads `__dirname` and fontkit reads
+ * `data.trie` beside the bundle; one without the other fails at cold start.
+ */
+export const RENDERS_RESUMES = { banner: RENDER_BANNER, copyFiles: renderFiles } as const;
+
 export interface AppFunctionProps {
   /** Path from the repo root, for example `apps/api/src/ping-jobs.ts`. */
   readonly entry: string;
@@ -65,7 +72,10 @@ export interface AppFunctionProps {
   readonly memorySize?: number;
   readonly environment?: Record<string, string>;
   readonly removalPolicy: RemovalPolicy;
-  /** Replaces BUNDLING's banner (#51: RENDER_BANNER for functions that render résumés). */
+  /**
+   * Replaces BUNDLING's banner (#51: RENDERS_RESUMES). It must still define `require`
+   * (createRequire), as BUNDLING's does: the constructor refuses one that does not.
+   */
   readonly banner?: string;
   /**
    * Files copied beside the bundle, for code that reads them at run time (#51:
@@ -80,6 +90,9 @@ export class AppFunction extends Construct {
 
   constructor(scope: Construct, id: string, props: AppFunctionProps) {
     super(scope, id);
+    if (props.banner !== undefined && !props.banner.includes('createRequire(import.meta.url)')) {
+      throw new Error(`${id}: a banner must define require (see BUNDLING.banner)`);
+    }
     const logGroup = new LogGroup(this, 'Logs', {
       retention: RetentionDays.TWO_WEEKS,
       removalPolicy: props.removalPolicy,

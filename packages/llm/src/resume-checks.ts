@@ -1,6 +1,7 @@
 import {
   type JobKeyword,
   printable,
+  RESUME_HEADINGS,
   resumeText,
   type StructuredResume,
   TermIndex,
@@ -65,9 +66,10 @@ export function plainText(text: string): string {
 export function plainParts(parts: TailoredParts): TailoredParts {
   const list = (items: string[]) => items.map(plainText).filter((t) => t !== '');
   return {
-    summary: plainText(parts.summary) || parts.summary,
+    // Never the raw text back: what is left after cleaning is what the file will show.
+    summary: plainText(parts.summary),
     skills: parts.skills
-      .map((g) => ({ group: plainText(g.group) || g.group, items: list(g.items) }))
+      .map((g) => ({ group: plainText(g.group) || RESUME_HEADINGS.skills, items: list(g.items) }))
       .filter((g) => g.items.length > 0),
     experience: parts.experience.map((e) => ({ id: e.id, bullets: list(e.bullets) })),
     projects: parts.projects.map((p) => ({ id: p.id, bullets: list(p.bullets) })),
