@@ -9,9 +9,11 @@ import { PageIntro } from '@/components/page-intro.tsx';
 import { Section } from '@/components/section.tsx';
 import { refusalText } from '@/components/setup/parts.tsx';
 import { Button } from '@/components/ui/button.tsx';
+import { Progress } from '@/components/ui/progress.tsx';
 import { copy, fill, plural } from '@/copy/index.ts';
 import {
   type Crawl,
+  crawlName,
   crawlStage,
   isCrawling,
   isStalled,
@@ -71,13 +73,19 @@ export function JobsPage({ checkEvery }: { checkEvery?: number }) {
  * What the companies list reflects: the newest crawl whose work ended, and how (read, scored, or
  * stalled; a crawl that failed changed nothing). A new version reads the list again from the
  * start, so a crawl that ended in another tab, or later than it seemed to (a stall that then
- * finished), counts too. While a crawl is at work the version stays. Undefined until the newest
+ * finished), counts too. While a crawl is at work the version stays, except that a list run's
+ * version moves as each of its companies is read. Undefined until the newest
  * crawl is known, so the list is never read just before a crawl is seen as ended.
  */
 function useListVersion(latest: ReturnType<typeof useLatestCrawl>): string | undefined {
   const last = useRef<string | undefined>(undefined);
   if (latest.data === undefined && !latest.isError) return undefined;
   const crawl = latest.data ?? null;
+  // #50: a list run's companies come in one by one: read the list again as each one ends.
+  if (crawl && isCrawling(crawl) && crawl.kind === 'list' && (crawl.list?.ended ?? 0) > 0) {
+    last.current = `${crawl.crawlId}:companies:${crawl.list?.ended}`;
+    return last.current;
+  }
   if (crawl && (isCrawling(crawl) || crawl.status === 'failed')) {
     last.current ??= 'open';
     return last.current;
@@ -254,6 +262,8 @@ function refusal(failure: unknown): string {
   if (failure instanceof ApiError) {
     if (failure.code === 'too-many-active-crawls') return text.find.errors.busy;
     if (failure.code === 'daily-limit-reached') return text.find.errors.daily;
+    if (failure.code === 'daily-list-limit-reached') return text.find.errors.dailyLists;
+    if (failure.code === 'lists-turned-off') return text.find.errors.listsOff;
     if (failure.kind === 'offline' || failure.kind === 'server' || failure.kind === 'unsure') {
       return text.find.errors.tryLater;
     }
@@ -263,11 +273,7 @@ function refusal(failure: unknown): string {
 
 /** The site a crawl reads, as people say it: "boards.greenhouse.io", without "www.". */
 export function hostOf(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '');
-  } catch {
-    return url;
-  }
+  return crawlName({ url });
 }
 
 /** The newest crawl couldn't be read: say so, and try again where that can help. */
@@ -302,13 +308,15 @@ function ReadFailed({
 
 /**
  * The newest crawl: the deputy at work while it runs (waiting its turn, reading, scoring), then
- * how it went. The result line is a status region, so it is read out when the work ends.
+ * how it went. The result line is a status region, so it is read out when the work ends. #50: a
+ * GitHub list is read, then its companies, with a bar of how many are read.
  */
 function CrawlProgress({ crawl }: { crawl: Crawl | null }) {
   if (!crawl) return null;
-  const host = hostOf(crawl.url);
+  const host = crawlName(crawl);
   const working = isCrawling(crawl);
   const stage = crawlStage(crawl);
+  const companies = crawl.list?.companies.length ?? 0;
   return (
     <div className="grid">
       <DeputyWorking
@@ -320,6 +328,15 @@ function CrawlProgress({ crawl }: { crawl: Crawl | null }) {
         // Space under the deputy only while he shows (his live regions stay, empty, after).
         className="data-shown:mb-3"
       />
+      {working && stage === 'companies' && companies > 0 && crawl.list && (
+        <Progress
+          className="mb-3"
+          label={fill(plural(text.working.companiesBar, companies), {
+            done: String(crawl.list.ended),
+          })}
+          value={(crawl.list.ended / companies) * 100}
+        />
+      )}
       <div role="status" className="grid gap-1">
         {!working && <Outcome crawl={crawl} host={host} />}
       </div>
@@ -342,6 +359,7 @@ function Outcome({ crawl, host }: { crawl: Crawl; host: string }) {
       </>
     );
   }
+  if (crawl.kind === 'list') return <ListOutcome crawl={crawl} host={host} />;
   const found = crawl.stats?.jobsFound ?? 0;
   const line =
     found === 0
@@ -349,19 +367,62 @@ function Outcome({ crawl, host }: { crawl: Crawl; host: string }) {
       : crawl.stats?.jobsRelevant === 0
         ? fill(text.result.doneNone, { host })
         : fill(plural(text.result.done, found), { host });
-  const scoring = crawl.relevance?.status === 'failed' ? crawl.relevance.error?.code : undefined;
   return (
     <>
       <p className="m-0 text-sm font-[650] text-ink">{line}</p>
-      {scoring && (
-        <p className="m-0 text-sm text-muted-foreground">
-          {fill(text.result.noScore, {
-            reason:
-              (text.scoringErrors as Record<string, string>)[scoring] ??
-              text.scoringErrors.model_unavailable,
-          })}
+      <NoScore crawl={crawl} />
+    </>
+  );
+}
+
+/** Why the AI didn't score a crawl's jobs, when it didn't: the deputy ranked them by keywords. */
+function NoScore({ crawl }: { crawl: Crawl }) {
+  const scoring = crawl.relevance?.status === 'failed' ? crawl.relevance.error?.code : undefined;
+  if (!scoring) return null;
+  return (
+    <p className="m-0 text-sm text-muted-foreground">
+      {fill(text.result.noScore, {
+        reason:
+          (text.scoringErrors as Record<string, string>)[scoring] ??
+          text.scoringErrors.model_unavailable,
+      })}
+    </p>
+  );
+}
+
+/**
+ * #50: how a list run went: the jobs read at how many companies, then what it passed over (sites
+ * that can't be read yet, companies whose read failed, boards already being read).
+ */
+function ListOutcome({ crawl, host }: { crawl: Crawl; host: string }) {
+  const list = crawl.list;
+  const read = crawl.stats?.companies?.succeeded ?? 0;
+  const found = crawl.stats?.jobsFound ?? 0;
+  const chosen = list?.companies.length ?? 0;
+  const skipped = list?.skipped ?? 0;
+  const line =
+    chosen === 0
+      ? fill(skipped > 0 ? text.result.listNoneReadable : text.result.listNoMatch, { host })
+      : fill(plural(text.result.listDone, found), {
+          host,
+          companies: plural(text.result.companies, read),
+        });
+  const notes = [
+    chosen > 0 && skipped > 0 ? plural(text.result.listSkipped, skipped) : null,
+    (crawl.stats?.companies?.failed ?? 0) > 0
+      ? plural(text.result.listFailed, crawl.stats?.companies?.failed ?? 0)
+      : null,
+    (list?.busy ?? 0) > 0 ? plural(text.result.listBusy, list?.busy ?? 0) : null,
+  ].filter((note): note is string => note !== null);
+  return (
+    <>
+      <p className="m-0 text-sm font-[650] text-ink">{line}</p>
+      {notes.map((note) => (
+        <p key={note} className="m-0 text-sm text-muted-foreground">
+          {note}
         </p>
-      )}
+      ))}
+      <NoScore crawl={crawl} />
     </>
   );
 }

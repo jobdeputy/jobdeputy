@@ -1050,6 +1050,8 @@ describe('list runs (#50)', () => {
       },
     });
     expect(JSON.stringify(view)).not.toContain('listSource');
+    // PR B: when it last moved on, for the page's stall check.
+    expect(view.updatedAt).toBe(new Date(NOW).toISOString());
     expect(crawlView(crawl({ parentCrawlId: 'L1' }))).toMatchObject({ parentCrawlId: 'L1' });
     expect(crawlView(crawl())).not.toHaveProperty('list');
   });

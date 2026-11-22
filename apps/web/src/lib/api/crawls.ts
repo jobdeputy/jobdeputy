@@ -10,15 +10,41 @@ import { type ApiClient, ApiError, isFinal, useApi } from './index.ts';
 export interface Crawl {
   crawlId: string;
   url: string;
+  /** #50: `list` for a list of roles (a GitHub repository): its best companies are crawled. */
+  kind?: 'list';
   status: 'queued' | 'running' | 'succeeded' | 'failed';
   /** The AI that scores its jobs: `platform`, a provider (the person's own key), or `none`. */
   aiSource?: string;
   error?: { code: string; message: string };
-  stats?: { jobsFound: number; jobsRelevant?: number };
+  stats?: {
+    jobsFound: number;
+    jobsRelevant?: number;
+    /** #50: a list run's company crawls that succeeded and failed. */
+    companies?: { succeeded: number; failed: number };
+  };
+  /** #50: a list run, once its list is read: the companies chosen and how far it is. */
+  list?: CrawlList;
   relevance?: { status: 'running' | 'done' | 'failed'; error?: { code: string; message: string } };
   createdAt: string;
+  /** When it last moved on (a list run: a company queued, started, or ended). */
+  updatedAt?: string;
   startedAt?: string;
   finishedAt?: string;
+}
+
+/** #50: what a list run chose, and how far its company crawls are. */
+export interface CrawlList {
+  /** The companies chosen, best first (at most 20). */
+  companies: { name: string; url: string }[];
+  /** Companies with matching roles on sites the deputy can't read yet. */
+  skipped: number;
+  /** Chosen companies whose board was already being read. */
+  busy: number;
+  /** Company crawls not started yet, at work now, and ended. */
+  waiting: number;
+  running: number;
+  ended: number;
+  crawlIds: string[];
 }
 
 /** How often a crawl at work is asked about again. */
@@ -38,9 +64,24 @@ export const SCORING_START_MS = 5 * 60 * 1000;
  */
 export const STALLED_MS = 15 * 60 * 1000;
 
+/**
+ * #50: how long a list run may go without moving on (a company queued, started, or ended) once it
+ * crawls its companies: the API's STALE_LIST_MS. Its companies share the crawl queue with others.
+ */
+export const LIST_STALLED_MS = 60 * 60 * 1000;
+
 type Followed = Pick<
   Crawl,
-  'status' | 'relevance' | 'aiSource' | 'stats' | 'createdAt' | 'startedAt' | 'finishedAt'
+  | 'status'
+  | 'relevance'
+  | 'aiSource'
+  | 'stats'
+  | 'createdAt'
+  | 'startedAt'
+  | 'finishedAt'
+  | 'kind'
+  | 'list'
+  | 'updatedAt'
 >;
 
 /** Whether the deputy is still reading the link. */
@@ -55,7 +96,13 @@ export function isReading(crawl: Pick<Crawl, 'status'>): boolean {
  * and kept some jobs, so a crawl like that with no scoring yet is still at work.
  */
 export function workDeadline(crawl: Followed): number | null {
-  if (isReading(crawl)) return Date.parse(crawl.startedAt ?? crawl.createdAt) + STALLED_MS;
+  if (isReading(crawl)) {
+    // A list run crawling its companies is stalled only once it stops moving on (as the API sees it).
+    if (crawl.kind === 'list' && (crawl.list?.crawlIds.length ?? 0) > 0) {
+      return Date.parse(crawl.updatedAt ?? crawl.createdAt) + LIST_STALLED_MS;
+    }
+    return Date.parse(crawl.startedAt ?? crawl.createdAt) + STALLED_MS;
+  }
   if (crawl.status !== 'succeeded') return null;
   const ended = Date.parse(crawl.finishedAt ?? '');
   if (crawl.relevance) return crawl.relevance.status === 'running' ? ended + STALLED_MS : null;
@@ -81,11 +128,32 @@ export function isStalled(crawl: Followed, now = Date.now()): boolean {
   );
 }
 
-/** Which stage a crawl at work is at, for the deputy's step line. */
-export function crawlStage(crawl: Pick<Crawl, 'status'>): 'waiting' | 'reading' | 'scoring' {
+/**
+ * Which stage a crawl at work is at, for the deputy's step line. #50: a list run reads its list,
+ * then its companies.
+ */
+export function crawlStage(
+  crawl: Pick<Crawl, 'status' | 'kind' | 'list'>,
+): 'waiting' | 'reading' | 'readingList' | 'companies' | 'scoring' {
   if (crawl.status === 'queued') return 'waiting';
-  if (crawl.status === 'running') return 'reading';
+  if (crawl.status === 'running') {
+    if (crawl.kind !== 'list') return 'reading';
+    return crawl.list ? 'companies' : 'readingList';
+  }
   return 'scoring';
+}
+
+/** What a crawl reads, as people say it: a site ("boards.greenhouse.io"), or a list ("owner/repo"). */
+export function crawlName(crawl: Pick<Crawl, 'url' | 'kind'>): string {
+  try {
+    const url = new URL(crawl.url);
+    if (crawl.kind === 'list' && url.hostname === 'github.com') {
+      return url.pathname.split('/').filter(Boolean).slice(0, 2).join('/') || url.hostname;
+    }
+    return url.hostname.replace(/^www\./, '');
+  } catch {
+    return crawl.url;
+  }
 }
 
 /**

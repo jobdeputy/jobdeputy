@@ -6,6 +6,7 @@ import {
   MAX_UPLOAD_BYTES,
   updateDocumentInput,
 } from '@jobdeputy/shared/documents';
+import { githubListFromUrl } from '@jobdeputy/shared/lists';
 import { createRoleInput, MAX_ROLES, profileInput } from '@jobdeputy/shared/profile';
 import { type ApiClient, ApiError, type UploadForm, type UploadOptions } from './client.ts';
 
@@ -87,7 +88,9 @@ export function createFakeApi({
    * AI, its scoring starts a stage later (a separate worker, as in the cell), runs, and is done. A
    * link with "unreachable" in it fails; "still-crawling" never finishes.
    */
-  function crawlView({ view, startedAt }: FakeCrawl): Record<string, unknown> {
+  function crawlView(crawl: FakeCrawl): Record<string, unknown> {
+    if (crawl.view.kind === 'list') return listView(crawl);
+    const { view, startedAt } = crawl;
     const stage = /still-crawling/i.test(String(view.url))
       ? 1
       : Math.floor((now() - startedAt) / crawlMs);
@@ -111,6 +114,67 @@ export function createFakeApi({
     };
     if (view.aiSource === 'none' || stage < 3) return done;
     return { ...done, relevance: { status: stage < 4 ? 'running' : 'done' } };
+  }
+
+  /**
+   * #50: a list run as the API shows it now, one `crawlMs` a step: queued, reading the list, then
+   * one company read a step (3 at work at once), then succeeded (its scoring after, as above). The
+   * list has 5 companies (the last one's read fails) and 3 skipped. In the link: "not-a-list"
+   * fails; "nothing-fits" chooses none; "unreadable" chooses none, all skipped; "still-crawling"
+   * stays at its second company.
+   */
+  function listView({ view, startedAt }: FakeCrawl): Record<string, unknown> {
+    const url = String(view.url);
+    const step = /still-crawling/i.test(url) ? 3 : Math.floor((now() - startedAt) / crawlMs);
+    const at = (n: number) => new Date(startedAt + n * crawlMs).toISOString();
+    if (step < 1) return { ...view, status: 'queued', updatedAt: at(0) };
+    if (step < 2) return { ...view, status: 'running', startedAt: at(1), updatedAt: at(1) };
+    if (/not-a-list/i.test(url)) {
+      return {
+        ...view,
+        status: 'failed',
+        error: { code: 'not_a_list', message: CRAWL_ERRORS.not_a_list },
+        finishedAt: at(2),
+        updatedAt: at(2),
+      };
+    }
+    const chosen = /nothing-fits|unreadable/i.test(url) ? [] : FAKE_LIST_COMPANIES;
+    const total = chosen.length;
+    const ended = Math.min(total, step - 2);
+    const running = Math.min(3, total - ended);
+    const list = {
+      companies: chosen,
+      skipped: /unreadable/i.test(url) ? 4 : /nothing-fits/i.test(url) ? 0 : 3,
+      busy: 0,
+      waiting: total - ended - running,
+      running,
+      ended,
+      crawlIds: chosen.slice(0, ended + running).map((_, i) => `${String(view.crawlId)}-${i}`),
+    };
+    if (ended < total) {
+      return { ...view, status: 'running', startedAt: at(1), updatedAt: at(step), list };
+    }
+    const finished = 2 + total;
+    const done = {
+      ...view,
+      status: 'succeeded',
+      list,
+      startedAt: at(1),
+      updatedAt: at(finished),
+      finishedAt: at(finished),
+      stats:
+        total === 0
+          ? { jobsFound: 0, jobsNew: 0, jobsUpdated: 0, companies: { succeeded: 0, failed: 0 } }
+          : {
+              jobsFound: 46,
+              jobsNew: 46,
+              jobsUpdated: 0,
+              jobsRelevant: 12,
+              companies: { succeeded: total - 1, failed: 1 },
+            },
+    };
+    if (view.aiSource === 'none' || total === 0 || step < finished + 1) return done;
+    return { ...done, relevance: { status: step < finished + 2 ? 'running' : 'done' } };
   }
 
   /** A résumé as the API shows it now: its status moves on with time once its file is in. */
@@ -335,6 +399,14 @@ export function createFakeApi({
             retryAfterSeconds: 3600,
           });
         }
+        // #50: a GitHub list. "list-limit" finds the day's lists used; "lists-off" finds them off.
+        const list = githubListFromUrl(checked.url);
+        if (list && /list-limit/i.test(checked.normalizedUrl)) {
+          throw new ApiError('too-many', { status: 429, code: 'daily-list-limit-reached' });
+        }
+        if (list && /lists-off/i.test(checked.normalizedUrl)) {
+          throw new ApiError('conflict', { status: 409, code: 'lists-turned-off' });
+        }
         const latest = myCrawls[0];
         if (latest && ['queued', 'running'].includes(String(crawlView(latest).status))) {
           throw new ApiError('too-many', {
@@ -347,7 +419,9 @@ export function createFakeApi({
         const crawl: FakeCrawl = {
           view: {
             crawlId: `fake-crawl-${lastCrawl}`,
-            url: checked.normalizedUrl,
+            // A list keeps the link's own words (the repository's name), as the API shows it.
+            url: list ? `https://github.com/${list.owner}/${list.repo}` : checked.normalizedUrl,
+            ...(list ? { kind: 'list' } : {}),
             aiSource,
             createdAt: new Date(now()).toISOString(),
           },
@@ -366,9 +440,18 @@ export function createFakeApi({
  * named from the link ("boards.greenhouse.io/acme" is Acme), with three jobs, ranked. A link with
  * "no-ai" in it was ranked without AI (no scores); "nothing-fits" found none that fit.
  */
-function fakeCompanies(crawled: Record<string, unknown>[]): Record<string, unknown>[] {
+function fakeCompanies(views: Record<string, unknown>[]): Record<string, unknown>[] {
   const seen = new Set<string>();
   const companies: Record<string, unknown>[] = [];
+  // #50: a list run's companies, each as its own crawl once read (the last one's read failed).
+  const crawled = views.flatMap((view) => {
+    if (view.kind !== 'list') return [view];
+    const list = view.list as { companies: { url: string }[]; ended: number } | undefined;
+    const read = Math.min(list?.ended ?? 0, FAKE_LIST_COMPANIES.length - 1);
+    return (list?.companies ?? [])
+      .slice(0, read)
+      .map((company) => ({ status: 'succeeded', url: company.url, createdAt: view.createdAt }));
+  });
   for (const crawl of crawled) {
     if (crawl.status !== 'succeeded' || /nothing-fits/i.test(String(crawl.url))) continue;
     const url = new URL(String(crawl.url));
@@ -435,6 +518,15 @@ const FAKE_JOBS = [
     reasons: ['More senior than your roles'],
   },
 ] as const;
+
+/** #50: the companies the fake's lists choose, best first (named from their boards' links). */
+const FAKE_LIST_COMPANIES = [
+  { name: 'Acme', url: 'https://job-boards.greenhouse.io/acme' },
+  { name: 'Globex', url: 'https://jobs.lever.co/globex' },
+  { name: 'Initech', url: 'https://jobs.ashbyhq.com/initech' },
+  { name: 'Umbrella', url: 'https://job-boards.greenhouse.io/umbrella' },
+  { name: 'Hooli', url: 'https://jobs.ashbyhq.com/hooli' },
+];
 
 interface FakeCrawl {
   view: Record<string, unknown>;

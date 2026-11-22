@@ -281,6 +281,8 @@ export function crawlView(c: Crawl) {
       : {}),
     ...(c.llm ? { llm: c.llm } : {}),
     createdAt: c.createdAt,
+    // #50: when the crawl last moved on (a list run's company crawls move it), for stall checks.
+    updatedAt: c.updatedAt,
     ...(c.startedAt ? { startedAt: c.startedAt } : {}),
     ...(c.finishedAt ? { finishedAt: c.finishedAt } : {}),
   };
