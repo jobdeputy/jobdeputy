@@ -332,6 +332,9 @@ export class CrawlRepository {
     /** T08b3: with the platform model, one free run is counted (exactly) against these. */
     platformRuns?: { perWeek: number; perMonth: number };
   }): Promise<Crawl> {
+    // #50: no list runs allowed at all (the day's condition below cannot say so before the
+    // day's first list).
+    if (input.list && input.list.perDay < 1) throw new DailyLimitError();
     const at = this.now();
     const now = at.toISOString();
     const aiRun: PlatformRun | undefined = input.platformRuns
@@ -833,13 +836,13 @@ function releaseActive(table: string, userId: string, crawlIds: string[], now: s
   };
 }
 
-/** How many crawls the user has started today (UTC). */
-export async function crawlsToday(
+/** Today's (UTC) `DAY#` usage item. */
+async function dayUsage(
   client: DynamoDBDocumentClient,
   usageTable: string,
   userId: string,
   at: Date,
-): Promise<number> {
+): Promise<Record<string, unknown> | undefined> {
   const res = await client.send(
     new GetCommand({
       TableName: usageTable,
@@ -847,7 +850,17 @@ export async function crawlsToday(
       ConsistentRead: true,
     }),
   );
-  return Number(res.Item?.crawls ?? 0);
+  return res.Item;
+}
+
+/** How many crawls the user has started today (UTC). */
+export async function crawlsToday(
+  client: DynamoDBDocumentClient,
+  usageTable: string,
+  userId: string,
+  at: Date,
+): Promise<number> {
+  return Number((await dayUsage(client, usageTable, userId, at))?.crawls ?? 0);
 }
 
 /** #50: how many list runs the user has started today (UTC). */
@@ -857,14 +870,7 @@ export async function listsToday(
   userId: string,
   at: Date,
 ): Promise<number> {
-  const res = await client.send(
-    new GetCommand({
-      TableName: usageTable,
-      Key: { userId, sk: `DAY#${utcDay(at)}` },
-      ConsistentRead: true,
-    }),
-  );
-  return Number(res.Item?.lists ?? 0);
+  return Number((await dayUsage(client, usageTable, userId, at))?.lists ?? 0);
 }
 
 /** Takes the crawl's ID out of the week's and month's platform runs (idempotent). */

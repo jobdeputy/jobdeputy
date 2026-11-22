@@ -114,6 +114,11 @@ export class RetryLaterError extends Error {
   override name = 'RetryLaterError';
 }
 
+/** #50: the crawl ended, but its list run was not moved on (retried by the message, never the crawl). */
+export class ListHandOffError extends Error {
+  override name = 'ListHandOffError';
+}
+
 /** The user-facing message, with a safe technical detail (for example "HTTP 502") when there is one. */
 export function crawlErrorFrom(error: FetchError): CrawlError {
   const base = CRAWL_ERRORS[error.code];
@@ -182,8 +187,24 @@ export async function processRecord(
     return 'skipped';
   }
   // #50: a company crawl's end moves its list run on (queues the next company, or ends the list).
+  // The crawl itself has ended by then: a failure here is the list's, never the crawl's. The
+  // message comes back (`start` finds the crawl ended and moves the list on); on its last
+  // receive it goes to the dead-letter queue, so the alarm says a list is stuck.
   const moveListOn = async () => {
-    if (crawl.parentCrawlId) await deps.advanceList(userId, crawl.parentCrawlId);
+    if (!crawl.parentCrawlId) return;
+    try {
+      await deps.advanceList(userId, crawl.parentCrawlId);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      if (receiveCount < MAX_RECEIVES) {
+        const seconds = RETRY_BACKOFF_SECONDS[receiveCount - 1] ?? 0;
+        await deps.delayRetry(record, seconds).catch(() => undefined);
+        logger.warn('List run not moved on; will retry', { crawlId, receiveCount, reason });
+      } else {
+        logger.error('List run not moved on after the last attempt', { crawlId, reason });
+      }
+      throw new ListHandOffError(reason);
+    }
   };
   const host = new URL(crawl.url).hostname;
   const audit = (
@@ -351,7 +372,7 @@ export async function processRecord(
     await moveListOn();
     return 'succeeded';
   } catch (error) {
-    if (error instanceof RetryLaterError) throw error;
+    if (error instanceof RetryLaterError || error instanceof ListHandOffError) throw error;
     const lastAttempt = receiveCount >= MAX_RECEIVES;
     const backoff = RETRY_BACKOFF_SECONDS[receiveCount - 1] ?? 0;
 

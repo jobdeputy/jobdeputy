@@ -14,7 +14,14 @@ import type { AiKeyStatus, AiSource } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2, APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
 import { route as auditRoute } from '../src/audit.js';
-import { type CrawlsDeps, crawlView, listSourceOf, route, STALE_CRAWL_MS } from '../src/crawls.js';
+import {
+  type CrawlsDeps,
+  crawlView,
+  listSourceOf,
+  route,
+  STALE_CRAWL_MS,
+  STALE_LIST_MS,
+} from '../src/crawls.js';
 import { concurrentUpdateProblem } from '../src/errors.js';
 import { PAGES, handler as testSite } from '../src/test-site.js';
 
@@ -106,7 +113,6 @@ function deps(over: Partial<CrawlsDeps['repo']> = {}) {
     aiDefault: vi.fn(async (): Promise<AiSource> => 'platform'),
     aiKeyStatus: vi.fn(async (): Promise<AiKeyStatus | undefined> => undefined),
     allowTestProvider: false,
-    allowTestLists: false,
     listsToday: vi.fn(async () => 0),
   };
   return { d, repo, settings };
@@ -909,24 +915,26 @@ describe('list runs (#50)', () => {
     expect(body(await route(post(LIST_URL), d)).code).toBe('daily-limit-reached');
   });
 
-  it("treats the test site's lists as lists on dev stacks only", () => {
+  it("treats only this stack's own test site's lists as lists (dev stacks)", () => {
+    const host = 'abc123.execute-api.us-east-1.amazonaws.com';
     const url = new URL(TEST_LIST);
-    expect(listSourceOf(url, true)).toEqual({ kind: 'test', url: TEST_LIST });
-    expect(listSourceOf(url, false)).toBeUndefined();
-    expect(
-      listSourceOf(
-        new URL('https://abc123.execute-api.us-east-1.amazonaws.com/test-site/jobs'),
-        true,
-      ),
-    ).toBeUndefined();
-    expect(
-      listSourceOf(new URL('https://evil.example/test-site/list-simplify'), true),
-    ).toBeUndefined();
+    expect(listSourceOf(url, host)).toEqual({ kind: 'test', url: TEST_LIST });
+    expect(listSourceOf(url, undefined)).toBeUndefined();
+    expect(listSourceOf(new URL(`https://${host}/test-site/jobs`), host)).toBeUndefined();
+    // Another API Gateway endpoint is not this stack's test site.
+    const other = 'https://other99.execute-api.us-east-1.amazonaws.com/test-site/list-x';
+    expect(listSourceOf(new URL(other), host)).toBeUndefined();
   });
 
   it('keeps a list run active while it moves on, and ends it once it stops moving', async () => {
-    const old = new Date(NOW - 2 * STALE_CRAWL_MS).toISOString();
-    const moving = crawl({ kind: 'list', status: 'running', createdAt: old });
+    const old = new Date(NOW - STALE_LIST_MS - 1).toISOString();
+    // Started long ago, last moved on 30 minutes ago: longer than a crawl may take, still moving.
+    const moving = crawl({
+      kind: 'list',
+      status: 'running',
+      createdAt: old,
+      updatedAt: new Date(NOW - 2 * STALE_CRAWL_MS).toISOString(),
+    });
     const { d, repo } = deps({
       request: vi.fn(async () => {
         throw new ActiveCrawlError();

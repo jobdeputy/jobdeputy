@@ -116,12 +116,13 @@ function audit(
 }
 
 /** Ends the list once every company crawl has ended: totals, the merged candidates, the slot freed. */
-async function finishList(list: Crawl, deps: ListRunDeps): Promise<void> {
+async function finishList(
+  list: Crawl,
+  deps: ListRunDeps,
+  config: CrawlLimitsConfig,
+): Promise<void> {
   const { userId } = list;
-  const [children, config] = await Promise.all([
-    Promise.all((list.childIds ?? []).map((id) => deps.getCrawl(userId, id))),
-    deps.limits(),
-  ]);
+  const children = await Promise.all((list.childIds ?? []).map((id) => deps.getCrawl(userId, id)));
   const ended = children.filter((c): c is Crawl => c !== undefined);
   const stats = listStats(ended);
   const withAi = list.aiSource !== undefined && list.aiSource !== 'none';
@@ -173,7 +174,8 @@ async function queueNext(list: Crawl, deps: ListRunDeps, config: CrawlLimitsConf
   if (!company) return;
   const checked = parseCrawlUrl(company.url);
   if (!checked.ok) {
-    await deps.lists.skipCompany(list);
+    // A board link we would refuse to crawl: a site we cannot read, not a busy one.
+    await deps.lists.skipCompany(list, 'skipped');
     return;
   }
   const sourceId = sourceIdFor(checked.normalizedUrl);
@@ -201,7 +203,7 @@ async function queueNext(list: Crawl, deps: ListRunDeps, config: CrawlLimitsConf
     if ((await queue(activeId)) !== 'busy') return;
   }
   logger.info('Company board busy; passing over it', { crawlId: list.crawlId, sourceId });
-  await deps.lists.skipCompany(list);
+  await deps.lists.skipCompany(list, 'busy');
 }
 
 /**
@@ -228,7 +230,7 @@ export async function advanceList(
       continue;
     }
     if (running > 0) return;
-    await finishList(list, deps);
+    await finishList(list, deps, config);
     return;
   }
   logger.warn('List run did not settle within its steps', { crawlId: listId });

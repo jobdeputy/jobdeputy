@@ -682,6 +682,14 @@ describe('list runs (#50)', () => {
     );
   });
 
+  it("refuses every list run when the admin allows none, even before the day's first", async () => {
+    const { c, send } = client();
+    await expect(
+      repo(c).request({ ...listInput, list: { ...listInput.list, perDay: 0 } }),
+    ).rejects.toBeInstanceOf(DailyLimitError);
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it('reports a full day of lists as the daily limit', async () => {
     const { c } = client(() => {
       throw cancelled('None', 'None', 'None', 'ConditionalCheckFailed', 'None', 'None');

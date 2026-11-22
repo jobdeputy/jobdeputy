@@ -493,8 +493,6 @@ export class CellStack extends Stack {
         PREFERENCES_TABLE_NAME: preferencesTable.tableName,
         CRAWL_LIMITS_PARAMETER: crawlLimits.parameterName,
         ...aiKeys.env,
-        // #50: the test site's lists are lists on dev stacks only (integration tests).
-        ALLOW_TEST_LISTS: props.stage === 'dev' ? 'true' : 'false',
       },
     });
     // T08b2: a key chosen for a crawl must exist and not be invalid (its status only).
@@ -812,6 +810,11 @@ export class CellStack extends Stack {
         integration: new HttpLambdaIntegration('TestSiteIntegration', testSite.fn),
       });
       new CfnOutput(this, 'TestSiteUrl', { value: testSiteStage.url });
+      // #50: this test site's list pages are lists (integration tests); no other host is.
+      crawlsApi.fn.addEnvironment(
+        'TEST_LIST_HOST',
+        `${testSiteApi.apiId}.execute-api.${this.region}.${this.urlSuffix}`,
+      );
     }
 
     // With a trailing slash (the integration tests join paths onto it); the web app's apiUrl is

@@ -17,6 +17,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   type CrawlWorkerDeps,
   crawlErrorFrom,
+  ListHandOffError,
   listed,
   MAX_LISTED_JOB_IDS,
   MAX_RECEIVES,
@@ -792,12 +793,25 @@ describe('crawl worker: list runs (#50)', () => {
     expect(deps.advanceList).toHaveBeenCalledWith(USER, 'LIST');
   });
 
-  it('retries when moving the list on fails, so the next delivery does it', async () => {
+  it('retries when moving the list on fails, so the next delivery does it; the crawl stays succeeded', async () => {
     const { deps, state } = setup();
     asList(deps, { parentCrawlId: 'LIST' });
     deps.advanceList.mockRejectedValueOnce(new Error('throttled'));
-    await expect(processRecord(record(), deps)).rejects.toBeInstanceOf(RetryLaterError);
-    expect(state.status).toBe('succeeded');
+    await expect(processRecord(record(), deps)).rejects.toBeInstanceOf(ListHandOffError);
+    expect(state).toMatchObject({ status: 'succeeded', audit: ['crawl.succeeded'] });
+    expect(deps.delayRetry).toHaveBeenCalledWith(expect.anything(), RETRY_BACKOFF_SECONDS[0]);
+  });
+
+  it('dead-letters the message when the list cannot be moved on by the last attempt, never failing the crawl', async () => {
+    const { deps, state } = setup();
+    asList(deps, { parentCrawlId: 'LIST' });
+    deps.advanceList.mockRejectedValue(new Error('throttled'));
+    await expect(processRecord(record(MAX_RECEIVES), deps)).rejects.toBeInstanceOf(
+      ListHandOffError,
+    );
+    expect(state).toMatchObject({ status: 'succeeded', audit: ['crawl.succeeded'] });
+    expect(deps.repo.finish).toHaveBeenCalledTimes(1);
+    expect(deps.delayRetry).not.toHaveBeenCalled();
   });
 
   it('never touches a list for a crawl of its own', async () => {

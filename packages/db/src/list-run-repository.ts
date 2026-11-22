@@ -174,8 +174,11 @@ export class ListRunRepository {
     }
   }
 
-  /** Passes over the list's next company (its board is busy), counting it. False when the list moved on. */
-  async skipCompany(list: Crawl): Promise<boolean> {
+  /**
+   * Passes over the list's next company, counting it: `busy` (its board has a crawl in progress)
+   * or `skipped` (a site we cannot crawl). False when the list moved on.
+   */
+  async skipCompany(list: Crawl, reason: 'busy' | 'skipped'): Promise<boolean> {
     const position = list.queuedCount ?? 0;
     try {
       await this.client.send(
@@ -183,9 +186,9 @@ export class ListRunRepository {
           TableName: this.tables.crawls,
           Key: { userId: list.userId, crawlId: list.crawlId },
           UpdateExpression:
-            'SET queuedCount = :next, #list.busy = if_not_exists(#list.busy, :zero) + :one, updatedAt = :now',
+            'SET queuedCount = :next, #list.#reason = if_not_exists(#list.#reason, :zero) + :one, updatedAt = :now',
           ConditionExpression: '#status = :running AND queuedCount = :position',
-          ExpressionAttributeNames: { '#list': 'list', '#status': 'status' },
+          ExpressionAttributeNames: { '#list': 'list', '#reason': reason, '#status': 'status' },
           ExpressionAttributeValues: {
             ':next': position + 1,
             ':position': position,

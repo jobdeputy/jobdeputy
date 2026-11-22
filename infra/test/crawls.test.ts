@@ -120,16 +120,19 @@ describe('crawl pipeline (T06b)', () => {
     expect(JSON.stringify(s3.map((s) => s.Resource))).toContain('/derived/users/*/crawls/*/page');
   });
 
-  it('treats the test site as a list in dev stacks only (#50)', () => {
-    const flags = (template: Template) =>
+  it("treats only the stack's own test site as a list, in dev stacks only (#50)", () => {
+    const hosts = (template: Template) =>
       Object.values(template.findResources('AWS::Lambda::Function'))
-        .map((f) => f.Properties.Environment?.Variables?.ALLOW_TEST_LISTS)
+        .map((f) => f.Properties.Environment?.Variables?.TEST_LIST_HOST)
         .filter((v) => v !== undefined);
     const prod = Template.fromStack(
       buildApp({ stage: 'prod', env: {} }).node.findChild('jobdeputy-prod-iad') as never,
     );
-    expect(flags(t)).toEqual(['true']);
-    expect(flags(prod)).toEqual(['false']);
+    expect(hosts(prod)).toEqual([]);
+    const [host] = hosts(t);
+    expect(hosts(t)).toHaveLength(1);
+    expect(JSON.stringify(host)).toContain('TestSiteApi');
+    expect(JSON.stringify(host)).toContain('.execute-api.');
   });
 
   it('gives the crawls API only the calls it makes', () => {

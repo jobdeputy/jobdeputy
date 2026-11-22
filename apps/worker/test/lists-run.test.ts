@@ -115,11 +115,11 @@ function setup(options: { companies?: number; aiSource?: Crawl['aiSource'] } = {
         now.childIds = [...(now.childIds ?? []), company.crawlId];
         return 'queued' as const;
       }),
-      skipCompany: vi.fn(async (read: Crawl) => {
+      skipCompany: vi.fn(async (read: Crawl, reason: 'busy' | 'skipped') => {
         const now = list();
         if (now.queuedCount !== read.queuedCount) return false;
         now.queuedCount = (now.queuedCount ?? 0) + 1;
-        if (now.list) now.list.busy = (now.list.busy ?? 0) + 1;
+        if (now.list) now.list[reason] = (now.list[reason] ?? 0) + 1;
         return true;
       }),
     },
@@ -288,6 +288,24 @@ describe('advanceList (#50)', () => {
     expect(list().queuedCount).toBe(3);
     expect(list().childIds).toHaveLength(2);
     expect(sources.get(free)?.activeCrawlId).toBe(list().childIds?.[0]);
+  });
+
+  it('counts a company whose board link we would never crawl as skipped, not busy', async () => {
+    const { deps, list } = setup({ companies: 1 });
+    Object.assign(list(), {
+      queuedCount: 0,
+      list: {
+        rows: 1,
+        matched: 1,
+        companiesMatched: 1,
+        skipped: 0,
+        companies: [{ name: 'Private', url: 'http://10.0.0.1/jobs', matches: 1 }],
+      },
+    });
+    await advanceList(USER, LIST, deps);
+    expect(list().list).toMatchObject({ skipped: 1 });
+    expect(list().list?.busy).toBeUndefined();
+    expect(list().status).toBe('succeeded');
   });
 
   it('does nothing for a list that ended (stale) or is not a list', async () => {

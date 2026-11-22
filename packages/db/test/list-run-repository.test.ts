@@ -120,17 +120,18 @@ describe('ListRunRepository (#50)', () => {
 
   it('passes over a company, counting it, only from the position it read', async () => {
     const { c, send } = client();
-    expect(await repo(c).skipCompany(list())).toBe(true);
+    expect(await repo(c).skipCompany(list(), 'busy')).toBe(true);
     const update = first<UpdateCommand>(send);
     expect(update.UpdateExpression).toContain(
-      '#list.busy = if_not_exists(#list.busy, :zero) + :one',
+      '#list.#reason = if_not_exists(#list.#reason, :zero) + :one',
     );
+    expect(update.ExpressionAttributeNames).toMatchObject({ '#reason': 'busy' });
     expect(update.ConditionExpression).toBe('#status = :running AND queuedCount = :position');
     expect(update.ExpressionAttributeValues).toMatchObject({ ':position': 2, ':next': 3 });
 
     const { c: late } = client(() => {
       throw named('ConditionalCheckFailedException');
     });
-    expect(await repo(late).skipCompany(list())).toBe(false);
+    expect(await repo(late).skipCompany(list(), 'skipped')).toBe(false);
   });
 });

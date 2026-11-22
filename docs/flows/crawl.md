@@ -163,7 +163,7 @@ A link to a GitHub list of open roles (for example SimplifyJobs New-Grad-Positio
 - **Submit:** the same `POST /me/crawls`. A `github.com/<owner>/<repo>` link (any path inside it) becomes a crawl with `kind: list`; its source is the repository, in lowercase. It counts as 1 crawl and 1 of the day's **2 lists** (`usage` `DAY#` `lists`), holds the user's one active slot, and uses one AI run (counted at submit, as for a crawl).
 - **Read:** the crawl worker reads the repository's files from its default branch on `raw.githubusercontent.com`: Simplify's `.github/scripts/listings.json` where there is one, else the README's tables (HTML or Markdown, read by their Company, Role, and Location headers). At most 25 MB and 60 s. Neither has roles: `failed`, `not_a_list`.
 - **Choose:** every open role goes through the keyword filter (T08c) and must be in the US (or not say where). Companies are ranked by matching roles, then the best role's priority, the newest role, and the name. The first **20** whose board we can read (Greenhouse, Lever, Ashby, Workday) are chosen; companies above the cut on other sites are **skipped and counted** (more readers: #64).
-- **Crawl:** each chosen company becomes a **company crawl**: a `crawls` item (`trigger: list`, `parentCrawlId`, `aiSource: none`) written `queued`, so the same stream, Pipe, and queue hand it to the crawl worker. At most **3** are queued or running at once (the queue's own concurrency, 2, still applies). A board with a crawl in progress is passed over (`list.busy`). Company crawls are not counted against the day, and `GET /me/crawls` leaves them out.
+- **Crawl:** each chosen company becomes a **company crawl**: a `crawls` item (`trigger: list`, `parentCrawlId`, `aiSource: none`) written `queued`, so the same stream, Pipe, and queue hand it to the crawl worker. At most **3** are queued or running at once (the queue's own concurrency, 2, still applies). A board with a crawl in progress is passed over (`list.busy`); a board whose crawl has ended is taken over. Company crawls are not counted against the day, and `GET /me/crawls` leaves them out.
 - **End:** each company crawl's `finish` tells its list run in the same transaction; the worker then moves the list on. The last one ends the list: its stats are the company crawls' added up, and its candidates are the **50** best across them (each company's first, then each one's second, …). Ending `succeeded` with an AI source starts the [relevance](relevance.md) run on the list, once.
 
 ```mermaid
@@ -199,7 +199,9 @@ sequenceDiagram
 | A company crawl fails | counted (`stats.companies.failed`); the list goes on |
 | No company can be crawled | `succeeded` at once, 0 jobs, with `skipped` |
 | A worker stops after a company crawl ended | the next delivery of that crawl's message moves the list on |
-| The list stops moving for 15 minutes (`updatedAt`) | the next submit ends it `failed` (`internal`) and frees the slot; its company crawls still finish |
+| The list stops moving for 60 minutes (`updatedAt`: a company queued or ended; a crawl gets 15) | the next submit ends it `failed` (`internal`) and frees the slot; its company crawls still finish |
+| The list cannot be moved on after a company crawl ended (a DynamoDB error) | the crawl stays `succeeded`; its message comes back and moves the list on; after 3 attempts it is dead-lettered (alarm) |
+| A chosen company's board link is one we would refuse to crawl | passed over, counted in `skipped` |
 
 ## 4. The user sees the result
 

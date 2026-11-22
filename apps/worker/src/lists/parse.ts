@@ -1,3 +1,4 @@
+import { MAX_URL_LENGTH } from '@jobdeputy/shared';
 import { decodeEntities, htmlToText } from '../jobs/text.js';
 
 /**
@@ -22,6 +23,9 @@ const MAX_LINKS = 5;
 
 const text = (value: unknown) =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, MAX_TEXT) : '';
+/** A link is kept whole (any longer is not a link we crawl: `MAX_URL_LENGTH`), never cut. */
+const link = (value: unknown) =>
+  typeof value === 'string' && value.trim().length <= MAX_URL_LENGTH ? value.trim() : '';
 
 /**
  * The Simplify format (`.github/scripts/listings.json`, also used by lists forked from it): an
@@ -38,7 +42,7 @@ export function parseListings(json: unknown): ListRow[] | undefined {
     const r = item as Record<string, unknown>;
     const company = text(r.company_name);
     const title = text(r.title);
-    const url = text(r.url);
+    const url = link(r.url);
     if (!company || !title) continue;
     recognised = true;
     if (r.active === false || r.is_visible === false || !url) continue;

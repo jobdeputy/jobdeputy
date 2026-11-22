@@ -60,6 +60,12 @@ const logger = createLogger('api-crawls');
  * within it), so a new submit replaces it instead of waiting for it forever.
  */
 export const STALE_CRAWL_MS = 15 * 60 * 1000;
+/**
+ * #50: a list run that has not moved on (a company queued or ended) for this long has stopped.
+ * Longer than a crawl: its company crawls share the crawl queue (2 at a time for the cell), and
+ * one company crawl's three attempts with their waits take up to about 12 minutes.
+ */
+export const STALE_LIST_MS = 60 * 60 * 1000;
 
 export interface CrawlsDeps {
   repo: Pick<
@@ -89,8 +95,8 @@ export interface CrawlsDeps {
   aiKeyStatus: (userId: string, provider: AiProvider) => Promise<AiKeyStatus | undefined>;
   /** Dev stacks only: the `stub` provider for integration tests. */
   allowTestProvider: boolean;
-  /** #50, dev stacks only: the test site's lists (`/test-site/list-*`) are lists, for integration tests. */
-  allowTestLists: boolean;
+  /** #50, dev stacks only: this stack's test site, whose `/test-site/list-*` pages are lists (integration tests). */
+  testListHost?: string;
 }
 
 function defaultDeps(): CrawlsDeps {
@@ -104,7 +110,7 @@ function defaultDeps(): CrawlsDeps {
     CRAWL_LIMITS_PARAMETER,
     AI_KEYS_TABLE_NAME,
     ALLOW_TEST_AI_PROVIDER,
-    ALLOW_TEST_LISTS,
+    TEST_LIST_HOST,
   } = process.env;
   if (
     !CRAWLS_TABLE_NAME ||
@@ -144,7 +150,7 @@ function defaultDeps(): CrawlsDeps {
     aiDefault: async (userId) => (await aiKeys.getSettings(userId))?.defaultSource ?? 'platform',
     aiKeyStatus: async (userId, provider) => (await aiKeys.get(userId, provider))?.status,
     allowTestProvider: ALLOW_TEST_AI_PROVIDER === 'true',
-    allowTestLists: ALLOW_TEST_LISTS === 'true',
+    ...(TEST_LIST_HOST ? { testListHost: TEST_LIST_HOST } : {}),
   };
 }
 
@@ -294,18 +300,20 @@ export const ACTIVE_RETRY_AFTER_SECONDS = 30;
 const isActive = (c: Crawl | undefined, now: number) =>
   c !== undefined &&
   ACTIVE_CRAWL_STATUSES.includes(c.status) &&
-  now - Date.parse(c.kind === 'list' ? c.updatedAt : c.createdAt) <= STALE_CRAWL_MS;
+  (c.kind === 'list'
+    ? now - Date.parse(c.updatedAt) <= STALE_LIST_MS
+    : now - Date.parse(c.createdAt) <= STALE_CRAWL_MS);
 
-/** #50, dev stacks only: the test site's API Gateway host. */
-const TEST_SITE_HOST = /^[a-z0-9]+\.execute-api\.[a-z0-9-]+\.amazonaws\.com$/;
-
-/** #50: the list a link points at: a GitHub repository, or (dev stacks only) the test site's list. */
-export function listSourceOf(url: URL, allowTest: boolean): ListSource | undefined {
+/**
+ * #50: the list a link points at: a GitHub repository, or (dev stacks only) a list page on this
+ * stack's own test site, `testHost`.
+ */
+export function listSourceOf(url: URL, testHost: string | undefined): ListSource | undefined {
   const github = githubListFromUrl(url);
   if (github) return github;
   if (
-    allowTest &&
-    TEST_SITE_HOST.test(url.hostname) &&
+    testHost !== undefined &&
+    url.hostname === testHost &&
     url.pathname.startsWith('/test-site/list-')
   ) {
     return { kind: 'test', url: url.href };
@@ -403,7 +411,7 @@ async function submit(
     });
   }
   const { url } = checked;
-  const list = listSourceOf(url, deps.allowTestLists);
+  const list = listSourceOf(url, deps.testListHost);
   // #50: one source per list, however its link is written.
   const normalizedUrl = list ? listUrl(list) : checked.normalizedUrl;
   const sourceId = sourceIdFor(normalizedUrl);
