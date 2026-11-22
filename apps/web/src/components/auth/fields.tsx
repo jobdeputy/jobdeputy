@@ -2,6 +2,10 @@ import { type ComponentProps, useId, useState } from 'react';
 import { copy } from '@/copy/index.ts';
 import { cn } from '@/lib/utils.ts';
 
+/** The input's box (the prototype's `.field input`), shared by one-line and multi-line fields. */
+const BOX =
+  'min-h-13 w-full rounded-[14px] border border-line bg-surface px-[15px] text-[0.9375rem] text-ink shadow-[inset_0_1px_0_var(--color-surface-strong)] outline-none transition-[border-color,box-shadow,background-color] duration-[180ms] placeholder:text-muted-foreground hover:border-line-strong hover:bg-surface-strong focus:border-green focus:bg-white focus:shadow-[0_0_0_4px_var(--color-green-wash)] motion-reduce:transition-none forced-colors:focus:outline-2 forced-colors:focus:outline-solid aria-invalid:border-orange';
+
 /**
  * A form field (round 7 `.field`): its label above, the input, then its hint and, once the form
  * has been tried, its error, both tied to the input (`aria-describedby`); an error also marks it
@@ -25,6 +29,45 @@ export function Field({
   /** Beside the input, at its end (a button that acts on what was typed, such as Add). */
   action?: React.ReactNode;
 }) {
+  return (
+    <FieldFrame label={label} hint={hint} error={error} className={className}>
+      {(tie) => (
+        <div className={cn('relative', action && 'flex gap-2')}>
+          <input
+            {...tie}
+            className={cn(BOX, children && 'pe-[67px]', action && 'min-w-0 flex-1')}
+            {...input}
+          />
+          {children}
+          {action}
+        </div>
+      )}
+    </FieldFrame>
+  );
+}
+
+/**
+ * What every field shares: its label above, the control, then its hint and, once the form has
+ * been tried, its error, both tied to the control (`aria-describedby`); an error also marks it
+ * `aria-invalid`. `children` places the control, given the attributes that tie it.
+ */
+function FieldFrame({
+  label,
+  hint,
+  error,
+  className,
+  children,
+}: {
+  label: string;
+  hint?: string | undefined;
+  error?: string | null | undefined;
+  className?: string | undefined;
+  children: (tie: {
+    id: string;
+    'aria-invalid': true | undefined;
+    'aria-describedby': string | undefined;
+  }) => React.ReactNode;
+}) {
   const id = useId();
   const hintId = `${id}-hint`;
   const errorId = `${id}-error`;
@@ -36,21 +79,11 @@ export function Field({
       <label htmlFor={id} className="text-[0.8125rem] font-[680] tracking-[0.01em]">
         {label}
       </label>
-      <div className={cn('relative', action && 'flex gap-2')}>
-        <input
-          id={id}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={described}
-          className={cn(
-            'min-h-13 w-full rounded-[14px] border border-line bg-surface px-[15px] text-[0.9375rem] text-ink shadow-[inset_0_1px_0_var(--color-surface-strong)] outline-none transition-[border-color,box-shadow,background-color] duration-[180ms] placeholder:text-muted-foreground hover:border-line-strong hover:bg-surface-strong focus:border-green focus:bg-white focus:shadow-[0_0_0_4px_var(--color-green-wash)] motion-reduce:transition-none forced-colors:focus:outline-2 forced-colors:focus:outline-solid aria-invalid:border-orange',
-            children && 'pe-[67px]',
-            action && 'min-w-0 flex-1',
-          )}
-          {...input}
-        />
-        {children}
-        {action}
-      </div>
+      {children({
+        id,
+        'aria-invalid': error ? true : undefined,
+        'aria-describedby': described,
+      })}
       {showHint && (
         <p id={hintId} className="m-0 text-[0.8125rem] text-muted-foreground">
           {hint}
@@ -79,5 +112,30 @@ export function PasswordField(props: Omit<ComponentProps<typeof Field>, 'type' |
         <span aria-hidden="true">{shown ? copy.auth.hide : copy.auth.show}</span>
       </button>
     </Field>
+  );
+}
+
+/**
+ * A multi-line field (several web addresses, one per line), as `Field` is: its label, the box, then
+ * its hint or its error, tied to it.
+ */
+export function TextAreaField({
+  label,
+  hint,
+  error,
+  className,
+  ...input
+}: ComponentProps<'textarea'> & { label: string; hint?: string; error?: string | null }) {
+  return (
+    <FieldFrame label={label} hint={hint} error={error} className={className}>
+      {(tie) => (
+        <textarea
+          rows={3}
+          {...tie}
+          className={cn(BOX, 'resize-y py-[13px] leading-normal')}
+          {...input}
+        />
+      )}
+    </FieldFrame>
   );
 }

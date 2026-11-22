@@ -66,6 +66,14 @@ export const SCREENS: Screen[] = [
     steps: (page) => uploadResume(page, 'Alex_Morgan_Resume.pdf', 'Ready'),
   },
   { name: 'profile', path: '/', open: 'Get started free', still: true, steps: toSignedIn },
+  // A group's form open on the Profile page: Contact and location, a code without its number marked.
+  {
+    name: 'profile-edit',
+    path: '/',
+    open: 'Get started free',
+    still: true,
+    steps: toProfileEdit,
+  },
   // Every shared component state (#17); the pending buttons and the loading skeleton appear
   // after the 300 ms delay.
   {
@@ -214,6 +222,14 @@ async function uploadResume(page: Page, name: string, stage: string) {
     .getByText(stage)
     .first()
     .waitFor({ timeout: 15_000 });
+}
+
+async function toProfileEdit(page: Page) {
+  await toSignedIn(page);
+  await page.getByRole('button', { name: 'Edit Contact and location' }).click();
+  await page.getByLabel('Country code').fill('+44');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByText('Enter the number, or clear the country code.').waitFor();
 }
 
 async function toSignedIn(page: Page) {

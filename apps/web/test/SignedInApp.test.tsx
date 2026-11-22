@@ -2,7 +2,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { StepYou, saveBody } from '../src/components/setup/step-you.tsx';
+import { saveBody } from '../src/components/profile/profile-form.tsx';
+import { StepYou, youSpec } from '../src/components/setup/step-you.tsx';
 import { ApiError } from '../src/lib/api/client.ts';
 import { createFakeApi } from '../src/lib/api/fake.ts';
 import { ApiContext } from '../src/lib/api/index.ts';
@@ -210,7 +211,11 @@ describe('the signed-in app', () => {
     const saved = await api.request<Profile>('GET', '/me/profile');
     // What the server adds is on the saved profile…
     expect(saved).toMatchObject({ email: expect.any(String), homeCell: 'iad' });
-    const body = saveBody(saved, { firstName: 'Alexandra', lastName: 'Morgan', city: 'Dallas' });
+    const body = saveBody(youSpec, saved, {
+      firstName: 'Alexandra',
+      lastName: 'Morgan',
+      city: 'Dallas',
+    });
     // …but not in what goes back, which keeps the rest (skills, the region).
     expect(body).not.toHaveProperty('email');
     expect(body).not.toHaveProperty('createdAt');
@@ -226,10 +231,12 @@ describe('the signed-in app', () => {
     );
     await expect(api.request('PUT', '/me/profile', body)).resolves.toMatchObject({ version: 2 });
     // A city cleared is gone; the rest of the place stays.
-    expect(saveBody(saved, { firstName: 'A', lastName: 'M', city: ' ' }).location).toEqual({
-      region: 'TX',
-      country: 'US',
-    });
+    expect(saveBody(youSpec, saved, { firstName: 'A', lastName: 'M', city: ' ' }).location).toEqual(
+      {
+        region: 'TX',
+        country: 'US',
+      },
+    );
   });
 
   it('saves under React’s development check (StrictMode mounts twice)', async () => {
@@ -333,7 +340,10 @@ describe('the signed-in app', () => {
     vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
       if (method !== 'PUT') return request(method, path, body);
       // Another device saves skills (the names unchanged), and this save never arrives.
-      await request('PUT', '/me/profile', { ...saveBody(saved, valuesOfSaved()), skills: ['Go'] });
+      await request('PUT', '/me/profile', {
+        ...saveBody(youSpec, saved, valuesOfSaved()),
+        skills: ['Go'],
+      });
       throw new ApiError('unsure');
     });
     const onSaved = vi.fn();
@@ -423,7 +433,7 @@ describe('the signed-in app', () => {
     const saved = await api.request<Profile>('GET', '/me/profile');
     // Another device saves skills (the names unchanged) before this save is sent.
     await api.request('PUT', '/me/profile', {
-      ...saveBody(saved, valuesOfSaved()),
+      ...saveBody(youSpec, saved, valuesOfSaved()),
       skills: ['Go'],
     });
     render(
