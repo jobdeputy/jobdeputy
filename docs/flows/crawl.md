@@ -199,10 +199,10 @@ sequenceDiagram
 | A company crawl fails | counted (`stats.companies.failed`); the list goes on |
 | No company can be crawled | `succeeded` at once, 0 jobs, with `skipped` |
 | A worker stops after a company crawl ended | the next delivery of that crawl's message moves the list on |
-| The list stops moving for 60 minutes once its companies are chosen (`updatedAt`: a company queued, an attempt started, or one ended; before that, 15 minutes like a crawl) | the next submit ends it `failed` (`internal`) and frees the slot; its company crawls still finish |
-| The admin set `listsPerDay` to 0 | `403 lists-turned-off` at submit; nothing counted |
+| The list stops moving for 60 minutes once a company crawl is queued (`updatedAt`: a company queued, an attempt started, or one ended; before that, 15 minutes like a crawl) | the next submit ends it `failed` (`internal`) and frees the slot; its company crawls still finish |
+| The admin set `listsPerDay` to 0 | `409 lists-turned-off` at submit (a list already in progress is still returned); nothing counted |
 | The list cannot be moved on after a company crawl ended (a DynamoDB error) | the crawl stays `succeeded`; its message comes back (30 s, 120 s) and moves the list on; the 3rd failure is dead-lettered at once (alarm) |
-| A chosen company's board link is one we would refuse to crawl | passed over, counted in `skipped` |
+| A company's board link is one we would refuse to crawl | not readable when choosing: skipped and counted (the worker checks again before queueing, as a guard) |
 
 ## 4. The user sees the result
 

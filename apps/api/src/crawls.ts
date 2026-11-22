@@ -5,7 +5,6 @@ import {
   type Crawl,
   CrawlRepository,
   CrawlSettingsRepository,
-  crawlsToday,
   DailyLimitError,
   documentClient,
   PlatformAllowanceError,
@@ -62,8 +61,9 @@ const logger = createLogger('api-crawls');
 export const STALE_CRAWL_MS = 15 * 60 * 1000;
 /**
  * #50: a list run that has not moved on for this long has stopped. Every company crawl's
- * attempt marks it, so the longest quiet spell is one attempt waiting out the crawl queue's
- * visibility timeout (18 minutes) behind other crawls (the queue runs 2 at a time).
+ * attempt marks it, so a quiet spell is one attempt waiting out the crawl queue's visibility
+ * timeout (18 minutes), plus any wait behind other users' crawls (the queue runs 2 at a time;
+ * a backlog of 15 minutes raises the queue-health alarm).
  */
 export const STALE_LIST_MS = 60 * 60 * 1000;
 
@@ -81,8 +81,7 @@ export interface CrawlsDeps {
   settings: Pick<CrawlSettingsRepository, 'get' | 'save'>;
   /** The admin's default and maximum (T06c), cached for at most 5 minutes. */
   limits: () => Promise<CrawlLimitsConfig>;
-  usedToday: (userId: string) => Promise<number>;
-  /** #50: crawls and list runs started today, in one read. */
+  /** Crawls (and, #50, list runs) started today, in one read. */
   usageToday: (userId: string) => Promise<{ crawls: number; lists: number }>;
   /** T08b3: the free platform runs used this week and month. */
   platformRunsUsed: (userId: string) => Promise<{ week: number; month: number }>;
@@ -141,7 +140,6 @@ function defaultDeps(): CrawlsDeps {
     settings: new CrawlSettingsRepository(client, PREFERENCES_TABLE_NAME),
     auditTable: AUDIT_TABLE_NAME,
     limits: ssmCrawlLimits(CRAWL_LIMITS_PARAMETER),
-    usedToday: (userId) => crawlsToday(client, USAGE_TABLE_NAME, userId, new Date()),
     usageToday: (userId) => usageToday(client, USAGE_TABLE_NAME, userId, new Date()),
     platformRunsUsed: (userId) => platformRunsUsed(client, USAGE_TABLE_NAME, userId, new Date()),
     newId: ulid,
@@ -191,7 +189,7 @@ async function settingsView(userId: string, deps: CrawlsDeps) {
   const [config, settings, usedToday, active] = await Promise.all([
     deps.limits(),
     deps.settings.get(userId),
-    deps.usedToday(userId),
+    deps.usageToday(userId).then((today) => today.crawls),
     deps.repo.getActiveCrawlIds(userId),
   ]);
   return {
@@ -294,14 +292,14 @@ type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
 export const ACTIVE_RETRY_AFTER_SECONDS = 30;
 
 /**
- * Queued or running, and still moving. #50: once a list run has chosen its companies, it lasts
+ * Queued or running, and still moving. #50: once a list run has queued a company crawl, it lasts
  * as long as its company crawls: it is stale when it has not moved on (`updatedAt`: a company
  * queued, an attempt started, or one ended) for `STALE_LIST_MS`. Until then it is a crawl.
  */
 const isActive = (c: Crawl | undefined, now: number) =>
   c !== undefined &&
   ACTIVE_CRAWL_STATUSES.includes(c.status) &&
-  (c.kind === 'list' && c.list
+  (c.kind === 'list' && (c.childIds?.length ?? 0) > 0
     ? now - Date.parse(c.updatedAt) <= STALE_LIST_MS
     : now - Date.parse(c.createdAt) <= STALE_CRAWL_MS);
 
@@ -417,9 +415,13 @@ async function submit(
   const normalizedUrl = list ? listUrl(list) : checked.normalizedUrl;
   const sourceId = sourceIdFor(normalizedUrl);
   const [config, settings] = await Promise.all([deps.limits(), deps.settings.get(userId)]);
-  // #50: the admin turned list runs off (not a daily limit: no reset brings them back).
+  // #50: the admin turned list runs off (not a daily limit: no reset brings them back). A list
+  // already in progress is still returned, as for any page. 409, not 403: the web app reads a
+  // 403 as a closed account.
   if (list && config.listsPerDay < 1) {
-    return problem(403, 'List runs are turned off', {
+    const running = await activeCrawlOf(userId, sourceIdFor(normalizedUrl), deps);
+    if (running) return json(200, crawlView(running));
+    return problem(409, 'List runs are turned off', {
       detail: 'Lists of roles cannot be crawled right now. Paste a company’s careers link instead.',
       code: 'lists-turned-off',
       requestId,
@@ -482,15 +484,15 @@ async function submit(
       }
       if (error instanceof DailyLimitError) {
         // #50: the day's lists can be full while its crawls are not.
-        const today = list ? await deps.usageToday(userId) : undefined;
-        if (today && today.lists >= config.listsPerDay) {
+        const today = await deps.usageToday(userId);
+        if (list && today.lists >= config.listsPerDay) {
           return problem(429, 'Daily list limit reached', {
             detail: dailyListLimitMessage(today.lists, config.listsPerDay),
             code: 'daily-list-limit-reached',
             requestId,
           });
         }
-        const used = today?.crawls ?? (await deps.usedToday(userId));
+        const used = today.crawls;
         return problem(429, 'Daily crawl limit reached', {
           detail: dailyLimitMessage(used, dailyLimit),
           code: 'daily-limit-reached',

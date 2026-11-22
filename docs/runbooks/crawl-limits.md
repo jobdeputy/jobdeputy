@@ -31,7 +31,7 @@ aws ssm put-parameter --overwrite \
 - **Days before a hidden job is deleted** (T08c): `jobExpiryDays` (1 to 90, default 7). Applies to jobs hidden or closed from then on; a job already hidden keeps its date. The crawl worker reads the setting too (same 5-minute cache).
 - **Jobs the AI scores per crawl** (T08d): `relevanceMaxJobs` (1 to 50, default 50). The best candidates first (shown ones, then the rest); the others keep the keyword filter's verdict. At most 50, because it fixes the worst case of model calls per crawl (6 task calls, 18 model calls).
 - **Lowest score shown** (T08d): `relevanceMinScore` (0 to 100, default 30). A job the AI scores lower is hidden (`llm_low_score`) and expires like other hidden jobs. Applies from each crawl's next scoring.
-- **List runs** (#50): `listsPerDay` (0 to 10, default 2; 0 turns list runs off: submits get `403 lists-turned-off`) and `listCompanies` (1 to 50, default 20). A list run also counts as 1 crawl toward the daily limit and holds the user's one active slot while its companies are crawled, at most 3 at once. A change applies to the next list run.
+- **List runs** (#50): `listsPerDay` (0 to 10, default 2; 0 turns list runs off: submits get `409 lists-turned-off`) and `listCompanies` (1 to 50, default 20). A list run also counts as 1 crawl toward the daily limit and holds the user's one active slot while its companies are crawled, at most 3 at once. A change applies to the next list run.
 
 ## Notes
 

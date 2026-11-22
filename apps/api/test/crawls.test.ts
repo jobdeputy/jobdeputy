@@ -104,7 +104,6 @@ function deps(over: Partial<CrawlsDeps['repo']> = {}) {
       listsPerDay: 2,
       listCompanies: 20,
     })),
-    usedToday: vi.fn(async () => 3),
     platformRunsUsed: vi.fn(async () => ({ week: 1, month: 1 })),
     auditTable: 'Audit',
     newId: () => `01J8ZQ4Y3N5W6X7Y8Z9A0B1C${String(10 + (n++ % 90))}`,
@@ -113,7 +112,7 @@ function deps(over: Partial<CrawlsDeps['repo']> = {}) {
     aiDefault: vi.fn(async (): Promise<AiSource> => 'platform'),
     aiKeyStatus: vi.fn(async (): Promise<AiKeyStatus | undefined> => undefined),
     allowTestProvider: false,
-    usageToday: vi.fn(async () => ({ crawls: 0, lists: 0 })),
+    usageToday: vi.fn(async () => ({ crawls: 3, lists: 0 })),
   };
   return { d, repo, settings };
 }
@@ -441,7 +440,7 @@ describe('daily crawl limit (T06c)', () => {
         throw new DailyLimitError();
       }),
     });
-    vi.mocked(d.usedToday).mockResolvedValue(20);
+    vi.mocked(d.usageToday).mockResolvedValue({ crawls: 20, lists: 0 });
     const res = await route(post(URL_), d);
     expect(res.statusCode).toBe(429);
     expect(body(res)).toMatchObject({
@@ -915,8 +914,6 @@ describe('list runs (#50)', () => {
       code: 'daily-limit-reached',
       detail: "You've used 20 of 20 crawls today. Resets at 00:00 UTC.",
     });
-    // One read of the day for both.
-    expect(d.usedToday).not.toHaveBeenCalled();
   });
 
   it('refuses lists, without counting anything, when the admin turned them off', async () => {
@@ -927,10 +924,18 @@ describe('list runs (#50)', () => {
       listsPerDay: 0,
     });
     const res = await route(post(LIST_URL), d);
-    expect(res.statusCode).toBe(403);
+    // Not 403: the web app reads that as a closed account.
+    expect(res.statusCode).toBe(409);
     expect(body(res).code).toBe('lists-turned-off');
     expect(repo.request).not.toHaveBeenCalled();
     expect((await route(post(URL_), d)).statusCode).toBe(202);
+
+    // A list run already in progress is still returned.
+    vi.mocked(repo.getSource).mockResolvedValue({ activeCrawlId: C1 } as Source);
+    vi.mocked(repo.getCrawl).mockResolvedValue(crawl({ kind: 'list', status: 'running' }));
+    const again = await route(post(LIST_URL), d);
+    expect(again.statusCode).toBe(200);
+    expect(body(again)).toMatchObject({ crawlId: C1, kind: 'list' });
   });
 
   it("treats only this stack's own test site's lists as lists (dev stacks)", () => {
@@ -952,6 +957,7 @@ describe('list runs (#50)', () => {
       kind: 'list',
       status: 'running',
       list: chosen,
+      childIds: ['K1'],
       createdAt: old,
       updatedAt: new Date(NOW - 2 * STALE_CRAWL_MS).toISOString(),
     });
@@ -975,9 +981,17 @@ describe('list runs (#50)', () => {
     );
   });
 
-  it('gives a list run that has not chosen its companies the time of a crawl', async () => {
+  it('gives a list run with no company crawl yet the time of a crawl', async () => {
     const quiet = new Date(NOW - 2 * STALE_CRAWL_MS).toISOString();
-    const reading = crawl({ kind: 'list', status: 'running', createdAt: quiet, updatedAt: quiet });
+    // Chosen, but no company crawl queued yet (the worker stopped in between): nothing moves it on.
+    const reading = crawl({
+      kind: 'list',
+      status: 'running',
+      list: { rows: 1, matched: 1, companiesMatched: 1, companies: [], skipped: 0 },
+      queuedCount: 0,
+      createdAt: quiet,
+      updatedAt: quiet,
+    });
     const { d, repo } = deps({
       request: vi.fn(async () => {
         throw new ActiveCrawlError();
