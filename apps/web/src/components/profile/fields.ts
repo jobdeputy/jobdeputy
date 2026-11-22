@@ -78,11 +78,14 @@ export const phoneFields = {
 
 /**
  * The phone: a number with its calling code (+1 when none is typed), or none at all when the
- * number is empty and the code is the default. A code typed without a number is sent as it is, so
- * the check asks for the number rather than dropping the code unseen.
+ * number is cleared and the code is left as it was shown (the default, or the saved one). A new
+ * code typed without a number is sent as it is, so the check asks for the number rather than
+ * dropping the code unseen.
  */
 export function putPhone(body: SaveBody, code: string, number: string) {
-  if (number || (code && code !== US_CALLING_CODE)) {
+  // `body` holds what is saved until this puts the answer in.
+  const shown = (body.phone as Phone | undefined)?.countryCode ?? US_CALLING_CODE;
+  if (number || (code && code !== shown && code !== US_CALLING_CODE)) {
     body.phone = { countryCode: code || US_CALLING_CODE, number };
   } else delete body.phone;
 }
@@ -93,8 +96,9 @@ export function putPhone(body: SaveBody, code: string, number: string) {
  */
 export function normUrl(typed: string): string {
   const value = typed.trim();
-  // A scheme is `name://`; `example.com:8443` is a host and port, so it gets one too.
-  return value && !/^[a-z][a-z\d+.-]*:\/\//i.test(value) ? `https://${value}` : value;
+  // A scheme is `name:` (`https://`, or `https:/` mistyped, kept for the URL check to read);
+  // `example.com:8443` is a host and port (a digit after the colon), so it gets https:// too.
+  return value && !/^[a-z][a-z\d+.-]*:(?!\d)/i.test(value) ? `https://${value}` : value;
 }
 
 /** Several web addresses, one per line, as they are saved (blank lines dropped). */

@@ -292,12 +292,51 @@ describe('editing About you', () => {
       ),
     ).toBeTruthy();
     expect((screen.getByLabelText('Headline') as HTMLInputElement).value).toBe('Staff engineer');
+    // What was typed in a field nobody else changed stays.
+    expect((screen.getByLabelText('Preferred name') as HTMLInputElement).value).toBe('Al');
     expect((await saved(api)).headline).toBe('Staff engineer');
     // Saved again, it keeps both.
-    type('Preferred name', 'Al');
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(facts('Name and headline')).toContain('Preferred name: Al'));
     expect(await saved(api)).toMatchObject({ preferredName: 'Al', headline: 'Staff engineer' });
+  });
+
+  it('takes a lost save that a refresh shows went through as saved', async () => {
+    const api = await onProfile();
+    const request = api.request.bind(api);
+    let lose = true;
+    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      const answer = await request(method, path, body);
+      // The answer is lost, and so is the check after it; later, the connection is back.
+      if (lose && method === 'PUT') throw new ApiError('unsure', {});
+      if (lose && method === 'GET') {
+        lose = false;
+        throw new ApiError('offline', {});
+      }
+      return answer as never;
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Name and headline' }));
+    type('Headline', 'Staff engineer');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(
+      await screen.findByText(
+        'We couldn’t tell whether that saved. Check your connection, then try again.',
+      ),
+    ).toBeTruthy();
+    await act(() => queries.invalidateQueries({ queryKey: ['profile'] }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(facts('Name and headline')).toContain('Headline: Staff engineer'));
+    expect(screen.queryByText(/changed somewhere else/)).toBeNull();
+  });
+
+  it('removes a saved phone from elsewhere when only its number is cleared', async () => {
+    const api = await onProfile({ phone: { countryCode: '+44', number: '20 7946 0000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Contact and location' }));
+    expect((screen.getByLabelText('Country code') as HTMLInputElement).value).toBe('+44');
+    type('Phone number', '');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(facts('Contact and location')).toContain('Phone: Not added'));
+    expect('phone' in (await saved(api))).toBe(false);
   });
 
   it('knows a save whose answer was lost went through, the phone saved with its +1', async () => {
@@ -350,6 +389,8 @@ describe('normUrl', () => {
     expect(normUrl('localhost:3000')).toBe('https://localhost:3000');
     expect(normUrl('https://alex.dev')).toBe('https://alex.dev');
     expect(normUrl('http://alex.dev')).toBe('http://alex.dev');
+    // A scheme mistyped is kept (the URL check reads https:/alex.dev as https://alex.dev).
+    expect(normUrl('https:/alex.dev')).toBe('https:/alex.dev');
     expect(normUrl('  ')).toBe('');
   });
 });

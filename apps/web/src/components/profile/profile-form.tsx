@@ -168,6 +168,23 @@ export function useProfileForm<N extends string>({
     later(words, otherText);
   }
 
+  /**
+   * Takes in this form's fields as saved now (`fresh`), against what they were when it opened
+   * (`was`): a field changed elsewhere shows what is saved; any other keeps what was typed. The
+   * one place the form starts again from what is saved.
+   */
+  function takeIn(fresh: Values<N>, was: Values<N>) {
+    setValues((typed) => {
+      const next = { ...typed };
+      for (const name of names) {
+        const field = spec.fields[name];
+        if (normOf(field, fresh[name]) !== normOf(field, was[name])) next[name] = fresh[name];
+      }
+      return next;
+    });
+    setOpened(fresh);
+  }
+
   /** Reads the saved profile again; shows it here and returns it (null if it can't be read). */
   async function reload(): Promise<Profile | null> {
     try {
@@ -193,18 +210,23 @@ export function useProfileForm<N extends string>({
       setSpoken('');
     });
     const before = opened;
+    const answers = answersOf(spec, values);
+    const body = bodyOf(spec, profile, answers);
+    // What this save would leave saved (a phone's +1 added, an empty number dropped).
+    const sent = valuesOf(spec, body as Profile);
     const now = valuesOf(spec, profile);
     if (!sameAnswers(spec, now, before)) {
-      // This form's fields were saved elsewhere since it opened: show them, so nothing is
-      // overwritten unseen.
-      setValues(now);
-      setOpened(now);
-      setErrors({});
-      setRefusal(spec.changedElsewhere);
+      // A refresh brought newer answers for this form since it opened. These very answers (an
+      // earlier save of this person's whose answer was lost): saved. Otherwise show what changed
+      // elsewhere, so nothing is overwritten unseen.
+      if (sameAnswers(spec, now, sent)) onSaved(profile);
+      else {
+        setErrors({});
+        takeIn(now, before);
+        setRefusal(spec.changedElsewhere);
+      }
       return;
     }
-    const answers = answersOf(spec, values);
-    const body = saveBody(spec, profile, values);
     const found = check(spec, body, answers);
     // Rendered before focus moves, so the field is read with its reason.
     flushSync(() => setErrors(found.fields));
@@ -225,8 +247,7 @@ export function useProfileForm<N extends string>({
       onSaved(next);
     } catch (error) {
       if (!here.current) return;
-      // Compared as saved (a phone's +1 added, an empty number dropped), not as typed.
-      await refused(error, valuesOf(spec, body as Profile), before, body.version);
+      await refused(error, sent, before, body.version);
     } finally {
       if (here.current) setPending(false);
     }
@@ -266,8 +287,7 @@ export function useProfileForm<N extends string>({
         setRefusal(kind === 'conflict' ? spec.savedMeanwhile : errorsText.saveFailed);
       } else {
         // This form's fields changed elsewhere: show them, so nothing is overwritten unseen.
-        setValues(valuesOf(spec, fresh));
-        setOpened(valuesOf(spec, fresh));
+        takeIn(valuesOf(spec, fresh), before);
         setRefusal(spec.changedElsewhere);
       }
     } else {
@@ -335,12 +355,21 @@ export function saveBody<N extends string>(
   profile: Profile,
   values: Values<N>,
 ): SaveBody {
+  return bodyOf(spec, profile, answersOf(spec, values));
+}
+
+/** The body to save, from the answers as `answersOf` leaves them. */
+function bodyOf<N extends string>(
+  spec: FormSpec<N>,
+  profile: Profile,
+  answers: Values<N>,
+): SaveBody {
   const saved = Object.fromEntries(
     Object.entries(profile).filter(([key]) => INPUT_KEYS.includes(key) && key !== 'version'),
   );
   // A copy: `apply` changes nested objects (location, links) in place.
   const body: SaveBody = { ...structuredClone(saved), version: profile.version };
-  spec.apply(body, answersOf(spec, values));
+  spec.apply(body, answers);
   return body;
 }
 
