@@ -116,6 +116,7 @@ function setup(fetchImpl: FetchFn = async () => page(), fitInputs: FitInputs = N
     },
     runList: vi.fn(async () => undefined),
     advanceList: vi.fn(async () => undefined),
+    touchList: vi.fn(async () => undefined),
     isBeingDeleted: vi.fn(async () => false),
     newFetcher: vi.fn((): FetchFn => fetch),
     storePage: vi.fn(async () => undefined),
@@ -811,13 +812,33 @@ describe('crawl worker: list runs (#50)', () => {
     );
     expect(state).toMatchObject({ status: 'succeeded', audit: ['crawl.succeeded'] });
     expect(deps.repo.finish).toHaveBeenCalledTimes(1);
-    expect(deps.delayRetry).not.toHaveBeenCalled();
+    // Dead-lettered at once, so the alarm is not late.
+    expect(deps.delayRetry).toHaveBeenCalledWith(expect.anything(), 0);
+  });
+
+  it('retries the hand-off of an already ended crawl with the same waits', async () => {
+    const { deps, state } = setup();
+    state.status = 'succeeded';
+    deps.repo.getCrawl.mockResolvedValue({ crawlId: CRAWL, parentCrawlId: 'LIST' } as Crawl);
+    deps.advanceList.mockRejectedValue(new Error('throttled'));
+    await expect(processRecord(record(2), deps)).rejects.toBeInstanceOf(ListHandOffError);
+    expect(deps.delayRetry).toHaveBeenCalledWith(expect.anything(), RETRY_BACKOFF_SECONDS[1]);
+  });
+
+  it('marks its list as still moving on every attempt, and goes on if that fails', async () => {
+    const { deps, state } = setup();
+    asList(deps, { parentCrawlId: 'LIST' });
+    deps.touchList.mockRejectedValue(new Error('throttled'));
+    expect(await processRecord(record(), deps)).toBe('succeeded');
+    expect(deps.touchList).toHaveBeenCalledWith(USER, 'LIST');
+    expect(state.status).toBe('succeeded');
   });
 
   it('never touches a list for a crawl of its own', async () => {
     const { deps } = setup();
     expect(await processRecord(record(), deps)).toBe('succeeded');
     expect(deps.advanceList).not.toHaveBeenCalled();
+    expect(deps.touchList).not.toHaveBeenCalled();
     expect(deps.runList).not.toHaveBeenCalled();
   });
 });

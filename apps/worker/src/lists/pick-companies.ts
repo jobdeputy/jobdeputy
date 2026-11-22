@@ -61,7 +61,9 @@ function siteOf(row: ListRow, testHost: string | undefined): Site | undefined {
     const board = boardFromUrl(checked.url);
     if (board) {
       const { job: _job, ...whole } = board;
-      return { key: boardKey(whole), url: boardUrl(whole) };
+      // The board's own link must pass the same checks before it counts as readable.
+      const own = parseCrawlUrl(boardUrl(whole));
+      if (own.ok) return { key: boardKey(whole), url: own.normalizedUrl };
     }
   }
   return undefined;

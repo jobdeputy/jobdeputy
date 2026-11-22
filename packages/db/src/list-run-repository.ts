@@ -174,6 +174,24 @@ export class ListRunRepository {
     }
   }
 
+  /** Marks a running list run as still moving (`updatedAt`); nothing when it has ended. */
+  async touch(userId: string, crawlId: string): Promise<void> {
+    try {
+      await this.client.send(
+        new UpdateCommand({
+          TableName: this.tables.crawls,
+          Key: { userId, crawlId },
+          UpdateExpression: 'SET updatedAt = :now',
+          ConditionExpression: '#status = :running',
+          ExpressionAttributeNames: { '#status': 'status' },
+          ExpressionAttributeValues: { ':running': 'running', ':now': this.now().toISOString() },
+        }),
+      );
+    } catch (error) {
+      if (!isConditionFailure(error)) throw error;
+    }
+  }
+
   /**
    * Passes over the list's next company, counting it: `busy` (its board has a crawl in progress)
    * or `skipped` (a site we cannot crawl). False when the list moved on.

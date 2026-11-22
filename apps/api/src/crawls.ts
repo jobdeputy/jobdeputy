@@ -8,12 +8,12 @@ import {
   crawlsToday,
   DailyLimitError,
   documentClient,
-  listsToday,
   PlatformAllowanceError,
   platformRunsUsed,
   sourceIdFor,
   ssmCrawlLimits,
   TooManyActiveCrawlsError,
+  usageToday,
   VersionConflictError,
 } from '@jobdeputy/db';
 import {
@@ -61,9 +61,9 @@ const logger = createLogger('api-crawls');
  */
 export const STALE_CRAWL_MS = 15 * 60 * 1000;
 /**
- * #50: a list run that has not moved on (a company queued or ended) for this long has stopped.
- * Longer than a crawl: its company crawls share the crawl queue (2 at a time for the cell), and
- * one company crawl's three attempts with their waits take up to about 12 minutes.
+ * #50: a list run that has not moved on for this long has stopped. Every company crawl's
+ * attempt marks it, so the longest quiet spell is one attempt waiting out the crawl queue's
+ * visibility timeout (18 minutes) behind other crawls (the queue runs 2 at a time).
  */
 export const STALE_LIST_MS = 60 * 60 * 1000;
 
@@ -82,8 +82,8 @@ export interface CrawlsDeps {
   /** The admin's default and maximum (T06c), cached for at most 5 minutes. */
   limits: () => Promise<CrawlLimitsConfig>;
   usedToday: (userId: string) => Promise<number>;
-  /** #50: list runs started today. */
-  listsToday: (userId: string) => Promise<number>;
+  /** #50: crawls and list runs started today, in one read. */
+  usageToday: (userId: string) => Promise<{ crawls: number; lists: number }>;
   /** T08b3: the free platform runs used this week and month. */
   platformRunsUsed: (userId: string) => Promise<{ week: number; month: number }>;
   auditTable: string;
@@ -142,7 +142,7 @@ function defaultDeps(): CrawlsDeps {
     auditTable: AUDIT_TABLE_NAME,
     limits: ssmCrawlLimits(CRAWL_LIMITS_PARAMETER),
     usedToday: (userId) => crawlsToday(client, USAGE_TABLE_NAME, userId, new Date()),
-    listsToday: (userId) => listsToday(client, USAGE_TABLE_NAME, userId, new Date()),
+    usageToday: (userId) => usageToday(client, USAGE_TABLE_NAME, userId, new Date()),
     platformRunsUsed: (userId) => platformRunsUsed(client, USAGE_TABLE_NAME, userId, new Date()),
     newId: ulid,
     now: Date.now,
@@ -294,13 +294,14 @@ type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
 export const ACTIVE_RETRY_AFTER_SECONDS = 30;
 
 /**
- * Queued or running, and still moving. #50: a list run lasts as long as its company crawls; it
- * is stale when it has not moved on (`updatedAt`: each company queued or ended) for as long.
+ * Queued or running, and still moving. #50: once a list run has chosen its companies, it lasts
+ * as long as its company crawls: it is stale when it has not moved on (`updatedAt`: a company
+ * queued, an attempt started, or one ended) for `STALE_LIST_MS`. Until then it is a crawl.
  */
 const isActive = (c: Crawl | undefined, now: number) =>
   c !== undefined &&
   ACTIVE_CRAWL_STATUSES.includes(c.status) &&
-  (c.kind === 'list'
+  (c.kind === 'list' && c.list
     ? now - Date.parse(c.updatedAt) <= STALE_LIST_MS
     : now - Date.parse(c.createdAt) <= STALE_CRAWL_MS);
 
@@ -416,6 +417,14 @@ async function submit(
   const normalizedUrl = list ? listUrl(list) : checked.normalizedUrl;
   const sourceId = sourceIdFor(normalizedUrl);
   const [config, settings] = await Promise.all([deps.limits(), deps.settings.get(userId)]);
+  // #50: the admin turned list runs off (not a daily limit: no reset brings them back).
+  if (list && config.listsPerDay < 1) {
+    return problem(403, 'List runs are turned off', {
+      detail: 'Lists of roles cannot be crawled right now. Paste a company’s careers link instead.',
+      code: 'lists-turned-off',
+      requestId,
+    });
+  }
   const dailyLimit = effectiveDailyLimit(config, settings?.dailyLimit);
   let replacing: string | undefined;
   let healed = false;
@@ -473,15 +482,15 @@ async function submit(
       }
       if (error instanceof DailyLimitError) {
         // #50: the day's lists can be full while its crawls are not.
-        const lists = list ? await deps.listsToday(userId) : 0;
-        if (list && lists >= config.listsPerDay) {
+        const today = list ? await deps.usageToday(userId) : undefined;
+        if (today && today.lists >= config.listsPerDay) {
           return problem(429, 'Daily list limit reached', {
-            detail: dailyListLimitMessage(lists, config.listsPerDay),
+            detail: dailyListLimitMessage(today.lists, config.listsPerDay),
             code: 'daily-list-limit-reached',
             requestId,
           });
         }
-        const used = await deps.usedToday(userId);
+        const used = today?.crawls ?? (await deps.usedToday(userId));
         return problem(429, 'Daily crawl limit reached', {
           detail: dailyLimitMessage(used, dailyLimit),
           code: 'daily-limit-reached',

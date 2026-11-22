@@ -863,14 +863,15 @@ export async function crawlsToday(
   return Number((await dayUsage(client, usageTable, userId, at))?.crawls ?? 0);
 }
 
-/** #50: how many list runs the user has started today (UTC). */
-export async function listsToday(
+/** #50: the crawls and the list runs the user has started today (UTC), in one read. */
+export async function usageToday(
   client: DynamoDBDocumentClient,
   usageTable: string,
   userId: string,
   at: Date,
-): Promise<number> {
-  return Number((await dayUsage(client, usageTable, userId, at))?.lists ?? 0);
+): Promise<{ crawls: number; lists: number }> {
+  const item = await dayUsage(client, usageTable, userId, at);
+  return { crawls: Number(item?.crawls ?? 0), lists: Number(item?.lists ?? 0) };
 }
 
 /** Takes the crawl's ID out of the week's and month's platform runs (idempotent). */

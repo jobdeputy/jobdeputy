@@ -118,6 +118,18 @@ describe('ListRunRepository (#50)', () => {
     expect(await repo(busy.c).queueCompany(list(), 3, company)).toBe('busy');
   });
 
+  it('marks a running list as still moving, and ignores one that ended', async () => {
+    const { c, send } = client();
+    await repo(c).touch(USER, 'L1');
+    const update = first<UpdateCommand>(send);
+    expect(update.UpdateExpression).toBe('SET updatedAt = :now');
+    expect(update.ConditionExpression).toBe('#status = :running');
+    const { c: ended } = client(() => {
+      throw named('ConditionalCheckFailedException');
+    });
+    await expect(repo(ended).touch(USER, 'L1')).resolves.toBeUndefined();
+  });
+
   it('passes over a company, counting it, only from the position it read', async () => {
     const { c, send } = client();
     expect(await repo(c).skipCompany(list(), 'busy')).toBe(true);

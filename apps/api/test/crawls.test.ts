@@ -10,7 +10,7 @@ import {
   TooManyActiveCrawlsError,
   VersionConflictError,
 } from '@jobdeputy/db';
-import type { AiKeyStatus, AiSource } from '@jobdeputy/shared';
+import { type AiKeyStatus, type AiSource, DEFAULT_CRAWL_LIMITS } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2, APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
 import { route as auditRoute } from '../src/audit.js';
@@ -113,7 +113,7 @@ function deps(over: Partial<CrawlsDeps['repo']> = {}) {
     aiDefault: vi.fn(async (): Promise<AiSource> => 'platform'),
     aiKeyStatus: vi.fn(async (): Promise<AiKeyStatus | undefined> => undefined),
     allowTestProvider: false,
-    listsToday: vi.fn(async () => 0),
+    usageToday: vi.fn(async () => ({ crawls: 0, lists: 0 })),
   };
   return { d, repo, settings };
 }
@@ -901,7 +901,7 @@ describe('list runs (#50)', () => {
         throw new DailyLimitError();
       }),
     });
-    vi.mocked(d.listsToday).mockResolvedValue(2);
+    vi.mocked(d.usageToday).mockResolvedValue({ crawls: 2, lists: 2 });
     const res = await route(post(LIST_URL), d);
     expect(res.statusCode).toBe(429);
     expect(body(res)).toMatchObject({
@@ -910,9 +910,27 @@ describe('list runs (#50)', () => {
     });
 
     // Lists left, but no crawls left today.
-    vi.mocked(d.listsToday).mockResolvedValue(1);
-    vi.mocked(d.usedToday).mockResolvedValue(20);
-    expect(body(await route(post(LIST_URL), d)).code).toBe('daily-limit-reached');
+    vi.mocked(d.usageToday).mockResolvedValue({ crawls: 20, lists: 1 });
+    expect(body(await route(post(LIST_URL), d))).toMatchObject({
+      code: 'daily-limit-reached',
+      detail: "You've used 20 of 20 crawls today. Resets at 00:00 UTC.",
+    });
+    // One read of the day for both.
+    expect(d.usedToday).not.toHaveBeenCalled();
+  });
+
+  it('refuses lists, without counting anything, when the admin turned them off', async () => {
+    const { d, repo } = deps();
+    vi.mocked(d.limits).mockResolvedValue({
+      ...DEFAULT_CRAWL_LIMITS,
+      maxActive: 3,
+      listsPerDay: 0,
+    });
+    const res = await route(post(LIST_URL), d);
+    expect(res.statusCode).toBe(403);
+    expect(body(res).code).toBe('lists-turned-off');
+    expect(repo.request).not.toHaveBeenCalled();
+    expect((await route(post(URL_), d)).statusCode).toBe(202);
   });
 
   it("treats only this stack's own test site's lists as lists (dev stacks)", () => {
@@ -929,9 +947,11 @@ describe('list runs (#50)', () => {
   it('keeps a list run active while it moves on, and ends it once it stops moving', async () => {
     const old = new Date(NOW - STALE_LIST_MS - 1).toISOString();
     // Started long ago, last moved on 30 minutes ago: longer than a crawl may take, still moving.
+    const chosen = { rows: 1, matched: 1, companiesMatched: 1, companies: [], skipped: 0 };
     const moving = crawl({
       kind: 'list',
       status: 'running',
+      list: chosen,
       createdAt: old,
       updatedAt: new Date(NOW - 2 * STALE_CRAWL_MS).toISOString(),
     });
@@ -947,6 +967,24 @@ describe('list runs (#50)', () => {
     expect(repo.finish).not.toHaveBeenCalled();
 
     vi.mocked(repo.getCrawl).mockResolvedValue({ ...moving, updatedAt: old });
+    await route(post(LIST_URL), d);
+    expect(repo.finish).toHaveBeenCalledWith(
+      expect.objectContaining({ crawlId: C1 }),
+      expect.objectContaining({ status: 'failed' }),
+      expect.anything(),
+    );
+  });
+
+  it('gives a list run that has not chosen its companies the time of a crawl', async () => {
+    const quiet = new Date(NOW - 2 * STALE_CRAWL_MS).toISOString();
+    const reading = crawl({ kind: 'list', status: 'running', createdAt: quiet, updatedAt: quiet });
+    const { d, repo } = deps({
+      request: vi.fn(async () => {
+        throw new ActiveCrawlError();
+      }),
+    });
+    vi.mocked(repo.getSource).mockResolvedValue({ activeCrawlId: C1 } as Source);
+    vi.mocked(repo.getCrawl).mockResolvedValue(reading);
     await route(post(LIST_URL), d);
     expect(repo.finish).toHaveBeenCalledWith(
       expect.objectContaining({ crawlId: C1 }),

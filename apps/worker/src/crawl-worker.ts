@@ -59,6 +59,8 @@ export interface CrawlWorkerDeps {
   runList: (crawl: Crawl) => Promise<ListRunSummary | undefined>;
   /** #50: moves a list run on after one of its company crawls ended. */
   advanceList: (userId: string, listId: string) => Promise<void>;
+  /** #50: marks a running list run as still moving (its `updatedAt`). */
+  touchList: (userId: string, listId: string) => Promise<void>;
   isBeingDeleted: (userId: string) => Promise<boolean>;
   /** A fresh fetcher for one crawl attempt (its robots.txt memory lasts that attempt). */
   newFetcher: () => FetchFn;
@@ -177,23 +179,13 @@ export async function processRecord(
     logger.info('Account is being deleted; skipping', { crawlId });
     return 'skipped';
   }
-  const crawl = await deps.repo.start(userId, crawlId);
-  if (!crawl) {
-    logger.info('Crawl missing or already finished; skipping', { crawlId });
-    // #50: a company crawl that ended, but whose list was not moved on (the attempt failed
-    // after `finish`): move it on now.
-    const ended = await deps.repo.getCrawl(userId, crawlId);
-    if (ended?.parentCrawlId) await deps.advanceList(userId, ended.parentCrawlId);
-    return 'skipped';
-  }
   // #50: a company crawl's end moves its list run on (queues the next company, or ends the list).
   // The crawl itself has ended by then: a failure here is the list's, never the crawl's. The
   // message comes back (`start` finds the crawl ended and moves the list on); on its last
-  // receive it goes to the dead-letter queue, so the alarm says a list is stuck.
-  const moveListOn = async () => {
-    if (!crawl.parentCrawlId) return;
+  // receive it is dead-lettered at once, so the alarm says a list is stuck.
+  const handOff = async (listId: string) => {
     try {
-      await deps.advanceList(userId, crawl.parentCrawlId);
+      await deps.advanceList(userId, listId);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       if (receiveCount < MAX_RECEIVES) {
@@ -202,10 +194,34 @@ export async function processRecord(
         logger.warn('List run not moved on; will retry', { crawlId, receiveCount, reason });
       } else {
         logger.error('List run not moved on after the last attempt', { crawlId, reason });
+        await deps.delayRetry(record, 0).catch(() => undefined);
       }
       throw new ListHandOffError(reason);
     }
   };
+  const crawl = await deps.repo.start(userId, crawlId);
+  if (!crawl) {
+    logger.info('Crawl missing or already finished; skipping', { crawlId });
+    // #50: a company crawl that ended, but whose list was not moved on (the attempt failed
+    // after `finish`): move it on now.
+    const ended = await deps.repo.getCrawl(userId, crawlId);
+    if (ended?.parentCrawlId) await handOff(ended.parentCrawlId);
+    return 'skipped';
+  }
+  const moveListOn = async () => {
+    if (crawl.parentCrawlId) await handOff(crawl.parentCrawlId);
+  };
+  // #50: each attempt of a company crawl shows its list is still moving (a retried attempt can
+  // wait out the queue's visibility timeout first).
+  // Best effort: the crawl goes on if the mark fails.
+  if (crawl.parentCrawlId) {
+    await deps.touchList(userId, crawl.parentCrawlId).catch((error: unknown) => {
+      logger.warn('List run not marked as moving', {
+        crawlId,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
   const host = new URL(crawl.url).hostname;
   const audit = (
     name: string,
@@ -472,12 +488,13 @@ function defaultDeps(): CrawlWorkerDeps {
       }),
     );
   };
+  const listRuns = new ListRunRepository(client, {
+    crawls: CRAWLS_TABLE_NAME,
+    sources: SOURCES_TABLE_NAME,
+    audit: AUDIT_TABLE_NAME,
+  });
   const lists: ListRunDeps = {
-    lists: new ListRunRepository(client, {
-      crawls: CRAWLS_TABLE_NAME,
-      sources: SOURCES_TABLE_NAME,
-      audit: AUDIT_TABLE_NAME,
-    }),
+    lists: listRuns,
     getCrawl: (userId, crawlId) => crawls.getCrawl(userId, crawlId),
     getSource: (userId, sourceId) => crawls.getSource(userId, sourceId),
     finish: (crawl, outcome, audit) => crawls.finish(crawl, outcome, audit),
@@ -494,6 +511,7 @@ function defaultDeps(): CrawlWorkerDeps {
     repo: crawls,
     runList: (crawl) => runList(crawl, lists),
     advanceList: (userId, listId) => advanceList(userId, listId, lists),
+    touchList: (userId, listId) => listRuns.touch(userId, listId),
     isBeingDeleted: (userId) => account.isBeingDeleted(userId),
     newFetcher: () => {
       const fetcher = createFetcher();
