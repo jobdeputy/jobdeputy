@@ -214,7 +214,7 @@ describe('editing About you', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit Name and headline' }));
     expect((screen.getByLabelText('First name') as HTMLInputElement).value).toBe('Alex');
     type('Preferred name', '  ');
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
     await waitFor(() => expect(facts('Name and headline')).toContain('Preferred name: Not added'));
     expect('preferredName' in (await saved(api))).toBe(false);
   });
@@ -223,7 +223,7 @@ describe('editing About you', () => {
     await onProfile();
     fireEvent.click(screen.getByRole('button', { name: 'Edit Name and headline' }));
     type('Last name', '');
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
     const last = screen.getByLabelText('Last name');
     expect(document.activeElement).toBe(last);
     expect(last.getAttribute('aria-invalid')).toBe('true');
@@ -240,7 +240,7 @@ describe('editing About you', () => {
     type('Country code', '');
     type('Phone number', '512 555 0100');
     type('City', 'Austin');
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
     await waitFor(() => expect(facts('Contact and location')).toContain('Phone: +1 512 555 0100'));
     expect(await saved(api)).toMatchObject({
       phone: { countryCode: '+1', number: '512 555 0100' },
@@ -248,7 +248,7 @@ describe('editing About you', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Edit Contact and location' }));
     type('Phone number', '');
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
     await waitFor(() => expect(facts('Contact and location')).toContain('Phone: Not added'));
     expect('phone' in (await saved(api))).toBe(false);
   });
@@ -258,13 +258,13 @@ describe('editing About you', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit Contact and location' }));
     type('Country code', '++44');
     type('Phone number', '20 7946 0000');
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
     expect(document.activeElement).toBe(screen.getByLabelText('Country code'));
     expect(screen.getByText('Use a code like +1, +44, or +91.')).toBeTruthy();
     // A code other than +1 with no number is not dropped unseen.
     type('Country code', '+44');
     type('Phone number', '');
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
     expect(document.activeElement).toBe(screen.getByLabelText('Phone number'));
     expect(screen.getByText('Enter the number, or clear the country code.')).toBeTruthy();
   });
@@ -274,7 +274,7 @@ describe('editing About you', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit Contact and location' }));
     type('Country code', ' 44');
     type('Phone number', '20 7946 0000');
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
     await waitFor(() => expect(facts('Contact and location')).toContain('Phone: +44 20 7946 0000'));
     expect((await saved(api)).phone).toEqual({ countryCode: '+44', number: '20 7946 0000' });
   });
@@ -292,7 +292,7 @@ describe('editing About you', () => {
       headline: 'Staff engineer',
     });
     await act(() => queries.invalidateQueries({ queryKey: ['profile'] }));
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
     expect(
       await screen.findByText(
         'Your profile changed somewhere else. It shows here now: check it, then save.',
@@ -303,7 +303,7 @@ describe('editing About you', () => {
     expect((screen.getByLabelText('Preferred name') as HTMLInputElement).value).toBe('Al');
     expect((await saved(api)).headline).toBe('Staff engineer');
     // Saved again, it keeps both.
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
     await waitFor(() => expect(facts('Name and headline')).toContain('Preferred name: Al'));
     expect(await saved(api)).toMatchObject({ preferredName: 'Al', headline: 'Staff engineer' });
   });
@@ -322,7 +322,7 @@ describe('editing About you', () => {
       phone: { countryCode: '+1', number: '555 0199' },
     });
     await act(() => queries.invalidateQueries({ queryKey: ['profile'] }));
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
     await screen.findByText(/changed somewhere else/);
     expect((screen.getByLabelText('Country code') as HTMLInputElement).value).toBe('+1');
     expect((screen.getByLabelText('Phone number') as HTMLInputElement).value).toBe('555 0199');
@@ -344,14 +344,14 @@ describe('editing About you', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Edit Name and headline' }));
     type('Headline', 'Staff engineer');
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
     expect(
       await screen.findByText(
         'We couldn’t tell whether that saved. Check your connection, then try again.',
       ),
     ).toBeTruthy();
     await act(() => queries.invalidateQueries({ queryKey: ['profile'] }));
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
     await waitFor(() => expect(facts('Name and headline')).toContain('Headline: Staff engineer'));
     expect(screen.queryByText(/changed somewhere else/)).toBeNull();
   });
@@ -361,7 +361,7 @@ describe('editing About you', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit Contact and location' }));
     expect((screen.getByLabelText('Country code') as HTMLInputElement).value).toBe('+44');
     type('Phone number', '');
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
     await waitFor(() => expect(facts('Contact and location')).toContain('Phone: Not added'));
     expect('phone' in (await saved(api))).toBe(false);
   });
@@ -377,7 +377,7 @@ describe('editing About you', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit Contact and location' }));
     type('Country code', '');
     type('Phone number', '512 555 0100');
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
     await waitFor(() => expect(facts('Contact and location')).toContain('Phone: +1 512 555 0100'));
     expect(screen.queryByText(/changed somewhere else/)).toBeNull();
   });
@@ -387,7 +387,7 @@ describe('editing About you', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit Links' }));
     type('LinkedIn', 'linkedin.com/in/alex');
     type('Other links', 'alex.dev\n\n https://blog.alex.dev ');
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
     await waitFor(() => expect(facts('Links')).toContain('LinkedIn: https://linkedin.com/in/alex'));
     expect(facts('Links')).toContain('Other links: https://alex.dev | https://blog.alex.dev');
     expect((await saved(api)).links).toEqual({
@@ -401,7 +401,7 @@ describe('editing About you', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit Links' }));
     type('GitHub', 'http://github.com/alex');
     type('Other links', Array.from({ length: 11 }, (_, i) => `site${i}.dev`).join('\n'));
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
     expect(document.activeElement).toBe(screen.getByLabelText('GitHub'));
     expect(
       screen.getByText('Enter a web address, like linkedin.com/in/your-name (https only).'),
@@ -468,7 +468,7 @@ describe('Target roles on the Profile page', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Add' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Platform engineer' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
     await waitFor(() => expect(shownTitles()).toEqual(['Staff engineer', 'Engineering manager']));
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit Target roles' }));
     expect(await screen.findByText('Target roles saved.')).toBeTruthy();
@@ -488,7 +488,7 @@ describe('Target roles on the Profile page', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Target roles' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Role A' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Role B' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
     await screen.findByText('We couldn’t tell whether that saved. Try again in a moment.');
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Cancel' }).hasAttribute('disabled')).toBe(false),
