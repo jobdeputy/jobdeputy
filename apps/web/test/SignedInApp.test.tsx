@@ -37,12 +37,12 @@ describe('the signed-in app', () => {
     expect(screen.getByRole('banner').textContent).toContain('Step 1 of 3');
   });
 
-  it('takes someone with a profile straight to their page', async () => {
+  it('takes someone with a profile straight to Job matches (#49)', async () => {
     const api = createFakeApi({ delay: 0 });
     await api.request('PUT', '/me/profile', { version: 0, firstName: 'Alex', lastName: 'Morgan' });
     await renderApp(await signedIn(), {}, api);
     expect(
-      await screen.findByRole('heading', { level: 1, name: 'What your deputy knows about you.' }),
+      await screen.findByRole('heading', { level: 1, name: 'The best jobs at each company.' }),
     ).toBeTruthy();
   });
 

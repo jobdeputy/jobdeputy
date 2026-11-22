@@ -72,6 +72,26 @@ export function DocumentIcon({ className = 'size-5' }: { className?: string }) {
   );
 }
 
+/** A briefcase: the Job matches page, in the sidebar (the round 7 prototype's nav icon). */
+export function BriefcaseIcon({ className = 'size-5' }: { className?: string }) {
+  return (
+    <LineIcon className={className}>
+      <rect x="3.5" y="7.25" width="17" height="12.5" rx="2" />
+      <path d="M8.75 7.25V5.5c0-.83.67-1.5 1.5-1.5h3.5c.83 0 1.5.67 1.5 1.5v1.75M3.5 12.5h17" />
+    </LineIcon>
+  );
+}
+
+/** Two links of a chain: a link to read (the Find jobs section). */
+export function LinkIcon({ className = 'size-5' }: { className?: string }) {
+  return (
+    <LineIcon className={className}>
+      <path d="M10 13.5a3.75 3.75 0 0 0 5.3.2l2.75-2.75a3.75 3.75 0 0 0-5.3-5.3L11.5 6.9" />
+      <path d="M14 10.5a3.75 3.75 0 0 0-5.3-.2L5.95 13.05a3.75 3.75 0 0 0 5.3 5.3l1.25-1.25" />
+    </LineIcon>
+  );
+}
+
 /** A file the server couldn't use. */
 export function AlertIcon({ className = 'size-5' }: { className?: string }) {
   return (

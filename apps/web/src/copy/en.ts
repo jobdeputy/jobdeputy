@@ -372,10 +372,100 @@ export const en = {
   /** The signed-in app's page list (the sidebar; across the top on phones). */
   nav: {
     label: 'Primary',
+    jobs: 'Job matches',
     profile: 'Profile',
     resumes: 'Résumés',
     /** The browser tab's title on a page: "Profile · JobDeputy". */
     pageTitle: '{page} · JobDeputy',
+  },
+  /** The Job matches page: a link in, the best jobs at each company out (#49). */
+  jobsPage: {
+    eyebrow: 'Job matches',
+    title: 'The best jobs at each company.',
+    intro:
+      'Paste a careers page. Your deputy reads it and keeps the 3 roles that fit you best at each company.',
+    find: {
+      title: 'Find jobs',
+      line: 'One company’s careers page or job board, as a link.',
+      label: 'Careers page link',
+      placeholder: 'boards.greenhouse.io/acme',
+      hint: 'Public pages only. LinkedIn needs a sign-in, so your deputy can’t read it.',
+      submit: 'Find jobs',
+      /** Read out while the link is sent. */
+      sending: 'Sending the link…',
+      errors: {
+        empty: 'Paste a link to a careers page.',
+        busy: 'Your deputy is already reading a link. Paste the next one when it’s done.',
+        daily: 'You’ve used today’s links. More from midnight UTC.',
+        tryLater: 'That didn’t go through. Try again in a moment.',
+        /** The API's own words for a refusal it gives no reason for. */
+        refused: 'That link can’t be read. Check it, or try another page.',
+        /** The free AI runs are used up for now (the platform model). */
+        aiUsedUp:
+          'You’ve used your free AI scoring for now. Your deputy can still rank this link by keywords.',
+      },
+      /** Beside an AI refusal: send the same link, ranked by keywords only (no AI scores). */
+      withoutAi: 'Find jobs without AI scores',
+      /** The newest link couldn't be checked on. */
+      readFailed: 'Couldn’t check on your last link.',
+      retry: 'Try again',
+      retrying: 'Checking…',
+    },
+    /**
+     * Why a link can't be read, by the API's reason (packages/shared/src/crawl.ts CRAWL_ERRORS): when
+     * it is sent, or when the deputy tried it. A test keeps every reason here.
+     */
+    linkErrors: {
+      invalid_url: 'This is not a web address your deputy can read.',
+      blocked_address:
+        'This address points to a private or internal network, which your deputy never reads.',
+      unsafe_redirect: 'The page sent your deputy somewhere it doesn’t follow.',
+      too_many_redirects: 'The page redirected too many times.',
+      blocked_by_robots: 'The site asks automated visitors not to read this page.',
+      login_required: 'This page needs a sign-in. Your deputy only reads public pages.',
+      blocked: 'The site turned your deputy away.',
+      not_found: 'The page isn’t there (any more).',
+      http_error: 'The site answered with an error.',
+      unsupported_content: 'This isn’t a web page (for example a PDF or an image).',
+      too_large: 'The page is too large to read.',
+      needs_browser:
+        'This page only shows its jobs with JavaScript, which your deputy can’t run yet.',
+      unreadable_feed:
+        'Your deputy couldn’t read this job board’s list. Its format may have changed.',
+      tls_error: 'The site’s secure connection is broken (for example an expired certificate).',
+      timeout: 'The site took too long to answer.',
+      unreachable: 'The site couldn’t be reached.',
+      internal: 'Something went wrong on our side.',
+    },
+    /** Why the AI didn't score a crawl's jobs (packages/shared/src/ai.ts RELEVANCE_ERRORS). */
+    scoringErrors: {
+      key_missing: 'Its AI key was deleted, so the jobs weren’t scored.',
+      key_invalid: 'Its AI key doesn’t work, so the jobs weren’t scored.',
+      key_rejected: 'The AI provider turned the key away while scoring.',
+      model_unavailable: 'The AI model was unavailable, so some jobs weren’t scored.',
+    },
+    /** The deputy at work on the link. */
+    working: {
+      status: 'Finding jobs',
+      speech: 'On it.',
+      waiting: 'Waiting for my turn to read {host}…',
+      reading: 'Reading {host}…',
+      scoring: 'Scoring the jobs at {host} against your roles…',
+    },
+    /** How the last link went. */
+    result: {
+      /** `{count}` is how many jobs the page listed. */
+      done: {
+        one: 'Done with {host}: {count} job read.',
+        other: 'Done with {host}: {count} jobs read.',
+      },
+      doneEmpty: 'Done with {host}: no jobs on that page.',
+      stalled: 'Your deputy couldn’t finish {host}. Send the link again to start over.',
+      doneNone: 'Done with {host}: no jobs there fit your roles.',
+      noScore: 'Your deputy ranked them without AI: {reason}',
+      failed: 'Couldn’t read {host}. {reason}',
+      tryAnother: 'Check the link, or try another page.',
+    },
   },
   /** The Résumés page: the files the deputy tailors from (#33). */
   resumesPage: {

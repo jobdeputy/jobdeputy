@@ -4,6 +4,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./ai": "./src/ai.ts",
+    "./crawl": "./src/crawl.ts",
     "./documents": "./src/documents.ts",
     "./profile": "./src/profile.ts"
   },

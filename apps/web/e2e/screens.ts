@@ -65,6 +65,18 @@ export const SCREENS: Screen[] = [
     still: true,
     steps: (page) => uploadResume(page, 'Alex_Morgan_Resume.pdf', 'Ready'),
   },
+  // Job matches (#49), where the app opens: empty, the deputy at work, done, and a failed link.
+  { name: 'jobs', path: '/', open: 'Get started free', still: true, steps: toJobs },
+  { name: 'jobs-working', path: '/', open: 'Get started free', still: true, steps: toJobsWorking },
+  { name: 'jobs-done', path: '/', open: 'Get started free', still: true, steps: toJobsDone },
+  { name: 'jobs-failed', path: '/', open: 'Get started free', still: true, steps: toJobsFailed },
+  {
+    name: 'jobs-ai-used-up',
+    path: '/',
+    open: 'Get started free',
+    still: true,
+    steps: toJobsAiUsedUp,
+  },
   { name: 'profile', path: '/', open: 'Get started free', still: true, steps: toSignedIn },
   // A group's form open on the Profile page: Contact and location, a code without its number marked.
   {
@@ -285,9 +297,7 @@ async function uploadResume(page: Page, name: string, stage: string) {
 async function toResumes(page: Page) {
   await uploadResume(page, 'Alex_Morgan_Resume.pdf', 'Ready');
   await page.getByRole('button', { name: 'Continue' }).click();
-  await page
-    .getByRole('heading', { level: 1, name: 'What your deputy knows about you.' })
-    .waitFor();
+  await page.getByRole('heading', { level: 1, name: 'The best jobs at each company.' }).waitFor();
   await page
     .getByRole('navigation', { name: 'Primary' })
     .getByRole('link', { name: 'Résumés' })
@@ -310,9 +320,56 @@ async function toProfileEdit(page: Page) {
   await page.getByText('Enter the number, or clear the country code.').waitFor();
 }
 
-async function toSignedIn(page: Page) {
+/** Set up and signed in: the app opens on Job matches (#49). */
+async function toJobs(page: Page) {
   await toStepResume(page);
   await page.getByRole('button', { name: 'Skip for now' }).click();
+  await page.getByRole('heading', { level: 1, name: 'The best jobs at each company.' }).waitFor();
+}
+
+/** Job matches with a link sent: the deputy at work on a page that never finishes. */
+async function toJobsWorking(page: Page) {
+  await toJobs(page);
+  await page.getByLabel('Careers page link').fill('still-crawling.example.com/careers');
+  await page.getByRole('button', { name: 'Find jobs' }).click();
+  await page.getByText('Reading still-crawling.example.com…').waitFor();
+}
+
+/** Job matches after a link was read. */
+async function toJobsDone(page: Page) {
+  await toJobs(page);
+  await page.getByLabel('Careers page link').fill('boards.greenhouse.io/acme');
+  await page.getByRole('button', { name: 'Find jobs' }).click();
+  await page
+    .getByText('Done with boards.greenhouse.io: 12 jobs read.')
+    .waitFor({ timeout: 15_000 });
+}
+
+/** A link that could not be read, its reason beside it. */
+async function toJobsFailed(page: Page) {
+  await toJobs(page);
+  await page.getByLabel('Careers page link').fill('unreachable.example.com/careers');
+  await page.getByRole('button', { name: 'Find jobs' }).click();
+  await page.getByText('Couldn’t read unreachable.example.com.', { exact: false }).waitFor({
+    timeout: 15_000,
+  });
+}
+
+/** The free AI runs used up: the reason, and the way on (keywords only). */
+async function toJobsAiUsedUp(page: Page) {
+  await toJobs(page);
+  await page.getByLabel('Careers page link').fill('ai-limit.example.com/careers');
+  await page.getByRole('button', { name: 'Find jobs' }).click();
+  await page.getByRole('button', { name: 'Find jobs without AI scores' }).waitFor();
+}
+
+/** Signed in, on the Profile page. */
+async function toSignedIn(page: Page) {
+  await toJobs(page);
+  await page
+    .getByRole('navigation', { name: 'Primary' })
+    .getByRole('link', { name: 'Profile' })
+    .click();
   await page
     .getByRole('heading', { level: 1, name: 'What your deputy knows about you.' })
     .waitFor();

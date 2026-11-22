@@ -112,6 +112,28 @@ test('creates an account, confirms it with the code, lands signed in, and signs 
   await expectNoAccessibilityViolations(page);
   await expectNoHorizontalScroll(page);
   await page.getByRole('button', { name: 'Continue' }).click();
+  // Job matches (#49), where the app opens: at its own address, named in the tab, passing axe.
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'The best jobs at each company.' }),
+  ).toBeFocused();
+  await expect(page).toHaveURL(/\/jobs$/);
+  await expect(page).toHaveTitle('Job matches · JobDeputy');
+  await expectNoAccessibilityViolations(page);
+  await expectNoHorizontalScroll(page);
+  // A link in: the deputy at work (axe while it works), then how it went.
+  await page.getByLabel('Careers page link').fill('boards.greenhouse.io/acme');
+  await page.getByRole('button', { name: 'Find jobs' }).click();
+  await expect(page.getByText('Finding jobs')).toBeVisible();
+  await expectNoAccessibilityViolations(page);
+  await expect(page.getByText('Done with boards.greenhouse.io: 12 jobs read.')).toBeVisible({
+    timeout: 15_000,
+  });
+  await expectNoAccessibilityViolations(page);
+  await expectNoHorizontalScroll(page);
+  await page
+    .getByRole('navigation', { name: 'Primary' })
+    .getByRole('link', { name: 'Profile' })
+    .click();
   await expect(
     page.getByRole('heading', { level: 1, name: 'What your deputy knows about you.' }),
   ).toBeFocused();

@@ -681,9 +681,10 @@ describe('the Résumés page in the app', () => {
     const api = createFakeApi({ delay: 0, checkMs: 0 });
     await api.request('PUT', '/me/profile', { version: 0, firstName: 'Alex', lastName: 'Morgan' });
     await renderApp(auth, {}, api);
-    await screen.findByRole('heading', { level: 1, name: 'What your deputy knows about you.' });
+    await screen.findByRole('heading', { level: 1, name: 'The best jobs at each company.' });
     const nav = within(screen.getByRole('navigation', { name: 'Primary' }));
     expect(nav.getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Job matches',
       'Résumés',
       'Profile',
     ]);
