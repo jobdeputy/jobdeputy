@@ -113,7 +113,7 @@ describe('the landing page’s address', () => {
 });
 
 describe('the signed-in app’s pages', () => {
-  it('opens the Profile page at /profile once the set-up is done, whatever the path was', async () => {
+  it('opens Job matches at /jobs once the set-up is done, whatever the path was (#49)', async () => {
     const auth = createFakeAuth({ delay: 0 });
     await auth.signUp('new@example.com', 'a long enough password');
     await auth.confirmSignUp('new@example.com', 'a long enough password', '123456');
@@ -124,20 +124,22 @@ describe('the signed-in app’s pages', () => {
     document.title = 'JobDeputy';
     await renderApp(auth, {}, api);
     expect(
-      await screen.findByRole('heading', { level: 1, name: 'What your deputy knows about you.' }),
+      await screen.findByRole('heading', { level: 1, name: 'The best jobs at each company.' }),
     ).toBeTruthy();
-    expect(window.location.pathname).toBe('/profile');
-    expect(document.title).toBe('Profile · JobDeputy');
+    expect(window.location.pathname).toBe('/jobs');
+    expect(document.title).toBe('Job matches · JobDeputy');
     // The page list is a landmark of its own, beside the page's main content, not inside it.
     const nav = screen.getByRole('navigation', { name: 'Primary' });
     expect(screen.getByRole('main').contains(nav)).toBe(false);
-    // Later (Back to an entry from before), the address is left alone: Profile still shows.
+    // Later (Back to an entry from before), the address is left alone: Job matches still shows.
     act(() => navigate('/nowhere'));
     expect(window.location.pathname).toBe('/nowhere');
     expect(
-      screen.getByRole('heading', { level: 1, name: 'What your deputy knows about you.' }),
+      screen.getByRole('heading', { level: 1, name: 'The best jobs at each company.' }),
     ).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Profile' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('link', { name: 'Job matches' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
     // Signing out goes back to the landing page's address, and its title.
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
     await screen.findByRole('heading', { level: 1, name: 'You set it up. Your deputy applies.' });
@@ -160,6 +162,7 @@ describe('editing About you', () => {
       lastName: 'Morgan',
       ...profile,
     });
+    window.history.replaceState(null, '', '/profile');
     ({ queries } = await renderApp(auth, {}, api));
     await screen.findByRole('heading', { level: 1, name: 'What your deputy knows about you.' });
     return api;
@@ -432,6 +435,7 @@ describe('Target roles on the Profile page', () => {
     const api = createFakeApi({ delay: 0 });
     await api.request('PUT', '/me/profile', { version: 0, firstName: 'Alex', lastName: 'Morgan' });
     for (const title of titles) await api.request('POST', '/me/roles', { title });
+    window.history.replaceState(null, '', '/profile');
     await renderApp(auth, {}, api);
     await screen.findByRole('heading', { level: 1, name: 'What your deputy knows about you.' });
     return api;

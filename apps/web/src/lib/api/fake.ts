@@ -1,3 +1,4 @@
+import { CRAWL_ERRORS, parseCrawlUrl } from '@jobdeputy/shared/crawl';
 import {
   createDocumentInput,
   DOCUMENT_TYPES,
@@ -55,23 +56,62 @@ interface FakeDocument {
  * each account's data apart (by whoever `user` says is signed in); anything else is not found. It
  * forgets everything on reload. Résumés list newest first and stop at 10 (422); an uploaded file
  * is checked for malware for `checkMs`, read for `checkMs` more, then is ready (or not: see
- * `OUTCOMES`); a file over 5 MB is refused by the form, as S3 refuses it.
+ * `OUTCOMES`); a file over 5 MB is refused by the form, as S3 refuses it. A link is crawled
+ * one at a time (429 while one is at work), through the API's own address check (#49).
  */
 export function createFakeApi({
   delay = 200,
   checkMs = 1500,
+  crawlMs = 1500,
+  now = Date.now,
   user = async () => 'someone@example.com',
 }: {
   delay?: number;
   /** How long each stage of the server's check of an uploaded file takes. */
   checkMs?: number;
+  /** How long each stage of a crawl takes (queued, reading, scoring). */
+  crawlMs?: number;
+  /** The crawls' clock: a test can hold it and move it on, rather than race the real one. */
+  now?: () => number;
   /** Who is signed in; nobody is refused as the API would (401). */
   user?: () => Promise<string | null>;
 } = {}): ApiClient {
   const profiles = new Map<string, Record<string, unknown>>();
   const roles = new Map<string, Record<string, unknown>[]>();
   const documents = new Map<string, FakeDocument[]>();
+  const crawls = new Map<string, FakeCrawl[]>();
   let lastRole = 0;
+
+  /**
+   * A crawl as the API shows it now, one `crawlMs` a stage: queued, reading, then succeeded; with
+   * AI, its scoring starts a stage later (a separate worker, as in the cell), runs, and is done. A
+   * link with "unreachable" in it fails; "still-crawling" never finishes.
+   */
+  function crawlView({ view, startedAt }: FakeCrawl): Record<string, unknown> {
+    const stage = /still-crawling/i.test(String(view.url))
+      ? 1
+      : Math.floor((now() - startedAt) / crawlMs);
+    if (stage < 1) return { ...view, status: 'queued' };
+    const startedIso = new Date(startedAt + crawlMs).toISOString();
+    if (stage < 2) return { ...view, status: 'running', startedAt: startedIso };
+    const finishedAt = new Date(startedAt + 2 * crawlMs).toISOString();
+    if (/unreachable/i.test(String(view.url))) {
+      return {
+        ...view,
+        status: 'failed',
+        error: { code: 'unreachable', message: CRAWL_ERRORS.unreachable },
+        finishedAt,
+      };
+    }
+    const done = {
+      ...view,
+      status: 'succeeded',
+      stats: { jobsFound: 12, jobsNew: 12, jobsUpdated: 0, jobsRelevant: 4 },
+      finishedAt,
+    };
+    if (view.aiSource === 'none' || stage < 3) return done;
+    return { ...done, relevance: { status: stage < 4 ? 'running' : 'done' } };
+  }
 
   /** A résumé as the API shows it now: its status moves on with time once its file is in. */
   function documentView({ view, uploadedAt }: FakeDocument): Record<string, unknown> {
@@ -249,10 +289,64 @@ export function createFakeApi({
         );
         return undefined as T;
       }
+      const myCrawls = crawls.get(me) ?? [];
+      if (path === '/me/crawls?limit=1' && method === 'GET') {
+        const latest = myCrawls[0];
+        return { crawls: latest ? [crawlView(latest)] : [] } as T;
+      }
+      if (path === '/me/crawls' && method === 'POST') {
+        // The API's own check of the address (packages/shared/src/crawl.ts), then one at a time.
+        const checked = parseCrawlUrl(String((body as { url?: unknown })?.url ?? ''));
+        if (!checked.ok) {
+          throw new ApiError('invalid', {
+            status: 400,
+            code: checked.code,
+            message: checked.message,
+          });
+        }
+        const aiSource =
+          (body as { aiSource?: unknown })?.aiSource === 'none' ? 'none' : 'platform';
+        // A link with "ai-limit" in it finds the free AI runs used up (scoring by keywords works).
+        if (aiSource === 'platform' && /ai-limit/i.test(checked.normalizedUrl)) {
+          throw new ApiError('too-many', {
+            status: 429,
+            code: 'platform-ai-limit-reached',
+            retryAfterSeconds: 3600,
+          });
+        }
+        const latest = myCrawls[0];
+        if (latest && ['queued', 'running'].includes(String(crawlView(latest).status))) {
+          throw new ApiError('too-many', {
+            status: 429,
+            code: 'too-many-active-crawls',
+            retryAfterSeconds: 30,
+          });
+        }
+        lastCrawl += 1;
+        const crawl: FakeCrawl = {
+          view: {
+            crawlId: `fake-crawl-${lastCrawl}`,
+            url: checked.normalizedUrl,
+            aiSource,
+            createdAt: new Date(now()).toISOString(),
+          },
+          startedAt: now(),
+        };
+        crawls.set(me, [crawl, ...myCrawls]);
+        return crawlView(crawl) as T;
+      }
       throw new ApiError('not-found', { status: 404 });
     },
   };
 }
+
+interface FakeCrawl {
+  view: Record<string, unknown>;
+  startedAt: number;
+}
+
+/** Counted across every fake, as résumés are. */
+let lastCrawl = 0;
 
 /** A body the API's schema refuses: a 400 naming each wrong field. */
 function refused(issues: { path: PropertyKey[]; message: string }[]): ApiError {

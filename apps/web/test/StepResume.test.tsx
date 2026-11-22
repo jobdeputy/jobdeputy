@@ -128,8 +128,9 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     expect(item().getByText('PDF · 180 kB')).toBeTruthy();
     await waitFor(() => expect(statusText()).toContain('Alex_Morgan_Resume.pdf is ready.'));
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    // The set-up done, the app opens on Job matches (#49).
     expect(
-      await screen.findByRole('heading', { level: 1, name: 'What your deputy knows about you.' }),
+      await screen.findByRole('heading', { level: 1, name: 'The best jobs at each company.' }),
     ).toBeTruthy();
     expect((await documents(api)).map((each) => each.status)).toEqual(['ready']);
   });

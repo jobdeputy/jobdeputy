@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { AppNav, HOME_PAGE, PAGES, pageAt } from '@/components/app-shell.tsx';
+import { JobsPage } from '@/components/jobs/jobs-page.tsx';
 import { type AuthControl, AuthDrawer, type AuthMode } from '@/components/landing/auth-drawer.tsx';
 import { Hero } from '@/components/landing/hero.tsx';
 import { SiteHeader } from '@/components/landing/site-header.tsx';
@@ -62,7 +63,7 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
   // The app's pages, once the profile is read and the set-up is done.
   const pages = !step && profile.data !== undefined;
   const path = usePath();
-  // The page shown is the one marked: Profile also at an address that is no page.
+  // The page shown is the one marked: Job matches also at an address that is no page.
   const page = pageAt(path);
   usePageAddress(pages, path, page.label);
   return (
@@ -88,6 +89,8 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
               onNext={() => setSetUpStep(SET_UP_NEXT[step])}
               onBack={() => setSetUpStep(SET_UP_BACK[step])}
             />
+          ) : page.path === '/jobs' ? (
+            <JobsPage />
           ) : page.path === '/resumes' ? (
             <ResumesPage />
           ) : (
