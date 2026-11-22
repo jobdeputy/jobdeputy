@@ -97,7 +97,8 @@ jobs:
         with:
           name: ui-screenshots-${{ matrix.shard }}
           path: apps/web/screenshots/
-          if-no-files-found: error
+          # A part may hold no screenshot tests (16 parts); Post screenshots checks there are some.
+          if-no-files-found: ignore
           retention-days: 7
 
   screenshots:
@@ -125,6 +126,11 @@ jobs:
           pattern: ui-screenshots-*
           merge-multiple: true
           path: screenshots
+      - name: Check there are screenshots
+        run: |
+          count=$(find screenshots -name '*.png' 2>/dev/null | wc -l)
+          echo "$count screenshots"
+          test "$count" -gt 0
       - name: Post them on the PR
         env:
           GH_TOKEN: ${{ github.token }}
