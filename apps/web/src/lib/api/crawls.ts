@@ -158,6 +158,19 @@ export function crawlName(crawl: Pick<Crawl, 'url'> & Partial<Pick<Crawl, 'kind'
 }
 
 /**
+ * #50: while a list run is at work (its companies read, then its scoring), a key that changes as
+ * each company ends, so the companies already loaded are read again in place (CompanyList's
+ * `progress`). Undefined before the first company ends, and once the run's work is over (its
+ * end changes the list's version, which reads it again from the start).
+ */
+export function listProgressKey(crawl: Crawl | null): string | undefined {
+  if (crawl?.kind !== 'list' || !crawl.list || crawl.list.ended === 0 || !isCrawling(crawl)) {
+    return undefined;
+  }
+  return `${crawl.crawlId}:${crawl.list.ended}`;
+}
+
+/**
  * #50: a list run's companies being read: how many are read, of those it will read (the chosen
  * ones, less any passed over because their board was busy or can't be read).
  */

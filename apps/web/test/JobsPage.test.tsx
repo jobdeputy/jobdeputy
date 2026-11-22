@@ -15,6 +15,7 @@ import {
   isStalled,
   LIST_STALLED_MS,
   listProgress,
+  listProgressKey,
   nextCrawlCheck,
   SCORING_START_MS,
   STALLED_MS,
@@ -465,6 +466,9 @@ describe('Job matches: a GitHub list (#50)', () => {
 
   it("keeps the companies already loaded as each of a list's companies is read", async () => {
     const api = heldApi();
+    const request = vi.spyOn(api, 'request');
+    const companyReads = () =>
+      request.mock.calls.filter(([, path]) => String(path).startsWith('/me/companies')).length;
     const { queries } = await renderPage(api);
     // The companies' queries: a new one would start again from the first page.
     const lists = () =>
@@ -479,10 +483,23 @@ describe('Job matches: a GitHub list (#50)', () => {
     api.next(3);
     expect(await screen.findByRole('article', { name: 'Acme' }, { timeout: 3000 })).toBeTruthy();
     const during = lists();
+    const reads = companyReads();
     api.next();
     expect(await screen.findByRole('article', { name: 'Globex' }, { timeout: 3000 })).toBeTruthy();
     // Read again in place: the same query (its pages kept), not a new list.
     expect(lists()).toEqual(during);
+    expect(companyReads()).toBeGreaterThan(reads);
+    // Its last companies end as its scoring starts: they show before the scoring is done.
+    api.next(3);
+    await screen.findByText(
+      'Scoring the jobs at acme/list against your roles…',
+      {},
+      { timeout: 3000 },
+    );
+    expect(
+      await screen.findByRole('article', { name: 'Umbrella' }, { timeout: 3000 }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/^Done with/)).toBeNull();
     expect(screen.getByRole('article', { name: 'Acme' })).toBeTruthy();
   });
 
@@ -594,6 +611,43 @@ describe('crawl helpers', () => {
     ]) {
       expect(crawlName({ kind: 'list', url })).toBe('SimplifyJobs/New-Grad-Positions');
     }
+  });
+
+  it("#50: changes the companies key as each of a list's companies ends, while it is at work", () => {
+    const list = (over: Partial<Crawl>, ended: number) =>
+      crawl({
+        crawlId: 'L',
+        kind: 'list',
+        status: 'running',
+        startedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        list: {
+          companies: [],
+          skipped: 0,
+          busy: 0,
+          waiting: 0,
+          running: 1,
+          ended,
+          crawlIds: ['k'],
+        },
+        ...over,
+      });
+    expect(listProgressKey(list({}, 0))).toBeUndefined();
+    expect(listProgressKey(list({}, 2))).toBe('L:2');
+    // Scoring after its companies: still at work, so its last company counts.
+    const scoring = list(
+      {
+        status: 'succeeded',
+        finishedAt: new Date().toISOString(),
+        aiSource: 'platform',
+        stats: { jobsFound: 9, jobsRelevant: 3 },
+      },
+      3,
+    );
+    expect(listProgressKey(scoring)).toBe('L:3');
+    expect(listProgressKey(list({ status: 'failed' }, 2))).toBeUndefined();
+    expect(listProgressKey(crawl({ status: 'running' }))).toBeUndefined();
+    expect(listProgressKey(null)).toBeUndefined();
   });
 
   it("#50: counts a list's companies to read without those passed over", () => {

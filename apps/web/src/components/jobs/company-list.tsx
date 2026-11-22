@@ -43,15 +43,18 @@ export function CompanyList({
   offline?: boolean;
 }) {
   const companies = useCompanies(version);
-  const { refetch } = companies;
+  const { refetch, isFetching } = companies;
+  // A company ended: read the loaded pages again, once no read is on its way (a read sent before
+  // it ended may miss it, and More companies on its way is never cancelled).
   const lastProgress = useRef(progress);
+  const due = useRef(false);
   useEffect(() => {
-    const before = lastProgress.current;
+    if (progress !== lastProgress.current && progress !== undefined) due.current = true;
     lastProgress.current = progress;
-    if (progress === undefined || before === progress) return;
-    // A read already on its way (the list's first, or More companies) is joined, never cancelled.
-    void refetch({ cancelRefetch: false });
-  }, [progress, refetch]);
+    if (!due.current || isFetching) return;
+    due.current = false;
+    void refetch();
+  }, [progress, isFetching, refetch]);
   const wide = useWide();
   // The job open in the preview: as the list has it now (a list read again may have scored it),
   // else as it was when it was opened (a read that left it out).

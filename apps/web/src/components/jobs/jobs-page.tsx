@@ -19,6 +19,7 @@ import {
   isStalled,
   latestCrawlQuery,
   listProgress,
+  listProgressKey,
   startCrawl,
   useLatestCrawl,
   workDeadline,
@@ -78,9 +79,9 @@ export function JobsPage({ checkEvery }: { checkEvery?: number }) {
  * What the companies list reflects: the newest crawl whose work ended, and how (read, scored, or
  * stalled; a crawl that failed changed nothing). A new version reads the list again from the
  * start, so a crawl that ended in another tab, or later than it seemed to (a stall that then
- * finished), counts too. While a crawl is at work the version stays (a list run's companies are
- * read again in place as each one ends: `listProgressKey`). Undefined until the newest
- * crawl is known, so the list is never read just before a crawl is seen as ended.
+ * finished), counts too. While a crawl is at work the version stays (a list run's companies
+ * are read again in place as each one ends: `listProgressKey` in lib/api/crawls.ts). Undefined
+ * until the newest crawl is known, so the list is never read just before a crawl is seen as ended.
  */
 function useListVersion(latest: ReturnType<typeof useLatestCrawl>): string | undefined {
   const last = useRef<string | undefined>(undefined);
@@ -99,16 +100,6 @@ function useListVersion(latest: ReturnType<typeof useLatestCrawl>): string | und
       ].join(':')
     : 'none';
   return last.current;
-}
-
-/**
- * #50: while a list run's companies are read, a key that changes as each one ends, so the
- * companies already loaded are read again in place (CompanyList's `progress`). Undefined
- * otherwise; once its companies are read, its scoring's end reads the list again (the version).
- */
-export function listProgressKey(crawl: Crawl | null): string | undefined {
-  if (!crawl?.list || crawl.kind !== 'list' || !isCrawling(crawl)) return undefined;
-  return crawlStage(crawl) === 'companies' ? `${crawl.crawlId}:${crawl.list.ended}` : undefined;
 }
 
 /**
@@ -410,7 +401,7 @@ function ListOutcome({ crawl, host }: { crawl: Crawl; host: string }) {
       ? fill(skipped > 0 ? text.result.listNoneReadable : text.result.listNoMatch, { host })
       : read === 0
         ? fill(text.result.listNoneRead, { host })
-        : found === 0
+        : crawl.stats?.jobsFound === 0
           ? fill(text.result.listNoJobs, { host, companies: plural(text.result.companies, read) })
           : crawl.stats?.jobsRelevant === 0
             ? fill(text.result.listNoneFit, {

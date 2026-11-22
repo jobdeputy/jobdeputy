@@ -160,6 +160,8 @@ export function createFakeApi({
         stats: { jobsFound: 0, jobsNew: 0, jobsUpdated: 0, companies: { succeeded: 0, failed: 0 } },
       };
     }
+    const noJobs = /list-no-jobs/i.test(url);
+    const noneFit = noJobs || /jobs-fit-none/i.test(url);
     const chosen = /nothing-fits|unreadable/i.test(url) ? [] : FAKE_LIST_COMPANIES;
     const total = chosen.length;
     const ended = Math.min(total, step - 2);
@@ -189,15 +191,15 @@ export function createFakeApi({
           ? { jobsFound: 0, jobsNew: 0, jobsUpdated: 0, companies: { succeeded: 0, failed: 0 } }
           : {
               // "list-no-jobs": its companies have no open jobs at all.
-              jobsFound: /list-no-jobs/i.test(url) ? 0 : 46,
-              jobsNew: /list-no-jobs/i.test(url) ? 0 : 46,
+              jobsFound: noJobs ? 0 : 46,
+              jobsNew: noJobs ? 0 : 46,
               jobsUpdated: 0,
               // "jobs-fit-none": its companies' jobs were read, and none fit.
-              jobsRelevant: /jobs-fit-none|list-no-jobs/i.test(url) ? 0 : 12,
+              jobsRelevant: noneFit ? 0 : 12,
               companies: { succeeded: total - 1, failed: 1 },
             },
     };
-    const scored = total > 0 && !/jobs-fit-none|list-no-jobs/i.test(url);
+    const scored = total > 0 && !noneFit;
     if (view.aiSource === 'none' || !scored || step < finished + 1) return done;
     return { ...done, relevance: { status: step < finished + 2 ? 'running' : 'done' } };
   }
