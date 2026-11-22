@@ -493,6 +493,8 @@ export class CellStack extends Stack {
         PREFERENCES_TABLE_NAME: preferencesTable.tableName,
         CRAWL_LIMITS_PARAMETER: crawlLimits.parameterName,
         ...aiKeys.env,
+        // #50: the test site's lists are lists on dev stacks only (integration tests).
+        ALLOW_TEST_LISTS: props.stage === 'dev' ? 'true' : 'false',
       },
     });
     // T08b2: a key chosen for a crawl must exist and not be invalid (its status only).
@@ -534,7 +536,14 @@ export class CellStack extends Stack {
     jobsTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem', 'dynamodb:BatchGetItem');
     // The deletion record, and (T08c) the profile's headline and skills for the filter.
     usersTable.grant(crawlWorker.fn, 'dynamodb:GetItem');
-    crawlsTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem');
+    // #50: a list run reads itself and its company crawls (GetItem), and queues each company
+    // crawl (PutItem, in the transaction that moves the list on).
+    crawlsTable.grant(
+      crawlWorker.fn,
+      'dynamodb:UpdateItem',
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+    );
     // Frees the crawl's active slot when it ends (same transaction). T08c: each company's
     // shown jobs (`COMPANY#`): read, replaced at the version read, places freed.
     usageTable.grant(crawlWorker.fn, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem');

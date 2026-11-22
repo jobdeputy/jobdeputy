@@ -97,7 +97,12 @@ describe('crawl pipeline (T06b)', () => {
 
   it('gives the worker only the writes it makes, and S3 writes of fetched pages only', () => {
     const worker = statementsFor('CrawlWorkerFn');
-    expect(actionsOn(worker, 'CrawlsTable')).toEqual(['dynamodb:UpdateItem']);
+    // #50: a list run reads itself and its company crawls, and puts each company crawl.
+    expect(actionsOn(worker, 'CrawlsTable')).toEqual([
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+      'dynamodb:UpdateItem',
+    ]);
     expect(actionsOn(worker, 'SourcesTable')).toEqual(['dynamodb:GetItem', 'dynamodb:UpdateItem']);
     expect(actionsOn(worker, 'AuditTable')).toEqual(['dynamodb:PutItem']);
     expect(actionsOn(worker, 'UsersTable')).toEqual(['dynamodb:GetItem']);
@@ -113,6 +118,18 @@ describe('crawl pipeline (T06b)', () => {
       's3:PutObjectTagging',
     ]);
     expect(JSON.stringify(s3.map((s) => s.Resource))).toContain('/derived/users/*/crawls/*/page');
+  });
+
+  it('treats the test site as a list in dev stacks only (#50)', () => {
+    const flags = (template: Template) =>
+      Object.values(template.findResources('AWS::Lambda::Function'))
+        .map((f) => f.Properties.Environment?.Variables?.ALLOW_TEST_LISTS)
+        .filter((v) => v !== undefined);
+    const prod = Template.fromStack(
+      buildApp({ stage: 'prod', env: {} }).node.findChild('jobdeputy-prod-iad') as never,
+    );
+    expect(flags(t)).toEqual(['true']);
+    expect(flags(prod)).toEqual(['false']);
   });
 
   it('gives the crawls API only the calls it makes', () => {

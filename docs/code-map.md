@@ -79,21 +79,24 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `me.ts` | `GET /me`, `DELETE /me` (account deletion request, T12) |
 | `profile.ts` | profile, search preferences, target roles |
 | `documents.ts` | résumé upload (presigned POST), list, rename, default, delete |
-| `crawls.ts` | `POST/GET /me/crawls` (with the crawl's `aiSource`; counts the free platform run, T08b3), `GET /me/crawls/{id}`, `/me/crawl-settings` (daily and, T08c, jobs-per-company limits); replaces stale active crawls |
+| `crawls.ts` | `POST/GET /me/crawls` (with the crawl's `aiSource`; counts the free platform run, T08b3; #50: a GitHub list link is a list run, `listSourceOf`, and its view shows its progress), `GET /me/crawls/{id}`, `/me/crawl-settings` (daily and, T08c, jobs-per-company limits); replaces stale active crawls |
 | `jobs.ts` | `GET /me/jobs` (shown jobs, or `view=all`, with each job's `fit` and why), `GET /me/jobs/{jobId}` (read-only), `GET /me/companies` (#49: companies by their best job, each with its shown jobs ranked; from `usage` `COMPANY#`) |
 | `ai.ts` | `/me/ai-keys` (save with consent, list, check, delete; encrypts the key with KMS), `/me/ai-settings` (T08b2), `GET /me/ai-usage` (T08b3) |
 | `audit.ts` | `GET /me/audit` |
 | `account-guard.ts` | 410 on writes while a deletion is pending |
 | `audited.ts`, `errors.ts` | audit entry builder; error-to-HTTP mapping (409 `try-again`) |
 | `cognito.ts`, `pre-signup.ts` | email lookup; sign-up trigger (blocks reserved test domains) |
-| `test-site.ts` | dev-only pages the integration tests crawl |
+| `test-site.ts` | dev-only pages the integration tests crawl (#50: `list-simplify`, a list linking to them) |
 | `ping-jobs.ts` | dev-only T04 async test |
 
 ## apps/worker/src: queue and scheduled workers
 
 | File | Role |
 |---|---|
-| `crawl-worker.ts` | crawl queue: fetch, read jobs, filter and rank them (T08c), save, close missing jobs, finish |
+| `crawl-worker.ts` | crawl queue: fetch, read jobs, filter and rank them (T08c), save, close missing jobs, finish; #50: a list run's own step, and a company crawl's end moves its list on |
+| `lists/read-list.ts`, `lists/parse.ts` | #50: a GitHub list's roles: Simplify `listings.json` from the default branch, else the README's HTML or Markdown tables (`LIST_FETCH_LIMITS`); the dev test site's list |
+| `lists/pick-companies.ts` | #50: which companies a list run crawls: keyword filter and US places on each role, companies ranked by matches, the first 20 readable boards (`boardUrl`), the rest skipped and counted |
+| `lists/list-run.ts` | #50: `runList` (read once, choose, start), `advanceList` (queue the next company, 3 at once; pass over a busy board; end the list with totals and the merged candidates) |
 | `document-worker.ts`, `extract.ts` | résumé processing after the malware scan; PDF/DOCX text |
 | `key-check-worker.ts` | ai-keys queue: decrypts a key, one check call, records `valid` or `invalid` (T08b2) |
 | `deletion-worker.ts` | erases every user table and S3 prefix (T12) |
@@ -120,7 +123,8 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | File | Role |
 |---|---|
 | `db/src/transact.ts` | `transactWrite`: retries conflicts with jitter, then `ConcurrentUpdateError` |
-| `db/src/crawl-repository.ts` | sources, crawls, daily and active limits, finish |
+| `db/src/crawl-repository.ts` | sources, crawls, daily and active limits (#50: and the day's lists), finish (#50: a company crawl tells its list run), `claimSource`; `listCrawls` leaves company crawls out |
+| `db/src/list-run-repository.ts` | #50: a list run's writes on its `crawls` item: `choose`, `queueCompany` (one transaction with the company crawl and its board's source), `skipCompany` |
 | `db/src/job-repository.ts` | save jobs (idempotent, with the filter verdict and expiry), close missing, mark over the limit, list (shown or all), get |
 | `db/src/company-limit-repository.ts` | T08c: `usage` `COMPANY#`: each company's shown jobs, replaced at the version read; #49 `listShown` for `GET /me/companies` |
 | `db/src/relevance-repository.ts` | T08d: a crawl's scoring run: start, each task call with its tokens and scores in one transaction, end with an audit entry |
@@ -130,7 +134,7 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `db/src/ai-key-repository.ts` | `ai-keys` (save, check, delete, results; daily check limit) and `preferences` `AI_SETTINGS` |
 | `db/src/usage-counters.ts`, `versioned.ts`, `audit-repository.ts` | exact caps; optimistic versions; audit entries and paging |
 | `db/src/account-repository.ts`, `crawl-settings-repository.ts`, `ping-repository.ts`, `client.ts` | deletion record; user crawl and jobs-per-company limits; ping; DynamoDB client and condition helpers |
-| `shared/src/*.ts` | Zod schemas and constants per feature (`auth`, `crawl`, `documents`, `profile`, `ping`), `company-rank.ts` (T08c/#49: `compareRank`, how a company's shown jobs are ranked, shared by the crawl worker and `GET /me/companies`, and the cursor's schema), `ai.ts` (the pinned platform model; own-key providers, schemas, and limits), `http.ts` (problem details), `logger.ts` |
+| `shared/src/*.ts` | Zod schemas and constants per feature (`auth`, `crawl`, `documents`, `profile`, `ping`, `lists` (#50: `githubListFromUrl`, `listUrl`, list limits)), `company-rank.ts` (T08c/#49: `compareRank`, how a company's shown jobs are ranked, shared by the crawl worker and `GET /me/companies`, and the cursor's schema), `ai.ts` (the pinned platform model; own-key providers, schemas, and limits), `http.ts` (problem details), `logger.ts` |
 | `test-fixtures/src/index.ts` | synthetic PDF, DOCX, zip bomb, EICAR |
 | `llm/src/task.ts` | `defineTask`, `runTask`: 3 turns, token caps, timeout, strict zod output, `partial`, usage (the only Strands caller, 0009) |
 | `llm/src/models.ts` | `resolveModel`: the platform model on Bedrock in the cell Region, or the user's OpenAI or Anthropic key; no client retries |

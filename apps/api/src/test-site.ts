@@ -53,7 +53,74 @@ const postings = JSON.stringify([
   },
 ]).replaceAll('</', '<\\/');
 
-export const PAGES: Record<string, () => HttpResponse> = {
+/** A second company's careers page (#50): one job, in the US. */
+const secondPostings = JSON.stringify([
+  {
+    '@context': 'https://schema.org',
+    '@type': 'JobPosting',
+    title: 'Platform Engineer',
+    description: 'Run the platform. Synthetic posting for integration tests.',
+    datePosted: '2026-11-20',
+    employmentType: 'FULL_TIME',
+    hiringOrganization: { '@type': 'Organization', name: 'Example Second Co' },
+    jobLocation: {
+      '@type': 'Place',
+      address: {
+        '@type': 'PostalAddress',
+        addressLocality: 'Austin',
+        addressRegion: 'TX',
+        addressCountry: 'US',
+      },
+    },
+    url: '/test-site/jobs-second/platform-engineer',
+  },
+]).replaceAll('</', '<\\/');
+
+/**
+ * #50: a list in the Simplify format, its links on this site: two companies we can read (the
+ * first with two roles), one whose site we cannot read (skipped), one in Canada (not matched),
+ * and one closed role.
+ */
+function list(host: string): HttpResponse {
+  const at = (page: string) => `https://${host}/test-site/${page}`;
+  const row = (
+    company: string,
+    title: string,
+    locations: string[],
+    url: string,
+    active = true,
+  ) => ({
+    company_name: company,
+    title,
+    locations,
+    url,
+    active,
+    is_visible: true,
+    date_posted: 1795000000,
+  });
+  return {
+    statusCode: 200,
+    headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+    body: JSON.stringify([
+      row('Example Test Co', 'Backend Engineer', ['New York, NY'], at('jobs-schema-org')),
+      row('Example Test Co', 'Data Engineer', ['Remote in USA'], at('jobs-schema-org')),
+      row('Example Second Co', 'Platform Engineer', ['Austin, TX'], at('jobs-second')),
+      row('Unreadable Co', 'Software Engineer', ['Boston, MA'], 'https://example.com/jobs/1'),
+      row('Canada Co', 'Software Engineer', ['Toronto, ON'], at('jobs')),
+      row('Closed Co', 'Software Engineer', ['Denver, CO'], at('jobs'), false),
+    ]),
+  };
+}
+
+export const PAGES: Record<string, (event: APIGatewayProxyEventV2) => HttpResponse> = {
+  /** #50: a list of roles (`list-*` pages are lists on dev stacks). */
+  'list-simplify': (event) => list(event.requestContext.domainName),
+  /** #50: the second company in that list. */
+  'jobs-second': () =>
+    html(
+      200,
+      `<!doctype html><html lang="en"><head><title>Careers at Example Second Co</title><script type="application/ld+json">${secondPostings}</script></head><body><h1>Open roles</h1><p>Synthetic test page for JobDeputy's integration tests.</p></body></html>`,
+    ),
   /** A careers page with schema.org job data: two jobs to read (T07b). */
   'jobs-schema-org': () =>
     html(
@@ -95,6 +162,6 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<HttpRespon
   const name = event.pathParameters?.page ?? '';
   // Own keys only: `constructor` and friends are not pages.
   return Object.hasOwn(PAGES, name)
-    ? (PAGES[name] as () => HttpResponse)()
+    ? (PAGES[name] as (event: APIGatewayProxyEventV2) => HttpResponse)(event)
     : html(404, '<h1>Not found</h1>');
 }

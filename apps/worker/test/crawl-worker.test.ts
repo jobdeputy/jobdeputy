@@ -111,7 +111,10 @@ function setup(fetchImpl: FetchFn = async () => page(), fitInputs: FitInputs = N
         state.auditDetail = (audit as { detail?: unknown }).detail;
         return true;
       }),
+      getCrawl: vi.fn(async (): Promise<Crawl | undefined> => crawl()),
     },
+    runList: vi.fn(async () => undefined),
+    advanceList: vi.fn(async () => undefined),
     isBeingDeleted: vi.fn(async () => false),
     newFetcher: vi.fn((): FetchFn => fetch),
     storePage: vi.fn(async () => undefined),
@@ -527,6 +530,32 @@ describe('crawl worker: relevance and the company limit (T08c)', () => {
     expect(await candidatesOf(undefined)).toBeUndefined();
   });
 
+  it("#50: a list's company crawl keeps its share for the list's AI run, and moves the list on", async () => {
+    const inputs = {
+      profile: { roles: [role], skills: [] },
+      companyLimit: 1,
+      expiryDays: 7,
+      relevanceMaxJobs: 50,
+      relevanceMinScore: 30,
+    };
+    const { deps } = setup(async () => twoJobs(), inputs);
+    const start = deps.repo.start.getMockImplementation();
+    deps.repo.start.mockImplementation(async (...args) => {
+      const crawl = await start?.(...args);
+      return (
+        crawl && ({ ...crawl, aiSource: 'none', parentCrawlId: 'LIST', listShare: 1 } as Crawl)
+      );
+    });
+    expect(await processRecord(record(), deps)).toBe('succeeded');
+    const outcome = deps.repo.finish.mock.calls[0]?.[1];
+    expect(outcome?.status === 'succeeded' && outcome.candidates).toHaveLength(1);
+    expect(deps.advanceList).toHaveBeenCalledWith(USER, 'LIST');
+    // Moved on only after the crawl ended.
+    expect(deps.repo.finish.mock.invocationCallOrder[0]).toBeLessThan(
+      deps.advanceList.mock.invocationCallOrder[0] as number,
+    );
+  });
+
   it('a better job pushes out one another page listed', async () => {
     const inputs = {
       profile: { roles: [{ ...role, priority: 90 }], skills: [] },
@@ -706,5 +735,75 @@ describe('crawl worker: closed jobs (T07c)', () => {
     const merged = listed(['new-1', 'old-0'], previous);
     expect(merged).toHaveLength(MAX_LISTED_JOB_IDS);
     expect(merged.slice(0, 3)).toEqual(['new-1', 'old-0', 'old-1']);
+  });
+});
+
+describe('crawl worker: list runs (#50)', () => {
+  const asList = (deps: ReturnType<typeof setup>['deps'], over: Partial<Crawl>) => {
+    const start = deps.repo.start.getMockImplementation();
+    deps.repo.start.mockImplementation(async (...args) => {
+      const crawl = await start?.(...args);
+      return crawl && ({ ...crawl, ...over } as Crawl);
+    });
+  };
+
+  it("runs a list's own step instead of crawling its link", async () => {
+    const { deps, fetch, state } = setup();
+    asList(deps, { kind: 'list' });
+    expect(await processRecord(record(), deps)).toBe('succeeded');
+    expect(deps.runList).toHaveBeenCalledWith(
+      expect.objectContaining({ crawlId: CRAWL, kind: 'list' }),
+    );
+    expect(fetch).not.toHaveBeenCalled();
+    // The list stays running: its last company crawl ends it.
+    expect(state.status).toBe('running');
+  });
+
+  it('fails a list that is not a list, without retrying', async () => {
+    const { deps, state } = setup();
+    asList(deps, { kind: 'list' });
+    deps.runList.mockRejectedValue(new FetchError('not_a_list', false));
+    expect(await processRecord(record(), deps)).toBe('failed');
+    expect(state).toMatchObject({ status: 'failed', error: { code: 'not_a_list' } });
+  });
+
+  it('retries a list whose site is unreachable', async () => {
+    const { deps } = setup();
+    asList(deps, { kind: 'list' });
+    deps.runList.mockRejectedValue(new FetchError('unreachable', true));
+    await expect(processRecord(record(), deps)).rejects.toBeInstanceOf(RetryLaterError);
+  });
+
+  it('moves the list on when a company crawl fails', async () => {
+    const { deps, state } = setup(async () => {
+      throw new FetchError('blocked', false);
+    });
+    asList(deps, { parentCrawlId: 'LIST' });
+    expect(await processRecord(record(), deps)).toBe('failed');
+    expect(state.status).toBe('failed');
+    expect(deps.advanceList).toHaveBeenCalledWith(USER, 'LIST');
+  });
+
+  it('moves the list on when an ended company crawl is delivered again (its move was lost)', async () => {
+    const { deps, state } = setup();
+    state.status = 'succeeded';
+    deps.repo.getCrawl.mockResolvedValue({ crawlId: CRAWL, parentCrawlId: 'LIST' } as Crawl);
+    expect(await processRecord(record(), deps)).toBe('skipped');
+    expect(deps.advanceList).toHaveBeenCalledWith(USER, 'LIST');
+  });
+
+  it('retries when moving the list on fails, so the next delivery does it', async () => {
+    const { deps, state } = setup();
+    asList(deps, { parentCrawlId: 'LIST' });
+    deps.advanceList.mockRejectedValueOnce(new Error('throttled'));
+    await expect(processRecord(record(), deps)).rejects.toBeInstanceOf(RetryLaterError);
+    expect(state.status).toBe('succeeded');
+  });
+
+  it('never touches a list for a crawl of its own', async () => {
+    const { deps } = setup();
+    expect(await processRecord(record(), deps)).toBe('succeeded');
+    expect(deps.advanceList).not.toHaveBeenCalled();
+    expect(deps.runList).not.toHaveBeenCalled();
   });
 });

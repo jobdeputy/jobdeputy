@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { DERIVED_PREFIX, ulidId } from './documents.js';
+import { DEFAULT_LIST_COMPANIES, DEFAULT_LISTS_PER_DAY } from './lists.js';
 
 /** T06: crawl requests. Decisions: docs/decisions/0007-crawler.md. */
 export const MAX_URL_LENGTH = 2048;
@@ -22,6 +23,8 @@ export const CRAWL_ERRORS = {
   too_large: 'The page is too large.',
   needs_browser: 'This page only shows its content with JavaScript, which we cannot run yet.',
   unreadable_feed: "We could not read this job board's listing. Its format may have changed.",
+  /** #50: a GitHub repository with no list of roles we can read. */
+  not_a_list: 'We could not find a list of open roles in this repository.',
   tls_error: "The site's secure connection is broken (for example an expired certificate).",
   timeout: 'The site took too long to answer.',
   unreachable: 'The site could not be reached.',
@@ -184,6 +187,9 @@ export const crawlLimitsConfig = z
     relevanceMaxJobs: z.number().int().min(1).max(50).default(50),
     /** T08d: a score below this hides the job (`not_relevant`, reason `llm_low_score`). */
     relevanceMinScore: z.number().int().min(0).max(100).default(30),
+    /** #50: list runs a day (each also counts as 1 crawl), and companies crawled per list. */
+    listsPerDay: z.number().int().min(0).max(10).default(DEFAULT_LISTS_PER_DAY),
+    listCompanies: z.number().int().min(1).max(50).default(DEFAULT_LIST_COMPANIES),
   })
   .refine((c) => c.dailyDefault <= c.dailyMax, 'dailyDefault must not exceed dailyMax')
   .refine(
@@ -204,6 +210,8 @@ export const DEFAULT_CRAWL_LIMITS: CrawlLimitsConfig = {
   jobExpiryDays: 7,
   relevanceMaxJobs: 50,
   relevanceMinScore: 30,
+  listsPerDay: DEFAULT_LISTS_PER_DAY,
+  listCompanies: DEFAULT_LIST_COMPANIES,
 };
 
 /**

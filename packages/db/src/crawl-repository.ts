@@ -1,16 +1,17 @@
 import { createHash } from 'node:crypto';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import {
   type AiSource,
   type CrawlErrorCode,
   type CrawlStatus,
   isoWeek,
+  type ListSource,
   type RelevanceError,
   utcDay,
   utcMonth,
 } from '@jobdeputy/shared';
-import { type AuditInput, auditItem, type Page, queryNewestFirst } from './audit-repository.js';
+import { type AuditInput, auditItem, type Page } from './audit-repository.js';
 import { cancelledAt, isConditionFailure } from './client.js';
 import { transactWrite } from './transact.js';
 
@@ -22,7 +23,7 @@ export interface Source {
   url: string;
   normalizedUrl: string;
   /** `ats_board` once a crawl read it as a job board (T07b); otherwise `unknown`. */
-  kind: 'unknown' | 'ats_board';
+  kind: 'unknown' | 'ats_board' | 'list';
   /** The job board, for example `greenhouse` (T07b). */
   ats?: string;
   /** From the last successful crawl (T07b). */
@@ -52,7 +53,26 @@ export interface Crawl {
   sourceId: string;
   /** The normalized URL at crawl time. */
   url: string;
-  trigger: 'user';
+  /** #50: `list` for a company crawl a list run started. */
+  trigger: 'user' | 'list';
+  /** #50: a list run: it reads the list, then crawls its best companies as child crawls. */
+  kind?: 'list';
+  /** #50: where a list run reads its list. */
+  listSource?: ListSource;
+  /** #50: the list run that started this company crawl. */
+  parentCrawlId?: string;
+  /** #50: a company crawl keeps (and describes) at most this many candidates for the list's AI run. */
+  listShare?: number;
+  /** #50: what a list run read and chose (set once, when the list is read). */
+  list?: CrawlList;
+  /** #50: how many of `list.companies` have been queued (or skipped), in order. */
+  queuedCount?: number;
+  /** #50: company crawls queued or running now (a string set; at most `LIST_CONCURRENCY`). */
+  runningIds?: Set<string>;
+  /** #50: every company crawl queued, in order. */
+  childIds?: string[];
+  /** #50: company crawls that ended (succeeded or failed). */
+  childrenEnded?: number;
   /** T08b2: where this crawl's AI work gets its model (used from T08d). */
   aiSource?: AiSource;
   /**
@@ -84,6 +104,30 @@ export interface Crawl {
   createdAt: string;
   updatedAt: string;
   schemaVersion: 1;
+}
+
+/** #50: a company a list run chose: its name in the list, its board, and how many of its roles matched. */
+export interface ListCompany {
+  name: string;
+  /** The board's own link, crawled like a link the user gave. */
+  url: string;
+  matches: number;
+}
+
+/** #50: what a list run read. */
+export interface CrawlList {
+  /** Open roles in the list. */
+  rows: number;
+  /** Roles that passed the keyword filter (roles and US places). */
+  matched: number;
+  /** Companies with at least one matching role. */
+  companiesMatched: number;
+  /** Chosen companies, best first (at most the admin's `listCompanies`). */
+  companies: ListCompany[];
+  /** Companies ranked above the cut whose site we cannot read yet (#64). */
+  skipped: number;
+  /** Chosen companies not crawled because their board already had a crawl in progress. */
+  busy?: number;
 }
 
 /** T08d: why a scoring run stopped without scoring (shown to the user). */
@@ -152,6 +196,8 @@ export interface CrawlStats {
   jobsOverLimit?: number;
   /** T08d3: candidates' descriptions read from their own posting. */
   descriptions?: DescriptionStats;
+  /** #50: a list run's company crawls that succeeded and failed. */
+  companies?: { succeeded: number; failed: number };
 }
 
 /** T08d3: postings read for candidates whose board list has no description. */
@@ -198,6 +244,10 @@ export interface CrawlError {
 
 export const CRAWL_TTL_SECONDS = 180 * 24 * 60 * 60;
 const MAX_MESSAGE_LENGTH = 300;
+/** #50: queries one page of `listCrawls` may take (each up to 1 MB). */
+const MAX_LIST_READS = 5;
+/** #50: the most company crawls one list run starts (the admin maximum of `listCompanies`). */
+const MAX_LIST_CHILDREN = 50;
 
 /** A crawl of this page is already queued or running (see `Source.activeCrawlId`). */
 export class ActiveCrawlError extends Error {
@@ -277,6 +327,8 @@ export class CrawlRepository {
     maxActive: number;
     replacing?: string;
     aiSource?: AiSource;
+    /** #50: a list run: where it reads its list, and the lists allowed today. */
+    list?: { source: ListSource; perDay: number };
     /** T08b3: with the platform model, one free run is counted (exactly) against these. */
     platformRuns?: { perWeek: number; perMonth: number };
   }): Promise<Crawl> {
@@ -292,6 +344,7 @@ export class CrawlRepository {
       sourceId: input.sourceId,
       url: input.normalizedUrl,
       trigger: 'user',
+      ...(input.list ? { kind: 'list' as const, listSource: input.list.source } : {}),
       ...(input.aiSource ? { aiSource: input.aiSource } : {}),
       ...(aiRun ? { aiRun } : {}),
       status: 'queued',
@@ -304,38 +357,16 @@ export class CrawlRepository {
     try {
       await transactWrite(this.client, {
         TransactItems: [
-          {
-            Update: {
-              TableName: this.tables.sources,
-              Key: { userId: input.userId, sourceId: input.sourceId },
-              UpdateExpression: [
-                'SET #type = :source, #url = :url, normalizedUrl = :normalized',
-                '#kind = if_not_exists(#kind, :unknown)',
-                'companyConfirmed = if_not_exists(companyConfirmed, :false)',
-                'active = :true, schedule = if_not_exists(schedule, :manual)',
-                'lastCrawlId = :crawlId, activeCrawlId = :crawlId',
-                'createdAt = if_not_exists(createdAt, :now), updatedAt = :now, schemaVersion = :one',
-              ].join(', '),
-              ConditionExpression:
-                input.replacing === undefined
-                  ? 'attribute_not_exists(activeCrawlId)'
-                  : 'attribute_not_exists(activeCrawlId) OR activeCrawlId = :replacing',
-              ExpressionAttributeNames: { '#type': 'type', '#url': 'url', '#kind': 'kind' },
-              ExpressionAttributeValues: {
-                ':source': 'source',
-                ':url': input.url,
-                ':normalized': input.normalizedUrl,
-                ':unknown': 'unknown',
-                ':false': false,
-                ':true': true,
-                ':manual': { type: 'manual' },
-                ':crawlId': input.crawlId,
-                ':now': now,
-                ':one': 1,
-                ...(input.replacing !== undefined ? { ':replacing': input.replacing } : {}),
-              },
-            },
-          },
+          claimSource(this.tables.sources, {
+            userId: input.userId,
+            sourceId: input.sourceId,
+            url: input.url,
+            normalizedUrl: input.normalizedUrl,
+            crawlId: input.crawlId,
+            now,
+            ...(input.list ? { kind: 'list' as const } : {}),
+            ...(input.replacing !== undefined ? { replacing: input.replacing } : {}),
+          }),
           {
             Put: {
               TableName: this.tables.crawls,
@@ -354,9 +385,11 @@ export class CrawlRepository {
             Update: {
               TableName: this.tables.usage,
               Key: { userId: input.userId, sk: `DAY#${utcDay(at)}` },
-              UpdateExpression:
-                'SET crawls = if_not_exists(crawls, :zero) + :one, #type = :day, #ttl = :ttl, createdAt = if_not_exists(createdAt, :now), updatedAt = :now, schemaVersion = :one',
-              ConditionExpression: 'attribute_not_exists(crawls) OR crawls < :limit',
+              // #50: a list run is also counted in `lists`, only while the day has room for one.
+              UpdateExpression: `SET crawls = if_not_exists(crawls, :zero) + :one${input.list ? ', lists = if_not_exists(lists, :zero) + :one' : ''}, #type = :day, #ttl = :ttl, createdAt = if_not_exists(createdAt, :now), updatedAt = :now, schemaVersion = :one`,
+              ConditionExpression: input.list
+                ? '(attribute_not_exists(crawls) OR crawls < :limit) AND (attribute_not_exists(lists) OR lists < :lists)'
+                : 'attribute_not_exists(crawls) OR crawls < :limit',
               ExpressionAttributeNames: { '#type': 'type', '#ttl': 'ttl' },
               ExpressionAttributeValues: {
                 ':zero': 0,
@@ -365,6 +398,7 @@ export class CrawlRepository {
                 ':ttl': Math.floor(at.getTime() / 1000) + USAGE_DAY_TTL_SECONDS,
                 ':now': now,
                 ':limit': input.dailyLimit,
+                ...(input.list ? { ':lists': input.list.perDay } : {}),
               },
             },
           },
@@ -472,8 +506,37 @@ export class CrawlRepository {
     return res.Item as Crawl | undefined;
   }
 
-  listCrawls(userId: string, limit: number, after?: string): Promise<Page<Crawl>> {
-    return queryNewestFirst(this.client, this.tables.crawls, 'crawlId', userId, limit, after);
+  /**
+   * The user's own crawls, newest first. #50: a list run's company crawls are left out (they
+   * are newer than their list, and are reached through it); filtered pages are read until
+   * the page is full, at most `MAX_LIST_READS` reads.
+   */
+  async listCrawls(userId: string, limit: number, after?: string): Promise<Page<Crawl>> {
+    const items: Crawl[] = [];
+    let start = after;
+    for (let read = 0; read < MAX_LIST_READS; read += 1) {
+      const res = await this.client.send(
+        new QueryCommand({
+          TableName: this.tables.crawls,
+          KeyConditionExpression: 'userId = :u',
+          FilterExpression: 'attribute_not_exists(parentCrawlId)',
+          ExpressionAttributeValues: { ':u': userId },
+          ScanIndexForward: false,
+          // A list adds at most `listCompanies` (50) company crawls above it.
+          Limit: limit - items.length + MAX_LIST_CHILDREN,
+          ...(start !== undefined ? { ExclusiveStartKey: { userId, crawlId: start } } : {}),
+        }),
+      );
+      for (const item of (res.Items ?? []) as Crawl[]) {
+        items.push(item);
+        if (items.length === limit) return { items, next: item.crawlId };
+      }
+      const last = res.LastEvaluatedKey?.crawlId;
+      if (typeof last !== 'string') return { items };
+      start = last;
+    }
+    // Not full after the most reads allowed: the caller pages on from where they stopped.
+    return start !== undefined ? { items, next: start } : { items };
   }
 
   /** The IDs in the user's active set (queued or running crawls, possibly stale). */
@@ -553,7 +616,7 @@ export class CrawlRepository {
    * the source for the next crawl. False when the crawl was already finished.
    */
   async finish(
-    crawl: Pick<Crawl, 'userId' | 'crawlId' | 'sourceId' | 'aiRun'>,
+    crawl: Pick<Crawl, 'userId' | 'crawlId' | 'sourceId' | 'aiRun' | 'parentCrawlId'>,
     outcome: FinishOutcome,
     audit: Omit<AuditInput, 'userId'>,
   ): Promise<boolean> {
@@ -609,6 +672,26 @@ export class CrawlRepository {
             },
           },
           releaseActive(this.tables.usage, userId, [crawlId], now),
+          // #50: a company crawl tells its list run it ended, in the same transaction, so the
+          // list never waits for a crawl that is over. No condition: a list that ended early
+          // (stale) still lets its company crawls finish.
+          ...(crawl.parentCrawlId
+            ? [
+                {
+                  Update: {
+                    TableName: this.tables.crawls,
+                    Key: { userId, crawlId: crawl.parentCrawlId },
+                    UpdateExpression:
+                      'DELETE runningIds :id ADD childrenEnded :one SET updatedAt = :now',
+                    ExpressionAttributeValues: {
+                      ':id': new Set([crawlId]),
+                      ':one': 1,
+                      ':now': now,
+                    },
+                  },
+                },
+              ]
+            : []),
           // T08b3: a crawl that failed never reached its AI work: its free run is given back.
           ...(outcome.status === 'failed' && crawl.aiRun
             ? refundPlatformRun(this.tables.usage, userId, crawlId, crawl.aiRun, now)
@@ -662,6 +745,58 @@ export class CrawlRepository {
   }
 }
 
+/**
+ * Saves the source and makes `crawlId` its active crawl, only if it has none (or has the
+ * `replacing` one): one crawl of a page at a time, even when two requests race.
+ */
+export function claimSource(
+  table: string,
+  input: {
+    userId: string;
+    sourceId: string;
+    url: string;
+    normalizedUrl: string;
+    crawlId: string;
+    now: string;
+    /** #50: a list's source is always a list; any other source's kind is learned when crawled. */
+    kind?: 'list';
+    replacing?: string;
+  },
+) {
+  return {
+    Update: {
+      TableName: table,
+      Key: { userId: input.userId, sourceId: input.sourceId },
+      UpdateExpression: [
+        'SET #type = :source, #url = :url, normalizedUrl = :normalized',
+        input.kind ? '#kind = :kind' : '#kind = if_not_exists(#kind, :kind)',
+        'companyConfirmed = if_not_exists(companyConfirmed, :false)',
+        'active = :true, schedule = if_not_exists(schedule, :manual)',
+        'lastCrawlId = :crawlId, activeCrawlId = :crawlId',
+        'createdAt = if_not_exists(createdAt, :now), updatedAt = :now, schemaVersion = :one',
+      ].join(', '),
+      ConditionExpression:
+        input.replacing === undefined
+          ? 'attribute_not_exists(activeCrawlId)'
+          : 'attribute_not_exists(activeCrawlId) OR activeCrawlId = :replacing',
+      ExpressionAttributeNames: { '#type': 'type', '#url': 'url', '#kind': 'kind' },
+      ExpressionAttributeValues: {
+        ':source': 'source',
+        ':url': input.url,
+        ':normalized': input.normalizedUrl,
+        ':kind': input.kind ?? 'unknown',
+        ':false': false,
+        ':true': true,
+        ':manual': { type: 'manual' },
+        ':crawlId': input.crawlId,
+        ':now': input.now,
+        ':one': 1,
+        ...(input.replacing !== undefined ? { ':replacing': input.replacing } : {}),
+      },
+    },
+  };
+}
+
 /** The source's update after a crawl ends. DynamoDB cannot store an empty set: it is removed. */
 function sourceUpdateExpression(learned: SourceUpdate | undefined): string {
   const set = ['lastCrawledAt = :now', 'updatedAt = :now'];
@@ -713,6 +848,23 @@ export async function crawlsToday(
     }),
   );
   return Number(res.Item?.crawls ?? 0);
+}
+
+/** #50: how many list runs the user has started today (UTC). */
+export async function listsToday(
+  client: DynamoDBDocumentClient,
+  usageTable: string,
+  userId: string,
+  at: Date,
+): Promise<number> {
+  const res = await client.send(
+    new GetCommand({
+      TableName: usageTable,
+      Key: { userId, sk: `DAY#${utcDay(at)}` },
+      ConsistentRead: true,
+    }),
+  );
+  return Number(res.Item?.lists ?? 0);
 }
 
 /** Takes the crawl's ID out of the week's and month's platform runs (idempotent). */

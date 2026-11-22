@@ -432,6 +432,7 @@ export const en = {
         'This page only shows its jobs with JavaScript, which your deputy can’t run yet.',
       unreadable_feed:
         'Your deputy couldn’t read this job board’s list. Its format may have changed.',
+      not_a_list: 'Your deputy couldn’t find a list of open roles in this repository.',
       tls_error: 'The site’s secure connection is broken (for example an expired certificate).',
       timeout: 'The site took too long to answer.',
       unreachable: 'The site couldn’t be reached.',

@@ -78,6 +78,8 @@ The company limit is a snapshot in `usage` `COMPANY#<companyKey>`: the jobs show
 
 ## Layer 2, the AI scoring run (T08d)
 
+**List runs (#50):** a list's company crawls have no AI of their own (`aiSource: none`); each keeps its share of candidates, and the list run, when its last company crawl ends, hands on the 50 best across them. The run below then starts once, on the list ([crawl flow 3b](crawl.md#3b-a-list-of-roles-50)).
+
 ### How the run starts
 
 When the crawl worker marks a crawl `succeeded`, the crawls stream emits a `MODIFY`. A second EventBridge Pipe passes it to the relevance queue only when:
