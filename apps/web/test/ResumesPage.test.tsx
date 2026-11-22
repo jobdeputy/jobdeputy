@@ -613,7 +613,11 @@ describe('adding résumés on the Résumés page', { timeout: 30_000 }, () => {
   });
 
   it('says what happened to each file in a batch', async () => {
-    await renderPage([], createFakeApi({ delay: 30, checkMs: 0 }));
+    // Good.pdf's upload never ends, so its "ready" message cannot replace the batch's
+    // messages before they are read (it did on a busy machine with a 30 ms fake upload).
+    const api = createFakeApi({ delay: 0, checkMs: 0 });
+    vi.spyOn(api, 'upload').mockReturnValue(new Promise<void>(() => {}));
+    await renderPage([], api);
     pick(pdf('notes.txt'), pdf('Good.pdf'));
     await waitFor(() => expect(statusText()).toContain('notes.txt isn’t a PDF or DOCX file.'));
     expect(statusText()).toContain('Uploading Good.pdf.');
