@@ -25,6 +25,9 @@ export default defineConfig(({ mode }) => ({
   },
   test: {
     environment: 'happy-dom',
+    // A US time zone, as most of the launch's users are in (and never UTC, which hides bugs that
+    // read a UTC date in the viewer's zone, #49). Workers inherit it.
+    env: { TZ: 'America/New_York' },
     // Playwright owns e2e/; Vitest runs only the unit tests.
     include: ['test/**/*.test.{ts,tsx}'],
   },

@@ -36,29 +36,32 @@ export function JobsPage({ checkEvery }: { checkEvery?: number }) {
   useRenderAtDeadline(crawl);
   const listVersion = useListVersion(latest);
   return (
-    <div className="grid w-full max-w-[880px] content-start gap-8">
-      <PageIntro id="jobs-title" eyebrow={text.eyebrow} title={text.title} intro={text.intro} />
-      <Section
-        id="find-jobs"
-        icon={<LinkIcon className="size-[22px]" />}
-        title={text.find.title}
-        line={text.find.line}
-      >
-        <div className="mt-6 grid gap-6">
-          <FindJobs />
-          {latest.isError && latest.data === undefined ? (
-            <ReadFailed
-              // A new failure is a new alert, so the same words are read out again.
-              key={latest.errorUpdateCount}
-              error={latest.error}
-              retrying={latest.isFetching}
-              onRetry={() => latest.refetch()}
-            />
-          ) : (
-            <CrawlProgress crawl={crawl} />
-          )}
-        </div>
-      </Section>
+    // Wide enough for the companies beside a job's preview; the link form keeps its measure.
+    <div className="grid w-full max-w-[1120px] content-start gap-8">
+      <div className="grid w-full max-w-[880px] content-start gap-8">
+        <PageIntro id="jobs-title" eyebrow={text.eyebrow} title={text.title} intro={text.intro} />
+        <Section
+          id="find-jobs"
+          icon={<LinkIcon className="size-[22px]" />}
+          title={text.find.title}
+          line={text.find.line}
+        >
+          <div className="mt-6 grid gap-6">
+            <FindJobs />
+            {latest.isError && latest.data === undefined ? (
+              <ReadFailed
+                // A new failure is a new alert, so the same words are read out again.
+                key={latest.errorUpdateCount}
+                error={latest.error}
+                retrying={latest.isFetching}
+                onRetry={() => latest.refetch()}
+              />
+            ) : (
+              <CrawlProgress crawl={crawl} />
+            )}
+          </div>
+        </Section>
+      </div>
       <CompanyList version={listVersion} offline={latest.isPaused} />
     </div>
   );
