@@ -1,12 +1,10 @@
+import { MAX_DOCUMENT_TITLE } from '@jobdeputy/shared/documents';
 import { type FormEvent, type RefObject, useRef, useState } from 'react';
 import { Field } from '@/components/auth/fields.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet.tsx';
-import { copy } from '@/copy/index.ts';
+import { copy, fill } from '@/copy/index.ts';
 import { cn } from '@/lib/utils.ts';
-
-/** The API's longest name (packages/shared/src/documents.ts `updateDocumentInput`). */
-const MAX_TITLE = 200;
 
 /**
  * Rename a résumé (#33 piece 6b3; the round 7 prototype's `#rename-drawer`): the sign-in sheet
@@ -115,11 +113,11 @@ function RenameForm({
       <Field
         ref={inputRef}
         label={text.label}
-        hint={text.hint}
+        hint={fill(text.hint, { max: String(MAX_DOCUMENT_TITLE) })}
         error={tried && empty ? text.empty : null}
         value={typed}
         onChange={(event) => setTyped(event.target.value)}
-        maxLength={MAX_TITLE}
+        maxLength={MAX_DOCUMENT_TITLE}
         autoComplete="off"
         spellCheck={false}
         readOnly={pending}

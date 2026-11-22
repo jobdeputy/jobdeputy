@@ -312,13 +312,13 @@ describe('a résumé’s actions on the Résumés page', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Make default Second' }));
     expect(
-      await screen.findByText('This résumé changed elsewhere. Look again, then try again.'),
+      await screen.findByText('Your résumés changed elsewhere. Look again, then try again.'),
     ).toBeTruthy();
     expect(rows()[0]).toContain('Second, renamed');
     fireEvent.click(screen.getByRole('button', { name: 'Make default Second, renamed' }));
     await waitFor(() => expect(rows()[0]).toContain('Default'));
     expect(
-      screen.queryByText('This résumé changed elsewhere. Look again, then try again.'),
+      screen.queryByText('Your résumés changed elsewhere. Look again, then try again.'),
     ).toBeNull();
   });
 
@@ -349,6 +349,49 @@ describe('a résumé’s actions on the Résumés page', () => {
     expect(await within(rowItems()[0] as HTMLElement).findByText(why)).toBeTruthy();
     await waitFor(() => expect(statusText()).toContain(why));
     expect(rows()[1]).toContain('Default');
+  });
+
+  it('takes one Make default at a time', async () => {
+    const api = await renderPage(['First.pdf', 'Second.pdf', 'Third.pdf']);
+    const request = api.request.bind(api);
+    let answer = () => {};
+    const put = vi.spyOn(api, 'request').mockImplementation((method, path, body) =>
+      method === 'PUT'
+        ? new Promise((resolve) => {
+            answer = () => resolve(request(method, path, body));
+          })
+        : request(method, path, body),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Make default Third' }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Make default Second' }).getAttribute('aria-disabled'),
+      ).toBe('true'),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Make default Second' }));
+    expect(put.mock.calls.filter(([method]) => method === 'PUT')).toHaveLength(1);
+    answer();
+    await waitFor(() => expect(rows()[0]).toContain('Default'));
+    expect(
+      screen.getByRole('button', { name: 'Make default Second' }).getAttribute('aria-disabled'),
+    ).toBeNull();
+  });
+
+  it('says it is gone only once the list shows it', async () => {
+    const api = await renderPage();
+    const request = api.request.bind(api);
+    vi.spyOn(api, 'request').mockImplementation((method, path, body) => {
+      if (method === 'PUT') return Promise.reject(new ApiError('not-found', { status: 404 }));
+      if (method === 'GET' && path === '/me/documents') {
+        return Promise.reject(new ApiError('offline', { status: 0 }));
+      }
+      return request(method, path, body);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Make default Second' }));
+    const why = 'That didn’t change your default. Check your connection, then try again.';
+    expect(await within(rowItems()[0] as HTMLElement).findByText(why)).toBeTruthy();
+    expect(statusText()).not.toContain('is gone');
+    expect(rows()).toHaveLength(2);
   });
 
   it('downloads a ready one through the API’s link, under its file name', async () => {

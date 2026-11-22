@@ -427,8 +427,8 @@ export const en = {
     failed: {
       makeDefault: 'That didn’t change your default. Check your connection, then try again.',
       download: 'That didn’t download. Check your connection, then try again.',
-      /** It changed elsewhere meanwhile: the list is read again, and the person can try again. */
-      changed: 'This résumé changed elsewhere. Look again, then try again.',
+      /** Résumés changed elsewhere meanwhile: the list is read again, and the person can try again. */
+      changed: 'Your résumés changed elsewhere. Look again, then try again.',
       /** No longer ready (it was a download): read again, the row says why. */
       notReady: 'This résumé isn’t ready to download.',
     },
@@ -437,7 +437,7 @@ export const en = {
       title: 'Rename résumé',
       line: 'Change the name you see. The file stays exactly as it is.',
       label: 'Name',
-      hint: 'Up to 200 characters.',
+      hint: 'Up to {max} characters.',
       empty: 'Enter a name.',
       save: 'Save name',
       saving: 'Saving…',

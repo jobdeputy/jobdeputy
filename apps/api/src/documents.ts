@@ -76,7 +76,7 @@ function s3Deps(
         new GetObjectCommand({
           Bucket: bucket,
           Key: key,
-          ResponseContentDisposition: `attachment; filename="${fileName.replace(/[^\x20-\x7e]|"/g, '_')}"`,
+          ResponseContentDisposition: attachment(fileName),
         }),
         { expiresIn: DOWNLOAD_URL_SECONDS },
       ),
@@ -89,6 +89,20 @@ function s3Deps(
       );
     },
   };
+}
+
+/**
+ * The download's Content-Disposition: an attachment under its file name. Plain ASCII for old
+ * clients (anything else, and quotes, become `_`), and the real name in UTF-8 (RFC 6266 /
+ * RFC 5987 `filename*`), so "Résumé.pdf" saves as itself.
+ */
+export function attachment(fileName: string): string {
+  const ascii = fileName.replace(/[^\x20-\x7e]|["\\]/g, '_');
+  const utf8 = encodeURIComponent(fileName).replace(
+    /['()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${utf8}`;
 }
 
 function defaultDeps(): DocumentsDeps {
