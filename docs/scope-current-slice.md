@@ -19,7 +19,7 @@ The rules are agreed in [0013](decisions/0013-apply-flow-rules.md); the extensio
 3. For a company, JobDeputy writes **one tailored résumé** covering its top jobs, plus a cover letter where a job accepts one. The user previews it in the app.
 4. Each job gets an **ATS match score**. At 80% or more it is ready; below 80% the user sees a warning, the missing keywords, and **Re-tailor**, and may still apply.
 5. The user applies: opens the job and applies by hand, or lets the **extension** fill the form on the job's site, reviews it, and clicks Submit.
-6. The application is recorded with the exact résumé version used. After 3 applications to one company in 30 days, that company **cools down**: its new jobs still show, marked "Cooling down until <date>", with Apply turned off.
+6. The application is recorded with the exact résumé version used. After 3 applications to one company in 30 days, that company **cools down**: its new jobs still show, marked `Cooling down until <date>`, with Apply turned off.
 
 ## Milestones
 

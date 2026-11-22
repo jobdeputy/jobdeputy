@@ -20,7 +20,7 @@ The next slice ([scope](../scope-current-slice.md)) takes a user from a link to 
 - **One tailored résumé per company**, covering its top jobs (at most 3 shown per company). A cover letter ("letter to the hiring manager") is written only when a job accepts one. The résumé is the main thing.
 - **An ATS match score per job**, recommended threshold **80%**. Below it the app warns, lists the missing keywords, and offers **Re-tailor**; the user may still apply.
 - **Every tailored résumé is stored** and linked to its company and jobs, with a preview in the app. An application keeps the exact version it used.
-- **Per-company limit and cooldown:** 3 applications to one company in a **rolling 30 days**. During the cooldown the company's new jobs still show, marked "Cooling down until <date>", with Apply turned off.
+- **Per-company limit and cooldown:** 3 applications to one company in a **rolling 30 days**. During the cooldown the company's new jobs still show, marked `Cooling down until <date>`, with Apply turned off.
 - **The extension fills, the user submits.** It fills every field it can, then stops; the user reviews and clicks Submit. It never submits on its own.
 - **Lists of many companies** come from GitHub lists and public job boards. Each board's terms and robots rules are checked before it is added; India-only boards (such as Naukri) wait for the India cell.
 - The threshold, the limit, and the cooldown are configuration values with these defaults; user settings for them come later.
