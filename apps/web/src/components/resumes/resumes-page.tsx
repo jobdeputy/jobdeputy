@@ -93,9 +93,6 @@ export function ResumesPage({
   const [renameError, setRenameError] = useState<string | null>(null);
   const renameOpener = useRef<HTMLElement | null>(null);
   const renameGone = useRef(false);
-  // How many Make default are on their way, and whether two were at once (see makeDefault).
-  const defaulting = useRef(0);
-  const overlapped = useRef(false);
 
   useEffect(() => {
     if (!focusTo) return;
@@ -194,26 +191,20 @@ export function ResumesPage({
     const from = globalThis.document.activeElement;
     setRowError(null);
     track(document, 'default', true);
-    defaulting.current += 1;
-    // Another Make default on its way meanwhile: the answers may come in either order, so the
-    // list is read again (once both are done, the last read is what is saved) instead.
-    if (defaulting.current > 1) overlapped.current = true;
     try {
       const made = await api.request<Document>('PUT', `/me/documents/${document.documentId}`, {
         version: latest(document).version,
         isDefault: true,
       });
-      if (overlapped.current) await readAgain();
-      else
-        await change((list) =>
-          list.map((each) =>
-            each.documentId === made.documentId
-              ? made
-              : each.isDefault
-                ? { ...each, isDefault: false }
-                : each,
-          ),
-        );
+      await change((list) =>
+        list.map((each) =>
+          each.documentId === made.documentId
+            ? made
+            : each.isDefault
+              ? { ...each, isDefault: false }
+              : each,
+        ),
+      );
       setFocusTo({ documentId: made.documentId, action: 'download', from });
       say(fill(text.said.madeDefault, { name: made.title }));
     } catch (failure) {
@@ -225,8 +216,6 @@ export function ResumesPage({
       } else shown(document, why, from);
     } finally {
       track(document, 'default', false);
-      defaulting.current -= 1;
-      if (defaulting.current === 0) overlapped.current = false;
     }
   }
 
@@ -487,6 +476,9 @@ function Library({
   say: (words: string) => void;
 }) {
   const text = copy.resumesPage.library;
+  // One Make default at a time: the API refuses a second that overlaps the first (it checks the
+  // default it read is still the default), and their answers could come in either order.
+  const defaulting = [...busy].some((key) => key.endsWith(':default'));
   return (
     <Section
       id="library"
@@ -516,6 +508,7 @@ function Library({
                   key={document.documentId}
                   document={document}
                   busy={busy}
+                  defaulting={defaulting}
                   error={rowError?.documentId === document.documentId ? rowError.words : null}
                   handlers={handlers}
                 />
@@ -553,11 +546,14 @@ function Count({ count }: { count: number }) {
 function Row({
   document,
   busy,
+  defaulting,
   error,
   handlers,
 }: {
   document: Document;
   busy: ReadonlySet<string>;
+  /** A Make default is on its way (this row's, or another's: this one's waits). */
+  defaulting: boolean;
   /** Why its last action didn't go through. */
   error: string | null;
   handlers: RowHandlers;
@@ -608,6 +604,7 @@ function Row({
             data-action="default"
             pending={waiting('default')}
             pendingLabel={text.makingDefault}
+            aria-disabled={(defaulting && !waiting('default')) || undefined}
             onClick={() => handlers.onMakeDefault(document)}
           >
             {text.makeDefault}
