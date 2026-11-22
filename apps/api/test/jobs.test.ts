@@ -1,7 +1,8 @@
-import type { CompanyShown, Job } from '@jobdeputy/db';
+import type { CompanyShown, CrawlSettings, Job } from '@jobdeputy/db';
+import { DEFAULT_CRAWL_LIMITS } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
-import { type JobsDeps, route } from '../src/jobs.js';
+import { COMPANY_PAGE_READS, type JobsDeps, route } from '../src/jobs.js';
 
 const J1 = 'a'.repeat(32);
 
@@ -51,15 +52,28 @@ const job = (over: Partial<Job> = {}): Job => ({
   ...over,
 });
 
-function deps(over: Partial<JobsDeps['repo']> = {}, shown: CompanyShown[] = []) {
+function deps(
+  over: Partial<JobsDeps['repo']> = {},
+  shown: CompanyShown[] = [],
+  companyJobsLimit?: number,
+) {
   const repo = {
     list: vi.fn(async () => ({ items: [job()], next: J1 })),
     get: vi.fn(async (): Promise<Job | undefined> => job()),
-    getMany: vi.fn(async (): Promise<Job[]> => []),
+    getSummaries: vi.fn(async (): Promise<Job[]> => []),
     ...over,
   };
   const companies = { listShown: vi.fn(async () => shown) };
-  return { repo, companies } satisfies JobsDeps;
+  const limits = vi.fn(async () => ({ ...DEFAULT_CRAWL_LIMITS }));
+  const settings = {
+    get: vi.fn(
+      async (): Promise<CrawlSettings | undefined> =>
+        companyJobsLimit === undefined
+          ? undefined
+          : ({ version: 1, companyJobsLimit } as CrawlSettings),
+    ),
+  };
+  return { repo, companies, limits, settings } satisfies JobsDeps;
 }
 
 describe('GET /me/jobs', () => {
@@ -215,10 +229,15 @@ describe('GET /me/companies (#49)', () => {
       job({ jobId: id('d'), title: 'D', companyKey: 'ashby:initech' }),
     ),
   ];
-  const getMany = vi.fn(async (_u: string, ids: string[]) =>
-    stored.filter((j) => ids.includes(j.jobId)),
+  // As the projected read returns them: no description, only its hash (D has none).
+  const getSummaries = vi.fn(async (_u: string, ids: string[]) =>
+    stored
+      .filter((j) => ids.includes(j.jobId))
+      .map(({ description: _, ...j }) =>
+        j.jobId === id('d') ? (({ descriptionHash: __, ...rest }) => rest)(j) : j,
+      ),
   );
-  const call = async (query?: Record<string, string>, d = deps({ getMany }, shown)) => {
+  const call = async (query?: Record<string, string>, d = deps({ getSummaries }, shown)) => {
     const res = await route(event('GET /me/companies', { queryStringParameters: query }), d);
     return { status: res.statusCode, body: JSON.parse(res.body as string), d };
   };
@@ -240,20 +259,22 @@ describe('GET /me/companies (#49)', () => {
     expect(body).not.toHaveProperty('nextCursor');
     // Summaries only: no descriptions or internal fields.
     expect(body.companies[0].jobs[0]).not.toHaveProperty('description');
+    expect(body.companies[0].jobs[0].hasDescription).toBe(true);
+    expect(body.companies[2].jobs[0].hasDescription).toBe(false);
     expect(body.companies[0].jobs[0]).not.toHaveProperty('dedupeKey');
     expect(d.companies.listShown).toHaveBeenCalledWith('user-a');
-    expect(getMany).toHaveBeenCalledWith('user-a', [id('c'), id('b'), id('a'), id('d')]);
+    expect(getSummaries).toHaveBeenCalledWith('user-a', [id('c'), id('b'), id('a'), id('d')]);
   });
 
   it("pages with an opaque cursor, reading only the page's jobs", async () => {
     const first = await call({ limit: '2' });
     expect(view(first.body)).toEqual(['lever:globex Globex: C', 'greenhouse:acme Acme: B,A']);
     expect(typeof first.body.nextCursor).toBe('string');
-    getMany.mockClear();
+    getSummaries.mockClear();
     const second = await call({ limit: '2', cursor: first.body.nextCursor });
     expect(view(second.body)).toEqual(['ashby:initech -: D']);
     expect(second.body).not.toHaveProperty('nextCursor');
-    expect(getMany).toHaveBeenCalledWith('user-a', [id('d')]);
+    expect(getSummaries).toHaveBeenCalledWith('user-a', [id('d')]);
   });
 
   it('leaves out jobs hidden, closed or deleted since, and companies left with none', async () => {
@@ -277,8 +298,80 @@ describe('GET /me/companies (#49)', () => {
         limitState: 'over_limit',
       }),
     ]);
-    const { body } = await call({}, deps({ getMany: gone }, shown));
+    const { body } = await call({}, deps({ getSummaries: gone }, shown));
     expect(body.companies).toEqual([]);
+  });
+
+  it("caps each company at the user's jobs per company now, after leaving out hidden ones", async () => {
+    const { body } = await call({}, deps({ getSummaries }, shown, 1));
+    expect(view(body)).toEqual([
+      'lever:globex Globex: C',
+      'greenhouse:acme Acme: B',
+      'ashby:initech -: D',
+    ]);
+    // A hidden best job lets the next one in.
+    const hiddenBest = vi.fn(async (_u: string, ids: string[]) =>
+      stored
+        .filter((j) => ids.includes(j.jobId))
+        .map((j) => (j.jobId === id('b') ? { ...j, limitState: 'over_limit' as const } : j)),
+    );
+    const capped = await call({}, deps({ getSummaries: hiddenBest }, shown, 1));
+    expect(view(capped.body)).toContain('greenhouse:acme Acme: A');
+  });
+
+  it("uses the admin's default when the user chose none, or their setting can't be read", async () => {
+    // A company ranked under the old default (10) still has 4 shown: 3 are listed.
+    const four: CompanyShown[] = [
+      {
+        companyKey: 'greenhouse:acme',
+        shown: Object.fromEntries(
+          ['1', '2', '3', '4'].map((c, i) => [id(c), { p: 50, s: 90 - i }]),
+        ),
+      },
+    ];
+    const all = vi.fn(async (_u: string, ids: string[]) =>
+      ids.map((jobId) => job({ jobId, title: jobId[0] ?? '' })),
+    );
+    const titles = async (d: ReturnType<typeof deps>) =>
+      view((await call({}, d)).body as Parameters<typeof view>[0]);
+    expect(await titles(deps({ getSummaries: all }, four))).toEqual([
+      'greenhouse:acme Acme: 1,2,3',
+    ]);
+    const broken = deps({ getSummaries: all }, four, 1);
+    broken.settings.get.mockRejectedValue(new Error('throttled'));
+    expect(await titles(broken)).toEqual(['greenhouse:acme Acme: 1,2,3']);
+  });
+
+  it('fills a page with the next companies when hidden jobs leave some empty', async () => {
+    // Globex (the best) and Acme have nothing shown any more: Initech fills the page of 1.
+    const onlyD = vi.fn(async (_u: string, ids: string[]) =>
+      stored.filter((j) => ids.includes(j.jobId) && j.jobId === id('d')),
+    );
+    const { body } = await call({ limit: '1' }, deps({ getSummaries: onlyD }, shown));
+    expect(view(body)).toEqual(['ashby:initech -: D']);
+    expect(body).not.toHaveProperty('nextCursor');
+    expect(onlyD).toHaveBeenCalledTimes(3); // one per company, all within COMPANY_PAGE_READS
+  });
+
+  it('stops filling after a few reads, with a cursor past what it read', async () => {
+    const many: CompanyShown[] = Array.from({ length: 5 }, (_, i) => ({
+      companyKey: `co:${i}`,
+      shown: { [String(i).repeat(32)]: { p: 50, s: 90 - i } },
+    }));
+    const none = vi.fn(async () => []);
+    const first = await call({ limit: '1' }, deps({ getSummaries: none }, many));
+    expect(first.body.companies).toEqual([]);
+    expect(none).toHaveBeenCalledTimes(COMPANY_PAGE_READS);
+    // The next page starts after the last company read.
+    const fourth = vi.fn(async (_u: string, ids: string[]) =>
+      ids.map((jobId) => job({ jobId, title: jobId[0] ?? '', companyKey: `co:${jobId[0]}` })),
+    );
+    const next = await call(
+      { limit: '1', cursor: first.body.nextCursor },
+      deps({ getSummaries: fourth }, many),
+    );
+    const n = COMPANY_PAGE_READS;
+    expect(view(next.body)).toEqual([`co:${n} Acme: ${n}`]);
   });
 
   it('is empty before any crawl', async () => {

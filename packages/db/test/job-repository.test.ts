@@ -1,7 +1,7 @@
 import type { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { describe, expect, it, vi } from 'vitest';
-import { type JobPosting, JobRepository, SAVE_CONCURRENCY } from '../src/index.js';
+import { type JobPosting, JobRepository, SAVE_CONCURRENCY, SUMMARY_FIELDS } from '../src/index.js';
 
 const NOW = new Date('2026-09-29T12:00:00.000Z');
 const USER = '0f8fad5b-d9cb-469f-a165-70867728950e';
@@ -484,6 +484,27 @@ describe('JobRepository.withDescription (T08d3)', () => {
     const req = sent?.input.RequestItems.Jobs;
     expect(req).toMatchObject({ ProjectionExpression: 'jobId, descriptionHash' });
     expect(req).not.toHaveProperty('ConsistentRead');
+  });
+});
+
+describe('JobRepository.getSummaries (#49)', () => {
+  it('reads only the summary fields, every name aliased, strongly consistent', async () => {
+    const { c, send } = client(() => ({
+      Responses: { Jobs: [{ jobId: 'a', title: 'A', status: 'new', ttl: 1 }] },
+    }));
+    expect(await repo(c).getSummaries(USER, ['a', 'missing'])).toEqual([
+      { jobId: 'a', title: 'A', status: 'new', ttl: 1 },
+    ]);
+    const sent = send.mock.calls[0]?.[0] as
+      | { input: { RequestItems: Record<string, Record<string, unknown>> } }
+      | undefined;
+    const req = sent?.input.RequestItems.Jobs ?? {};
+    expect(req).toMatchObject({ ConsistentRead: true });
+    const names = req.ExpressionAttributeNames as Record<string, string>;
+    // Reserved words (status, ttl, filter) are safe only through names; never the description.
+    expect(Object.values(names).sort()).toEqual([...SUMMARY_FIELDS].sort());
+    expect(Object.values(names)).not.toContain('description');
+    expect(String(req.ProjectionExpression).split(', ').sort()).toEqual(Object.keys(names).sort());
   });
 });
 

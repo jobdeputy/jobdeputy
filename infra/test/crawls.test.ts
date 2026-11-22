@@ -128,11 +128,12 @@ describe('crawl pipeline (T06b)', () => {
     expect(api.flatMap((s) => [s.Action].flat()).some((a) => a.startsWith('s3:'))).toBe(false);
   });
 
-  it('lets the jobs API only read the jobs table and the companies it shows (T07b, #49)', () => {
+  it('lets the jobs API only read the jobs table, the companies it shows, and their limit (T07b, #49)', () => {
     const jobs = statementsFor('JobsApiFn');
     const dynamo = jobs.filter((s) => [s.Action].flat().some((a) => a.startsWith('dynamodb:')));
     expect(dynamo.flatMap((s) => [s.Action].flat()).sort()).toEqual([
       'dynamodb:BatchGetItem',
+      'dynamodb:GetItem',
       'dynamodb:GetItem',
       'dynamodb:Query',
       'dynamodb:Query',
@@ -143,6 +144,11 @@ describe('crawl pipeline (T06b)', () => {
       'dynamodb:Query',
     ]);
     expect(actionsOn(jobs, 'UsageTable')).toEqual(['dynamodb:Query']);
+    // The jobs-per-company limit: the user's setting and the admin's parameter, read only.
+    expect(actionsOn(jobs, 'PreferencesTable')).toEqual(['dynamodb:GetItem']);
+    const ssm = jobs.filter((s) => [s.Action].flat().some((a) => a.startsWith('ssm:')));
+    expect(ssm.flatMap((s) => [s.Action].flat())).toEqual(['ssm:GetParameter']);
+    expect(JSON.stringify(ssm[0]?.Resource)).toMatch(/:parameter",{"Ref":"CrawlLimits/);
     expect(jobs.flatMap((s) => [s.Action].flat()).some((a) => a.startsWith('s3:'))).toBe(false);
   });
 

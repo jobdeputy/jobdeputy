@@ -149,7 +149,7 @@ stateDiagram-v2
 
 `GET /me/jobs` shows **counted** jobs by default; `?view=all` shows everything. A job the user acted on never expires.
 
-`GET /me/companies` (#49) shows the same counted jobs **by company**: it reads the user's `COMPANY#` items, ranks the companies by their best job (the same order the worker ranks a company's jobs: AI score, role priority, newest), pages them (10 at a time, an opaque cursor), and batch-reads that page's jobs. Jobs hidden or closed since are left out. At most 3 jobs per company by default (the admin's `companyJobsDefault`, [runbook](../runbooks/crawl-limits.md)); a lower limit applies from each company's next crawl.
+`GET /me/companies` (#49) shows the same counted jobs **by company**: it reads the user's `COMPANY#` items, ranks the companies by their best job (the same order the worker ranks a company's jobs: AI score, role priority, newest), pages them (10 at a time, an opaque cursor), and batch-reads that page's job summaries (consistent, no descriptions). Jobs hidden or closed since are left out, and a company left with none gives its place to the next one. At most 3 jobs per company by default (the admin's `companyJobsDefault`, [runbook](../runbooks/crawl-limits.md)); the list applies the user's limit at once, the crawl from each company's next crawl. A crawl that re-ranks between two pages can move a company across the cursor (repeated or missed): the web app drops repeats and reads from the first page again when a crawl ends.
 
 ## Safety rules around the model
 

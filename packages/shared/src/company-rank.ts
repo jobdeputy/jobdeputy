@@ -3,6 +3,9 @@
  * best N per company) and the API (#49, which lists companies by their best job).
  */
 
+import { z } from 'zod';
+import { jobId } from './crawl.js';
+
 /** What the company's `usage` item remembers about each shown job, to rank it again later. */
 export interface ShownEntry {
   /** Priority of the role it matched (1–100). */
@@ -15,6 +18,29 @@ export interface ShownEntry {
 
 export interface RankedJob extends ShownEntry {
   jobId: string;
+}
+
+/**
+ * #49: a `RankedJob` read back from a client (`GET /me/companies`' cursor). Kept beside the
+ * interfaces so a new rank field is added to both; the type check below fails if they part.
+ */
+export const rankedJobSchema = z.strictObject({
+  jobId,
+  p: z.number().int(),
+  t: z.string().max(64).optional(),
+  s: z.number().int().optional(),
+});
+type SameKeys<A, B> = [keyof A] extends [keyof B]
+  ? [keyof B] extends [keyof A]
+    ? true
+    : never
+  : never;
+const _rankFieldsMatch: SameKeys<z.infer<typeof rankedJobSchema>, RankedJob> = true;
+void _rankFieldsMatch;
+
+/** A parsed cursor as a `RankedJob` (optional fields left out rather than undefined). */
+export function toRankedJob({ jobId, p, t, s }: z.infer<typeof rankedJobSchema>): RankedJob {
+  return { jobId, p, ...(t !== undefined ? { t } : {}), ...(s !== undefined ? { s } : {}) };
 }
 
 /**

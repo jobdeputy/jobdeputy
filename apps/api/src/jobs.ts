@@ -1,16 +1,27 @@
-import { CompanyLimitRepository, documentClient, type Job, JobRepository } from '@jobdeputy/db';
 import {
+  CompanyLimitRepository,
+  CrawlSettingsRepository,
+  documentClient,
+  type Job,
+  JobRepository,
+  type JobSummaryItem,
+  ssmCrawlLimits,
+} from '@jobdeputy/db';
+import {
+  type CrawlLimitsConfig,
   callerFromEvent,
-  companiesCursor,
   companiesPageQuery,
   compareRank,
   createLogger,
+  effectiveCompanyJobsLimit,
   type HttpResponse,
   jobId as jobIdSchema,
   jobsPageQuery,
   json,
   problem,
   type RankedJob,
+  rankedJobSchema,
+  toRankedJob,
   validationProblem,
 } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, Context } from 'aws-lambda';
@@ -18,24 +29,33 @@ import type { APIGatewayProxyEventV2WithJWTAuthorizer, Context } from 'aws-lambd
 const logger = createLogger('api-jobs');
 
 export interface JobsDeps {
-  repo: Pick<JobRepository, 'list' | 'get' | 'getMany'>;
+  repo: Pick<JobRepository, 'list' | 'get' | 'getSummaries'>;
   /** #49: each company's shown jobs (`usage` `COMPANY#` items), read-only. */
   companies: Pick<CompanyLimitRepository, 'listShown'>;
+  /** #49: the admin's limits (jobs shown per company), and the user's own choice. */
+  limits: () => Promise<CrawlLimitsConfig>;
+  settings: Pick<CrawlSettingsRepository, 'get'>;
 }
 
 function defaultDeps(): JobsDeps {
-  const { JOBS_TABLE_NAME, USAGE_TABLE_NAME } = process.env;
-  if (!JOBS_TABLE_NAME) throw new Error('JOBS_TABLE_NAME must be set');
-  if (!USAGE_TABLE_NAME) throw new Error('USAGE_TABLE_NAME must be set');
+  const { JOBS_TABLE_NAME, USAGE_TABLE_NAME, PREFERENCES_TABLE_NAME, CRAWL_LIMITS_PARAMETER } =
+    process.env;
+  if (!JOBS_TABLE_NAME || !USAGE_TABLE_NAME || !PREFERENCES_TABLE_NAME || !CRAWL_LIMITS_PARAMETER) {
+    throw new Error(
+      'JOBS_TABLE_NAME, USAGE_TABLE_NAME, PREFERENCES_TABLE_NAME and CRAWL_LIMITS_PARAMETER must be set',
+    );
+  }
   const client = documentClient();
   return {
     repo: new JobRepository(client, JOBS_TABLE_NAME),
     companies: new CompanyLimitRepository(client, USAGE_TABLE_NAME),
+    limits: ssmCrawlLimits(CRAWL_LIMITS_PARAMETER),
+    settings: new CrawlSettingsRepository(client, PREFERENCES_TABLE_NAME),
   };
 }
 
 /** What a list shows: everything but the description (which can be long) and internal fields. */
-export function jobSummary(j: Job) {
+export function jobSummary(j: JobSummaryItem) {
   return {
     jobId: j.jobId,
     title: j.title,
@@ -49,7 +69,7 @@ export function jobSummary(j: Job) {
     ...(j.applyUrl ? { applyUrl: j.applyUrl } : {}),
     ...(j.ats ? { ats: j.ats } : {}),
     ...(j.postedAt ? { postedAt: j.postedAt } : {}),
-    hasDescription: j.description !== undefined,
+    hasDescription: j.description !== undefined || j.descriptionHash !== undefined,
     firstSeenAt: j.firstSeenAt,
     lastSeenAt: j.lastSeenAt,
     ...(j.closedAt ? { closedAt: j.closedAt } : {}),
@@ -109,10 +129,22 @@ function decodeCursor(cursor: string): unknown {
 }
 
 /**
- * #49: the caller's companies, the one with the best job first, each with its shown jobs
- * (at most the per-company limit) ranked as the crawl ranked them. Read from the companies'
- * `COMPANY#` items, then one batch read of the page's jobs. Jobs hidden or closed since are
- * left out, so a page can be short and still have a next one.
+ * At most this many slices of companies are read to fill one page when jobs hidden or closed
+ * since leave companies empty; past it, the page is short and has a next one.
+ */
+export const COMPANY_PAGE_READS = 3;
+
+/**
+ * #49: the caller's companies, the one with the best job first, each with its shown jobs ranked
+ * as the crawl ranked them, at most the user's per-company limit now (a lower limit than the one a
+ * company was last ranked under applies at once, not only from its next crawl). Read from the
+ * companies' `COMPANY#` items (all of them, a few bytes each: the ranking is in memory), then the
+ * page's job summaries in a batch. Jobs hidden or closed since are left out; a company left with
+ * none is skipped and the next one read in its place (at most `COMPANY_PAGE_READS` slices).
+ *
+ * The cursor is the last company's best job. A crawl that re-ranks companies between two pages
+ * can move one across it, so a later page can repeat or miss a company: clients drop repeats and
+ * read from the start again when a crawl finishes.
  */
 async function companiesPage(
   userId: string,
@@ -120,7 +152,11 @@ async function companiesPage(
   after: RankedJob | undefined,
   deps: JobsDeps,
 ) {
-  const ranked = (await deps.companies.listShown(userId))
+  const [shown, perCompany] = await Promise.all([
+    deps.companies.listShown(userId),
+    companyJobsLimitFor(userId, deps),
+  ]);
+  const ranked = shown
     .map((c) => {
       const jobs = Object.entries(c.shown)
         .map(([jobId, entry]) => ({ jobId, ...entry }))
@@ -128,31 +164,61 @@ async function companiesPage(
       return { companyKey: c.companyKey, jobs, best: jobs[0] as RankedJob };
     })
     .sort((a, b) => compareRank(a.best, b.best));
-  const rest = after ? ranked.filter((c) => compareRank(after, c.best) < 0) : ranked;
-  const page = rest.slice(0, limit);
-  const found = new Map(
-    (
-      await deps.repo.getMany(
-        userId,
-        page.flatMap((c) => c.jobs.map((j) => j.jobId)),
-      )
-    ).map((j) => [j.jobId, j]),
-  );
-  const companies = page.flatMap((c) => {
-    const jobs = c.jobs
-      .map((r) => found.get(r.jobId))
-      .filter((j): j is Job => j !== undefined && j.closedAt === undefined)
-      .map(jobSummary)
-      .filter((j) => !j.hidden);
-    if (jobs.length === 0) return [];
-    const companyName = jobs.find((j) => j.companyName)?.companyName;
-    return [{ companyKey: c.companyKey, ...(companyName ? { companyName } : {}), jobs }];
-  });
-  const last = page.at(-1);
+  let rest = after ? ranked.filter((c) => compareRank(after, c.best) < 0) : ranked;
+  const companies: CompanyView[] = [];
+  let last: RankedJob | undefined;
+  for (let read = 0; read < COMPANY_PAGE_READS && companies.length < limit && rest.length; read++) {
+    const slice = rest.slice(0, limit - companies.length);
+    rest = rest.slice(slice.length);
+    const found = new Map(
+      (
+        await deps.repo.getSummaries(
+          userId,
+          slice.flatMap((c) => c.jobs.map((j) => j.jobId)),
+        )
+      ).map((j) => [j.jobId, j]),
+    );
+    for (const c of slice) {
+      last = c.best;
+      const jobs = c.jobs
+        .map((r) => found.get(r.jobId))
+        .filter((j): j is JobSummaryItem => j !== undefined && j.closedAt === undefined)
+        .map(jobSummary)
+        .filter((j) => !j.hidden)
+        .slice(0, perCompany);
+      if (jobs.length === 0) continue;
+      const companyName = jobs.find((j) => j.companyName)?.companyName;
+      companies.push({ companyKey: c.companyKey, ...(companyName ? { companyName } : {}), jobs });
+    }
+  }
   return {
     companies,
-    ...(rest.length > limit && last ? { nextCursor: encodeCursor(last.best) } : {}),
+    ...(rest.length > 0 && last ? { nextCursor: encodeCursor(last) } : {}),
   };
+}
+
+type CompanyView = {
+  companyKey: string;
+  companyName?: string;
+  jobs: ReturnType<typeof jobSummary>[];
+};
+
+/**
+ * The jobs shown per company for this user now: their own choice within the admin's maximum. If
+ * their setting can't be read, the admin's default applies (as the admin limits fall back to the
+ * built-in ones), rather than failing the whole list.
+ */
+async function companyJobsLimitFor(userId: string, deps: JobsDeps): Promise<number> {
+  const [config, settings] = await Promise.all([
+    deps.limits(),
+    deps.settings.get(userId).catch((error: unknown) => {
+      logger.warn('Could not read the crawl settings; using the default', {
+        error: error as Error,
+      });
+      return undefined;
+    }),
+  ]);
+  return effectiveCompanyJobsLimit(config, settings?.companyJobsLimit);
 }
 
 type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
@@ -184,10 +250,9 @@ export async function route(event: Event, deps: JobsDeps): Promise<HttpResponse>
       const { limit, cursor } = query.data;
       let after: RankedJob | undefined;
       if (cursor !== undefined) {
-        const decoded = companiesCursor.safeParse(decodeCursor(cursor));
+        const decoded = rankedJobSchema.safeParse(decodeCursor(cursor));
         if (!decoded.success) return validationProblem(decoded.error, requestId);
-        const { jobId, p, t, s } = decoded.data;
-        after = { jobId, p, ...(t !== undefined ? { t } : {}), ...(s !== undefined ? { s } : {}) };
+        after = toRankedJob(decoded.data);
       }
       return json(200, await companiesPage(caller.userId, limit, after, deps));
     }

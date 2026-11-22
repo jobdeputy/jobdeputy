@@ -6,14 +6,14 @@ import type {
   ShownJobs,
 } from '@jobdeputy/db';
 import { ShownConflictError } from '@jobdeputy/db';
-import { type CrawlLimitsConfig, effectiveCompanyJobsLimit } from '@jobdeputy/shared';
-import { type FilterProfile, filterJob } from './code-filter.js';
 import {
-  applyCompanyLimit,
+  type CrawlLimitsConfig,
   compareRank,
-  type LimitResult,
+  effectiveCompanyJobsLimit,
   type RankedJob,
-} from './company-limit.js';
+} from '@jobdeputy/shared';
+import { type FilterProfile, filterJob } from './code-filter.js';
+import { applyCompanyLimit, type LimitResult } from './company-limit.js';
 
 /** What the crawl needs to decide which jobs to show (read once per crawl). */
 export interface FitInputs {

@@ -145,19 +145,11 @@ export const jobsPageQuery = z.strictObject({
 
 /**
  * #49: `GET /me/companies` pages companies by their best job. The cursor is opaque to clients
- * (base64url JSON of the last company's best job, see `companiesCursor`).
+ * (base64url JSON of the last company's best job, `rankedJobSchema` in company-rank.ts).
  */
 export const companiesPageQuery = z.strictObject({
   limit: z.coerce.number().int().min(1).max(10).default(10),
   cursor: z.string().min(1).max(400).optional(),
-});
-
-/** The decoded cursor: the rank of the last company's best job. */
-export const companiesCursor = z.strictObject({
-  jobId,
-  p: z.number().int(),
-  t: z.string().max(64).optional(),
-  s: z.number().int().optional(),
 });
 
 /** Queue message from the crawls Pipe: the crawl's key only. */

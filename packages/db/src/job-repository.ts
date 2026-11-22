@@ -159,6 +159,35 @@ export interface SaveStats {
 
 /** Writes at the same time while saving one crawl's jobs: fast, and gentle on the table. */
 export const SAVE_CONCURRENCY = 10;
+/** #49: the fields a list of jobs shows (`descriptionHash` stands for "has a description"). */
+export const SUMMARY_FIELDS = [
+  'jobId',
+  'title',
+  'companyName',
+  'companyKey',
+  'locations',
+  'workplace',
+  'employmentType',
+  'salary',
+  'jobUrl',
+  'applyUrl',
+  'ats',
+  'postedAt',
+  'descriptionHash',
+  'firstSeenAt',
+  'lastSeenAt',
+  'closedAt',
+  'status',
+  'starred',
+  'filter',
+  'limitState',
+  'relevance',
+  'ttl',
+] as const satisfies readonly (keyof Job)[];
+
+export type JobSummaryItem = Pick<Job, (typeof SUMMARY_FIELDS)[number]> &
+  Partial<Pick<Job, 'description'>>;
+
 /** DynamoDB's limit of keys per BatchGetItem. */
 const BATCH_GET_MAX = 100;
 const BATCH_GET_ATTEMPTS = 4;
@@ -523,6 +552,20 @@ export class JobRepository {
     return (await this.batchGet(userId, jobIds, { ConsistentRead: true })) as unknown as Job[];
   }
 
+  /**
+   * #49: what a list shows of these jobs (`SUMMARY_FIELDS`: no description, no internal fields),
+   * strongly consistent: the web app reads the list again the moment a crawl ends, and must see
+   * the jobs it closed or hid. (A projection saves bytes, not read units.) Missing jobs are left out.
+   */
+  async getSummaries(userId: string, jobIds: string[]): Promise<JobSummaryItem[]> {
+    const names = Object.fromEntries(SUMMARY_FIELDS.map((field, i) => [`#s${i}`, field]));
+    return (await this.batchGet(userId, jobIds, {
+      ConsistentRead: true,
+      ProjectionExpression: Object.keys(names).join(', '),
+      ExpressionAttributeNames: names,
+    })) as unknown as JobSummaryItem[];
+  }
+
   /** T08d3: which of these jobs already have a description (missing jobs have none). */
   async withDescription(userId: string, jobIds: string[]): Promise<Set<string>> {
     const found = await this.batchGet(userId, jobIds, {
@@ -536,7 +579,11 @@ export class JobRepository {
   private async batchGet(
     userId: string,
     jobIds: string[],
-    options: { ConsistentRead?: boolean; ProjectionExpression?: string },
+    options: {
+      ConsistentRead?: boolean;
+      ProjectionExpression?: string;
+      ExpressionAttributeNames?: Record<string, string>;
+    },
   ): Promise<Record<string, unknown>[]> {
     const found: Record<string, unknown>[] = [];
     for (let i = 0; i < jobIds.length; i += BATCH_GET_MAX) {
