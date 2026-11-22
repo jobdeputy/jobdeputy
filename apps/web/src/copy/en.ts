@@ -438,7 +438,7 @@ export const en = {
     },
     preferences: {
       title: 'Job preferences',
-      line: 'What your deputy looks for, and what it sets aside.',
+      line: 'What your deputy looks for.',
       roles: {
         title: 'Target roles',
         none: 'None yet. Add the job titles your deputy should look for.',

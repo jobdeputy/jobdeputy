@@ -42,7 +42,9 @@ export function StepRoles({ onSaved, onBack }: { onSaved: () => void; onBack: ()
           />
         }
       >
-        {(saved) => <RolesForm saved={saved} place={PLACE} onSaved={onSaved} onCancel={onBack} />}
+        {(saved) => (
+          <RolesForm saved={saved} place={PLACE} onSaved={onSaved} onCancel={() => onBack()} />
+        )}
       </QueryRegion>
     </>
   );

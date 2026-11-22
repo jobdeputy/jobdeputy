@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { Field, TextAreaField } from '@/components/auth/fields.tsx';
 import { EditIcon, PersonIcon, TargetIcon } from '@/components/icons.tsx';
@@ -155,7 +155,7 @@ function JobPreferences({ say }: { say: (words: string) => void }) {
               />
             }
           >
-            {(saved) => <RoleTitles roles={saved} />}
+            {(saved) => <RoleTitles roles={saved} labelledBy="preferences-roles-title" />}
           </QueryRegion>
         }
         editor={(done) => <RolesEditor saved={roles.data ?? []} {...done} />}
@@ -165,7 +165,7 @@ function JobPreferences({ say }: { say: (words: string) => void }) {
 }
 
 /** The saved titles, as tags (the prototype's `.tag`), or that none are added yet. */
-function RoleTitles({ roles }: { roles: readonly Role[] }) {
+function RoleTitles({ roles, labelledBy }: { roles: readonly Role[]; labelledBy: string }) {
   if (roles.length === 0) {
     return (
       <p className="m-0 text-[0.9375rem] text-muted-foreground">
@@ -174,10 +174,7 @@ function RoleTitles({ roles }: { roles: readonly Role[] }) {
     );
   }
   return (
-    <ul
-      aria-labelledby="preferences-roles-title"
-      className="m-0 flex list-none flex-wrap gap-2 p-0"
-    >
+    <ul aria-labelledby={labelledBy} className="m-0 flex list-none flex-wrap gap-2 p-0">
       {roles.map((role) => (
         <li
           key={role.roleId}
@@ -194,9 +191,7 @@ function RoleTitles({ roles }: { roles: readonly Role[] }) {
 function RolesEditor({ saved, labelledBy, onSaved, onCancel }: Done & { saved: Role[] }) {
   const text = copy.profilePage;
   const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    box.current?.querySelector<HTMLElement>('input')?.focus();
-  }, []);
+  useOpenAtFirstField(box);
   return (
     <div ref={box} className={EDITOR_BOX}>
       <RolesForm
@@ -214,6 +209,13 @@ function RolesEditor({ saved, labelledBy, onSaved, onCancel }: Done & { saved: R
       />
     </div>
   );
+}
+
+/** A group's form opens at its first field (Edit is gone, so focus goes somewhere useful). */
+function useOpenAtFirstField(ref: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    ref.current?.querySelector<HTMLElement>('input, textarea')?.focus();
+  }, [ref]);
 }
 
 /** A group's form box (the prototype's `.profile-editor`). */
@@ -255,8 +257,13 @@ function Facts({ facts }: { facts: readonly FactRow[] }) {
 
 type FactRow = readonly [label: string, value: string | readonly string[] | undefined];
 
-/** How a group's form ends: saved, or cancelled (nothing saved). Both go back to the facts. */
-type Done = { labelledBy: string; onSaved: () => void; onCancel: () => void };
+/** How a group's form ends: saved, or cancelled. Both go back to what is saved. */
+type Done = {
+  labelledBy: string;
+  onSaved: () => void;
+  /** `partlySaved`: a save that failed partway had saved some of it (marked Saved, as it is). */
+  onCancel: (partlySaved?: boolean) => void;
+};
 
 /**
  * One group under its heading (the prototype's `.profile-group`), with Edit: the form replaces
@@ -323,7 +330,7 @@ function Group({
         ? editor({
             labelledBy: `${id}-title`,
             onSaved: () => close(true),
-            onCancel: () => close(false),
+            onCancel: (partlySaved) => close(partlySaved === true),
           })
         : view}
     </div>
@@ -348,10 +355,7 @@ function GroupForm<N extends string>({
 }) {
   const text = copy.profilePage;
   const { bind, pending, form, messages } = useProfileForm({ spec, profile, onSaved });
-  const { ref } = form;
-  useEffect(() => {
-    ref.current?.querySelector<HTMLElement>('input, textarea')?.focus();
-  }, [ref]);
+  useOpenAtFirstField(form.ref);
   return (
     <form {...form} aria-labelledby={labelledBy} className={cn(EDITOR_BOX, form.className)}>
       <div className="grid min-w-0 items-start gap-[21px] @[640px]:grid-cols-2">
@@ -362,7 +366,7 @@ function GroupForm<N extends string>({
         <Button type="submit" pending={pending} pendingLabel={copy.setUp.saving}>
           {text.save}
         </Button>
-        <Button type="button" variant="outline" onClick={onCancel} disabled={pending}>
+        <Button type="button" variant="outline" onClick={() => onCancel()} disabled={pending}>
           {text.cancel}
         </Button>
       </div>
