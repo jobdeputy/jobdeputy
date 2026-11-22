@@ -62,7 +62,8 @@ async function finalState(user: TestUser, documentId: string) {
 describe.concurrent('résumés (deployed)', () => {
   it('uploads a PDF, extracts its text, downloads it, and keeps it private', async () => {
     const pdf = makePdf([['JobDeputy integration test', 'Ada Lovelace, Engineer']]);
-    const { documentId, s3Status } = await upload(alice, 'Integration CV.pdf', PDF, pdf);
+    // An accented name: the download keeps it (RFC 5987 filename*), with a plain fallback.
+    const { documentId, s3Status } = await upload(alice, 'Integration Résumé.pdf', PDF, pdf);
     expect(s3Status).toBe(204);
 
     const doc = await finalState(alice, documentId);
@@ -75,7 +76,9 @@ describe.concurrent('résumés (deployed)', () => {
 
     const download = await fetch(doc.downloadUrl);
     expect(download.status).toBe(200);
-    expect(download.headers.get('content-disposition')).toContain('attachment');
+    expect(download.headers.get('content-disposition')).toBe(
+      `attachment; filename="Integration R_sum_.pdf"; filename*=UTF-8''Integration%20R%C3%A9sum%C3%A9.pdf`,
+    );
     expect(new Uint8Array(await download.arrayBuffer())).toEqual(pdf);
 
     // Bob can neither see, change, nor delete Alice's document.
