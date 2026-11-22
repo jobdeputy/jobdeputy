@@ -1,8 +1,13 @@
-import { type DragEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { AlertIcon, DocumentIcon, UploadIcon } from '@/components/icons.tsx';
 import { stageLine, statusLine } from '@/components/resumes/document-status.ts';
-import { pickRefusal, sendResume, useDropOnlyOn } from '@/components/resumes/send-resume.ts';
+import {
+  pickRefusal,
+  sendResume,
+  useDropOnlyOn,
+  useFileDrop,
+} from '@/components/resumes/send-resume.ts';
 import { Button } from '@/components/ui/button.tsx';
 import { Progress } from '@/components/ui/progress.tsx';
 import { QueryRegion } from '@/components/ui/query-region.tsx';
@@ -123,7 +128,6 @@ function ResumeForm({
   });
   const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
-  const [dragging, setDragging] = useState(false);
   const { spoken, say, hush } = useSaying();
   const picker = useRef<HTMLInputElement>(null);
   const fileLine = useRef<HTMLSpanElement>(null);
@@ -147,6 +151,9 @@ function ResumeForm({
   }, []);
 
   useDropOnlyOn(zone);
+  const drop = useFileDrop(([file]) => {
+    if (file) void add(file);
+  });
 
   /** Shows why something didn't work; a line still to be said no longer holds. */
   function fail(reason: string) {
@@ -277,13 +284,6 @@ function ResumeForm({
     if (here.current) cleared(document, true);
   }
 
-  function onDrop(event: DragEvent) {
-    event.preventDefault();
-    setDragging(false);
-    const [file] = event.dataTransfer.files;
-    if (file) void add(file);
-  }
-
   const uploading = held.kind === 'uploading';
   const busy = uploading || removing;
   // A file is in (being checked, or ready): the server carries on if the person moves on.
@@ -296,22 +296,10 @@ function ResumeForm({
       {held.kind === 'none' ? (
         // The zone takes a dropped file; its button (and the hidden picker) is the way in for
         // everyone else, so the zone itself is not a control.
-        // biome-ignore lint/a11y/noStaticElementInteractions: a drop target; the button inside is the control.
         <div
           ref={zone}
-          data-dragging={dragging || undefined}
-          onDragEnter={(event) => {
-            event.preventDefault();
-            setDragging(true);
-          }}
-          onDragOver={(event) => event.preventDefault()}
-          onDragLeave={(event) => {
-            // Leaving for one of its own children is still over the zone.
-            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-              setDragging(false);
-            }
-          }}
-          onDrop={onDrop}
+          data-dragging={drop.dragging || undefined}
+          {...drop.handlers}
           className="group grid justify-items-center gap-2 rounded-[22px] border-[1.5px] border-dashed border-line-strong bg-surface p-[21px] text-center transition-colors duration-180 data-dragging:border-green-line data-dragging:bg-green-wash sm:p-[34px]"
         >
           <span

@@ -1,5 +1,5 @@
 import { MAX_DOCUMENTS } from '@jobdeputy/shared/documents';
-import { type RefObject, useEffect } from 'react';
+import { type DragEvent, type RefObject, useEffect, useRef, useState } from 'react';
 import { refusalText } from '@/components/setup/parts.tsx';
 import { copy, fill } from '@/copy/index.ts';
 import { type Document, markUploadedHere, type StartedUpload } from '@/lib/api/documents.ts';
@@ -13,7 +13,7 @@ import { type ApiClient, ApiError, isFinal } from '@/lib/api/index.ts';
 export type Sent =
   | { kind: 'sent'; document: Document }
   | { kind: 'cancelled' }
-  | { kind: 'failed'; reason: string };
+  | { kind: 'failed'; reason: string; canRetry: boolean };
 
 /**
  * Starts the upload and sends the file. One started but never finished is deleted (it would wait a
@@ -37,7 +37,7 @@ export async function sendResume(
       api.request('DELETE', `/me/documents/${documentId}`).catch(() => undefined);
     }
     if (signal.aborted) return { kind: 'cancelled' };
-    return { kind: 'failed', reason: uploadRefusal(failure, started === undefined) };
+    return { kind: 'failed', ...uploadRefusal(failure, started === undefined) };
   }
   const document: Document = { ...started.document, status: 'pending', sizeBytes: file.size };
   markUploadedHere(document.documentId);
@@ -51,15 +51,56 @@ export function pickRefusal(reason: 'type' | 'empty' | 'size' | 'name', name: st
   return fill(line[reason], { name });
 }
 
-/** Why an upload didn't happen: refused when starting it (`starting`), or while sending it. */
-function uploadRefusal(failure: unknown, starting: boolean): string {
+/**
+ * Why an upload didn't happen: refused when starting it (`starting`), or while sending it; and
+ * whether sending the same file again may go through (not once it was refused for what it is,
+ * at the limit, or with the session over).
+ */
+function uploadRefusal(failure: unknown, starting: boolean): { reason: string; canRetry: boolean } {
   const text = copy.setUp.resume;
-  if (!(failure instanceof ApiError)) return text.uploadFailed;
-  if (starting && failure.status === 422) return fill(text.full, { max: String(MAX_DOCUMENTS) });
-  if (starting && failure.kind === 'invalid') return text.badName;
-  if (!starting && failure.kind === 'invalid') return text.uploadRefused;
-  if (isFinal(failure) || failure.kind === 'too-many') return refusalText(failure);
-  return text.uploadFailed;
+  if (!(failure instanceof ApiError)) return { reason: text.uploadFailed, canRetry: true };
+  if (starting && failure.status === 422) {
+    return { reason: fill(text.full, { max: String(MAX_DOCUMENTS) }), canRetry: false };
+  }
+  if (starting && failure.kind === 'invalid') return { reason: text.badName, canRetry: false };
+  if (!starting && failure.kind === 'invalid') {
+    return { reason: text.uploadRefused, canRetry: false };
+  }
+  if (isFinal(failure)) return { reason: refusalText(failure), canRetry: false };
+  if (failure.kind === 'too-many') return { reason: refusalText(failure), canRetry: true };
+  return { reason: text.uploadFailed, canRetry: true };
+}
+
+/**
+ * A drop zone's state and handlers: highlighted while files are dragged over it, its own children
+ * included (entries and leaves are counted: Safari gives a leave no `relatedTarget`).
+ */
+export function useFileDrop(onFiles: (files: File[]) => void) {
+  const [dragging, setDragging] = useState(false);
+  const depth = useRef(0);
+  return {
+    dragging,
+    handlers: {
+      onDragEnter(event: DragEvent) {
+        event.preventDefault();
+        depth.current += 1;
+        setDragging(true);
+      },
+      onDragOver(event: DragEvent) {
+        event.preventDefault();
+      },
+      onDragLeave() {
+        depth.current = Math.max(0, depth.current - 1);
+        if (depth.current === 0) setDragging(false);
+      },
+      onDrop(event: DragEvent) {
+        event.preventDefault();
+        depth.current = 0;
+        setDragging(false);
+        onFiles([...event.dataTransfer.files]);
+      },
+    },
+  };
 }
 
 /**

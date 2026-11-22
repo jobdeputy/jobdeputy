@@ -1,5 +1,5 @@
 import { MAX_DOCUMENTS } from '@jobdeputy/shared/documents';
-import { type DragEvent, type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { AlertIcon, DocumentIcon, UploadIcon } from '@/components/icons.tsx';
 import { Button } from '@/components/ui/button.tsx';
@@ -9,7 +9,7 @@ import { ACCEPT, checkFile, type Document } from '@/lib/api/documents.ts';
 import { useApi } from '@/lib/api/index.ts';
 import { cn } from '@/lib/utils.ts';
 import { stageLine } from './document-status.ts';
-import { pickRefusal, sendResume, useDropOnlyOn } from './send-resume.ts';
+import { pickRefusal, sendResume, useDropOnlyOn, useFileDrop } from './send-resume.ts';
 
 /** A file being added: on its way up, or not added, with why (and whether sending it again may help). */
 interface Adding {
@@ -37,13 +37,13 @@ export function AddResumes({
   children: ReactNode;
   /** How many the library holds now. */
   count: number;
-  onSent: (document: Document) => void;
+  /** Puts a file that is in into the library; the file is counted here until it is there. */
+  onSent: (document: Document) => Promise<void>;
   say: (words: string) => void;
 }) {
   const text = copy.resumesPage.upload;
   const api = useApi();
   const [adding, setAdding] = useState<Adding[]>([]);
-  const [dragging, setDragging] = useState(false);
   const zone = useRef<HTMLDivElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const choose = useRef<HTMLButtonElement>(null);
@@ -51,8 +51,6 @@ export function AddResumes({
   const serial = useRef(0);
   // The uploads under way (Cancel stops one; leaving the page stops them all).
   const sending = useRef(new Map<number, AbortController>());
-  // Read when files come in, before the list on screen has caught up with the last ones.
-  const onTheirWay = useRef(0);
   const here = useRef(true);
   useEffect(() => {
     here.current = true;
@@ -63,6 +61,7 @@ export function AddResumes({
     };
   }, []);
   useDropOnlyOn(zone);
+  const drop = useFileDrop(addAll);
 
   const full = count + adding.filter((each) => !each.failed).length >= MAX_DOCUMENTS;
   const fullLine = text.said.full;
@@ -88,54 +87,64 @@ export function AddResumes({
       say(fullLine);
       return;
     }
-    // Newest on top, as the library lists them.
-    for (const file of files) add(file);
+    // Newest on top, as the library lists them; what each one did is said at once (a line said
+    // after another in the same moment would cut it off).
+    say(files.map(add).join(' '));
   }
 
-  function add(file: File) {
+  /** Takes in one file: sent, or listed as not added. What happened, in words. */
+  function add(file: File): string {
     serial.current += 1;
     const id = serial.current;
     const checked = checkFile(file);
-    const noRoom = count + onTheirWay.current >= MAX_DOCUMENTS;
+    // The uploads under way count before the list on screen has caught up with them.
+    const noRoom = count + sending.current.size >= MAX_DOCUMENTS;
     if (!checked.ok || noRoom) {
-      const reason = !checked.ok
-        ? pickRefusal(checked.reason, file.name)
-        : fill(text.noRoom, { name: file.name, max: String(MAX_DOCUMENTS) });
-      const failed = { reason, canRetry: false };
+      const failed = !checked.ok
+        ? { reason: pickRefusal(checked.reason, file.name), canRetry: false }
+        : // Sent again once there is room.
+          {
+            reason: fill(text.noRoom, { name: file.name, max: String(MAX_DOCUMENTS) }),
+            canRetry: true,
+          };
       setAdding((now) => [{ id, file, name: file.name, progress: 0, failed }, ...now]);
-      say(reason);
-      return;
+      return failed.reason;
     }
     setAdding((now) => [{ id, file, name: checked.input.fileName, progress: 0 }, ...now]);
     void send(id, file, checked.input);
+    return fill(copy.setUp.resume.said.uploading, { name: checked.input.fileName });
   }
 
   async function send(id: number, file: File, input: { fileName: string; contentType: string }) {
     const name = input.fileName;
     const controller = new AbortController();
     sending.current.set(id, controller);
-    onTheirWay.current += 1;
-    say(fill(copy.setUp.resume.said.uploading, { name }));
     const sent = await sendResume(api, file, input, {
       signal: controller.signal,
       onProgress: (progress) => update(id, (each) => ({ ...each, progress })),
     });
+    // Counted as under way until the library has it, so a full library never looks to have room.
+    if (sent.kind === 'sent' && here.current) await onSent(sent.document);
     sending.current.delete(id);
-    onTheirWay.current -= 1;
     if (!here.current) return;
     if (sent.kind === 'failed') {
-      update(id, (each) => ({ ...each, failed: { reason: sent.reason, canRetry: true } }));
-      say(fill(text.said.failed, { name, reason: sent.reason }));
+      const { reason, canRetry } = sent;
+      update(id, (each) => ({ ...each, failed: { reason, canRetry } }));
+      say(fill(text.said.failed, { name, reason }));
       return;
     }
     focusChooseIfIn(id);
     forget(id);
-    if (sent.kind === 'cancelled') {
-      say(fill(copy.setUp.resume.said.cancelled, { name }));
-      return;
-    }
-    onSent(sent.document);
-    say(fill(copy.setUp.resume.said.checking, { name }));
+    say(
+      fill(
+        sent.kind === 'cancelled'
+          ? copy.setUp.resume.said.cancelled
+          : copy.setUp.resume.said.checking,
+        {
+          name,
+        },
+      ),
+    );
   }
 
   function retry(entry: Adding) {
@@ -145,10 +154,17 @@ export function AddResumes({
     }
     const checked = checkFile(entry.file);
     if (!checked.ok) return;
-    flushSync(() => update(entry.id, ({ failed: _, ...each }) => ({ ...each, progress: 0 })));
+    flushSync(() =>
+      update(entry.id, ({ failed: _, ...each }) => ({
+        ...each,
+        name: checked.input.fileName,
+        progress: 0,
+      })),
+    );
     // Its Try again is gone: focus goes to the file's line, where Enter does nothing.
     lines.current.get(entry.id)?.focus();
     void send(entry.id, entry.file, checked.input);
+    say(fill(copy.setUp.resume.said.uploading, { name: checked.input.fileName }));
   }
 
   function dismiss(entry: Adding) {
@@ -157,33 +173,15 @@ export function AddResumes({
     say(fill(text.said.dismissed, { name: entry.name }));
   }
 
-  function onDrop(event: DragEvent) {
-    event.preventDefault();
-    setDragging(false);
-    addAll([...event.dataTransfer.files]);
-  }
-
   return (
     <div className="grid gap-6">
       <div className="@container">
         {/* The zone takes dropped files; its button (and the hidden picker) is the way in for
             everyone else, so the zone itself is not a control. */}
-        {/* biome-ignore lint/a11y/noStaticElementInteractions: a drop target; the button inside is the control. */}
         <div
           ref={zone}
-          data-dragging={(dragging && !full) || undefined}
-          onDragEnter={(event) => {
-            event.preventDefault();
-            setDragging(true);
-          }}
-          onDragOver={(event) => event.preventDefault()}
-          onDragLeave={(event) => {
-            // Leaving for one of its own children is still over the zone.
-            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-              setDragging(false);
-            }
-          }}
-          onDrop={onDrop}
+          data-dragging={(drop.dragging && !full) || undefined}
+          {...drop.handlers}
           // With room, the parts go on one line (icon, words, button), so the zone is only as tall
           // as its words; narrower, a centred stack.
           className="group grid justify-items-center gap-2 rounded-[22px] border-[1.5px] border-dashed border-line-strong bg-surface p-[21px] text-center transition-colors duration-180 data-dragging:border-green-line data-dragging:bg-green-wash sm:p-[34px] @min-[640px]:grid-cols-[auto_minmax(0,1fr)_auto] @min-[640px]:gap-x-[21px] @min-[640px]:gap-y-1 @min-[640px]:justify-items-start @min-[640px]:text-start @min-[640px]:[grid-template-areas:'icon_title_action'_'icon_meta_action']"

@@ -80,15 +80,18 @@ export function ResumesPage({
     const before = stages.current;
     stages.current = new Map(list.map((each) => [each.documentId, each.status]));
     if (!before) return;
+    // Said in one line: a line said after another in the same moment would cut it off.
+    const lines: string[] = [];
     for (const each of list) {
       const was = before.get(each.documentId);
       if (was === undefined || was === each.status || !wasUploadedHere(each.documentId)) continue;
       const name = each.title;
       const said = copy.setUp.resume.said;
-      if (each.status === 'processing') say(fill(said.reading, { name }));
-      else if (each.status === 'ready') say(fill(said.ready, { name }));
-      else if (isUnusable(each)) say(fill(text.upload.said.unusable, { name }));
+      if (each.status === 'processing') lines.push(fill(said.reading, { name }));
+      else if (each.status === 'ready') lines.push(fill(said.ready, { name }));
+      else if (isUnusable(each)) lines.push(fill(text.upload.said.unusable, { name }));
     }
+    if (lines.length) say(lines.join(' '));
   }, [documents.data, say]);
 
   function ask(document: Document, from: HTMLElement) {
@@ -127,9 +130,11 @@ export function ResumesPage({
       return;
     }
     // The default went: read the list again for the one the API handed it to.
-    const now = await queryClient
-      .fetchQuery({ ...documentsQuery(api), staleTime: 0 })
-      .catch(() => undefined);
+    // Asked of the API itself, not through the list's query: a file coming in meanwhile cancels
+    // the list's reads (see `sent`).
+    const { queryKey: key, queryFn } = documentsQuery(api);
+    const now = await queryFn().catch(() => undefined);
+    if (now) queryClient.setQueryData(key, now);
     const next = now?.find((each) => each.isDefault && each.documentId !== document.documentId);
     say(
       now === undefined
@@ -221,7 +226,7 @@ function Library({
   headingRef: Ref<HTMLHeadingElement>;
   onDelete: (document: Document, from: HTMLElement) => void;
   /** A file added here is in. */
-  onSent: (document: Document) => void;
+  onSent: (document: Document) => Promise<void>;
   say: (words: string) => void;
 }) {
   const text = copy.resumesPage.library;

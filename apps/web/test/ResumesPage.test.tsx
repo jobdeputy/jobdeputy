@@ -328,6 +328,23 @@ describe('adding résumés on the Résumés page', { timeout: 30_000 }, () => {
     expect(screen.queryByRole('list', { name: 'Files you are adding' })).toBeNull();
   });
 
+  it('says what happened to each file in a batch', async () => {
+    await renderPage([], createFakeApi({ delay: 30, checkMs: 0 }));
+    pick(pdf('notes.txt'), pdf('Good.pdf'));
+    await waitFor(() => expect(statusText()).toContain('notes.txt isn’t a PDF or DOCX file.'));
+    expect(statusText()).toContain('Uploading Good.pdf.');
+  });
+
+  it('offers no Try again when sending the same file can’t help', async () => {
+    const api = createFakeApi({ delay: 0, checkMs: 0 });
+    vi.spyOn(api, 'upload').mockRejectedValueOnce(new ApiError('invalid', { status: 403 }));
+    await renderPage([], api);
+    pick(pdf('Refused.pdf'));
+    expect(await adding().findByText('The upload was refused. Try again.')).toBeTruthy();
+    expect(adding().queryByRole('button', { name: 'Try again Refused.pdf' })).toBeNull();
+    expect(adding().getByRole('button', { name: 'Dismiss Refused.pdf' })).toBeTruthy();
+  });
+
   it('stops an upload on Cancel and keeps nothing', async () => {
     const api = await renderPage([], createFakeApi({ delay: 30, checkMs: 0 }));
     pick(pdf('Stop.pdf'));
@@ -363,6 +380,15 @@ describe('adding résumés on the Résumés page', { timeout: 30_000 }, () => {
       expect(statusText()).toContain('Your library is full. Delete a résumé to add another.'),
     );
     expect(request).not.toHaveBeenCalled();
+    request.mockRestore();
+    // With room again, the file that didn't fit goes in on Try again.
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Resume 0' }));
+    const sheet = await screen.findByRole('alertdialog');
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Delete résumé' }));
+    await waitFor(() => expect(screen.getByText('9 of 10')).toBeTruthy());
+    fireEvent.click(adding().getByRole('button', { name: 'Try again Eleventh.pdf' }));
+    await waitFor(() => expect(screen.getByText('10 of 10')).toBeTruthy());
+    expect(rows()[0]).toContain('Eleventh');
   });
 });
 
