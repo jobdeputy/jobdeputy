@@ -128,6 +128,10 @@ test('creates an account, confirms it with the code, lands signed in, and signs 
   await expect(page.getByText('Done with boards.greenhouse.io: 12 jobs read.')).toBeVisible({
     timeout: 15_000,
   });
+  // The company it found, its best jobs ranked, each with its fit (#49 PR C).
+  const acme = page.getByRole('article', { name: 'Acme' });
+  await expect(acme.getByRole('listitem')).toHaveCount(3);
+  await expect(acme.getByText('Strong fit')).toBeVisible();
   await expectNoAccessibilityViolations(page);
   await expectNoHorizontalScroll(page);
   await page

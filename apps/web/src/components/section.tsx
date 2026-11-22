@@ -1,6 +1,13 @@
 import type { ReactNode, Ref } from 'react';
 import { cn } from '@/lib/utils.ts';
 
+/** The prototype's card (`.task-surface`): a section, or a card of its own such as a company's. */
+export const CARD_CLASS =
+  '@container min-w-0 rounded-[34px] border border-line-soft bg-surface p-[21px] shadow-panel sm:p-[34px]';
+
+/** A section's title (an h2). */
+export const SECTION_TITLE_CLASS = 'm-0 text-xl font-[700] tracking-[-0.02em]';
+
 /**
  * A page's section card (the round 7 prototype's `.task-surface`): its icon, its title (an h2,
  * `${id}-title`, which names the section) and a line under it, then its content. `aside` sits at
@@ -25,10 +32,7 @@ export function Section({
   children: ReactNode;
 }) {
   return (
-    <section
-      aria-labelledby={`${id}-title`}
-      className="@container min-w-0 rounded-[34px] border border-line-soft bg-surface p-[21px] shadow-panel sm:p-[34px]"
-    >
+    <section aria-labelledby={`${id}-title`} className={CARD_CLASS}>
       <div
         className={cn(
           'grid grid-cols-[44px_minmax(0,1fr)] items-start gap-[21px]',
@@ -46,7 +50,7 @@ export function Section({
             id={`${id}-title`}
             ref={headingRef}
             tabIndex={headingRef ? -1 : undefined}
-            className="m-0 text-xl font-[700] tracking-[-0.02em] outline-none"
+            className={cn(SECTION_TITLE_CLASS, 'outline-none')}
           >
             {title}
           </h2>

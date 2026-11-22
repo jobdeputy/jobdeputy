@@ -4,6 +4,7 @@ import { type FormEvent, useEffect, useReducer, useRef, useState } from 'react';
 import { Field } from '@/components/auth/fields.tsx';
 import { DeputyWorking } from '@/components/deputy/deputy-working.tsx';
 import { LinkIcon } from '@/components/icons.tsx';
+import { CompanyList } from '@/components/jobs/company-list.tsx';
 import { PageIntro } from '@/components/page-intro.tsx';
 import { Section } from '@/components/section.tsx';
 import { refusalText } from '@/components/setup/parts.tsx';
@@ -26,13 +27,14 @@ const text = copy.jobsPage;
 /**
  * The Job matches page (#49): a link in, the best jobs at each company out. Find jobs takes one
  * careers page; the deputy reads it in the background (the crawl), and the page follows the
- * newest crawl, so one started before a reload or in another tab is followed too. The companies
- * and their jobs come under it (#49 PR C).
+ * newest crawl, so one started before a reload or in another tab is followed too. Under it, the
+ * companies and their best jobs (CompanyList), read again whenever a crawl's work ends.
  */
 export function JobsPage({ checkEvery }: { checkEvery?: number }) {
   const latest = useLatestCrawl(checkEvery);
   const crawl = latest.data ?? null;
   useRenderAtDeadline(crawl);
+  const listVersion = useListVersion(latest);
   return (
     <div className="grid w-full max-w-[880px] content-start gap-8">
       <PageIntro id="jobs-title" eyebrow={text.eyebrow} title={text.title} intro={text.intro} />
@@ -57,8 +59,35 @@ export function JobsPage({ checkEvery }: { checkEvery?: number }) {
           )}
         </div>
       </Section>
+      <CompanyList version={listVersion} offline={latest.isPaused} />
     </div>
   );
+}
+
+/**
+ * What the companies list reflects: the newest crawl whose work ended, and how (read, scored, or
+ * stalled; a crawl that failed changed nothing). A new version reads the list again from the
+ * start, so a crawl that ended in another tab, or later than it seemed to (a stall that then
+ * finished), counts too. While a crawl is at work the version stays. Undefined until the newest
+ * crawl is known, so the list is never read just before a crawl is seen as ended.
+ */
+function useListVersion(latest: ReturnType<typeof useLatestCrawl>): string | undefined {
+  const last = useRef<string | undefined>(undefined);
+  if (latest.data === undefined && !latest.isError) return undefined;
+  const crawl = latest.data ?? null;
+  if (crawl && (isCrawling(crawl) || crawl.status === 'failed')) {
+    last.current ??= 'open';
+    return last.current;
+  }
+  last.current = crawl
+    ? [
+        crawl.crawlId,
+        crawl.status,
+        crawl.relevance?.status ?? '',
+        isStalled(crawl) ? 'stalled' : '',
+      ].join(':')
+    : 'none';
+  return last.current;
 }
 
 /**

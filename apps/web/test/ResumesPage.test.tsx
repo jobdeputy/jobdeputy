@@ -550,7 +550,9 @@ const adding = () => within(screen.getByRole('list', { name: 'Files you are addi
 
 describe('adding résumés on the Résumés page', { timeout: 30_000 }, () => {
   it('uploads a chosen file with its progress, then follows it in the library until ready', async () => {
-    await renderPage(['First.pdf'], createFakeApi({ delay: 30, checkMs: 100 }));
+    // The server's check on the test's own clock, so a slow run never skips a stage.
+    let t = Date.now();
+    await renderPage(['First.pdf'], createFakeApi({ delay: 30, checkMs: 100, now: () => t }));
     pick(pdf('Second.pdf'));
     expect(await screen.findByRole('progressbar', { name: 'Uploading Second.pdf' })).toBeTruthy();
     expect(adding().getByText('Uploading · step 1 of 3')).toBeTruthy();
@@ -559,6 +561,7 @@ describe('adding résumés on the Résumés page', { timeout: 30_000 }, () => {
     expect(screen.queryByRole('list', { name: 'Files you are adding' })).toBeNull();
     expect(rows()[0]).toBe('SecondChecking it for malware · step 2 of 3Delete Second');
     expect(screen.getByText('2 of 10')).toBeTruthy();
+    t += 200;
     await waitFor(() => expect(statusText()).toContain('Second is ready.'));
     expect(rows()[0]).toBe('SecondPDF · 180 kBDelete Second');
   });

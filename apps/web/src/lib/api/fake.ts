@@ -71,7 +71,7 @@ export function createFakeApi({
   checkMs?: number;
   /** How long each stage of a crawl takes (queued, reading, scoring). */
   crawlMs?: number;
-  /** The crawls' clock: a test can hold it and move it on, rather than race the real one. */
+  /** The clock of the server's work (crawls, the résumé check): a test can hold it and move it on. */
   now?: () => number;
   /** Who is signed in; nobody is refused as the API would (401). */
   user?: () => Promise<string | null>;
@@ -116,7 +116,7 @@ export function createFakeApi({
   /** A résumé as the API shows it now: its status moves on with time once its file is in. */
   function documentView({ view, uploadedAt }: FakeDocument): Record<string, unknown> {
     if (uploadedAt === undefined) return view;
-    const since = Date.now() - uploadedAt;
+    const since = now() - uploadedAt;
     if (since < checkMs || /still-checking/i.test(view.fileName)) {
       return { ...view, status: 'pending' };
     }
@@ -145,7 +145,7 @@ export function createFakeApi({
       for (const mine of documents.values()) {
         const document = mine.find(({ view }) => view.documentId === key);
         if (document) {
-          document.uploadedAt = Date.now();
+          document.uploadedAt = now();
           document.view = { ...document.view, sizeBytes: file.size };
         }
       }
@@ -294,6 +294,9 @@ export function createFakeApi({
         const latest = myCrawls[0];
         return { crawls: latest ? [crawlView(latest)] : [] } as T;
       }
+      if (path.startsWith('/me/companies') && method === 'GET') {
+        return { companies: fakeCompanies(myCrawls.map(crawlView)) } as T;
+      }
       if (path === '/me/crawls' && method === 'POST') {
         // The API's own check of the address (packages/shared/src/crawl.ts), then one at a time.
         const checked = parseCrawlUrl(String((body as { url?: unknown })?.url ?? ''));
@@ -339,6 +342,66 @@ export function createFakeApi({
     },
   };
 }
+
+/**
+ * The companies the fake's finished crawls found (#49 PR C), newest crawl first, one per link:
+ * named from the link ("boards.greenhouse.io/acme" is Acme), with three jobs, ranked. A link with
+ * "no-ai" in it was ranked without AI (no scores); "nothing-fits" found none that fit.
+ */
+function fakeCompanies(crawled: Record<string, unknown>[]): Record<string, unknown>[] {
+  const seen = new Set<string>();
+  const companies: Record<string, unknown>[] = [];
+  for (const crawl of crawled) {
+    if (crawl.status !== 'succeeded' || /nothing-fits/i.test(String(crawl.url))) continue;
+    const url = new URL(String(crawl.url));
+    const slug = url.pathname.split('/').filter(Boolean)[0] ?? url.hostname.split('.')[0] ?? 'x';
+    const key = `fake:${slug.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const name = slug.charAt(0).toUpperCase() + slug.slice(1).replace(/-/g, ' ');
+    const scored = !/no-ai/i.test(url.href);
+    companies.push({
+      companyKey: key,
+      companyName: name,
+      jobs: FAKE_JOBS.map((job, i) => ({
+        jobId: `${String(companies.length)}${String(i)}`.padEnd(32, 'a'),
+        title: job.title,
+        companyKey: key,
+        companyName: name,
+        locations: [{ text: job.place }],
+        ...(job.workplace ? { workplace: job.workplace } : {}),
+        jobUrl: `${url.origin}${url.pathname.replace(/\/$/, '')}/jobs/${i + 1}`,
+        firstSeenAt: String(crawl.createdAt),
+        ...(scored ? { relevance: { score: job.score, reasons: job.reasons } } : {}),
+      })),
+    });
+  }
+  return companies;
+}
+
+const FAKE_JOBS = [
+  {
+    title: 'Senior Backend Engineer',
+    place: 'New York, NY',
+    workplace: 'hybrid',
+    score: 86,
+    reasons: ['Matches your target role Backend engineer', 'Asks for TypeScript and AWS'],
+  },
+  {
+    title: 'Platform Engineer, Developer Experience',
+    place: 'Remote, United States',
+    workplace: 'remote',
+    score: 63,
+    reasons: ['Close to Platform engineer', 'Kubernetes is not on your résumé'],
+  },
+  {
+    title: 'Staff Software Engineer, Payments',
+    place: 'San Francisco, CA',
+    workplace: 'onsite',
+    score: 41,
+    reasons: ['More senior than your roles'],
+  },
+] as const;
 
 interface FakeCrawl {
   view: Record<string, unknown>;
