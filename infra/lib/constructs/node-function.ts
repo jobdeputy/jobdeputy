@@ -1,12 +1,53 @@
-import { dirname, join } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Duration, RemovalPolicy } from 'aws-cdk-lib';
 import { Architecture, Runtime } from 'aws-cdk-lib/aws-lambda';
-import { NodejsFunction, OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
+import { type BundlingOptions, NodejsFunction, OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 
 export const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+
+/** How every function is bundled (esbuild); infra/test/bundling.test.ts runs a bundle made with it. */
+export const BUNDLING = {
+  format: OutputFormat.ESM,
+  target: 'node22',
+  sourceMap: true,
+  minify: true,
+  // The AWS SDK v3 ships with the Lambda runtime.
+  externalModules: ['@aws-sdk/*'],
+  // CommonJS names in an ES module bundle: `require` for packages that call it, and #51
+  // `__filename`/`__dirname`, which pdfkit reads when it loads.
+  banner: [
+    "import { createRequire } from 'module';",
+    "import { fileURLToPath as __jdFileURLToPath } from 'url';",
+    'const require = createRequire(import.meta.url);',
+    'const __filename = __jdFileURLToPath(import.meta.url);',
+    "const __dirname = __jdFileURLToPath(new URL('.', import.meta.url));",
+  ].join(' '),
+  // #51: fonts imported as bytes (the résumé PDF embeds Roboto; apps/worker/src/fonts.d.ts).
+  loader: { '.ttf': 'binary' } as const,
+} satisfies BundlingOptions;
+
+/**
+ * A file inside a dependency's dependency, found the way Node finds it from `from` (a package
+ * directory in the repo): `chain` names each package in turn, the last with the file's path.
+ */
+export function packageFile(from: string, chain: readonly string[]): string {
+  let at = join(REPO_ROOT, from, 'package.json');
+  for (const name of chain) at = createRequire(at).resolve(name);
+  return at;
+}
+
+/**
+ * #51: files the résumé renderers read from disk beside their code, which esbuild leaves out:
+ * fontkit's line-breaking data (`unicode-properties` reads `./data.trie` next to the module, so
+ * next to the bundle).
+ */
+export const RENDER_FILES = [
+  packageFile('apps/worker', ['pdfmake', 'pdfkit', 'fontkit', 'unicode-properties/data.trie']),
+];
 
 export interface AppFunctionProps {
   /** Path from the repo root, for example `apps/api/src/ping-jobs.ts`. */
@@ -15,6 +56,8 @@ export interface AppFunctionProps {
   readonly memorySize?: number;
   readonly environment?: Record<string, string>;
   readonly removalPolicy: RemovalPolicy;
+  /** Files (absolute paths in the repo) copied beside the bundle, for code that reads them at run time. */
+  readonly copyFiles?: readonly string[];
 }
 
 /** Node 22 on ARM64, bundled with esbuild, logs kept 14 days (decision 0005). */
@@ -42,14 +85,20 @@ export class AppFunction extends Construct {
         ...props.environment,
       },
       bundling: {
-        format: OutputFormat.ESM,
-        target: 'node22',
-        sourceMap: true,
-        minify: true,
-        // The AWS SDK v3 ships with the Lambda runtime.
-        externalModules: ['@aws-sdk/*'],
-        banner:
-          "import { createRequire } from 'module'; const require = createRequire(import.meta.url);",
+        ...BUNDLING,
+        ...(props.copyFiles?.length
+          ? {
+              commandHooks: {
+                beforeBundling: () => [],
+                beforeInstall: () => [],
+                // Paths from the input directory, so this works in Docker bundling too.
+                afterBundling: (inputDir: string, outputDir: string) =>
+                  (props.copyFiles ?? []).map(
+                    (file) => `cp "${join(inputDir, relative(REPO_ROOT, file))}" "${outputDir}/"`,
+                  ),
+              },
+            }
+          : {}),
       },
     });
   }

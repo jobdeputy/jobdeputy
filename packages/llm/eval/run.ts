@@ -6,6 +6,7 @@ import { BedrockModel } from '@strands-agents/sdk/models/bedrock';
 import { type ModelSource, resolveModel } from '../src/models.js';
 import { relevanceCases } from './cases/relevance.js';
 import { smokeCases } from './cases/smoke.js';
+import { structureCases } from './cases/structure.js';
 import { tailoringCases } from './cases/tailoring.js';
 import {
   compare,
@@ -13,6 +14,7 @@ import {
   evalJobKeywords,
   evalRelevance,
   evalSmoke,
+  evalStructure,
   evalTailoring,
   summary,
   summaryText,
@@ -20,7 +22,7 @@ import {
 
 // Runs the eval against the real platform model (costs money; about $0.01 for every task with
 // 2 runs). Used by PRs that change a prompt, schema, or model, and by Nightly.
-//   pnpm --filter @jobdeputy/llm eval [--task smoke|relevance|job-keywords|tailor-resume|all]
+//   pnpm --filter @jobdeputy/llm eval [--task smoke|relevance|job-keywords|tailor-resume|structure-resume|all]
 //     [--runs 2] [--summary out.md] [--summary-text out.txt] [--update-baseline]
 //     [--model <Bedrock model ID>]
 // --model compares another Bedrock model with the platform model's baseline (decision 0015:
@@ -69,6 +71,7 @@ const suites: Record<string, () => Promise<EvalReport>> = {
   relevance: () => evalRelevance(relevanceCases, source, runs),
   'job-keywords': () => evalJobKeywords(tailoringCases, source, runs),
   'tailor-resume': () => evalTailoring(tailoringCases, source, runs),
+  'structure-resume': () => evalStructure(structureCases, source, runs),
 };
 const chosen = values.task === 'all' ? Object.keys(suites) : [values.task as string];
 for (const name of chosen) if (!suites[name]) throw new Error(`unknown task: ${name}`);

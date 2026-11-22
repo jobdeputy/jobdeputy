@@ -93,7 +93,8 @@ const NUMBER = /(?<![A-Za-z])\d+(?:[.,]\d+)*/g;
 const LINK =
   /\b(?:https?:\/\/|www\.)\S+|\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+|\b[a-z0-9-]+\.(?:com|io|net|org|dev|ai|app|co|uk|in)\b/gi;
 
-const numbers = (text: string) =>
+/** The numbers a text writes, without thousands separators ("1,200" is "1200"). */
+export const numbersIn = (text: string) =>
   new Set((text.match(NUMBER) ?? []).map((n) => n.replace(/,/g, '')));
 
 /** Every date and number the base résumé writes, contact excluded. */
@@ -164,8 +165,8 @@ export function checkTailored(
   const original = baseText(base);
 
   // Numbers: no invented metrics, years, or sizes ("Python 3" may come from a confirmed skill).
-  const known = numbers(`${original}\n${evidence.join('\n')}`);
-  for (const n of numbers(written)) {
+  const known = numbersIn(`${original}\n${evidence.join('\n')}`);
+  for (const n of numbersIn(written)) {
     if (!known.has(n)) add('number', `the number ${n} is not in the résumé`);
   }
 

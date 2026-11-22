@@ -105,3 +105,100 @@ export function resumeText(resume: StructuredResume): string {
     ...resume.projects.flatMap((p) => [p.name, ...p.bullets]),
   ].join('\n');
 }
+
+/**
+ * One piece of the ATS-safe template (decision 0015): a single column, standard headings,
+ * plain text. The PDF, the DOCX, and the in-app preview all lay out these blocks, in order.
+ */
+export type ResumeBlock =
+  | { kind: 'name'; text: string }
+  /** The headline, then the contact line. */
+  | { kind: 'line'; text: string }
+  | { kind: 'heading'; text: string }
+  /** An entry's first line, for example "Software Engineer, Example Logistics". */
+  | { kind: 'entry'; text: string }
+  /** An entry's place and dates, or a project's link. */
+  | { kind: 'meta'; text: string }
+  | { kind: 'bullet'; text: string }
+  | { kind: 'paragraph'; text: string }
+  /** A skills line: "Languages: TypeScript, SQL". */
+  | { kind: 'skills'; group: string; items: string };
+
+/** The section headings, in order; ATSs look for these words. */
+export const RESUME_HEADINGS = {
+  summary: 'Summary',
+  skills: 'Skills',
+  experience: 'Experience',
+  education: 'Education',
+  certifications: 'Certifications',
+  projects: 'Projects',
+} as const;
+
+const joined = (separator: string, ...values: (string | undefined)[]) =>
+  values.filter((v): v is string => v !== undefined && v !== '').join(separator);
+
+/** "BSc in Computer Science"; the field once when the degree already names it. */
+function degreeText(degree?: string, field?: string): string {
+  if (degree && field && degree.toLowerCase().includes(field.toLowerCase())) return degree;
+  return joined(' in ', degree, field);
+}
+
+/** The résumé as the template's blocks; empty sections are left out. */
+export function resumeBlocks(resume: StructuredResume): ResumeBlock[] {
+  const c = resume.contact;
+  const blocks: ResumeBlock[] = [{ kind: 'name', text: c.name }];
+  if (c.headline) blocks.push({ kind: 'line', text: c.headline });
+  const contact = joined(' | ', c.email, c.phone, c.location, ...c.links);
+  if (contact) blocks.push({ kind: 'line', text: contact });
+  const section = (heading: string, body: ResumeBlock[]) => {
+    if (body.length > 0) blocks.push({ kind: 'heading', text: heading }, ...body);
+  };
+  const dates = (start?: string, end?: string) => joined(' – ', start, end);
+  const meta = (...values: (string | undefined)[]): ResumeBlock[] => {
+    const text = joined(' | ', ...values);
+    return text ? [{ kind: 'meta', text }] : [];
+  };
+  const bullets = (items: string[]): ResumeBlock[] =>
+    items.map((text) => ({ kind: 'bullet', text }));
+
+  section(
+    RESUME_HEADINGS.summary,
+    resume.summary ? [{ kind: 'paragraph', text: resume.summary }] : [],
+  );
+  section(
+    RESUME_HEADINGS.skills,
+    resume.skills.map((g) => ({ kind: 'skills', group: g.group, items: g.items.join(', ') })),
+  );
+  section(
+    RESUME_HEADINGS.experience,
+    resume.experience.flatMap((e) => [
+      { kind: 'entry', text: joined(', ', e.title, e.employer) } as const,
+      ...meta(e.location, dates(e.start, e.end)),
+      ...bullets(e.bullets),
+    ]),
+  );
+  section(
+    RESUME_HEADINGS.education,
+    resume.education.flatMap((d) => [
+      { kind: 'entry', text: joined(', ', degreeText(d.degree, d.field), d.school) } as const,
+      ...meta(dates(d.start, d.end)),
+      ...bullets(d.details),
+    ]),
+  );
+  section(
+    RESUME_HEADINGS.certifications,
+    resume.certifications.map((x) => ({
+      kind: 'paragraph',
+      text: joined(', ', x.name, x.issuer, x.date),
+    })),
+  );
+  section(
+    RESUME_HEADINGS.projects,
+    resume.projects.flatMap((p) => [
+      { kind: 'entry', text: p.name } as const,
+      ...meta(p.link),
+      ...bullets(p.bullets),
+    ]),
+  );
+  return blocks;
+}
