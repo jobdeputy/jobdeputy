@@ -70,6 +70,7 @@ export const SCREENS: Screen[] = [
   { name: 'jobs-working', path: '/', open: 'Get started free', still: true, steps: toJobsWorking },
   { name: 'jobs-done', path: '/', open: 'Get started free', still: true, steps: toJobsDone },
   { name: 'jobs-failed', path: '/', open: 'Get started free', still: true, steps: toJobsFailed },
+  { name: 'jobs-preview', path: '/', open: 'Get started free', still: true, steps: toJobsPreview },
   {
     name: 'jobs-ai-used-up',
     path: '/',
@@ -345,6 +346,16 @@ async function toJobsDone(page: Page) {
     .waitFor({ timeout: 15_000 });
   // Its company, read again once the crawl's work ended.
   await page.getByRole('article', { name: 'Acme' }).getByText('Strong fit').waitFor();
+}
+
+/** A job open in its preview: beside the list on a wide screen, a view of its own on a phone. */
+async function toJobsPreview(page: Page) {
+  await toJobsDone(page);
+  await page
+    .getByRole('article', { name: 'Acme' })
+    .getByRole('button', { name: 'Senior Backend Engineer' })
+    .click();
+  await page.getByText(/Design and run TypeScript services on AWS/).waitFor();
 }
 
 /** A link that could not be read, its reason beside it. */

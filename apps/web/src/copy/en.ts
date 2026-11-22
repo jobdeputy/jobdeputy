@@ -465,8 +465,6 @@ export const en = {
       more: 'More companies',
       moreFailed: 'More companies didn’t load. Press More companies to try again.',
       loadingMore: 'Loading more…',
-      /** After a job's title, read out only: its link opens the posting on its own site. */
-      opensNewTab: '(opens the posting in a new tab)',
       /** Where a job is worked (the API's `onsite`, `hybrid`, `remote`). */
       workplace: { onsite: 'On-site', hybrid: 'Hybrid', remote: 'Remote' },
       /** How well a job fits, from the AI's score (#49). */
@@ -476,6 +474,29 @@ export const en = {
         stretch: 'Stretch',
         unscored: 'Not scored yet',
       },
+    },
+    /** The job open beside the list (#49 PR D): what it is, why it fits, the posting. */
+    preview: {
+      label: 'The job you opened',
+      back: 'Back to your companies',
+      close: 'Close',
+      posted: 'Posted {date}',
+      score: 'Scored {score} of 100 against your roles.',
+      whyTitle: 'Why it fits',
+      whyNone: 'Your deputy ranked this one by keywords only: it has no AI reasons yet.',
+      /** The AI scored it, and gave no reasons. */
+      whyNoReasons: 'The AI scored it without giving its reasons.',
+      postingTitle: 'What the posting says',
+      postingNone: 'The job board didn’t share this posting’s text. Open it on their site.',
+      postingCut: 'The posting is longer: the rest is on their site.',
+      loading: 'Loading the posting',
+      loadFailed: 'The posting didn’t load.',
+      /** The job was taken down since the list was read. */
+      gone: 'This job isn’t on its board any more.',
+      retry: 'Try again',
+      openPosting: 'Open the posting',
+      /** Read after Open the posting: it opens on the company's site. */
+      newTab: '(opens in a new tab)',
     },
     /** How the last link went. */
     result: {

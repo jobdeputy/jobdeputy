@@ -133,6 +133,15 @@ test('creates an account, confirms it with the code, lands signed in, and signs 
   await expect(acme.getByRole('listitem')).toHaveCount(3);
   await expect(acme.getByText('Strong fit')).toBeVisible();
   await expectNoAccessibilityViolations(page);
+  // A job opens in its preview (#49 PR D): its title takes the focus, the posting is read, axe.
+  await acme.getByRole('button', { name: 'Senior Backend Engineer' }).click();
+  const job = page.getByRole('region', { name: 'Senior Backend Engineer' });
+  await expect(job.getByRole('heading', { level: 2 })).toBeFocused();
+  await expect(job.getByText(/Design and run TypeScript services on AWS/)).toBeVisible();
+  await expectNoAccessibilityViolations(page);
+  await expectNoHorizontalScroll(page);
+  await job.getByRole('button', { name: /Close|Back to your companies/ }).click();
+  await expect(acme.getByRole('button', { name: 'Senior Backend Engineer' })).toBeFocused();
   await expectNoHorizontalScroll(page);
   await page
     .getByRole('navigation', { name: 'Primary' })

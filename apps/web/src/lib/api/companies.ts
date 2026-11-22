@@ -17,6 +17,8 @@ export interface JobSummary {
   applyUrl?: string;
   postedAt?: string;
   firstSeenAt: string;
+  /** Whether the board shared the posting's text (read with the job itself). */
+  hasDescription?: boolean;
   relevance?: { score: number; reasons: string[] };
 }
 

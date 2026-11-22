@@ -297,6 +297,24 @@ export function createFakeApi({
       if (path.startsWith('/me/companies') && method === 'GET') {
         return { companies: fakeCompanies(myCrawls.map(crawlView)) } as T;
       }
+      const jobId = /^\/me\/jobs\/([0-9a-f]{32})$/.exec(path)?.[1];
+      if (jobId && method === 'GET') {
+        const job = fakeCompanies(myCrawls.map(crawlView))
+          .flatMap((company) => company.jobs as Record<string, unknown>[])
+          .find((each) => each.jobId === jobId);
+        if (!job) throw new ApiError('not-found', { status: 404 });
+        // The third job's board shared no description.
+        return (
+          String(job.title).startsWith('Staff')
+            ? { ...job, hasDescription: false }
+            : {
+                ...job,
+                hasDescription: true,
+                description: FAKE_DESCRIPTION,
+                descriptionTruncated: false,
+              }
+        ) as T;
+      }
       if (path === '/me/crawls' && method === 'POST') {
         // The API's own check of the address (packages/shared/src/crawl.ts), then one at a time.
         const checked = parseCrawlUrl(String((body as { url?: unknown })?.url ?? ''));
@@ -372,12 +390,27 @@ function fakeCompanies(crawled: Record<string, unknown>[]): Record<string, unkno
         ...(job.workplace ? { workplace: job.workplace } : {}),
         jobUrl: `${url.origin}${url.pathname.replace(/\/$/, '')}/jobs/${i + 1}`,
         firstSeenAt: String(crawl.createdAt),
+        // The third job's board shared no text.
+        hasDescription: !job.title.startsWith('Staff'),
         ...(scored ? { relevance: { score: job.score, reasons: job.reasons } } : {}),
       })),
     });
   }
   return companies;
 }
+
+const FAKE_DESCRIPTION = `About the role
+You'll build the services our customers rely on every day, with a small team that owns its work end to end.
+
+What you'll do
+- Design and run TypeScript services on AWS
+- Work with product and design on what to build next
+- Keep things fast, safe and simple
+
+What we look for
+- 5+ years building backend systems
+- Experience with TypeScript, Node.js and AWS
+- Clear writing, and care for the people who use what you build`;
 
 const FAKE_JOBS = [
   {

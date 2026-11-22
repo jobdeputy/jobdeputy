@@ -35,7 +35,7 @@ function describeCard(card: HTMLElement): string[] {
   const name = within(card).getByRole('heading', { level: 3 }).textContent;
   const rows = within(card)
     .getAllByRole('listitem')
-    .map((row) => row.textContent?.replace(' (opens the posting in a new tab)', '') ?? '');
+    .map((row) => row.textContent ?? '');
   return [String(name), ...rows];
 }
 
@@ -70,12 +70,10 @@ describe('Your companies (#49 PR C)', () => {
     ]);
     const first = cards()[1] as HTMLElement;
     expect(within(first).getByText('Its best 3 roles')).toBeTruthy();
-    const link = within(first).getByRole('link', {
-      name: 'Senior Backend Engineer (opens the posting in a new tab)',
-    });
-    expect(link.getAttribute('href')).toBe('https://boards.greenhouse.io/acme/jobs/1');
-    expect(link.getAttribute('target')).toBe('_blank');
-    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+    // A job's title opens it beside the list (the preview), not the posting.
+    const open = within(first).getByRole('button', { name: 'Senior Backend Engineer' });
+    expect(open.getAttribute('aria-expanded')).toBe('false');
+    expect(open.getAttribute('aria-controls')).toBe('job-preview');
   });
 
   it('says a job is not scored yet when the AI has not scored it', async () => {
