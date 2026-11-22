@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-21
 - **Task:** #47
+- **Amended by:** [0015](0015-ats-match-score-and-tailored-resumes.md) (the score is computed in code from LLM-listed keywords)
 
 ## Context
 

@@ -1,6 +1,8 @@
 import type { Task } from '../task.js';
+import { jobKeywordsTask } from './job-keywords.js';
 import { relevanceTask } from './relevance.js';
 import { smokeTask } from './smoke.js';
+import { tailorResumeTask } from './tailor-resume.js';
 
 export interface TaskEntry {
   task: Task<unknown, unknown>;
@@ -52,5 +54,44 @@ export const TASKS: TaskEntry[] = [
         hints: ['matches target role "Sample role" (title_match)'],
       },
     ],
+  }),
+  entry(jobKeywordsTask, {
+    jobs: [{ title: 'Sample title', description: 'Sample description with Sample skill.' }],
+  }),
+  entry(tailorResumeTask, {
+    company: 'Sample company',
+    base: {
+      contact: { name: 'Sample Person', headline: 'Sample headline', links: [] },
+      summary: 'Sample summary.',
+      skills: [{ group: 'Sample group', items: ['Sample skill'] }],
+      experience: [
+        {
+          id: 'e1',
+          employer: 'Sample employer',
+          title: 'Sample title',
+          start: '2020',
+          end: 'Present',
+          bullets: ['Sample bullet with Sample skill.'],
+        },
+      ],
+      education: [{ id: 'd1', school: 'Sample school', degree: 'Sample degree', details: [] }],
+      certifications: [{ id: 'c1', name: 'Sample certification' }],
+      projects: [{ id: 'p1', name: 'Sample project', bullets: ['Sample project bullet.'] }],
+    },
+    evidence: ['Sample confirmed skill'],
+    jobs: [
+      {
+        id: 'j1',
+        title: 'Sample title',
+        keywords: [
+          { term: 'Sample skill', kind: 'hard_skill', required: true },
+          { term: 'Sample missing skill', kind: 'hard_skill', required: false },
+        ],
+      },
+    ],
+    repair: {
+      draft: { summary: 'Sample draft.', skills: [], experience: [], projects: [] },
+      fixes: ['Sample fix.'],
+    },
   }),
 ];

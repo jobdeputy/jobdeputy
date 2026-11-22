@@ -134,7 +134,7 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `db/src/ai-key-repository.ts` | `ai-keys` (save, check, delete, results; daily check limit) and `preferences` `AI_SETTINGS` |
 | `db/src/usage-counters.ts`, `versioned.ts`, `audit-repository.ts` | exact caps; optimistic versions; audit entries and paging |
 | `db/src/account-repository.ts`, `crawl-settings-repository.ts`, `ping-repository.ts`, `client.ts` | deletion record; user crawl and jobs-per-company limits; ping; DynamoDB client and condition helpers |
-| `shared/src/*.ts` | Zod schemas and constants per feature (`auth`, `crawl`, `documents`, `profile`, `ping`, `lists` (#50: `githubListFromUrl`, `listUrl`, list limits)), `company-rank.ts` (T08c/#49: `compareRank`, how a company's shown jobs are ranked, shared by the crawl worker and `GET /me/companies`, and the cursor's schema), `ai.ts` (the pinned platform model; own-key providers, schemas, and limits), `http.ts` (problem details), `logger.ts` |
+| `shared/src/*.ts` | Zod schemas and constants per feature (`auth`, `crawl`, `documents`, `profile`, `ping`, `lists` (#50: `githubListFromUrl`, `listUrl`, list limits)), `company-rank.ts` (T08c/#49: `compareRank`, how a company's shown jobs are ranked, shared by the crawl worker and `GET /me/companies`, and the cursor's schema), `ai.ts` (the pinned platform model; own-key providers, schemas, and limits), `match-score.ts` (#51: the ATS match score: keyword weights, normalising and aliases, `groundKeywords`, `matchScore`), `resume.ts` (#51: the structured résumé and its text), `http.ts` (problem details), `logger.ts` |
 | `test-fixtures/src/index.ts` | synthetic PDF, DOCX, zip bomb, EICAR |
 | `llm/src/task.ts` | `defineTask`, `runTask`: 3 turns, token caps, timeout, strict zod output, `partial`, usage (the only Strands caller, 0009) |
 | `llm/src/models.ts` | `resolveModel`: the platform model on Bedrock in the cell Region, or the user's OpenAI or Anthropic key; no client retries |
@@ -145,8 +145,11 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `llm/src/tasks/smoke.ts`, `llm/src/tasks/index.ts` | the fixed check Nightly and the eval run against the real model; `TASKS`, every task with a sample input |
 | `llm/src/tasks/relevance.ts` | T08d: the `relevance` task (score 0–100, best role, reasons) and `scoreRelevance` (batches of 10, one follow-up, at most 6 task calls) |
 | `llm/src/tasks/relevance-stub.ts` | T08d: dev stacks only: the `stub` provider's fixed relevance answers, for integration tests |
+| `llm/src/tasks/job-keywords.ts` | #51: the `job-keywords` task (a company's top jobs in one call, a field per job) and `extractJobKeywords` (grounded in each posting) |
+| `llm/src/tasks/tailor-resume.ts` | #51: the `tailor-resume` task (summary, skills, bullets by entry ID) and `tailorResume` (a draft and at most two repairs, keeps the best honest draft, scores each job) |
+| `llm/src/resume-checks.ts` | #51: the honesty checks on a tailored résumé (entries, numbers, links, evidence, keywords per entry, repeats) and `assembleResume` |
 | `llm/src/fingerprint.ts` | hash of a task's prompt, schema, and limits; must match `eval/versions.json` for its version |
-| `llm/eval/` | eval harness (`harness.ts`), runner (`run.ts`, `pnpm --filter @jobdeputy/llm eval`), cases, saved baselines |
+| `llm/eval/` | eval harness (`harness.ts`), runner (`run.ts`, `pnpm --filter @jobdeputy/llm eval`, `--model` to compare another Bedrock model), cases (`tailoring.ts`: #51's people and companies for `job-keywords` and `tailor-resume`), saved baselines |
 
 ## infra
 

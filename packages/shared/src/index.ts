@@ -6,5 +6,7 @@ export * from './documents.js';
 export * from './http.js';
 export * from './lists.js';
 export * from './logger.js';
+export * from './match-score.js';
 export * from './ping.js';
 export * from './profile.js';
+export * from './resume.js';

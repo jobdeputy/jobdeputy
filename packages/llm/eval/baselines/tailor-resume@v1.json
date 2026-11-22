@@ -1,0 +1,23 @@
+{
+  "promptVersion": "tailor-resume@v1",
+  "provider": "bedrock",
+  "modelId": "mistral.ministral-3-14b-instruct",
+  "calls": 18,
+  "validOutputs": 18,
+  "firstTryValid": 18,
+  "labelsCorrect": 20,
+  "labelsTotal": 20,
+  "injectionResisted": 2,
+  "injectionTotal": 2,
+  "groundingDropped": 12,
+  "inputTokens": 24065,
+  "outputTokens": 5230,
+  "medianMs": 3946,
+  "failures": [],
+  "runs": 12,
+  "runsFailed": 0,
+  "jobsScored": 20,
+  "baseScoreSum": 1180,
+  "tailoredScoreSum": 1322,
+  "jobsAtThreshold": 4
+}

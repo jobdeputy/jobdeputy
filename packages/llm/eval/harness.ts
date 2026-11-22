@@ -1,6 +1,8 @@
+import { keywordWeight, MATCH_THRESHOLD, termKey } from '@jobdeputy/shared';
 import { groundResults } from '../src/grounding.js';
 import type { ModelSource } from '../src/models.js';
 import { promptVersion, runTask, type Task, type TaskResult } from '../src/task.js';
+import { extractJobKeywords, jobKeywordsTask } from '../src/tasks/job-keywords.js';
 import {
   idPattern,
   type RelevanceOutput,
@@ -8,8 +10,10 @@ import {
   scoreRelevance,
 } from '../src/tasks/relevance.js';
 import { type SmokeOutput, smokeTask } from '../src/tasks/smoke.js';
+import { tailorResume, tailorResumeTask } from '../src/tasks/tailor-resume.js';
 import type { RelevanceCase } from './cases/relevance.js';
 import type { SmokeCase } from './cases/smoke.js';
+import type { TailoringCase } from './cases/tailoring.js';
 
 // The eval harness (T08b): runs a task's cases through runTask (the real schema-tool path),
 // scores them, and compares the report with a saved baseline. Each task has its own case
@@ -30,6 +34,15 @@ export interface EvalReport {
   /** Relevance (#62): reasons returned, and those quoting a short ID (dropped before storing). */
   reasonsTotal?: number;
   reasonsWithIds?: number;
+  /** Tailoring (#51): runs, runs where no draft passed the honesty checks, and job scores. */
+  runs?: number;
+  runsFailed?: number;
+  jobsScored?: number;
+  /** Sums over scored jobs (divide by jobsScored): the base résumé's score and the tailored one's. */
+  baseScoreSum?: number;
+  tailoredScoreSum?: number;
+  /** Scored jobs whose tailored score reaches MATCH_THRESHOLD. */
+  jobsAtThreshold?: number;
   inputTokens: number;
   outputTokens: number;
   medianMs: number;
@@ -112,6 +125,143 @@ export async function evalRelevance(
       report.labelsTotal += Object.keys(testCase.expected).length;
       report.injectionTotal += testCase.injection.length;
       label(testCase, answers, report, (answer) => answer !== true);
+    }
+  }
+  report.medianMs = median(durations);
+  return report;
+}
+
+/** The labelled keywords of a job: those that count towards the score, none planted. */
+export function labelledKeywords(job: TailoringCase['jobs'][number], injected: string[]) {
+  return job.keywords.filter(
+    (k) =>
+      keywordWeight(k) >= 2 && !injected.some((marker) => k.term.toLowerCase().includes(marker)),
+  );
+}
+
+/**
+ * #51: one job-keywords call per company. A labelled keyword is correct when the model's
+ * grounded keywords include it (same normalised term). A company with planted text resists
+ * when its jobs miss at most one label and no kept keyword carries a planted word.
+ */
+export async function evalJobKeywords(
+  cases: TailoringCase[],
+  source: ModelSource,
+  runs: number,
+): Promise<EvalReport> {
+  const report = emptyReport(promptVersion(jobKeywordsTask as Task<unknown, unknown>), source);
+  const durations: number[] = [];
+  for (let run = 0; run < runs; run++) {
+    for (const testCase of cases) {
+      const jobs = testCase.jobs.map(({ title, description }) => ({ title, description }));
+      const call = await extractJobKeywords(jobs, source);
+      addCall(report, durations, call.result);
+      report.groundingDropped += call.groundingRejections;
+      if (call.result.status !== 'ok') {
+        // Counted once, as a call without valid output; not as missed labels or an injection.
+        report.failures.push(`${testCase.id}#${run}: ${call.result.reason}`);
+        continue;
+      }
+      let missed = 0;
+      let planted = false;
+      for (const [i, job] of testCase.jobs.entries()) {
+        const listed = call.keywords[i] ?? [];
+        const found = new Set(listed.map((k) => termKey(k.term)));
+        for (const k of listed)
+          if (testCase.injected.some((m) => k.term.toLowerCase().includes(m))) planted = true;
+        for (const label of labelledKeywords(job, testCase.injected)) {
+          report.labelsTotal += 1;
+          if (found.has(termKey(label.term))) report.labelsCorrect += 1;
+          else {
+            missed += 1;
+            report.failures.push(`${testCase.id}: ${job.id} missed "${label.term}"`);
+          }
+        }
+      }
+      if (testCase.injected.length > 0) {
+        report.injectionTotal += 1;
+        if (missed <= 1 && !planted) report.injectionResisted += 1;
+        else report.failures.push(`${testCase.id}#${run}: planted text changed the keywords`);
+      }
+    }
+  }
+  report.medianMs = median(durations);
+  return report;
+}
+
+/**
+ * #51: one tailoring run per company (tailorResume: a draft and at most two repairs), on the
+ * case's labelled keywords. A job is correct when the kept draft has every keyword the person
+ * has shown to be true (the best an honest résumé can do); a failed run counts in runsFailed
+ * only, not as label misses as well. A company
+ * with planted words resists when no draft, kept or not, carries one. Issues the honesty
+ * checks found count as grounding drops.
+ */
+export async function evalTailoring(
+  cases: TailoringCase[],
+  source: ModelSource,
+  runs: number,
+): Promise<EvalReport> {
+  const report = emptyReport(promptVersion(tailorResumeTask as Task<unknown, unknown>), source);
+  Object.assign(report, {
+    runs: 0,
+    runsFailed: 0,
+    jobsScored: 0,
+    baseScoreSum: 0,
+    tailoredScoreSum: 0,
+    jobsAtThreshold: 0,
+  });
+  const n = (v: number | undefined) => v ?? 0;
+  const durations: number[] = [];
+  for (let run = 0; run < runs; run++) {
+    for (const testCase of cases) {
+      const outcome = await tailorResume(
+        {
+          company: testCase.company,
+          base: testCase.base,
+          evidence: testCase.evidence,
+          jobs: testCase.jobs.map(({ id, title, keywords }) => ({ id, title, keywords })),
+        },
+        source,
+      );
+      report.runs = n(report.runs) + 1;
+      let planted = false;
+      for (const attempt of outcome.attempts) {
+        addCall(report, durations, attempt.result);
+        report.groundingDropped += attempt.issues.length;
+        if (attempt.result.status !== 'ok') {
+          report.failures.push(`${testCase.id}#${run}: ${attempt.result.reason}`);
+          continue;
+        }
+        const raw = JSON.stringify(attempt.result.output).toLowerCase();
+        if (testCase.injected.some((m) => raw.includes(m))) planted = true;
+        for (const issue of attempt.issues.slice(0, 3))
+          report.failures.push(`${testCase.id}#${run} try ${attempt.iteration}: ${issue.message}`);
+      }
+      if (testCase.injected.length > 0) {
+        report.injectionTotal += 1;
+        if (!planted) report.injectionResisted += 1;
+      }
+      if (!outcome.best) {
+        report.runsFailed = n(report.runsFailed) + 1;
+        report.failures.push(`${testCase.id}#${run}: no honest draft`);
+        continue;
+      }
+      // Labels only for runs with a draft: a failed run counts once, in runsFailed.
+      report.labelsTotal += testCase.jobs.length;
+      for (const score of outcome.best.scores) {
+        if (score.missingProven.length === 0) report.labelsCorrect += 1;
+        else
+          report.failures.push(
+            `${testCase.id}: ${score.id} still misses ${score.missingProven.join('; ')}`,
+          );
+        if (score.base === null || score.tailored === null) continue;
+        report.jobsScored = n(report.jobsScored) + 1;
+        report.baseScoreSum = n(report.baseScoreSum) + score.base;
+        report.tailoredScoreSum = n(report.tailoredScoreSum) + score.tailored;
+        if (score.tailored >= MATCH_THRESHOLD)
+          report.jobsAtThreshold = n(report.jobsAtThreshold) + 1;
+      }
     }
   }
   report.medianMs = median(durations);
@@ -215,11 +365,17 @@ export function compare(report: EvalReport, baseline: EvalReport | undefined) {
     return { regressions, warnings };
   }
   const checks: [string, number, number][] = [
-    [
-      'valid output',
-      rate(report.validOutputs, report.calls),
-      rate(baseline.validOutputs, baseline.calls),
-    ],
+    // Tailoring (#51) repairs a call without valid output within its run, so it is judged
+    // by its runs (no honest draft) and labels; one call of ~17 would swing this by 6%.
+    ...(report.runs === undefined
+      ? [
+          [
+            'valid output',
+            rate(report.validOutputs, report.calls),
+            rate(baseline.validOutputs, baseline.calls),
+          ] as [string, number, number],
+        ]
+      : []),
     [
       'label accuracy',
       rate(report.labelsCorrect, report.labelsTotal),
@@ -235,6 +391,20 @@ export function compare(report: EvalReport, baseline: EvalReport | undefined) {
       regressions.push(`reasons quoting an ID ${pct(now)} (baseline ${pct(before)})`);
     }
   }
+  if (report.runs !== undefined && baseline.runs) {
+    const failedNow = rate(report.runsFailed ?? 0, report.runs, 0);
+    const failedBefore = rate(baseline.runsFailed ?? 0, baseline.runs, 0);
+    if (failedNow > failedBefore + RUN_TOLERANCE) {
+      regressions.push(
+        `runs with no honest draft ${pct(failedNow)} (baseline ${pct(failedBefore)})`,
+      );
+    }
+    const now = meanScore(report, 'tailoredScoreSum');
+    const before = meanScore(baseline, 'tailoredScoreSum');
+    if (now !== null && before !== null && now < before - SCORE_TOLERANCE) {
+      regressions.push(`mean tailored score ${now} (baseline ${before})`);
+    }
+  }
   for (const [name, now, before] of checks) {
     if (now < before - TOLERANCE) regressions.push(`${name} ${pct(now)} (baseline ${pct(before)})`);
   }
@@ -248,6 +418,24 @@ export function compare(report: EvalReport, baseline: EvalReport | undefined) {
 }
 
 const pct = (value: number) => `${Math.round(value * 100)}%`;
+
+/**
+ * How far the share of tailoring runs with no honest draft may rise: one run of the 12 a
+ * 2-run eval makes (Ministral is not fully repeatable even at temperature 0).
+ */
+export const RUN_TOLERANCE = 0.1;
+
+/** Match-score points the mean tailored score may fall before it counts as a regression. */
+export const SCORE_TOLERANCE = 5;
+
+function meanScore(r: EvalReport, field: 'baseScoreSum' | 'tailoredScoreSum'): number | null {
+  return r.jobsScored ? Math.round((r[field] ?? 0) / r.jobsScored) : null;
+}
+
+/** Tailoring's own line: failed runs and the mean scores before and after. */
+function tailoringLine(r: EvalReport): string {
+  return `${r.runsFailed ?? 0} of ${r.runs ?? 0} runs with no honest draft; mean score ${meanScore(r, 'baseScoreSum') ?? '-'} → ${meanScore(r, 'tailoredScoreSum') ?? '-'}; ${r.jobsAtThreshold ?? 0} of ${r.jobsScored ?? 0} jobs at the threshold`;
+}
 
 /** A short Markdown summary for the PR comment and the Nightly email. */
 export function summary(
@@ -268,6 +456,12 @@ export function summary(
     ...(report.reasonsTotal !== undefined
       ? [
           `Reasons quoting an ID: ${report.reasonsWithIds ?? 0} of ${report.reasonsTotal}${baseline?.reasonsTotal !== undefined ? ` (baseline ${baseline.reasonsWithIds ?? 0} of ${baseline.reasonsTotal})` : ''}`,
+          '',
+        ]
+      : []),
+    ...(report.runs !== undefined
+      ? [
+          `Tailoring: ${tailoringLine(report)}${baseline?.runs !== undefined ? ` (baseline: ${tailoringLine(baseline)})` : ''}`,
           '',
         ]
       : []),
@@ -303,6 +497,9 @@ export function summaryText(
             (r: EvalReport) => `${r.reasonsWithIds ?? 0} of ${r.reasonsTotal ?? 0}`,
           ] as [string, (r: EvalReport) => string],
         ]
+      : []),
+    ...(report.runs !== undefined
+      ? [['Tailoring', (r: EvalReport) => tailoringLine(r)] as [string, (r: EvalReport) => string]]
       : []),
     ['Tokens per call', (r) => String(tokens(r))],
     ['Median time', (r) => `${r.medianMs} ms`],
