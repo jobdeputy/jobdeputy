@@ -40,8 +40,11 @@ export function ResumesPage() {
   });
   const { spoken, say } = useSaying();
   const heading = useRef<HTMLHeadingElement>(null);
-  // The résumé Delete asked about (kept while the sheet slides away), and whether it is open.
+  // The résumé Delete asked about (kept while the sheet slides away), what deleting it means
+  // (set when asked, so it can't change under the person while the list is read again), and
+  // whether the sheet is open.
   const [asked, setAsked] = useState<Document | null>(null);
+  const [meaning, setMeaning] = useState('');
   const [open, setOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +56,7 @@ export function ResumesPage() {
   function ask(document: Document, from: HTMLElement) {
     opener.current = from;
     setAsked(document);
+    setMeaning(question(document, documents.data ?? []));
     setError(null);
     setOpen(true);
   }
@@ -88,7 +92,7 @@ export function ResumesPage() {
     const now = await queryClient
       .fetchQuery({ ...documentsQuery(api), staleTime: 0 })
       .catch(() => undefined);
-    const next = now?.find((each) => each.isDefault);
+    const next = now?.find((each) => each.isDefault && each.documentId !== document.documentId);
     say(
       now === undefined
         ? fill(text.said.deleted, { name })
@@ -121,7 +125,7 @@ export function ResumesPage() {
         onOpenChange={setOpen}
         eyebrow={text.confirm.eyebrow}
         title={fill(text.confirm.title, { name: asked?.title ?? '' })}
-        description={question(asked, documents.data ?? [])}
+        description={meaning}
         confirm={text.confirm.confirm}
         pendingLabel={text.deleting}
         keep={text.confirm.keep}
@@ -146,11 +150,14 @@ export function ResumesPage() {
  * the newest ready one as it deletes, and this list may be behind (one being checked elsewhere is
  * not followed); the page says which once it is done.
  */
-function question(asked: Document | null, saved: readonly Document[]): string {
+function question(asked: Document, saved: readonly Document[]): string {
   const text = copy.resumesPage.confirm;
-  if (!asked?.isDefault) return text.line;
-  // Only one that is, or may yet be, ready can take over (not one the server couldn't use).
-  return saved.some((each) => each.documentId !== asked.documentId && !isUnusable(each))
+  if (!asked.isDefault) return text.line;
+  // Only one that is, or may yet be, ready can take over: not one the server couldn't use, nor
+  // an upload started elsewhere (it may never come).
+  return saved.some(
+    (each) => each.documentId !== asked.documentId && (each.status === 'ready' || onItsWay(each)),
+  )
     ? text.handOver
     : text.noHandOver;
 }

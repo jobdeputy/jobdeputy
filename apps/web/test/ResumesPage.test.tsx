@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ResumesPage } from '../src/components/resumes/resumes-page.tsx';
 import { ApiError } from '../src/lib/api/client.ts';
@@ -162,7 +162,7 @@ describe('ResumesPage', () => {
     await renderPage(['Good.pdf', 'malware.pdf']);
     fireEvent.click(screen.getByRole('button', { name: 'Delete Good' }));
     const sheet = await screen.findByRole('alertdialog');
-    expect(sheet.textContent).not.toContain('default');
+    expect(screen.getByText('The file is deleted for good. This can’t be undone.')).toBeTruthy();
     fireEvent.click(within(sheet).getByRole('button', { name: 'Delete résumé' }));
     await waitFor(() =>
       expect(statusText()).toContain('Good deleted. You have no default résumé now.'),
@@ -219,16 +219,21 @@ describe('ResumesPage', () => {
       return request(method, path, body);
     });
     // A re-read on its way (as the 2 s beat starts one).
-    void api.queries.refetchQueries({ queryKey: ['documents'] });
+    const reread = api.queries.refetchQueries({ queryKey: ['documents'] });
+    expect(held).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: 'Delete Third' }));
     const sheet = await screen.findByRole('alertdialog');
     fireEvent.click(within(sheet).getByRole('button', { name: 'Delete résumé' }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     await waitFor(() => expect(statusText()).toContain('Third deleted.'));
-    answer(undefined);
-    // Settled: the held read is answered (or dropped) and nothing is being read any more.
-    await waitFor(() => expect(api.queries.isFetching()).toBe(0));
-    await new Promise((done) => setTimeout(done, 50));
+    // The old list arrives only now; once that read has settled, it must not have landed.
+    await act(async () => {
+      answer(undefined);
+      await reread;
+    });
+    // What the page draws from: the stale list would be there at once.
+    const kept = api.queries.getQueryData<Document[]>(['documents']) ?? [];
+    expect(kept.map((each) => each.title)).toEqual(['Second', 'First']);
     expect(rows().some((row) => row?.startsWith('Third'))).toBe(false);
   });
 
