@@ -1,4 +1,4 @@
-import type { QueryClient } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppNav } from '../src/components/app-shell.tsx';
@@ -6,6 +6,7 @@ import { normUrl } from '../src/components/profile/fields.ts';
 import { ProfilePage } from '../src/components/profile/profile-page.tsx';
 import { ApiError } from '../src/lib/api/client.ts';
 import { createFakeApi } from '../src/lib/api/fake.ts';
+import { ApiContext } from '../src/lib/api/index.ts';
 import type { Profile } from '../src/lib/api/profile.ts';
 import { createFakeAuth } from '../src/lib/auth/fake.ts';
 import { navigate } from '../src/lib/router.ts';
@@ -47,7 +48,13 @@ function groupOf(group: string): HTMLElement {
 
 describe('ProfilePage', () => {
   it('shows what is saved in the prototype’s groups, and Not added for the rest', () => {
-    render(<ProfilePage profile={saved} />);
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ApiContext.Provider value={createFakeApi({ delay: 0 })}>
+          <ProfilePage profile={saved} />
+        </ApiContext.Provider>
+      </QueryClientProvider>,
+    );
     const title = screen.getByRole('heading', {
       level: 1,
       name: 'What your deputy knows about you.',
@@ -414,5 +421,68 @@ describe('normUrl', () => {
     expect(normUrl('HTTPS:alex.dev')).toBe('https://alex.dev');
     expect(normUrl('mailto:alex@example.com')).toBe('mailto:alex@example.com');
     expect(normUrl('  ')).toBe('');
+  });
+});
+
+describe('Target roles on the Profile page', () => {
+  async function onProfile(titles: readonly string[]) {
+    const auth = createFakeAuth({ delay: 0 });
+    await auth.signUp('alex@example.com', 'a long enough password');
+    await auth.confirmSignUp('alex@example.com', 'a long enough password', '123456');
+    const api = createFakeApi({ delay: 0 });
+    await api.request('PUT', '/me/profile', { version: 0, firstName: 'Alex', lastName: 'Morgan' });
+    for (const title of titles) await api.request('POST', '/me/roles', { title });
+    await renderApp(auth, {}, api);
+    await screen.findByRole('heading', { level: 1, name: 'What your deputy knows about you.' });
+    return api;
+  }
+
+  const shownTitles = () =>
+    within(screen.getByRole('list', { name: 'Target roles' }))
+      .getAllByRole('listitem')
+      .map((item) => item.textContent);
+
+  const savedTitles = async (api: ReturnType<typeof createFakeApi>) =>
+    (await api.request<{ roles: { title: string }[] }>('GET', '/me/roles')).roles.map(
+      (role) => role.title,
+    );
+
+  it('lists the saved titles under Job preferences, or says none are added', async () => {
+    await onProfile(['Staff engineer', 'Platform engineer']);
+    expect(screen.getByRole('region', { name: 'Job preferences' })).toBeTruthy();
+    await waitFor(() => expect(shownTitles()).toEqual(['Staff engineer', 'Platform engineer']));
+    cleanup();
+    await onProfile([]);
+    expect(
+      await screen.findByText('None yet. Add the job titles your deputy should look for.'),
+    ).toBeTruthy();
+  });
+
+  it('edits them with the set-up’s editor: Save adds and removes, then goes back', async () => {
+    const api = await onProfile(['Staff engineer', 'Platform engineer']);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Target roles' }));
+    expect(document.activeElement).toBe(screen.getByLabelText('Job title'));
+    expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
+    fireEvent.change(screen.getByLabelText('Job title'), {
+      target: { value: 'Engineering manager' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Platform engineer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(shownTitles()).toEqual(['Staff engineer', 'Engineering manager']));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit Target roles' }));
+    expect(await screen.findByText('Target roles saved.')).toBeTruthy();
+    expect(await savedTitles(api)).toEqual(['Staff engineer', 'Engineering manager']);
+  });
+
+  it('drops the changes on Cancel', async () => {
+    const api = await onProfile(['Staff engineer']);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Target roles' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Software engineer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit Target roles' }));
+    expect(shownTitles()).toEqual(['Staff engineer']);
+    expect(await savedTitles(api)).toEqual(['Staff engineer']);
+    expect(within(groupOf('Target roles')).queryByText('Saved')).toBeNull();
   });
 });

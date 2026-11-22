@@ -38,3 +38,24 @@ export function EditIcon({ className = 'size-4' }: { className?: string }) {
     </svg>
   );
 }
+
+/** A target: the Profile page's Job preferences section. */
+export function TargetIcon({ className = 'size-5' }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`shrink-0 ${className}`}
+    >
+      <circle cx="12" cy="12" r="8.25" />
+      <circle cx="12" cy="12" r="4.5" />
+      <circle cx="12" cy="12" r="1" />
+    </svg>
+  );
+}

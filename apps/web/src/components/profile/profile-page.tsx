@@ -1,12 +1,14 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { Field, TextAreaField } from '@/components/auth/fields.tsx';
-import { EditIcon, PersonIcon } from '@/components/icons.tsx';
+import { EditIcon, PersonIcon, TargetIcon } from '@/components/icons.tsx';
 import { PageIntro } from '@/components/page-intro.tsx';
-import { Fact, useSaying } from '@/components/setup/parts.tsx';
+import { Fact, LoadFailed, useSaying } from '@/components/setup/parts.tsx';
 import { Button } from '@/components/ui/button.tsx';
+import { QueryRegion } from '@/components/ui/query-region.tsx';
 import { copy, fill } from '@/copy/index.ts';
 import type { Profile } from '@/lib/api/profile.ts';
+import { type Role, useRoles } from '@/lib/api/roles.ts';
 import { cn } from '@/lib/utils.ts';
 import {
   cityField,
@@ -20,13 +22,15 @@ import {
   putText,
 } from './fields.ts';
 import { type FormSpec, useProfileForm } from './profile-form.tsx';
+import { RolesForm } from './roles-form.tsx';
 
 /**
  * The Profile page (#33, the round 7 prototype's profile-preview): what the deputy knows about the
  * person, by section. Its first section, About you, shows the saved details in the prototype's
  * groups (name and headline, contact and location, links); each group's Edit opens its form in
- * place, and Save or Cancel goes back to the facts. The Target roles section comes next (#33
- * piece 6a3); the prototype's readiness overview waits for the sections it counts.
+ * place, and Save or Cancel goes back to the facts. Job preferences holds the target roles,
+ * edited with the set-up's editor. The prototype's readiness overview waits for the sections it
+ * counts.
  */
 export function ProfilePage({ profile }: { profile: Profile }) {
   const text = copy.profilePage;
@@ -36,6 +40,7 @@ export function ProfilePage({ profile }: { profile: Profile }) {
     <div className="grid w-full max-w-[880px] content-start gap-8">
       <PageIntro id="profile-title" eyebrow={text.eyebrow} title={text.title} intro={text.intro} />
       <AboutYou profile={profile} say={say} />
+      <JobPreferences say={say} />
       <p role="status" className="sr-only">
         {spoken}
       </p>
@@ -47,8 +52,54 @@ function AboutYou({ profile, say }: { profile: Profile; say: (words: string) => 
   const text = copy.profilePage.about;
   const facts = factsOf(profile);
   return (
+    <Section
+      id="about"
+      icon={<PersonIcon className="size-[22px]" />}
+      title={text.title}
+      line={text.line}
+    >
+      <Group
+        id="about-name"
+        title={text.name.title}
+        view={<Facts facts={facts.name} />}
+        say={say}
+        editor={(done) => <NameForm profile={profile} {...done} />}
+      />
+      <Group
+        id="about-contact"
+        title={text.contact.title}
+        view={<Facts facts={facts.contact} />}
+        say={say}
+        editor={(done) => <ContactForm profile={profile} {...done} />}
+      />
+      <Group
+        id="about-links"
+        title={text.links.title}
+        view={<Facts facts={facts.links} />}
+        say={say}
+        editor={(done) => <LinksForm profile={profile} {...done} />}
+      />
+    </Section>
+  );
+}
+
+/** A section of the page (the prototype's `.profile-section`): its icon, title and line, then its groups. */
+function Section({
+  id,
+  icon,
+  title,
+  line,
+  children,
+}: {
+  id: string;
+  icon: ReactNode;
+  title: string;
+  line: string;
+  children: ReactNode;
+}) {
+  return (
     <section
-      aria-labelledby="about-title"
+      aria-labelledby={`${id}-title`}
       className="@container min-w-0 rounded-[34px] border border-line-soft bg-surface p-[21px] shadow-panel sm:p-[34px]"
     >
       <div className="grid grid-cols-[44px_minmax(0,1fr)] items-start gap-[21px]">
@@ -56,37 +107,149 @@ function AboutYou({ profile, say }: { profile: Profile; say: (words: string) => 
           aria-hidden="true"
           className="grid size-11 place-items-center rounded-full bg-paper-deep text-ink-soft"
         >
-          <PersonIcon className="size-[22px]" />
+          {icon}
         </span>
         <div className="grid gap-1">
-          <h2 id="about-title" className="m-0 text-xl font-[700] tracking-[-0.02em]">
-            {text.title}
+          <h2 id={`${id}-title`} className="m-0 text-xl font-[700] tracking-[-0.02em]">
+            {title}
           </h2>
-          <p className="m-0 text-sm text-muted-foreground">{text.line}</p>
+          <p className="m-0 text-sm text-muted-foreground">{line}</p>
         </div>
       </div>
-      <Group
-        id="about-name"
-        title={text.name.title}
-        facts={facts.name}
-        say={say}
-        editor={(done) => <NameForm profile={profile} {...done} />}
-      />
-      <Group
-        id="about-contact"
-        title={text.contact.title}
-        facts={facts.contact}
-        say={say}
-        editor={(done) => <ContactForm profile={profile} {...done} />}
-      />
-      <Group
-        id="about-links"
-        title={text.links.title}
-        facts={facts.links}
-        say={say}
-        editor={(done) => <LinksForm profile={profile} {...done} />}
-      />
+      {children}
     </section>
+  );
+}
+
+/**
+ * Job preferences (#33 piece 6a3): what the deputy looks for. Its Target roles group lists the
+ * titles it searches for; Edit opens the set-up's roles editor in place (`RolesForm`).
+ */
+function JobPreferences({ say }: { say: (words: string) => void }) {
+  const text = copy.profilePage.preferences;
+  const roles = useRoles();
+  return (
+    <Section
+      id="preferences"
+      icon={<TargetIcon className="size-[22px]" />}
+      title={text.title}
+      line={text.line}
+    >
+      <Group
+        id="preferences-roles"
+        title={text.roles.title}
+        say={say}
+        // Edited once they are read (the editor starts from what is saved).
+        editable={roles.data !== undefined}
+        view={
+          <QueryRegion
+            query={roles}
+            skeleton={{ kind: 'block', rows: 1 }}
+            label={copy.setUp.roles.loading}
+            error={
+              <LoadFailed
+                error={roles.error}
+                message={copy.setUp.roles.loadFailed}
+                retry={copy.setUp.roles.retry}
+                onRetry={() => roles.refetch()}
+              />
+            }
+          >
+            {(saved) => <RoleTitles roles={saved} />}
+          </QueryRegion>
+        }
+        editor={(done) => <RolesEditor saved={roles.data ?? []} {...done} />}
+      />
+    </Section>
+  );
+}
+
+/** The saved titles, as tags (the prototype's `.tag`), or that none are added yet. */
+function RoleTitles({ roles }: { roles: readonly Role[] }) {
+  if (roles.length === 0) {
+    return (
+      <p className="m-0 text-[0.9375rem] text-muted-foreground">
+        {copy.profilePage.preferences.roles.none}
+      </p>
+    );
+  }
+  return (
+    <ul
+      aria-labelledby="preferences-roles-title"
+      className="m-0 flex list-none flex-wrap gap-2 p-0"
+    >
+      {roles.map((role) => (
+        <li
+          key={role.roleId}
+          className="min-w-0 rounded-full border border-line bg-paper px-3 py-1.5 text-sm font-[650] wrap-anywhere text-ink"
+        >
+          {role.title}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** The roles editor in a group's form box, opening at its title field; Save and Cancel. */
+function RolesEditor({ saved, labelledBy, onSaved, onCancel }: Done & { saved: Role[] }) {
+  const text = copy.profilePage;
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    box.current?.querySelector<HTMLElement>('input')?.focus();
+  }, []);
+  return (
+    <div ref={box} className={EDITOR_BOX}>
+      <RolesForm
+        saved={saved}
+        place={{
+          labelledBy,
+          submit: text.save,
+          cancel: text.cancel,
+          size: 'default',
+          tooMany: text.preferences.roles.tooMany,
+          changedElsewhere: text.preferences.roles.changedElsewhere,
+        }}
+        onSaved={onSaved}
+        onCancel={onCancel}
+      />
+    </div>
+  );
+}
+
+/** A group's form box (the prototype's `.profile-editor`). */
+const EDITOR_BOX = 'grid min-w-0 gap-[21px] rounded-[22px] border border-line bg-paper p-[21px]';
+
+/** A group's saved facts (the prototype's `.profile-facts`): label, then value or Not added. */
+function Facts({ facts }: { facts: readonly FactRow[] }) {
+  const text = copy.profilePage;
+  return (
+    <dl className="m-0 grid">
+      {facts.map(([label, value]) => (
+        <div
+          key={label}
+          className="grid gap-x-[21px] gap-y-1 border-b border-line-soft py-[13px] last:border-b-0 @[560px]:grid-cols-[178px_minmax(0,1fr)] @[560px]:items-baseline"
+        >
+          <dt className="text-[0.8125rem] font-[650] text-muted-foreground">{label}</dt>
+          <dd
+            className={
+              value?.length
+                ? 'm-0 grid min-w-0 text-[0.9375rem] wrap-anywhere text-ink'
+                : 'm-0 min-w-0 text-[0.9375rem] text-muted-foreground'
+            }
+          >
+            {!value?.length
+              ? text.notAdded
+              : typeof value === 'string'
+                ? value
+                : value.map((line, at) => (
+                    // The same address may be listed twice: placed by where it is.
+                    // biome-ignore lint/suspicious/noArrayIndexKey: a read-only list
+                    <span key={at}>{line}</span>
+                  ))}
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -96,22 +259,26 @@ type FactRow = readonly [label: string, value: string | readonly string[] | unde
 type Done = { labelledBy: string; onSaved: () => void; onCancel: () => void };
 
 /**
- * One group of facts under its heading (the prototype's `.profile-group`), with Edit: the form
- * replaces the facts and takes focus at its first field; Save or Cancel brings the facts back and
+ * One group under its heading (the prototype's `.profile-group`), with Edit: the form replaces
+ * what is saved and takes focus at its first field; Save or Cancel brings the facts back and
  * focus to Edit, and a save marks the group Saved (and says so) until it is edited again.
  */
 function Group({
   id,
   title,
-  facts,
+  view,
   say,
   editor,
+  editable = true,
 }: {
   id: string;
   title: string;
-  facts: readonly FactRow[];
+  /** What is saved, shown while the form is closed. */
+  view: ReactNode;
   say: (words: string) => void;
   editor: (done: Done) => ReactNode;
+  /** Whether Edit is offered yet. */
+  editable?: boolean;
 }) {
   const text = copy.profilePage;
   const [editing, setEditing] = useState(false);
@@ -137,7 +304,7 @@ function Group({
             {text.saved}
           </p>
         )}
-        {!editing && (
+        {!editing && editable && (
           <Button
             ref={edit}
             variant="outline"
@@ -152,41 +319,13 @@ function Group({
           </Button>
         )}
       </div>
-      {editing ? (
-        editor({
-          labelledBy: `${id}-title`,
-          onSaved: () => close(true),
-          onCancel: () => close(false),
-        })
-      ) : (
-        <dl className="m-0 grid">
-          {facts.map(([label, value]) => (
-            <div
-              key={label}
-              className="grid gap-x-[21px] gap-y-1 border-b border-line-soft py-[13px] last:border-b-0 @[560px]:grid-cols-[178px_minmax(0,1fr)] @[560px]:items-baseline"
-            >
-              <dt className="text-[0.8125rem] font-[650] text-muted-foreground">{label}</dt>
-              <dd
-                className={
-                  value?.length
-                    ? 'm-0 grid min-w-0 text-[0.9375rem] wrap-anywhere text-ink'
-                    : 'm-0 min-w-0 text-[0.9375rem] text-muted-foreground'
-                }
-              >
-                {!value?.length
-                  ? text.notAdded
-                  : typeof value === 'string'
-                    ? value
-                    : value.map((line, at) => (
-                        // The same address may be listed twice: placed by where it is.
-                        // biome-ignore lint/suspicious/noArrayIndexKey: a read-only list
-                        <span key={at}>{line}</span>
-                      ))}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      )}
+      {editing
+        ? editor({
+            labelledBy: `${id}-title`,
+            onSaved: () => close(true),
+            onCancel: () => close(false),
+          })
+        : view}
     </div>
   );
 }
@@ -214,14 +353,7 @@ function GroupForm<N extends string>({
     ref.current?.querySelector<HTMLElement>('input, textarea')?.focus();
   }, [ref]);
   return (
-    <form
-      {...form}
-      aria-labelledby={labelledBy}
-      className={cn(
-        'grid min-w-0 gap-[21px] rounded-[22px] border border-line bg-paper p-[21px]',
-        form.className,
-      )}
-    >
+    <form {...form} aria-labelledby={labelledBy} className={cn(EDITOR_BOX, form.className)}>
       <div className="grid min-w-0 items-start gap-[21px] @[640px]:grid-cols-2">
         {children(bind)}
       </div>

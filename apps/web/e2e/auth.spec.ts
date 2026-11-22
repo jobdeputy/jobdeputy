@@ -131,6 +131,15 @@ test('creates an account, confirms it with the code, lands signed in, and signs 
   await expectNoAccessibilityViolations(page);
   await expectNoHorizontalScroll(page);
   await page.getByRole('button', { name: 'Cancel' }).click();
+  // Target roles: the set-up's editor, in place.
+  await page.getByRole('button', { name: 'Edit Target roles' }).click();
+  await expect(page.getByLabel('Job title')).toBeFocused();
+  await expectNoAccessibilityViolations(page);
+  await expectNoHorizontalScroll(page);
+  await page.getByRole('checkbox', { name: 'Backend engineer' }).check();
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByRole('button', { name: 'Edit Target roles' })).toBeFocused();
+  await expect(page.getByRole('list', { name: 'Target roles' })).toContainText('Backend engineer');
 
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(

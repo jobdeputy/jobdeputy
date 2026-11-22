@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { plan, reconcile, StepRoles } from '../src/components/setup/step-roles.tsx';
+import { plan, reconcile } from '../src/components/profile/roles-form.tsx';
+import { StepRoles } from '../src/components/setup/step-roles.tsx';
 import { ApiError } from '../src/lib/api/client.ts';
 import { createFakeApi } from '../src/lib/api/fake.ts';
 import { ApiContext } from '../src/lib/api/index.ts';
@@ -544,7 +545,9 @@ describe('Set it up, step 2: target roles', () => {
     continueOn();
     await waitFor(() => expect(alertText()).toContain('changed somewhere else'));
     expect(
-      screen.getByText('Up to 10 roles fit, and 12 are chosen. Remove 2 to continue.'),
+      screen.getByText('Up to 10 roles fit, and 12 are chosen. Remove 2 to continue.', {
+        ignore: '[role=status]',
+      }),
     ).toBeTruthy();
     await waitFor(() => expect(statusText()).toContain('Remove 2 to continue.'));
     // Typing one more: a reason about the list, under it once, not on the title field.
