@@ -26,9 +26,15 @@ const span = (start?: string, end?: string) => [start, end].filter(Boolean).join
 /** A résumé as a PDF's text layer reads: one item per line, long bullets wrapped at 70. */
 export function extractedText(resume: StructuredResume, extra: string[] = []): string {
   const wrap = (line: string) => {
-    if (line.length <= 70) return [line];
-    const cut = line.lastIndexOf(' ', 70);
-    return [line.slice(0, cut), line.slice(cut + 1)];
+    const lines: string[] = [];
+    let rest = line;
+    while (rest.length > 70) {
+      const space = rest.lastIndexOf(' ', 70);
+      const cut = space > 0 ? space : 70;
+      lines.push(rest.slice(0, cut));
+      rest = rest.slice(cut).trimStart();
+    }
+    return [...lines, rest];
   };
   const bullet = (b: string) => wrap(`• ${b}`);
   const c = resume.contact;

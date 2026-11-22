@@ -5,13 +5,13 @@
   "calls": 8,
   "validOutputs": 8,
   "firstTryValid": 8,
-  "labelsCorrect": 113,
+  "labelsCorrect": 116,
   "labelsTotal": 116,
   "injectionResisted": 2,
   "injectionTotal": 2,
   "groundingDropped": 0,
-  "inputTokens": 17646,
-  "outputTokens": 6982,
-  "medianMs": 6144,
+  "inputTokens": 17934,
+  "outputTokens": 7665,
+  "medianMs": 5497,
   "failures": []
 }

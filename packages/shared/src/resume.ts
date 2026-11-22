@@ -134,8 +134,27 @@ export const RESUME_HEADINGS = {
   projects: 'Projects',
 } as const;
 
+/**
+ * Text a file can hold: no control characters (tabs and line breaks become spaces), no
+ * U+FFFE or U+FFFF, and no lone surrogates. XML 1.0 forbids them, so a DOCX with one is
+ * reported as corrupt; PDF text extraction can leave them in a résumé's text.
+ */
+export function printable(text: string): string {
+  return (
+    text
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: removing them is the point.
+      .replace(/[\t\n\r\v\f]/g, ' ')
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: removing them is the point.
+      .replace(/[\u0000-\u001f\u007f\ufffe\uffff]/g, '')
+      .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '')
+  );
+}
+
 const joined = (separator: string, ...values: (string | undefined)[]) =>
-  values.filter((v): v is string => v !== undefined && v !== '').join(separator);
+  values
+    .map((v) => (v === undefined ? '' : printable(v).trim()))
+    .filter((v) => v !== '')
+    .join(separator);
 
 /** "BSc in Computer Science"; the field once when the degree already names it. */
 function degreeText(degree?: string, field?: string): string {
@@ -146,8 +165,9 @@ function degreeText(degree?: string, field?: string): string {
 /** The résumé as the template's blocks; empty sections are left out. */
 export function resumeBlocks(resume: StructuredResume): ResumeBlock[] {
   const c = resume.contact;
-  const blocks: ResumeBlock[] = [{ kind: 'name', text: c.name }];
-  if (c.headline) blocks.push({ kind: 'line', text: c.headline });
+  const blocks: ResumeBlock[] = [{ kind: 'name', text: joined('', c.name) }];
+  const headline = joined('', c.headline);
+  if (headline) blocks.push({ kind: 'line', text: headline });
   const contact = joined(' | ', c.email, c.phone, c.location, ...c.links);
   if (contact) blocks.push({ kind: 'line', text: contact });
   const section = (heading: string, body: ResumeBlock[]) => {
@@ -159,15 +179,22 @@ export function resumeBlocks(resume: StructuredResume): ResumeBlock[] {
     return text ? [{ kind: 'meta', text }] : [];
   };
   const bullets = (items: string[]): ResumeBlock[] =>
-    items.map((text) => ({ kind: 'bullet', text }));
+    items
+      .map((item) => joined('', item))
+      .filter(Boolean)
+      .map((text) => ({ kind: 'bullet', text }));
 
   section(
     RESUME_HEADINGS.summary,
-    resume.summary ? [{ kind: 'paragraph', text: resume.summary }] : [],
+    resume.summary ? [{ kind: 'paragraph', text: joined('', resume.summary) }] : [],
   );
   section(
     RESUME_HEADINGS.skills,
-    resume.skills.map((g) => ({ kind: 'skills', group: g.group, items: g.items.join(', ') })),
+    resume.skills.map((g) => ({
+      kind: 'skills',
+      group: joined('', g.group),
+      items: joined(', ', ...g.items),
+    })),
   );
   section(
     RESUME_HEADINGS.experience,
@@ -195,7 +222,7 @@ export function resumeBlocks(resume: StructuredResume): ResumeBlock[] {
   section(
     RESUME_HEADINGS.projects,
     resume.projects.flatMap((p) => [
-      { kind: 'entry', text: p.name } as const,
+      { kind: 'entry', text: joined('', p.name) } as const,
       ...meta(p.link),
       ...bullets(p.bullets),
     ]),

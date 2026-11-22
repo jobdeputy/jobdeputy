@@ -23,70 +23,114 @@ export interface StructureInput {
   text: string;
 }
 
-// The model's own shape: every field but a name may be empty (Ministral 3 14B writes "" or
-// "N/A" for a field the résumé lacks rather than leaving it out); code reads those as absent.
-const field = (max: number) => z.string().trim().max(max).optional();
-const name = (max: number) => z.string().trim().min(1).max(max);
-const list = (max: number, items: number) =>
-  z.array(z.string().trim().max(max)).max(items).optional();
+// The model's own shape. Every field but an entry's name may be empty (Ministral 3 14B writes
+// "" or "N/A" for a field the résumé lacks rather than leaving it out); code reads those as
+// absent. Its limits only bound the reply: they are far above any résumé, so a long skills
+// list or summary never makes the whole reply invalid. Code fits what it keeps to the
+// structured résumé's own limits (CAPS).
+const field = z.string().trim().max(2_000).optional();
+const name = z.string().trim().min(1).max(500);
+const list = z.array(z.string().trim().max(2_000)).max(60).optional();
 
 export const structureResumeOutput = z
   .object({
     contact: z
       .object({
-        name: field(120),
-        headline: field(160),
-        email: field(254),
-        phone: field(40),
-        location: field(120),
-        links: list(300, 4),
+        name: field,
+        headline: field,
+        email: field,
+        phone: field,
+        location: field,
+        links: list,
       })
       .strict(),
-    summary: field(800),
+    summary: field,
     skills: z
-      .array(z.object({ group: field(40), items: list(60, 20) }).strict())
-      .max(8)
+      .array(z.object({ group: field, items: list }).strict())
+      .max(30)
       .optional(),
     experience: z
       .array(
         z
           .object({
-            employer: name(120),
-            title: name(120),
-            location: field(120),
-            start: field(40),
-            end: field(40),
-            bullets: list(400, 10),
+            employer: name,
+            title: name,
+            location: field,
+            start: field,
+            end: field,
+            bullets: list,
           })
           .strict(),
       )
-      .max(12)
+      .max(30)
       .optional(),
     education: z
       .array(
         z
           .object({
-            school: name(160),
-            degree: field(160),
-            field: field(160),
-            start: field(40),
-            end: field(40),
-            details: list(300, 4),
+            school: name,
+            degree: field,
+            field: field,
+            start: field,
+            end: field,
+            details: list,
           })
           .strict(),
       )
-      .max(6)
+      .max(30)
       .optional(),
     certifications: z
-      .array(z.object({ name: name(160), issuer: field(120), date: field(40) }).strict())
-      .max(10)
+      .array(z.object({ name: name, issuer: field, date: field }).strict())
+      .max(30)
       .optional(),
     projects: z
-      .array(z.object({ name: name(120), link: field(300), bullets: list(400, 6) }).strict())
-      .max(8)
+      .array(z.object({ name: name, link: field, bullets: list }).strict())
+      .max(30)
       .optional(),
   })
   .strict();
+
+/** The structured résumé's limits (packages/shared resume.ts), which code fits the copy to. */
+const CAPS = {
+  name: 120,
+  headline: 160,
+  email: 254,
+  phone: 40,
+  place: 120,
+  links: 4,
+  link: 300,
+  summary: 800,
+  groups: 8,
+  group: 40,
+  skills: 20,
+  skill: 60,
+  jobs: 12,
+  employer: 120,
+  date: 40,
+  bullets: 10,
+  bullet: 400,
+  schools: 6,
+  school: 160,
+  details: 4,
+  detail: 300,
+  certifications: 10,
+  certification: 160,
+  issuer: 120,
+  projects: 8,
+  project: 120,
+  projectBullets: 6,
+} as const;
+
+/** Text cut to `max` characters at a word boundary (when there is one in its last 40%). */
+export function fit(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const space = cut.lastIndexOf(' ');
+  return (space > max * 0.6 ? cut.slice(0, space) : cut).trim();
+}
+
+/** What is sent: the start of the résumé's text (the prompt and grounding read the same). */
+export const sentText = (text: string) => text.slice(0, STRUCTURE_RESUME_CHARS);
 
 export type StructureResumeOutput = z.infer<typeof structureResumeOutput>;
 
@@ -108,7 +152,7 @@ Leave out page numbers, headers and footers, references, and anything that is no
   limits: { maxTokens: 4_000, totalTokens: 30_000, timeoutMs: 120_000 },
   prompt: ({ text }) =>
     [
-      dataBlock('resume', text.slice(0, STRUCTURE_RESUME_CHARS)),
+      dataBlock('resume', sentText(text)),
       'Copy this whole résumé into the fields: every entry and every bullet point.',
     ].join('\n\n'),
 });
@@ -129,14 +173,15 @@ class Source {
   private readonly folded: string;
   private readonly words: Set<string>;
   private readonly lower: string;
-  private readonly digits: string;
+  /** The digits of each phone-like run in the text ("(555) 010-1234", "+44 20 7946 0000"). */
+  private readonly phones: string[];
   private readonly numbers: Set<string>;
 
   constructor(text: string) {
     this.folded = fold(text);
     this.words = new Set(this.folded.trim().split(' '));
     this.lower = text.toLowerCase();
-    this.digits = text.replace(/\D/g, '');
+    this.phones = (text.match(/\+?\d[\d ().-]{5,}\d/g) ?? []).map((run) => run.replace(/\D/g, ''));
     this.numbers = numbersIn(text);
   }
 
@@ -164,11 +209,16 @@ class Source {
     return bare !== '' && this.lower.includes(bare);
   }
 
-  /** A phone number: its digits (at least 7) appear together, with or without a country code. */
+  /**
+   * A phone number the text writes as one run of digits and separators, with or without a
+   * country code: "+1 555 010 1234" for "(555) 010-1234" (the last 10 digits, the national
+   * number). Digits joined across separate numbers, such as dates, never match.
+   */
   hasPhone(value: string): boolean {
     const digits = value.replace(/\D/g, '');
-    // "+1 555 010 1234" for "(555) 010-1234": the last 10 digits, the national number.
-    return [digits, digits.slice(-10)].some((d) => d.length >= 7 && this.digits.includes(d));
+    if (digits.length < 7) return false;
+    const national = (d: string) => d.slice(-10);
+    return this.phones.some((run) => run === digits || national(run) === national(digits));
   }
 }
 
@@ -195,12 +245,16 @@ export interface GroundedResume {
   /** True when no experience, education, or project entry is left: nothing to tailor. */
   empty: boolean;
   /**
-   * The share (0–1) of the text's words that the structured copy has, each counted as often as
-   * it appears: low when the model stopped early or skipped entries.
+   * The share (0–1) of the résumé's whole text whose words the structured copy has, each
+   * counted as often as it appears: low when the model stopped early or skipped entries, and
+   * when the text was longer than what was sent (`truncated`).
    */
   coverage: number;
+  /** The text was longer than STRUCTURE_RESUME_CHARS: its end was not sent. */
+  truncated: boolean;
 }
 
+/** How much of `text` the résumé covers (GroundedResume.coverage). */
 export function coverageOf(resume: StructuredResume, text: string): number {
   const c = resume.contact;
   const counts = (value: string) => {
@@ -233,10 +287,14 @@ export function coverageOf(resume: StructuredResume, text: string): number {
   return total === 0 ? 1 : covered / total;
 }
 
+/** The name used when neither the model's nor the profile's is usable. */
+export const FALLBACK_NAME = 'Résumé';
+
 /**
  * Prompt-injection rule 4 (decision 0010) for a structured résumé: keeps only what the
- * résumé's text contains. An entry whose employer, title, school, or name is not there goes
- * entirely; any other field, bullet, or skill goes on its own. A name not in the text is
+ * résumé's text (what was sent of it) contains. An entry whose employer, title, school, or
+ * name is not there goes entirely; any other field, bullet, or skill goes on its own. Every
+ * value is plain text, fitted to the structured résumé's limits. A name not in the text is
  * replaced by the profile's (`name`). Entries get their IDs (`e1`, `d1`, `c1`, `p1`) here,
  * never from the model.
  */
@@ -245,116 +303,152 @@ export function groundStructured(
   text: string,
   name: string,
 ): GroundedResume {
-  const source = new Source(text);
+  const sent = sentText(text);
+  const source = new Source(sent);
   let rejections = 0;
+  const has = (v: string) => source.has(v);
   /** A field the model filled: absent when empty or a placeholder, dropped when not in the text. */
-  const keep = (value: string | undefined, ok: (v: string) => boolean): string | undefined => {
-    const v = plainText(value ?? '');
+  const keep = (
+    value: string | undefined,
+    max: number,
+    ok: (v: string) => boolean = has,
+  ): string | undefined => {
+    const v = fit(plainText(value ?? ''), max);
     if (blank(v)) return undefined;
     if (ok(v)) return v;
     rejections += 1;
     return undefined;
   };
-  const has = (v: string) => source.has(v);
-  /** Lines (bullets, details) the text supports; the others are dropped and counted. */
-  const lines = (items: string[] | undefined, ok = (v: string) => source.supports(v)) =>
-    (items ?? []).map(plainText).filter((line) => {
-      if (blank(line)) return false;
-      if (ok(line)) return true;
-      rejections += 1;
-      return false;
-    });
-  const defined = <T extends object>(value: T) =>
-    Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as T;
-  const entries = <T, U>(
-    list: T[] | undefined,
-    prefix: string,
-    required: (e: T) => string[],
-    map: (e: T) => U,
+  /** Lines (bullets, details, skills, links) the text supports, at most `count` of them. */
+  const lines = (
+    items: string[] | undefined,
+    count: number,
+    max: number,
+    ok = (v: string) => source.supports(v),
   ) =>
-    (list ?? [])
-      .filter((e) => {
-        if (required(e).every(has)) return true;
+    (items ?? [])
+      .map((item) => fit(plainText(item), max))
+      .filter((line) => {
+        if (blank(line)) return false;
+        if (ok(line)) return true;
         rejections += 1;
         return false;
       })
-      .map((e, i) => ({ id: `${prefix}${i + 1}`, ...map(e) }));
+      .slice(0, count);
+  const defined = <T extends object>(value: T) =>
+    Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as T;
+  /** Entries whose required names (plain, fitted) the text has, at most `count`, with IDs. */
+  const entries = <T, U>(
+    list: T[] | undefined,
+    prefix: string,
+    count: number,
+    names: (e: T) => string[],
+    map: (e: T, names: string[]) => U,
+  ) =>
+    (list ?? [])
+      .map((e) => ({ e, names: names(e) }))
+      .filter(({ names }) => {
+        if (names.every((n) => !blank(n) && has(n))) return true;
+        rejections += 1;
+        return false;
+      })
+      .slice(0, count)
+      .map(({ e, names }, i) => ({ id: `${prefix}${i + 1}`, ...map(e, names) }));
+  const plain = (value: string, max: number) => fit(plainText(value), max);
 
   const c = output.contact;
-  const contactName = keep(c.name, has);
+  const profileName = plain(name, CAPS.name);
   const contact = defined({
-    name: contactName ?? name,
-    headline: keep(c.headline, has),
-    email: keep(c.email, (v) => source.hasVerbatim(v)),
-    phone: keep(c.phone, (v) => source.hasPhone(v)),
-    location: keep(c.location, has),
-    links: lines(c.links, (l) => source.hasVerbatim(l)),
+    name: keep(c.name, CAPS.name) ?? (blank(profileName) ? FALLBACK_NAME : profileName),
+    headline: keep(c.headline, CAPS.headline),
+    email: keep(c.email, CAPS.email, (v) => source.hasVerbatim(v)),
+    phone: keep(c.phone, CAPS.phone, (v) => source.hasPhone(v)),
+    location: keep(c.location, CAPS.place),
+    links: lines(c.links, CAPS.links, CAPS.link, (l) => source.hasVerbatim(l)),
   });
 
-  const groups = new Map<string, string[]>();
+  // Headings merge regardless of case ("SKILLS" and "Skills" are one group), the first
+  // spelling kept.
+  const groups = new Map<string, { group: string; items: string[] }>();
   for (const g of output.skills ?? []) {
-    const group = plainText(g.group ?? '');
-    const heading = !blank(group) && has(group) ? group : DEFAULT_SKILL_GROUP;
-    const items = lines(g.items, has);
-    const merged = [...(groups.get(heading) ?? []), ...items];
-    if (merged.length > 0) groups.set(heading, [...new Set(merged)].slice(0, 20));
+    const written = plain(g.group ?? '', CAPS.group);
+    const group = !blank(written) && has(written) ? written : DEFAULT_SKILL_GROUP;
+    const items = lines(g.items, Number.POSITIVE_INFINITY, CAPS.skill, has);
+    const known = groups.get(group.toLowerCase()) ?? { group, items: [] };
+    known.items = [...new Set([...known.items, ...items])].slice(0, CAPS.skills);
+    if (known.items.length > 0) groups.set(group.toLowerCase(), known);
   }
 
-  const summary = lines(output.summary === undefined ? [] : [output.summary])[0];
   const resume: StructuredResume = defined({
     contact,
-    summary,
-    skills: [...groups].map(([group, items]) => ({ group, items })),
+    summary: lines(output.summary === undefined ? [] : [output.summary], 1, CAPS.summary)[0],
+    skills: [...groups.values()].slice(0, CAPS.groups),
     experience: entries(
       output.experience,
       'e',
-      (e) => [e.employer, e.title],
-      (e) =>
+      CAPS.jobs,
+      (e) => [plain(e.employer, CAPS.employer), plain(e.title, CAPS.employer)],
+      (e, [employer = '', title = '']) =>
         defined({
-          employer: withoutTitle(e.employer, e.title),
-          title: e.title,
-          location: keep(e.location, has),
-          start: keep(e.start, has),
-          end: keep(e.end, has),
-          bullets: lines(e.bullets),
+          employer: withoutTitle(employer, title),
+          title,
+          location: keep(e.location, CAPS.place),
+          start: keep(e.start, CAPS.date),
+          end: keep(e.end, CAPS.date),
+          bullets: lines(e.bullets, CAPS.bullets, CAPS.bullet),
         }),
     ),
     education: entries(
       output.education,
       'd',
-      (d) => [d.school],
-      (d) =>
+      CAPS.schools,
+      (d) => [plain(d.school, CAPS.school)],
+      (d, [school = '']) =>
         defined({
-          school: d.school,
-          degree: keep(d.degree, has),
-          field: keep(d.field, has),
-          start: keep(d.start, has),
-          end: keep(d.end, has),
-          details: lines(d.details),
+          school,
+          degree: keep(d.degree, CAPS.school),
+          field: keep(d.field, CAPS.school),
+          start: keep(d.start, CAPS.date),
+          end: keep(d.end, CAPS.date),
+          details: lines(d.details, CAPS.details, CAPS.detail),
         }),
     ),
     certifications: entries(
       output.certifications,
       'c',
-      (c) => [c.name],
-      (c) => defined({ name: c.name, issuer: keep(c.issuer, has), date: keep(c.date, has) }),
+      CAPS.certifications,
+      (x) => [plain(x.name, CAPS.certification)],
+      (x, [certification = '']) =>
+        defined({
+          name: certification,
+          issuer: keep(x.issuer, CAPS.issuer),
+          date: keep(x.date, CAPS.date),
+        }),
     ),
     projects: entries(
       output.projects,
       'p',
-      (p) => [p.name],
-      (p) =>
+      CAPS.projects,
+      (p) => [plain(p.name, CAPS.project)],
+      (p, [project = '']) =>
         defined({
-          name: p.name,
-          link: keep(p.link, (v) => source.hasVerbatim(v)),
-          bullets: lines(p.bullets),
+          name: project,
+          link: keep(p.link, CAPS.link, (v) => source.hasVerbatim(v)),
+          bullets: lines(p.bullets, CAPS.projectBullets, CAPS.bullet),
         }),
     ),
   });
+  // Every value was fitted above: a failure here is a bug, not bad model output.
   structuredResume.parse(resume);
   const empty =
     resume.experience.length === 0 && resume.education.length === 0 && resume.projects.length === 0;
-  return { resume, rejections, empty, coverage: coverageOf(resume, text) };
+  return {
+    resume,
+    rejections,
+    empty,
+    coverage: coverageOf(resume, text),
+    truncated: text.length > sent.length,
+  };
 }
 
 export interface StructureCall {
@@ -363,15 +457,14 @@ export interface StructureCall {
   grounded?: GroundedResume;
 }
 
-/** One task call (with runTask's own repairs), grounded in the résumé's text. */
+/** One task call (with runTask's own repairs) on the start of the text, grounded in it. */
 export async function structureResume(
   text: string,
   name: string,
   source: ModelSource,
   options: { signal?: AbortSignal } = {},
 ): Promise<StructureCall> {
-  const sent = text.slice(0, STRUCTURE_RESUME_CHARS);
-  const result = await runTask(structureResumeTask, { text: sent }, source, options);
+  const result = await runTask(structureResumeTask, { text }, source, options);
   if (result.status !== 'ok') return { result };
-  return { result, grounded: groundStructured(result.output, sent, name) };
+  return { result, grounded: groundStructured(result.output, text, name) };
 }

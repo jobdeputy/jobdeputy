@@ -4,11 +4,16 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { build } from 'esbuild';
 import { afterAll, describe, expect, it } from 'vitest';
-import { BUNDLING, RENDER_FILES, REPO_ROOT } from '../lib/constructs/node-function.js';
+import {
+  BUNDLING,
+  RENDER_BANNER,
+  REPO_ROOT,
+  renderFiles,
+} from '../lib/constructs/node-function.js';
 
 // #51: the résumé renderers run from a Lambda bundle, not from node_modules. A dependency that
 // reads a file beside its own code (unicode-properties' data.trie) works in tests and fails in
-// Lambda unless the file is copied beside the bundle (AppFunction's copyFiles). This bundles
+// Lambda unless the file is copied beside the bundle (AppFunction's rendersResumes). This bundles
 // them exactly as AppFunction does and runs the bundle alone, in an empty folder.
 
 const out = mkdtempSync(join(tmpdir(), 'jd-bundle-'));
@@ -27,9 +32,11 @@ const options = {
   logLevel: 'silent',
 } as const;
 
+/** Bundles `contents` as a function that renders résumés (AppFunction rendersResumes). */
 async function bundle(contents: string, copy: readonly string[]): Promise<string> {
   await build({
     ...options,
+    banner: { js: RENDER_BANNER },
     stdin: {
       contents,
       resolveDir: join(REPO_ROOT, 'apps/worker/src'),
@@ -62,7 +69,7 @@ console.log(JSON.stringify({ pdf: pdf.subarray(0, 5).toString(), pdfBytes: pdf.l
 
 describe('Lambda bundling (#51)', () => {
   it('runs the résumé renderers from the bundle, with the files they read beside it', async () => {
-    const result = JSON.parse(await bundle(entry, RENDER_FILES)) as Record<string, unknown>;
+    const result = JSON.parse(await bundle(entry, renderFiles())) as Record<string, unknown>;
     expect(result).toMatchObject({ pdf: '%PDF-', docx: 'PK' });
     expect(result.pdfBytes).toBeGreaterThan(5_000);
   }, 60_000);
@@ -72,7 +79,14 @@ describe('Lambda bundling (#51)', () => {
     await expect(bundle(entry, [])).rejects.toThrow(/data\.trie/);
   }, 60_000);
 
-  it('keeps every function parseable: the banner names clash with nothing bundled', async () => {
+  it('gives __dirname without an end slash, as CommonJS does', async () => {
+    const dir = await bundle('console.log(JSON.stringify([__dirname, __filename]));', []);
+    const [dirname, filename] = JSON.parse(dir) as [string, string];
+    expect(dirname.endsWith('/')).toBe(false);
+    expect(filename).toBe(join(dirname, 'index.mjs'));
+  }, 60_000);
+
+  it('keeps every function parseable: the banners clash with nothing bundled', async () => {
     // Every `entry: 'apps/…'` in infra/lib, bundled as its function is, then parsed by Node.
     const entries = new Set<string>();
     const scan = (dir: string) => {
@@ -88,8 +102,15 @@ describe('Lambda bundling (#51)', () => {
     expect(entries.size).toBeGreaterThan(10);
     for (const entry of entries) {
       const outfile = join(out, 'check', `${entry.replace(/\W/g, '_')}.mjs`);
-      await build({ ...options, entryPoints: [join(REPO_ROOT, entry)], outfile });
-      execFileSync(process.execPath, ['--check', outfile]);
+      for (const banner of [BUNDLING.banner, RENDER_BANNER]) {
+        await build({
+          ...options,
+          banner: { js: banner },
+          entryPoints: [join(REPO_ROOT, entry)],
+          outfile,
+        });
+        execFileSync(process.execPath, ['--check', outfile]);
+      }
     }
   }, 120_000);
 });

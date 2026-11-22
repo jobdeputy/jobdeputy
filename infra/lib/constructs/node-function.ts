@@ -17,18 +17,25 @@ export const BUNDLING = {
   minify: true,
   // The AWS SDK v3 ships with the Lambda runtime.
   externalModules: ['@aws-sdk/*'],
-  // CommonJS names in an ES module bundle: `require` for packages that call it, and #51
-  // `__filename`/`__dirname`, which pdfkit reads when it loads.
-  banner: [
-    "import { createRequire } from 'module';",
-    "import { fileURLToPath as __jdFileURLToPath } from 'url';",
-    'const require = createRequire(import.meta.url);',
-    'const __filename = __jdFileURLToPath(import.meta.url);',
-    "const __dirname = __jdFileURLToPath(new URL('.', import.meta.url));",
-  ].join(' '),
+  // `require` for packages that call it in an ES module bundle.
+  banner: "import { createRequire } from 'module'; const require = createRequire(import.meta.url);",
   // #51: fonts imported as bytes (the résumé PDF embeds Roboto; apps/worker/src/fonts.d.ts).
   loader: { '.ttf': 'binary' } as const,
 } satisfies BundlingOptions;
+
+/**
+ * #51: the banner of functions that render résumés: also CommonJS's `__filename` and
+ * `__dirname` (no end slash, as in CommonJS), which pdfkit reads when it loads. Only these
+ * functions get them, so no other function's dependencies see them defined.
+ */
+export const RENDER_BANNER = [
+  "import { createRequire } from 'module';",
+  "import { fileURLToPath as __jdFileURLToPath } from 'url';",
+  "import { dirname as __jdDirname } from 'path';",
+  'const require = createRequire(import.meta.url);',
+  'const __filename = __jdFileURLToPath(import.meta.url);',
+  'const __dirname = __jdDirname(__filename);',
+].join(' ');
 
 /**
  * A file inside a dependency's dependency, found the way Node finds it from `from` (a package
@@ -43,11 +50,13 @@ export function packageFile(from: string, chain: readonly string[]): string {
 /**
  * #51: files the résumé renderers read from disk beside their code, which esbuild leaves out:
  * fontkit's line-breaking data (`unicode-properties` reads `./data.trie` next to the module, so
- * next to the bundle).
+ * next to the bundle). Resolved only when a function that renders is built.
  */
-export const RENDER_FILES = [
-  packageFile('apps/worker', ['pdfmake', 'pdfkit', 'fontkit', 'unicode-properties/data.trie']),
-];
+export function renderFiles(): string[] {
+  return [
+    packageFile('apps/worker', ['pdfmake', 'pdfkit', 'fontkit', 'unicode-properties/data.trie']),
+  ];
+}
 
 export interface AppFunctionProps {
   /** Path from the repo root, for example `apps/api/src/ping-jobs.ts`. */
@@ -56,8 +65,11 @@ export interface AppFunctionProps {
   readonly memorySize?: number;
   readonly environment?: Record<string, string>;
   readonly removalPolicy: RemovalPolicy;
-  /** Files (absolute paths in the repo) copied beside the bundle, for code that reads them at run time. */
-  readonly copyFiles?: readonly string[];
+  /**
+   * #51: the function renders résumés (PDF, DOCX): its bundle gets RENDER_BANNER and the
+   * files of renderFiles() beside it.
+   */
+  readonly rendersResumes?: boolean;
 }
 
 /** Node 22 on ARM64, bundled with esbuild, logs kept 14 days (decision 0005). */
@@ -86,14 +98,15 @@ export class AppFunction extends Construct {
       },
       bundling: {
         ...BUNDLING,
-        ...(props.copyFiles?.length
+        ...(props.rendersResumes
           ? {
+              banner: RENDER_BANNER,
               commandHooks: {
                 beforeBundling: () => [],
                 beforeInstall: () => [],
                 // Paths from the input directory, so this works in Docker bundling too.
                 afterBundling: (inputDir: string, outputDir: string) =>
-                  (props.copyFiles ?? []).map(
+                  renderFiles().map(
                     (file) => `cp "${join(inputDir, relative(REPO_ROOT, file))}" "${outputDir}/"`,
                   ),
               },

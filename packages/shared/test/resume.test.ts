@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RESUME_HEADINGS, resumeBlocks, type StructuredResume } from '../src/resume.js';
+import { printable, RESUME_HEADINGS, resumeBlocks, type StructuredResume } from '../src/resume.js';
 
 const full: StructuredResume = {
   contact: {
@@ -96,5 +96,32 @@ describe('resumeBlocks', () => {
       { kind: 'heading', text: RESUME_HEADINGS.experience },
       { kind: 'entry', text: 'Dev, Acme' },
     ]);
+  });
+});
+
+describe('printable', () => {
+  it('removes what XML 1.0 forbids, keeping every other character', () => {
+    expect(printable('Ada\u0002 Love\u0007lace￾')).toBe('Ada Lovelace');
+    expect(printable('a\tb\nc')).toBe('a b c');
+    expect(printable('lone \uD800 surrogate')).toBe('lone  surrogate');
+    expect(printable('Łukasz 😀 “quotes” – é')).toBe('Łukasz 😀 “quotes” – é');
+  });
+
+  it('is applied to every block', () => {
+    const blocks = resumeBlocks({
+      contact: { name: 'Sam\u0002 Example', headline: '\u0007', links: [] },
+      summary: 'Sum\u0000mary',
+      skills: [{ group: 'To\u0001ols', items: ['G\u0003o'] }],
+      experience: [
+        { id: 'e1', employer: 'Ac\u0004me', title: 'Dev', bullets: ['Bu\u0005ilt', '\u0006'] },
+      ],
+      education: [],
+      certifications: [],
+      projects: [],
+    });
+    expect(JSON.stringify(blocks)).not.toMatch(/\\u000[0-7]/);
+    expect(blocks).toContainEqual({ kind: 'name', text: 'Sam Example' });
+    expect(blocks.filter((b) => b.kind === 'bullet')).toEqual([{ kind: 'bullet', text: 'Built' }]);
+    expect(blocks.some((b) => b.kind === 'line')).toBe(false);
   });
 });

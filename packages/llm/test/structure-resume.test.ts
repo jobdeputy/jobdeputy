@@ -5,10 +5,13 @@ import { stubSource } from '../src/stub-model.js';
 import {
   coverageOf,
   DEFAULT_SKILL_GROUP,
+  FALLBACK_NAME,
+  fit,
   groundStructured,
   STRUCTURE_RESUME_CHARS,
   type StructureResumeOutput,
   structureResume,
+  structureResumeOutput,
   structureResumeTask,
   withoutTitle,
 } from '../src/tasks/structure-resume.js';
@@ -220,6 +223,78 @@ describe('groundStructured', () => {
       expect(grounded.resume, c.id).toEqual(c.expected);
       expect(grounded.rejections, c.id).toBe(0);
     }
+  });
+});
+
+describe('groundStructured: limits, names, and plain text (review fixes)', () => {
+  it('accepts a long reply, then fits it to the résumé limits instead of refusing it', () => {
+    const skills = Array.from({ length: 25 }, (_, i) => `Skill${i}`);
+    const long = `${text}\nTools: ${skills.join(', ')}\n${'word '.repeat(200)}`;
+    const output = copied();
+    output.skills = [{ group: 'Tools', items: skills }];
+    output.summary = 'word '.repeat(200).trim();
+    output.contact.links = Array.from({ length: 6 }, () => 'github.com/sam-example');
+    expect(structureResumeOutput.safeParse(output).success).toBe(true);
+    const { resume } = groundStructured(output, long, 'P');
+    expect(resume.skills[0]?.items).toHaveLength(20);
+    expect(resume.summary?.length).toBeLessThanOrEqual(800);
+    expect(resume.summary?.endsWith('word')).toBe(true);
+    expect(resume.contact.links).toHaveLength(4);
+  });
+
+  it('flags a text longer than what was sent, and counts its unsent end in coverage', () => {
+    const tail = '\nEDUCATION\nUniversity of Example\n'.repeat(1) + 'More text here. '.repeat(800);
+    const whole = groundStructured(copied(), text, 'P');
+    const cut = groundStructured(copied(), `${text}${tail}`, 'P');
+    expect(whole.truncated).toBe(false);
+    expect(cut.truncated).toBe(true);
+    expect(cut.coverage).toBeLessThan(whole.coverage / 2);
+  });
+
+  it('keeps a phone only when the text writes it as one number, not digits joined across dates', () => {
+    const dated = `${text}\nJan 2019 – Mar 2021\n2021 – 2023`;
+    const output = copied();
+    output.contact.phone = '(201) 920-2120';
+    expect(groundStructured(output, dated, 'P').resume.contact.phone).toBeUndefined();
+    output.contact.phone = '555.010.1234';
+    expect(groundStructured(output, dated, 'P').resume.contact.phone).toBe('555.010.1234');
+  });
+
+  it('falls back to a name that always fits, whatever the profile gives', () => {
+    const output = copied();
+    output.contact.name = 'N/A';
+    expect(groundStructured(output, text, '  ').resume.contact.name).toBe(FALLBACK_NAME);
+    expect(groundStructured(output, text, 'x'.repeat(300)).resume.contact.name).toHaveLength(120);
+  });
+
+  it('stores entry names as plain text: no Markdown, bullet marks, or doubled spaces', () => {
+    const output = copied();
+    const e = output.experience?.[0];
+    if (!e) throw new Error('fixture');
+    e.title = '**Software  Engineer**';
+    e.employer = '• Example Logistics';
+    const job = groundStructured(output, text, 'P').resume.experience[0];
+    expect(job?.title).toBe('Software Engineer');
+    expect(job?.employer).toBe('Example Logistics');
+  });
+
+  it('merges skill headings that differ only in case', () => {
+    const output = copied();
+    output.skills = [
+      { group: 'Languages', items: ['TypeScript'] },
+      { group: 'LANGUAGES', items: ['SQL'] },
+    ];
+    expect(groundStructured(output, text, 'P').resume.skills).toEqual([
+      { group: 'Languages', items: ['TypeScript', 'SQL'] },
+    ]);
+  });
+});
+
+describe('fit', () => {
+  it('cuts at a word boundary, or hard when there is none near the end', () => {
+    expect(fit('short', 10)).toBe('short');
+    expect(fit('one two three four', 15)).toBe('one two three');
+    expect(fit('abcdefghijklmnop', 5)).toBe('abcde');
   });
 });
 
