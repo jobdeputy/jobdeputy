@@ -48,8 +48,12 @@ function chip(title: string) {
   return screen.getByRole('checkbox', { name: title }) as HTMLInputElement;
 }
 
-function continueOn() {
-  fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+/**
+ * Presses Continue once it is named so again: after a save that took over 300 ms, the button shows
+ * "Saving…" for at least 500 ms (the shared loading timing), even after the save's answer is in.
+ */
+async function continueOn() {
+  fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
 }
 
 /** What the status lines say (the step's own, and the loading region's). */
@@ -78,7 +82,7 @@ describe('Set it up, step 2: target roles', () => {
     await screen.findByRole('heading', { level: 1, name: 'First, what should I call you?' });
     fireEvent.change(screen.getByLabelText('First name'), { target: { value: 'Alex' } });
     fireEvent.change(screen.getByLabelText('Last name'), { target: { value: 'Morgan' } });
-    continueOn();
+    await continueOn();
     const title = await screen.findByRole('heading', {
       level: 1,
       name: 'What roles should I look for?',
@@ -88,7 +92,7 @@ describe('Set it up, step 2: target roles', () => {
     await screen.findByLabelText('Job title');
     fireEvent.click(chip('Backend engineer'));
     add('Staff engineer');
-    continueOn();
+    await continueOn();
     expect(await screen.findByRole('heading', { level: 1, name: 'Add your résumé.' })).toBeTruthy();
     expect(await savedTitles(api)).toEqual(['Backend engineer', 'Staff engineer']);
   });
@@ -102,7 +106,7 @@ describe('Set it up, step 2: target roles', () => {
     await screen.findByLabelText('First name');
     fireEvent.change(screen.getByLabelText('First name'), { target: { value: 'Alex' } });
     fireEvent.change(screen.getByLabelText('Last name'), { target: { value: 'Morgan' } });
-    continueOn();
+    await continueOn();
     await screen.findByLabelText('Job title');
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     await screen.findByRole('heading', { level: 1, name: 'First, what should I call you?' });
@@ -167,7 +171,7 @@ describe('Set it up, step 2: target roles', () => {
   it('asks for at least one role', async () => {
     const { api, onSaved } = await renderStep();
     const request = vi.spyOn(api, 'request');
-    continueOn();
+    await continueOn();
     expect(screen.getByText('Add at least one role, or pick a suggestion.')).toBeTruthy();
     expect(document.activeElement).toBe(screen.getByLabelText('Job title'));
     expect(onSaved).not.toHaveBeenCalled();
@@ -177,7 +181,7 @@ describe('Set it up, step 2: target roles', () => {
   it('saves a title typed but not added yet', async () => {
     const { api, onSaved } = await renderStep();
     type('Staff engineer');
-    continueOn();
+    await continueOn();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(await savedTitles(api)).toEqual(['Staff engineer']);
   });
@@ -191,7 +195,7 @@ describe('Set it up, step 2: target roles', () => {
     const request = vi.spyOn(api, 'request');
     fireEvent.click(chip('Data engineer'));
     fireEvent.click(chip('Platform engineer'));
-    continueOn();
+    await continueOn();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(request.mock.calls.map(([method, path]) => `${method} ${path}`)).toEqual([
       // What is saved is read first, then changed.
@@ -208,7 +212,7 @@ describe('Set it up, step 2: target roles', () => {
     await api.request('DELETE', `/me/roles/${data?.roleId}`);
     fireEvent.click(chip('Data engineer'));
     fireEvent.click(chip('Backend engineer'));
-    continueOn();
+    await continueOn();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(await savedTitles(api)).toEqual(['Backend engineer']);
   });
@@ -219,7 +223,7 @@ describe('Set it up, step 2: target roles', () => {
     fireEvent.click(chip('Backend engineer'));
     expect(chip('Backend engineer').checked).toBe(false);
     fireEvent.click(chip('Platform engineer'));
-    continueOn();
+    await continueOn();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(await savedTitles(api)).toEqual(['Platform engineer']);
   });
@@ -230,7 +234,7 @@ describe('Set it up, step 2: target roles', () => {
     type('backend engineer');
     fireEvent.keyDown(screen.getByLabelText('Job title'), { key: 'Enter' });
     expect(screen.getByText('Backend engineer is already on your list.')).toBeTruthy();
-    continueOn();
+    await continueOn();
     expect(screen.queryByText('Backend engineer is already on your list.')).toBeNull();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(await savedTitles(api)).toEqual(['Backend engineer']);
@@ -274,11 +278,11 @@ describe('Set it up, step 2: target roles', () => {
     fireEvent.click(chip('Backend engineer'));
     fireEvent.click(chip('Platform engineer'));
     fireEvent.click(chip('Engineering manager'));
-    continueOn();
+    await continueOn();
     await waitFor(() => expect(alertText()).toContain('We couldn’t tell whether that saved.'));
     // The one whose answer was lost did save; dropping it now removes it, unasked about.
     fireEvent.click(chip('Platform engineer'));
-    continueOn();
+    await continueOn();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(alertText()).not.toContain('changed somewhere else');
     expect(await savedTitles(api)).toEqual(['Backend engineer', 'Engineering manager']);
@@ -296,11 +300,11 @@ describe('Set it up, step 2: target roles', () => {
       return answer;
     });
     fireEvent.click(chip('Backend engineer'));
-    continueOn();
+    await continueOn();
     await waitFor(() => expect(alertText()).toContain('We couldn’t tell whether that saved.'));
     spy.mockClear();
     spy.mockImplementation(request);
-    continueOn();
+    await continueOn();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     // Read, found saved: nothing sent again.
     expect(spy.mock.calls.map(([method]) => method)).toEqual(['GET']);
@@ -365,7 +369,7 @@ describe('Set it up, step 2: target roles', () => {
         : request(method, path, body),
     );
     fireEvent.click(chip('Backend engineer'));
-    continueOn();
+    await continueOn();
     await waitFor(() =>
       expect(alertText()).toContain(
         '“Backend engineer” can’t be saved as it is. Change it or remove it.',
@@ -376,7 +380,7 @@ describe('Set it up, step 2: target roles', () => {
   it('moves on, sending and reading nothing, when nothing changed (offline too)', async () => {
     const { api, onSaved } = await renderStep(['Data engineer']);
     const request = vi.spyOn(api, 'request').mockRejectedValue(new ApiError('offline'));
-    continueOn();
+    await continueOn();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(request).not.toHaveBeenCalled();
   });
@@ -392,14 +396,14 @@ describe('Set it up, step 2: target roles', () => {
     });
     fireEvent.click(chip('Backend engineer'));
     fireEvent.click(chip('Platform engineer'));
-    continueOn();
+    await continueOn();
     await waitFor(() =>
       expect(alertText()).toContain('We couldn’t tell whether that saved. Try again in a moment.'),
     );
     spy.mockImplementation(request);
     // It did save; dropping it now removes it, unasked about.
     fireEvent.click(chip('Platform engineer'));
-    continueOn();
+    await continueOn();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(alertText()).not.toContain('changed somewhere else');
     expect(await savedTitles(api)).toEqual(['Backend engineer']);
@@ -415,14 +419,14 @@ describe('Set it up, step 2: target roles', () => {
     });
     fireEvent.click(chip('Backend engineer'));
     fireEvent.click(chip('Platform engineer'));
-    continueOn();
+    await continueOn();
     await waitFor(() =>
       expect(alertText()).toContain('We couldn’t tell whether that saved. Try again in a moment.'),
     );
     expect(onSaved).not.toHaveBeenCalled();
     expect(await savedTitles(api)).toEqual(['Backend engineer']);
     spy.mockClear();
-    continueOn();
+    await continueOn();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(spy.mock.calls.filter(([method]) => method === 'POST')).toEqual([
       ['POST', '/me/roles', { title: 'Platform engineer' }],
@@ -439,11 +443,11 @@ describe('Set it up, step 2: target roles', () => {
     });
     fireEvent.click(chip('Backend engineer'));
     fireEvent.click(chip('Platform engineer'));
-    continueOn();
+    await continueOn();
     await waitFor(() => expect(alertText()).toContain('Try again in a moment.'));
     // The saved one dropped after all: it is removed, not brought back as another device's.
     fireEvent.click(chip('Backend engineer'));
-    continueOn();
+    await continueOn();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(await savedTitles(api)).toEqual(['Platform engineer']);
   });
@@ -455,7 +459,7 @@ describe('Set it up, step 2: target roles', () => {
       method === 'POST' ? Promise.reject(new ApiError('unsure')) : request(method, path, body),
     );
     fireEvent.click(chip('Backend engineer'));
-    continueOn();
+    await continueOn();
     await waitFor(() =>
       expect(alertText()).toContain(
         'We couldn’t tell whether that saved. Check your connection, then try again.',
@@ -470,11 +474,11 @@ describe('Set it up, step 2: target roles', () => {
     await api.request('POST', '/me/roles', { title: 'Mobile engineer' });
     fireEvent.click(chip('Backend engineer'));
     const request = vi.spyOn(api, 'request');
-    continueOn();
+    await continueOn();
     await waitFor(() => expect(alertText()).toContain('Your roles changed somewhere else.'));
     expect(chip('Mobile engineer').checked).toBe(true);
     expect(request.mock.calls.map(([method]) => method)).toEqual(['GET']);
-    continueOn();
+    await continueOn();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(await savedTitles(api)).toEqual([
       'Data engineer',
@@ -490,7 +494,7 @@ describe('Set it up, step 2: target roles', () => {
     await api.request('DELETE', `/me/roles/${mobile?.roleId}`);
     for (let n = 1; n <= 9; n += 1) await api.request('POST', '/me/roles', { title: `Role ${n}` });
     fireEvent.click(chip('Backend engineer'));
-    continueOn();
+    await continueOn();
     await waitFor(() =>
       expect(alertText()).toContain(
         'Your roles changed somewhere else. They show here now: check them, then continue.',
@@ -509,7 +513,7 @@ describe('Set it up, step 2: target roles', () => {
     ).toBeTruthy();
     fireEvent.click(chip('Role 9'));
     expect(screen.queryByText(/Up to 10 roles fit/)).toBeNull();
-    continueOn();
+    await continueOn();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(await savedTitles(api)).toHaveLength(10);
     expect(await savedTitles(api)).not.toContain('Role 9');
@@ -524,7 +528,7 @@ describe('Set it up, step 2: target roles', () => {
       throw new ApiError('invalid', { status: 422 });
     });
     fireEvent.click(chip('Backend engineer'));
-    continueOn();
+    await continueOn();
     await waitFor(() => expect(alertText()).toContain('changed somewhere else'));
     expect(chip('Added elsewhere').checked).toBe(true);
     expect(chip('Backend engineer').checked).toBe(true);
@@ -542,7 +546,7 @@ describe('Set it up, step 2: target roles', () => {
     });
     fireEvent.click(chip('Backend engineer'));
     fireEvent.click(chip('Platform engineer'));
-    continueOn();
+    await continueOn();
     await waitFor(() => expect(alertText()).toContain('changed somewhere else'));
     expect(
       screen.getByText('Up to 10 roles fit, and 12 are chosen. Remove 2 to continue.', {
@@ -561,7 +565,7 @@ describe('Set it up, step 2: target roles', () => {
     expect(screen.queryByText(/Remove one to add another/)).toBeNull();
     // Continue stops before sending anything, the reason still in place, and says it.
     const calls = vi.mocked(api.request).mock.calls.length;
-    continueOn();
+    await continueOn();
     await waitFor(() => expect(statusText()).toContain('Remove 2 to continue.'));
     expect(vi.mocked(api.request).mock.calls.length).toBe(calls);
     expect(
@@ -596,7 +600,7 @@ describe('Set it up, step 2: target roles', () => {
       return request(method, path, body);
     });
     fireEvent.click(chip('Backend engineer'));
-    continueOn();
+    await continueOn();
     await waitFor(() =>
       expect(alertText()).toContain('Your session has ended. Sign in again to continue.'),
     );
@@ -614,7 +618,7 @@ describe('Set it up, step 2: target roles', () => {
       return { roles: [...roles, { ...roles[0], roleId: 'extra', title: 'Role 11' }] };
     });
     const { onSaved } = await renderStep([], api);
-    continueOn();
+    await continueOn();
     await waitFor(() => expect(statusText()).toContain('Remove 1 to continue.'));
     expect(onSaved).not.toHaveBeenCalled();
   });
@@ -661,7 +665,7 @@ describe('Set it up, step 2: target roles', () => {
         : request(method, path, body),
     );
     fireEvent.click(chip('Backend engineer'));
-    continueOn();
+    await continueOn();
     // One role fits: nothing to remove, only to try again.
     await waitFor(() => expect(alertText()).toContain('Try again in a moment.'));
     expect(screen.queryByText(/Remove one to add another/)).toBeNull();
@@ -673,12 +677,12 @@ describe('Set it up, step 2: target roles', () => {
       .spyOn(api, 'request')
       .mockRejectedValue(new ApiError('too-many', { status: 429, retryAfterSeconds: 30 }));
     fireEvent.click(chip('Backend engineer'));
-    continueOn();
+    await continueOn();
     await waitFor(() =>
       expect(alertText()).toContain('Too many saves for now. Try again in 30 seconds.'),
     );
     spy.mockRejectedValue(new ApiError('signed-out', { status: 401 }));
-    continueOn();
+    await continueOn();
     await waitFor(() =>
       expect(alertText()).toContain('Your session has ended. Sign in again to continue.'),
     );
@@ -697,7 +701,7 @@ describe('Set it up, step 2: target roles', () => {
         : request(method, path, body),
     );
     fireEvent.click(chip('Backend engineer'));
-    continueOn();
+    await continueOn();
     expect((screen.getByLabelText('Job title') as HTMLInputElement).readOnly).toBe(true);
     expect((screen.getByRole('button', { name: 'Add' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(chip('Platform engineer'));
@@ -718,7 +722,7 @@ describe('Set it up, step 2: target roles', () => {
         : request(method, path, body),
     );
     fireEvent.click(chip('Backend engineer'));
-    continueOn();
+    await continueOn();
     // Sent (after the read): the step goes while its answer is on its way.
     await waitFor(() =>
       expect(api.request).toHaveBeenCalledWith('POST', '/me/roles', expect.anything()),
