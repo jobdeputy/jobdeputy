@@ -158,6 +158,17 @@ describe('ResumesPage', () => {
     expect(await screen.findByText('No résumés yet')).toBeTruthy();
   });
 
+  it('promises no new default when the others couldn’t be used', async () => {
+    await renderPage(['Good.pdf', 'malware.pdf']);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Good' }));
+    const sheet = await screen.findByRole('alertdialog');
+    expect(sheet.textContent).not.toContain('default');
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Delete résumé' }));
+    await waitFor(() =>
+      expect(statusText()).toContain('Good deleted. You have no default résumé now.'),
+    );
+  });
+
   it('keeps the question open and says why when the delete fails', async () => {
     const api = await renderPage();
     const request = api.request.bind(api);
@@ -213,8 +224,11 @@ describe('ResumesPage', () => {
     const sheet = await screen.findByRole('alertdialog');
     fireEvent.click(within(sheet).getByRole('button', { name: 'Delete résumé' }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    answer(undefined);
     await waitFor(() => expect(statusText()).toContain('Third deleted.'));
+    answer(undefined);
+    // Settled: the held read is answered (or dropped) and nothing is being read any more.
+    await waitFor(() => expect(api.queries.isFetching()).toBe(0));
+    await new Promise((done) => setTimeout(done, 50));
     expect(rows().some((row) => row?.startsWith('Third'))).toBe(false);
   });
 

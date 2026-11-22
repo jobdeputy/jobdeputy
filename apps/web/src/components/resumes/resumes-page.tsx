@@ -88,7 +88,7 @@ export function ResumesPage() {
     const now = await queryClient
       .fetchQuery({ ...documentsQuery(api), staleTime: 0 })
       .catch(() => undefined);
-    const next = now?.find((each) => each.isDefault && each.documentId !== document.documentId);
+    const next = now?.find((each) => each.isDefault);
     say(
       now === undefined
         ? fill(text.said.deleted, { name })
@@ -149,7 +149,8 @@ export function ResumesPage() {
 function question(asked: Document | null, saved: readonly Document[]): string {
   const text = copy.resumesPage.confirm;
   if (!asked?.isDefault) return text.line;
-  return saved.some((each) => each.documentId !== asked.documentId)
+  // Only one that is, or may yet be, ready can take over (not one the server couldn't use).
+  return saved.some((each) => each.documentId !== asked.documentId && !isUnusable(each))
     ? text.handOver
     : text.noHandOver;
 }
