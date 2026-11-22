@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AppNav } from '../src/components/app-shell.tsx';
 import { ProfilePage } from '../src/components/profile/profile-page.tsx';
@@ -26,12 +26,20 @@ const saved: Profile = {
 
 /** The facts of one group (under its heading), as "label: value" lines. */
 function facts(group: string): string[] {
+  const list = groupOf(group).querySelector('dl');
+  if (!list) throw new Error(`No facts under ${group}`);
+  return Array.from(list.querySelectorAll('dt')).map((dt) => {
+    const value = dt.nextElementSibling as HTMLElement;
+    // A list of values (other links) reads one per line.
+    const lines = Array.from(value.children).map((line) => line.textContent);
+    return `${dt.textContent}: ${lines.length ? lines.join(' | ') : value.textContent}`;
+  });
+}
+
+/** A group on the page: its heading's head row's parent. */
+function groupOf(group: string): HTMLElement {
   const heading = screen.getByRole('heading', { level: 3, name: group });
-  const list = heading.nextElementSibling;
-  if (list?.tagName !== 'DL') throw new Error(`No facts under ${group}`);
-  return Array.from(list.querySelectorAll('dt')).map(
-    (dt) => `${dt.textContent}: ${dt.nextElementSibling?.textContent}`,
-  );
+  return heading.parentElement?.parentElement as HTMLElement;
 }
 
 describe('ProfilePage', () => {
@@ -58,6 +66,7 @@ describe('ProfilePage', () => {
       'LinkedIn: https://www.linkedin.com/in/alex',
       'GitHub: Not added',
       'Portfolio: Not added',
+      'Website: Not added',
       'Other links: Not added',
     ]);
   });
@@ -124,5 +133,149 @@ describe('the signed-in app’s pages', () => {
     await screen.findByRole('heading', { level: 1, name: 'You set it up. Your deputy applies.' });
     expect(window.location.pathname).toBe('/');
     expect(document.title).toBe('JobDeputy');
+  });
+});
+
+describe('editing About you', () => {
+  /** The app on the Profile page, for a person with `profile` saved; returns the fake API. */
+  async function onProfile(profile: Record<string, unknown> = {}) {
+    const auth = createFakeAuth({ delay: 0 });
+    await auth.signUp('alex@example.com', 'a long enough password');
+    await auth.confirmSignUp('alex@example.com', 'a long enough password', '123456');
+    const api = createFakeApi({ delay: 0 });
+    await api.request('PUT', '/me/profile', {
+      version: 0,
+      firstName: 'Alex',
+      lastName: 'Morgan',
+      ...profile,
+    });
+    await renderApp(auth, {}, api);
+    await screen.findByRole('heading', { level: 1, name: 'What your deputy knows about you.' });
+    return api;
+  }
+
+  const saved = (api: ReturnType<typeof createFakeApi>) =>
+    api.request<Profile>('GET', '/me/profile');
+
+  function type(label: string, value: string) {
+    fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  }
+
+  it('opens a group’s form at its first field, saves it, and goes back to the facts', async () => {
+    const api = await onProfile({
+      phone: { countryCode: '+1', number: '5125550100' },
+      links: { github: 'https://github.com/alex', other: [] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Name and headline' }));
+    const form = screen.getByRole('form', { name: 'Name and headline' });
+    expect(document.activeElement).toBe(within(form).getByLabelText('First name'));
+    type('Preferred name', ' Al ');
+    type('Headline', 'Staff engineer');
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(facts('Name and headline')).toContain('Preferred name: Al'));
+    expect(facts('Name and headline')).toContain('Headline: Staff engineer');
+    // Back on Edit, marked Saved, and said.
+    const edit = screen.getByRole('button', { name: 'Edit Name and headline' });
+    expect(document.activeElement).toBe(edit);
+    expect(within(groupOf('Name and headline')).getByText('Saved')).toBeTruthy();
+    expect(await screen.findByText('Name and headline saved.')).toBeTruthy();
+    // The rest of the profile went along unchanged.
+    const now = await saved(api);
+    expect(now).toMatchObject({
+      preferredName: 'Al',
+      headline: 'Staff engineer',
+      phone: { countryCode: '+1', number: '5125550100' },
+      links: { github: 'https://github.com/alex' },
+    });
+  });
+
+  it('drops what was typed on Cancel, and leaves an emptied optional field out', async () => {
+    const api = await onProfile({ preferredName: 'Al' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Name and headline' }));
+    type('First name', 'Sam');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Edit Name and headline' }),
+    );
+    expect(facts('Name and headline')).toContain('First name: Alex');
+    expect(within(groupOf('Name and headline')).queryByText('Saved')).toBeNull();
+    // Opened again, it starts from what is saved.
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Name and headline' }));
+    expect((screen.getByLabelText('First name') as HTMLInputElement).value).toBe('Alex');
+    type('Preferred name', '  ');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(facts('Name and headline')).toContain('Preferred name: Not added'));
+    expect('preferredName' in (await saved(api))).toBe(false);
+  });
+
+  it('says what is missing or wrong beside the field, and focuses it', async () => {
+    await onProfile();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Name and headline' }));
+    type('Last name', '');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    const last = screen.getByLabelText('Last name');
+    expect(document.activeElement).toBe(last);
+    expect(last.getAttribute('aria-invalid')).toBe('true');
+    expect(screen.getByText('Enter your last name.')).toBeTruthy();
+  });
+
+  it('saves a phone with +1 when no code is typed, and removes it when the number is cleared', async () => {
+    const api = await onProfile();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Contact and location' }));
+    // The sign-in email and the country show, locked.
+    const form = screen.getByRole('form', { name: 'Contact and location' });
+    expect(within(form).getByText(String((await saved(api)).email))).toBeTruthy();
+    expect(within(form).getAllByText('Locked')).toHaveLength(2);
+    type('Country code', '');
+    type('Phone number', '512 555 0100');
+    type('City', 'Austin');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(facts('Contact and location')).toContain('Phone: +1 512 555 0100'));
+    expect(await saved(api)).toMatchObject({
+      phone: { countryCode: '+1', number: '512 555 0100' },
+      location: { city: 'Austin', country: 'US' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Contact and location' }));
+    type('Phone number', '');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(facts('Contact and location')).toContain('Phone: Not added'));
+    expect('phone' in (await saved(api))).toBe(false);
+  });
+
+  it('refuses a wrong calling code beside it', async () => {
+    await onProfile();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Contact and location' }));
+    type('Country code', '44');
+    type('Phone number', '20 7946 0000');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(document.activeElement).toBe(screen.getByLabelText('Country code'));
+    expect(screen.getByText('Use a code like +1, +44, or +91.')).toBeTruthy();
+  });
+
+  it('adds https:// to an address typed without it, and keeps other links one per line', async () => {
+    const api = await onProfile();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Links' }));
+    type('LinkedIn', 'linkedin.com/in/alex');
+    type('Other links', 'alex.dev\n\n https://blog.alex.dev ');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(facts('Links')).toContain('LinkedIn: https://linkedin.com/in/alex'));
+    expect(facts('Links')).toContain('Other links: https://alex.dev | https://blog.alex.dev');
+    expect((await saved(api)).links).toEqual({
+      linkedin: 'https://linkedin.com/in/alex',
+      other: ['https://alex.dev', 'https://blog.alex.dev'],
+    });
+  });
+
+  it('refuses an http:// address, and more other links than fit', async () => {
+    await onProfile();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Links' }));
+    type('GitHub', 'http://github.com/alex');
+    type('Other links', Array.from({ length: 11 }, (_, i) => `site${i}.dev`).join('\n'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(document.activeElement).toBe(screen.getByLabelText('GitHub'));
+    expect(
+      screen.getByText('Enter a web address, like linkedin.com/in/your-name (https only).'),
+    ).toBeTruthy();
+    expect(screen.getByText('Add at most 10 addresses.')).toBeTruthy();
   });
 });

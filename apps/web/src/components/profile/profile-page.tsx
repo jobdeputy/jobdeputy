@@ -1,26 +1,49 @@
-import { PersonIcon } from '@/components/icons.tsx';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
+import { Field, TextAreaField } from '@/components/auth/fields.tsx';
+import { EditIcon, PersonIcon } from '@/components/icons.tsx';
 import { PageIntro } from '@/components/page-intro.tsx';
-import { copy } from '@/copy/index.ts';
+import { Fact, useSaying } from '@/components/setup/parts.tsx';
+import { Button } from '@/components/ui/button.tsx';
+import { copy, fill } from '@/copy/index.ts';
 import type { Profile } from '@/lib/api/profile.ts';
+import { cn } from '@/lib/utils.ts';
+import {
+  linkFields,
+  MAX_OTHER_LINKS,
+  nameFields,
+  phoneFields,
+  putCity,
+  putLinks,
+  putPhone,
+  putText,
+  readCity,
+} from './fields.ts';
+import { type FormSpec, useProfileForm } from './profile-form.tsx';
 
 /**
  * The Profile page (#33, the round 7 prototype's profile-preview): what the deputy knows about the
  * person, by section. Its first section, About you, shows the saved details in the prototype's
- * groups (name and headline, contact and location, links). Editing them, and the Target roles
- * section, come next (#33 pieces 6a2, 6a3); the prototype's readiness overview waits for the
- * sections it counts.
+ * groups (name and headline, contact and location, links); each group's Edit opens its form in
+ * place, and Save or Cancel goes back to the facts. The Target roles section comes next (#33
+ * piece 6a3); the prototype's readiness overview waits for the sections it counts.
  */
 export function ProfilePage({ profile }: { profile: Profile }) {
   const text = copy.profilePage;
+  // "Name and headline saved.": said once a group's form closes (focus is back on its Edit).
+  const { spoken, say } = useSaying();
   return (
     <div className="grid w-full max-w-[880px] content-start gap-8">
       <PageIntro id="profile-title" eyebrow={text.eyebrow} title={text.title} intro={text.intro} />
-      <AboutYou profile={profile} />
+      <AboutYou profile={profile} say={say} />
+      <p role="status" className="sr-only">
+        {spoken}
+      </p>
     </div>
   );
 }
 
-function AboutYou({ profile }: { profile: Profile }) {
+function AboutYou({ profile, say }: { profile: Profile; say: (words: string) => void }) {
   const text = copy.profilePage.about;
   const facts = factsOf(profile);
   return (
@@ -42,42 +65,288 @@ function AboutYou({ profile }: { profile: Profile }) {
           <p className="m-0 text-sm text-muted-foreground">{text.line}</p>
         </div>
       </div>
-      <Group id="about-name" title={text.name.title} facts={facts.name} />
-      <Group id="about-contact" title={text.contact.title} facts={facts.contact} />
-      <Group id="about-links" title={text.links.title} facts={facts.links} />
+      <Group
+        id="about-name"
+        title={text.name.title}
+        facts={facts.name}
+        say={say}
+        editor={(done) => <NameForm profile={profile} {...done} />}
+      />
+      <Group
+        id="about-contact"
+        title={text.contact.title}
+        facts={facts.contact}
+        say={say}
+        editor={(done) => <ContactForm profile={profile} {...done} />}
+      />
+      <Group
+        id="about-links"
+        title={text.links.title}
+        facts={facts.links}
+        say={say}
+        editor={(done) => <LinksForm profile={profile} {...done} />}
+      />
     </section>
   );
 }
 
-type Fact = readonly [label: string, value: string | undefined];
+type FactRow = readonly [label: string, value: string | readonly string[] | undefined];
 
-/** One group of facts under its heading (the prototype's `.profile-group`). */
-function Group({ id, title, facts }: { id: string; title: string; facts: readonly Fact[] }) {
+/** How a group's form ends: saved, or cancelled (nothing saved). Both go back to the facts. */
+type Done = { labelledBy: string; onSaved: () => void; onCancel: () => void };
+
+/**
+ * One group of facts under its heading (the prototype's `.profile-group`), with Edit: the form
+ * replaces the facts and takes focus at its first field; Save or Cancel brings the facts back and
+ * focus to Edit, and a save marks the group Saved (and says so) until it is edited again.
+ */
+function Group({
+  id,
+  title,
+  facts,
+  say,
+  editor,
+}: {
+  id: string;
+  title: string;
+  facts: readonly FactRow[];
+  say: (words: string) => void;
+  editor: (done: Done) => ReactNode;
+}) {
+  const text = copy.profilePage;
+  const [editing, setEditing] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const edit = useRef<HTMLButtonElement>(null);
+  function close(didSave: boolean) {
+    // Rendered first, so focus lands on the Edit button that comes back.
+    flushSync(() => {
+      setEditing(false);
+      setSaved(didSave);
+    });
+    edit.current?.focus();
+    if (didSave) say(fill(text.savedSaid, { group: title }));
+  }
   return (
     <div className="mt-[34px] grid min-w-0 gap-[13px] border-t border-line pt-[34px]">
-      <h3 id={`${id}-title`} className="m-0 text-base font-[700]">
-        {title}
-      </h3>
-      <dl className="m-0 grid">
-        {facts.map(([label, value]) => (
-          <div
-            key={label}
-            className="grid gap-x-[21px] gap-y-1 border-b border-line-soft py-[13px] last:border-b-0 @[560px]:grid-cols-[178px_minmax(0,1fr)] @[560px]:items-baseline"
+      <div className="flex min-h-11 items-center gap-[13px]">
+        <h3 id={`${id}-title`} className="m-0 min-w-0 flex-1 text-base font-[700]">
+          {title}
+        </h3>
+        {saved && !editing && (
+          <p className="m-0 flex shrink-0 items-center gap-1.5 text-xs font-[650] text-green-ink before:font-[800] before:content-['✓']">
+            {text.saved}
+          </p>
+        )}
+        {!editing && (
+          <Button
+            ref={edit}
+            variant="outline"
+            onClick={() => {
+              setSaved(false);
+              setEditing(true);
+            }}
           >
-            <dt className="text-[0.8125rem] font-[650] text-muted-foreground">{label}</dt>
-            <dd
-              className={
-                value
-                  ? 'm-0 min-w-0 text-[0.9375rem] wrap-anywhere text-ink'
-                  : 'm-0 min-w-0 text-[0.9375rem] text-muted-foreground'
-              }
+            <EditIcon />
+            {text.edit}
+            <span className="sr-only"> {title}</span>
+          </Button>
+        )}
+      </div>
+      {editing ? (
+        editor({
+          labelledBy: `${id}-title`,
+          onSaved: () => close(true),
+          onCancel: () => close(false),
+        })
+      ) : (
+        <dl className="m-0 grid">
+          {facts.map(([label, value]) => (
+            <div
+              key={label}
+              className="grid gap-x-[21px] gap-y-1 border-b border-line-soft py-[13px] last:border-b-0 @[560px]:grid-cols-[178px_minmax(0,1fr)] @[560px]:items-baseline"
             >
-              {value || copy.profilePage.notAdded}
-            </dd>
-          </div>
-        ))}
-      </dl>
+              <dt className="text-[0.8125rem] font-[650] text-muted-foreground">{label}</dt>
+              <dd
+                className={
+                  value?.length
+                    ? 'm-0 grid min-w-0 text-[0.9375rem] wrap-anywhere text-ink'
+                    : 'm-0 min-w-0 text-[0.9375rem] text-muted-foreground'
+                }
+              >
+                {!value?.length
+                  ? text.notAdded
+                  : typeof value === 'string'
+                    ? value
+                    : value.map((line) => <span key={line}>{line}</span>)}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
     </div>
+  );
+}
+
+/**
+ * A group's form (the prototype's `.profile-editor`): its fields, two to a row where the section
+ * is wide enough, then why a save failed, then Save and Cancel. It opens at its first field.
+ */
+function GroupForm<N extends string>({
+  spec,
+  profile,
+  labelledBy,
+  onSaved,
+  onCancel,
+  children,
+}: Done & {
+  spec: FormSpec<N>;
+  profile: Profile;
+  children: (bind: ReturnType<typeof useProfileForm<N>>['bind']) => ReactNode;
+}) {
+  const text = copy.profilePage;
+  const { bind, pending, form, messages } = useProfileForm({ spec, profile, onSaved });
+  const { ref } = form;
+  useEffect(() => {
+    ref.current?.querySelector<HTMLElement>('input, textarea')?.focus();
+  }, [ref]);
+  return (
+    <form
+      {...form}
+      aria-labelledby={labelledBy}
+      className={cn(
+        'grid min-w-0 gap-[21px] rounded-[22px] border border-line bg-paper p-[21px]',
+        form.className,
+      )}
+    >
+      <div className="grid min-w-0 items-start gap-[21px] @[640px]:grid-cols-2">
+        {children(bind)}
+      </div>
+      {messages}
+      <div className="flex flex-wrap items-center gap-x-[13px] gap-y-2">
+        <Button type="submit" pending={pending} pendingLabel={copy.setUp.saving}>
+          {text.save}
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={pending}>
+          {text.cancel}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+const nameSpec: FormSpec<'firstName' | 'lastName' | 'preferredName' | 'headline'> = {
+  fields: nameFields,
+  apply(body, answers) {
+    body.firstName = answers.firstName;
+    body.lastName = answers.lastName;
+    putText(body, 'preferredName', answers.preferredName);
+    putText(body, 'headline', answers.headline);
+  },
+  savedMeanwhile: copy.profilePage.errors.savedMeanwhile,
+  changedElsewhere: copy.profilePage.errors.changedElsewhere,
+};
+
+function NameForm({ profile, ...done }: Done & { profile: Profile }) {
+  const text = copy.profilePage.about.name;
+  return (
+    <GroupForm spec={nameSpec} profile={profile} {...done}>
+      {(bind) => (
+        <>
+          <Field label={text.firstName} autoComplete="given-name" {...bind('firstName')} />
+          <Field label={text.lastName} autoComplete="family-name" {...bind('lastName')} />
+          <Field
+            label={text.preferredName}
+            hint={text.preferredNameHint}
+            autoComplete="nickname"
+            className="col-span-full"
+            {...bind('preferredName')}
+          />
+          <Field
+            label={text.headline}
+            hint={text.headlineHint}
+            className="col-span-full"
+            {...bind('headline')}
+          />
+        </>
+      )}
+    </GroupForm>
+  );
+}
+
+const contactSpec: FormSpec<'phoneCode' | 'phoneNumber' | 'city'> = {
+  fields: {
+    ...phoneFields,
+    city: { read: readCity, paths: ['location.city'], invalid: copy.setUp.errors.cityInvalid },
+  },
+  apply(body, answers) {
+    putPhone(body, answers.phoneCode, answers.phoneNumber);
+    putCity(body, answers.city);
+  },
+  savedMeanwhile: copy.profilePage.errors.savedMeanwhile,
+  changedElsewhere: copy.profilePage.errors.changedElsewhere,
+};
+
+function ContactForm({ profile, ...done }: Done & { profile: Profile }) {
+  const text = copy.profilePage.about.contact;
+  const email = typeof profile.email === 'string' ? profile.email : '';
+  return (
+    <GroupForm spec={contactSpec} profile={profile} {...done}>
+      {(bind) => (
+        <>
+          <ul className="col-span-full m-0 grid list-none gap-2 p-0 @[640px]:grid-cols-2">
+            <Fact label={text.email} value={email} pill={text.locked} />
+            <Fact label={text.country} value={copy.setUp.region} pill={text.locked} />
+          </ul>
+          <div className="col-span-full grid items-start gap-[13px] @[440px]:grid-cols-[minmax(89px,0.35fr)_minmax(0,1fr)]">
+            <Field
+              label={text.phoneCode}
+              autoComplete="tel-country-code"
+              inputMode="tel"
+              {...bind('phoneCode')}
+            />
+            <Field
+              label={text.phoneNumber}
+              type="tel"
+              autoComplete="tel-national"
+              {...bind('phoneNumber')}
+            />
+          </div>
+          <Field label={text.city} autoComplete="address-level2" {...bind('city')} />
+        </>
+      )}
+    </GroupForm>
+  );
+}
+
+const linksSpec: FormSpec<keyof typeof linkFields> = {
+  fields: linkFields,
+  apply: putLinks,
+  savedMeanwhile: copy.profilePage.errors.savedMeanwhile,
+  changedElsewhere: copy.profilePage.errors.changedElsewhere,
+};
+
+function LinksForm({ profile, ...done }: Done & { profile: Profile }) {
+  const text = copy.profilePage.about.links;
+  const url = { type: 'url', inputMode: 'url', autoCapitalize: 'none', spellCheck: false } as const;
+  return (
+    <GroupForm spec={linksSpec} profile={profile} {...done}>
+      {(bind) => (
+        <>
+          <Field label={text.linkedin} hint={text.linkHint} {...url} {...bind('linkedin')} />
+          <Field label={text.github} {...url} {...bind('github')} />
+          <Field label={text.portfolio} {...url} {...bind('portfolio')} />
+          <Field label={text.website} {...url} {...bind('website')} />
+          <TextAreaField
+            label={text.other}
+            hint={fill(text.otherHint, { max: String(MAX_OTHER_LINKS) })}
+            autoCapitalize="none"
+            spellCheck={false}
+            className="col-span-full"
+            {...bind('other')}
+          />
+        </>
+      )}
+    </GroupForm>
   );
 }
 
@@ -91,6 +360,7 @@ export function factsOf(profile: Profile) {
     linkedin?: string;
     github?: string;
     portfolio?: string;
+    website?: string;
     other?: string[];
   };
   const str = (value: unknown) => (typeof value === 'string' && value ? value : undefined);
@@ -117,7 +387,8 @@ export function factsOf(profile: Profile) {
       [about.links.linkedin, str(links.linkedin)],
       [about.links.github, str(links.github)],
       [about.links.portfolio, str(links.portfolio)],
-      [about.links.other, links.other?.length ? links.other.join(', ') : undefined],
+      [about.links.website, str(links.website)],
+      [about.links.other, links.other ?? []],
     ],
-  } satisfies Record<string, Fact[]>;
+  } satisfies Record<string, FactRow[]>;
 }

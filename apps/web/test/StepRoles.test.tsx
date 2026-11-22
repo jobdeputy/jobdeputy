@@ -501,7 +501,10 @@ describe('Set it up, step 2: target roles', () => {
     expect(onSaved).not.toHaveBeenCalled();
     // Eleven now: said at once, one must go before saving.
     expect(
-      screen.getByText('Up to 10 roles fit, and 11 are chosen. Remove 1 to continue.'),
+      // The visible line (the status line may say it too, once its beat has run).
+      screen.getByText('Up to 10 roles fit, and 11 are chosen. Remove 1 to continue.', {
+        ignore: '[role=status]',
+      }),
     ).toBeTruthy();
     fireEvent.click(chip('Role 9'));
     expect(screen.queryByText(/Up to 10 roles fit/)).toBeNull();
@@ -566,7 +569,10 @@ describe('Set it up, step 2: target roles', () => {
     // One removed, still too many: the reason stays, with what is left.
     fireEvent.click(chip('Elsewhere 1'));
     expect(
-      screen.getByText('Up to 10 roles fit, and 11 are chosen. Remove 1 to continue.'),
+      // The visible line (the status line may say it too, once its beat has run).
+      screen.getByText('Up to 10 roles fit, and 11 are chosen. Remove 1 to continue.', {
+        ignore: '[role=status]',
+      }),
     ).toBeTruthy();
     await waitFor(() => expect(statusText()).toContain('Remove 1 to continue.'));
     // Fitting again: the reason is gone, and no longer said.

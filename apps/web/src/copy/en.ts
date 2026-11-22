@@ -381,6 +381,13 @@ export const en = {
     intro: 'Everything your deputy uses to apply. Nothing reaches an employer without you.',
     /** A fact with nothing saved yet. */
     notAdded: 'Not added',
+    /** A group's button that opens its form; the group's title follows it, for screen readers. */
+    edit: 'Edit',
+    save: 'Save',
+    cancel: 'Cancel',
+    /** Beside a group's title once its form saved (and said: "{group} saved."). */
+    saved: 'Saved',
+    savedSaid: '{group} saved.',
     about: {
       title: 'About you',
       line: 'How you introduce yourself on drafts and application forms.',
@@ -390,6 +397,8 @@ export const en = {
         lastName: 'Last name',
         preferredName: 'Preferred name',
         headline: 'Headline',
+        preferredNameHint: 'What your deputy calls you. Forms use your full name.',
+        headlineHint: 'One line about the work you do best.',
       },
       contact: {
         title: 'Contact and location',
@@ -397,14 +406,37 @@ export const en = {
         phone: 'Phone',
         city: 'City',
         country: 'Country',
+        /** The phone's two parts, in its form. */
+        phoneCode: 'Country code',
+        phoneNumber: 'Phone number',
+        /** Beside the email and the country in the form: they can't be changed here. */
+        emailNote: 'Your sign-in. It can’t be changed here.',
+        locked: 'Locked',
       },
       links: {
         title: 'Links',
         linkedin: 'LinkedIn',
         github: 'GitHub',
         portfolio: 'Portfolio',
+        website: 'Website',
         other: 'Other links',
+        linkHint: 'A web address, like linkedin.com/in/your-name.',
+        otherHint: 'One address per line, up to {max}.',
       },
+    },
+    errors: {
+      preferredNameInvalid: 'Check your preferred name.',
+      headlineInvalid: 'Check your headline.',
+      phoneCodeInvalid: 'Use a code like +1, +44, or +91.',
+      phoneNumberInvalid: 'Use digits, spaces, dashes, or brackets.',
+      linkInvalid: 'Enter a web address, like linkedin.com/in/your-name (https only).',
+      otherLinksInvalid: 'Check each address: one per line, https only.',
+      otherLinksTooMany: 'Add at most {max} addresses.',
+      /** Refused as out of date: something this form doesn't show was saved meanwhile. */
+      savedMeanwhile:
+        'Something else in your profile was saved meanwhile. Press Save to save this too.',
+      changedElsewhere:
+        'Your profile changed somewhere else. It shows here now: check it, then save.',
     },
     /** Country codes as shown (the US-only launch). */
     countries: { US: 'United States' } as Record<string, string>,

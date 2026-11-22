@@ -117,6 +117,20 @@ test('creates an account, confirms it with the code, lands signed in, and signs 
   await expect(page).toHaveTitle('Profile · JobDeputy');
   await expectNoAccessibilityViolations(page);
   await expectNoHorizontalScroll(page);
+  // A group's form, open in place: axe, no sideways scroll, saved, and back to its facts.
+  await page.getByRole('button', { name: 'Edit Contact and location' }).click();
+  await expect(page.getByLabel('Phone number')).toBeVisible();
+  await expectNoAccessibilityViolations(page);
+  await expectNoHorizontalScroll(page);
+  await page.getByLabel('Phone number').fill('512 555 0100');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByRole('button', { name: 'Edit Contact and location' })).toBeFocused();
+  await expect(page.getByText('+1 512 555 0100')).toBeVisible();
+  await page.getByRole('button', { name: 'Edit Links' }).click();
+  await expect(page.getByLabel('Other links')).toBeVisible();
+  await expectNoAccessibilityViolations(page);
+  await expectNoHorizontalScroll(page);
+  await page.getByRole('button', { name: 'Cancel' }).click();
 
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(
