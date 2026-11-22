@@ -17,6 +17,9 @@ async function openDrawer(page: Page, name: string) {
 test('creates an account, confirms it with the code, lands signed in, and signs out', async ({
   page,
 }) => {
+  // The whole journey (sign-up, the set-up's three steps with the résumé check's 3 s, then the
+  // Profile page's forms, axe at each): over the 30 s limit on CI's WebKit (main run 44968165243).
+  test.slow();
   await openDrawer(page, 'Get started free');
   const drawer = page.getByRole('dialog');
   await drawer.getByLabel('Email').fill('new@example.com');
