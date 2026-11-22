@@ -475,14 +475,15 @@ describe('Target roles on the Profile page', () => {
     expect(await savedTitles(api)).toEqual(['Staff engineer', 'Engineering manager']);
   });
 
-  it('marks the roles Saved on Cancel when a failed save had saved part of it', async () => {
+  it('reads the roles again on Cancel after a save left in doubt, never claiming Saved', async () => {
     const api = await onProfile(['Role A', 'Role B', 'Role C']);
     const request = api.request.bind(api);
     let deletes = 0;
     vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
-      // The first removal goes through; the second fails on the server's side.
+      const answer = await request(method, path, body);
+      // The second removal goes through, but its answer is a server error.
       if (method === 'DELETE' && ++deletes === 2) throw new ApiError('server', { status: 500 });
-      return (await request(method, path, body)) as never;
+      return answer as never;
     });
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Target roles' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Role A' }));
@@ -493,9 +494,8 @@ describe('Target roles on the Profile page', () => {
       expect(screen.getByRole('button', { name: 'Cancel' }).hasAttribute('disabled')).toBe(false),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(within(groupOf('Target roles')).getByText('Saved')).toBeTruthy();
-    expect(shownTitles()).toEqual(['Role B', 'Role C']);
-    expect(await savedTitles(api)).toEqual(['Role B', 'Role C']);
+    await waitFor(() => expect(shownTitles()).toEqual(['Role C']));
+    expect(within(groupOf('Target roles')).queryByText('Saved')).toBeNull();
   });
 
   it('drops the changes on Cancel', async () => {

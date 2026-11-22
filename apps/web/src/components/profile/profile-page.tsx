@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { Field, TextAreaField } from '@/components/auth/fields.tsx';
@@ -190,6 +191,7 @@ function RoleTitles({ roles, labelledBy }: { roles: readonly Role[]; labelledBy:
 /** The roles editor in a group's form box, opening at its title field; Save and Cancel. */
 function RolesEditor({ saved, labelledBy, onSaved, onCancel }: Done & { saved: Role[] }) {
   const text = copy.profilePage;
+  const queries = useQueryClient();
   const box = useRef<HTMLDivElement>(null);
   useOpenAtFirstField(box);
   return (
@@ -205,7 +207,12 @@ function RolesEditor({ saved, labelledBy, onSaved, onCancel }: Done & { saved: R
           changedElsewhere: text.preferences.roles.changedElsewhere,
         }}
         onSaved={onSaved}
-        onCancel={onCancel}
+        onCancel={() => {
+          // A save that failed partway, or whose answer was lost, may have saved some of it: the
+          // list is read again, so it shows what is saved (never claimed as Saved here).
+          void queries.invalidateQueries({ queryKey: ['roles'] });
+          onCancel();
+        }}
       />
     </div>
   );
@@ -257,13 +264,8 @@ function Facts({ facts }: { facts: readonly FactRow[] }) {
 
 type FactRow = readonly [label: string, value: string | readonly string[] | undefined];
 
-/** How a group's form ends: saved, or cancelled. Both go back to what is saved. */
-type Done = {
-  labelledBy: string;
-  onSaved: () => void;
-  /** `partlySaved`: a save that failed partway had saved some of it (marked Saved, as it is). */
-  onCancel: (partlySaved?: boolean) => void;
-};
+/** How a group's form ends: saved, or cancelled (not marked Saved). Both go back to what is saved. */
+type Done = { labelledBy: string; onSaved: () => void; onCancel: () => void };
 
 /**
  * One group under its heading (the prototype's `.profile-group`), with Edit: the form replaces
@@ -330,7 +332,7 @@ function Group({
         ? editor({
             labelledBy: `${id}-title`,
             onSaved: () => close(true),
-            onCancel: (partlySaved) => close(partlySaved === true),
+            onCancel: () => close(false),
           })
         : view}
     </div>
@@ -366,7 +368,7 @@ function GroupForm<N extends string>({
         <Button type="submit" pending={pending} pendingLabel={copy.setUp.saving}>
           {text.save}
         </Button>
-        <Button type="button" variant="outline" onClick={() => onCancel()} disabled={pending}>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={pending}>
           {text.cancel}
         </Button>
       </div>

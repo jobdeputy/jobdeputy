@@ -46,8 +46,7 @@ export function RolesForm({
   saved: Role[];
   place: RolesFormPlace;
   onSaved: () => void;
-  /** `partlySaved`: a save that failed partway had already saved some of the changes. */
-  onCancel: (partlySaved: boolean) => void;
+  onCancel: () => void;
 }) {
   const text = copy.setUp.roles;
   const api = useApi();
@@ -213,10 +212,7 @@ export function RolesForm({
    * One change saved: the roles are now `current`, and this step made them so (a later try does
    * not take its own earlier saves for changes made elsewhere).
    */
-  // Some of a save went through (a role removed or added), whatever happened next.
-  const partlySaved = useRef(false);
   function saveDone(current: Role[]) {
-    partlySaved.current = true;
     // A read already on its way answers from before this change: it must not undo it.
     void queries.cancelQueries({ queryKey: ['roles'] });
     queries.setQueryData(['roles'], current);
@@ -471,7 +467,7 @@ export function RolesForm({
           type="button"
           variant="outline"
           size={place.size}
-          onClick={() => onCancel(partlySaved.current)}
+          onClick={onCancel}
           disabled={pending}
         >
           {place.cancel}
