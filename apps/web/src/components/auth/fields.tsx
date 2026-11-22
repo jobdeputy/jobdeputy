@@ -29,6 +29,45 @@ export function Field({
   /** Beside the input, at its end (a button that acts on what was typed, such as Add). */
   action?: React.ReactNode;
 }) {
+  return (
+    <FieldFrame label={label} hint={hint} error={error} className={className}>
+      {(tie) => (
+        <div className={cn('relative', action && 'flex gap-2')}>
+          <input
+            {...tie}
+            className={cn(BOX, children && 'pe-[67px]', action && 'min-w-0 flex-1')}
+            {...input}
+          />
+          {children}
+          {action}
+        </div>
+      )}
+    </FieldFrame>
+  );
+}
+
+/**
+ * What every field shares: its label above, the control, then its hint and, once the form has
+ * been tried, its error, both tied to the control (`aria-describedby`); an error also marks it
+ * `aria-invalid`. `children` places the control, given the attributes that tie it.
+ */
+function FieldFrame({
+  label,
+  hint,
+  error,
+  className,
+  children,
+}: {
+  label: string;
+  hint?: string | undefined;
+  error?: string | null | undefined;
+  className?: string | undefined;
+  children: (tie: {
+    id: string;
+    'aria-invalid': true | undefined;
+    'aria-describedby': string | undefined;
+  }) => React.ReactNode;
+}) {
   const id = useId();
   const hintId = `${id}-hint`;
   const errorId = `${id}-error`;
@@ -40,17 +79,11 @@ export function Field({
       <label htmlFor={id} className="text-[0.8125rem] font-[680] tracking-[0.01em]">
         {label}
       </label>
-      <div className={cn('relative', action && 'flex gap-2')}>
-        <input
-          id={id}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={described}
-          className={cn(BOX, children && 'pe-[67px]', action && 'min-w-0 flex-1')}
-          {...input}
-        />
-        {children}
-        {action}
-      </div>
+      {children({
+        id,
+        'aria-invalid': error ? true : undefined,
+        'aria-describedby': described,
+      })}
       {showHint && (
         <p id={hintId} className="m-0 text-[0.8125rem] text-muted-foreground">
           {hint}
@@ -93,34 +126,16 @@ export function TextAreaField({
   className,
   ...input
 }: ComponentProps<'textarea'> & { label: string; hint?: string; error?: string | null }) {
-  const id = useId();
-  const hintId = `${id}-hint`;
-  const errorId = `${id}-error`;
-  const showHint = hint && !error;
-  const described = [showHint && hintId, error && errorId].filter(Boolean).join(' ') || undefined;
   return (
-    <div className={cn('grid gap-1.5', className)}>
-      <label htmlFor={id} className="text-[0.8125rem] font-[680] tracking-[0.01em]">
-        {label}
-      </label>
-      <textarea
-        id={id}
-        rows={3}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={described}
-        className={cn(BOX, 'resize-y py-[13px] leading-normal')}
-        {...input}
-      />
-      {showHint && (
-        <p id={hintId} className="m-0 text-[0.8125rem] text-muted-foreground">
-          {hint}
-        </p>
+    <FieldFrame label={label} hint={hint} error={error} className={className}>
+      {(tie) => (
+        <textarea
+          rows={3}
+          {...tie}
+          className={cn(BOX, 'resize-y py-[13px] leading-normal')}
+          {...input}
+        />
       )}
-      {error && (
-        <p id={errorId} className="m-0 text-[0.8125rem] font-[650] text-danger-ink">
-          {error}
-        </p>
-      )}
-    </div>
+    </FieldFrame>
   );
 }

@@ -1,7 +1,10 @@
+import type { QueryClient } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppNav } from '../src/components/app-shell.tsx';
+import { normUrl } from '../src/components/profile/fields.ts';
 import { ProfilePage } from '../src/components/profile/profile-page.tsx';
+import { ApiError } from '../src/lib/api/client.ts';
 import { createFakeApi } from '../src/lib/api/fake.ts';
 import type { Profile } from '../src/lib/api/profile.ts';
 import { createFakeAuth } from '../src/lib/auth/fake.ts';
@@ -137,6 +140,7 @@ describe('the signed-in app’s pages', () => {
 });
 
 describe('editing About you', () => {
+  let queries: QueryClient;
   /** The app on the Profile page, for a person with `profile` saved; returns the fake API. */
   async function onProfile(profile: Record<string, unknown> = {}) {
     const auth = createFakeAuth({ delay: 0 });
@@ -149,7 +153,7 @@ describe('editing About you', () => {
       lastName: 'Morgan',
       ...profile,
     });
-    await renderApp(auth, {}, api);
+    ({ queries } = await renderApp(auth, {}, api));
     await screen.findByRole('heading', { level: 1, name: 'What your deputy knows about you.' });
     return api;
   }
@@ -242,14 +246,74 @@ describe('editing About you', () => {
     expect('phone' in (await saved(api))).toBe(false);
   });
 
-  it('refuses a wrong calling code beside it', async () => {
+  it('refuses a wrong calling code beside it, and asks for the number a code needs', async () => {
     await onProfile();
     fireEvent.click(screen.getByRole('button', { name: 'Edit Contact and location' }));
-    type('Country code', '44');
+    type('Country code', '++44');
     type('Phone number', '20 7946 0000');
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(document.activeElement).toBe(screen.getByLabelText('Country code'));
     expect(screen.getByText('Use a code like +1, +44, or +91.')).toBeTruthy();
+    // A code other than +1 with no number is not dropped unseen.
+    type('Country code', '+44');
+    type('Phone number', '');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(document.activeElement).toBe(screen.getByLabelText('Phone number'));
+    expect(screen.getByText('Enter the number, or clear the country code.')).toBeTruthy();
+  });
+
+  it('reads a calling code typed without its + as meant', async () => {
+    const api = await onProfile();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Contact and location' }));
+    type('Country code', ' 44');
+    type('Phone number', '20 7946 0000');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(facts('Contact and location')).toContain('Phone: +44 20 7946 0000'));
+    expect((await saved(api)).phone).toEqual({ countryCode: '+44', number: '20 7946 0000' });
+  });
+
+  it('shows what another tab saved, rather than overwriting it, when a refresh came meanwhile', async () => {
+    const api = await onProfile({ headline: 'Engineer' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Name and headline' }));
+    type('Preferred name', 'Al');
+    // Another tab saves a new headline; this one refreshes (the window regained focus, say).
+    const other = await saved(api);
+    await api.request('PUT', '/me/profile', {
+      version: other.version,
+      firstName: 'Alex',
+      lastName: 'Morgan',
+      headline: 'Staff engineer',
+    });
+    await act(() => queries.invalidateQueries({ queryKey: ['profile'] }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(
+      await screen.findByText(
+        'Your profile changed somewhere else. It shows here now: check it, then save.',
+      ),
+    ).toBeTruthy();
+    expect((screen.getByLabelText('Headline') as HTMLInputElement).value).toBe('Staff engineer');
+    expect((await saved(api)).headline).toBe('Staff engineer');
+    // Saved again, it keeps both.
+    type('Preferred name', 'Al');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(facts('Name and headline')).toContain('Preferred name: Al'));
+    expect(await saved(api)).toMatchObject({ preferredName: 'Al', headline: 'Staff engineer' });
+  });
+
+  it('knows a save whose answer was lost went through, the phone saved with its +1', async () => {
+    const api = await onProfile();
+    const request = api.request.bind(api);
+    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      const answer = await request(method, path, body);
+      if (method === 'PUT') throw new ApiError('unsure', {});
+      return answer as never;
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Contact and location' }));
+    type('Country code', '');
+    type('Phone number', '512 555 0100');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(facts('Contact and location')).toContain('Phone: +1 512 555 0100'));
+    expect(screen.queryByText(/changed somewhere else/)).toBeNull();
   });
 
   it('adds https:// to an address typed without it, and keeps other links one per line', async () => {
@@ -277,5 +341,15 @@ describe('editing About you', () => {
       screen.getByText('Enter a web address, like linkedin.com/in/your-name (https only).'),
     ).toBeTruthy();
     expect(screen.getByText('Add at most 10 addresses.')).toBeTruthy();
+  });
+});
+
+describe('normUrl', () => {
+  it('adds https:// unless a scheme is typed, a host with a port included', () => {
+    expect(normUrl(' example.com:8443/work ')).toBe('https://example.com:8443/work');
+    expect(normUrl('localhost:3000')).toBe('https://localhost:3000');
+    expect(normUrl('https://alex.dev')).toBe('https://alex.dev');
+    expect(normUrl('http://alex.dev')).toBe('http://alex.dev');
+    expect(normUrl('  ')).toBe('');
   });
 });

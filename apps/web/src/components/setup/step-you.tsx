@@ -1,5 +1,5 @@
 import { Field } from '@/components/auth/fields.tsx';
-import { nameFields, putCity, readCity } from '@/components/profile/fields.ts';
+import { cityField, nameFields, putCity } from '@/components/profile/fields.ts';
 import { type FormSpec, useProfileForm } from '@/components/profile/profile-form.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { copy } from '@/copy/index.ts';
@@ -12,7 +12,7 @@ export const youSpec: FormSpec<'firstName' | 'lastName' | 'city'> = {
   fields: {
     firstName: nameFields.firstName,
     lastName: nameFields.lastName,
-    city: { read: readCity, paths: ['location.city'], invalid: copy.setUp.errors.cityInvalid },
+    city: cityField,
   },
   apply(body, answers) {
     body.firstName = answers.firstName;

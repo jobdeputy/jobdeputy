@@ -66,7 +66,7 @@ export const SCREENS: Screen[] = [
     steps: (page) => uploadResume(page, 'Alex_Morgan_Resume.pdf', 'Ready'),
   },
   { name: 'profile', path: '/', open: 'Get started free', still: true, steps: toSignedIn },
-  // A group's form open on the Profile page: Contact and location, a wrong calling code marked.
+  // A group's form open on the Profile page: Contact and location, a code without its number marked.
   {
     name: 'profile-edit',
     path: '/',
@@ -227,10 +227,9 @@ async function uploadResume(page: Page, name: string, stage: string) {
 async function toProfileEdit(page: Page) {
   await toSignedIn(page);
   await page.getByRole('button', { name: 'Edit Contact and location' }).click();
-  await page.getByLabel('Country code').fill('44');
-  await page.getByLabel('Phone number').fill('20 7946 0000');
+  await page.getByLabel('Country code').fill('+44');
   await page.getByRole('button', { name: 'Save' }).click();
-  await page.getByText('Use a code like +1, +44, or +91.').waitFor();
+  await page.getByText('Enter the number, or clear the country code.').waitFor();
 }
 
 async function toSignedIn(page: Page) {

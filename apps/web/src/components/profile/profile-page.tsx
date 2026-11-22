@@ -9,6 +9,7 @@ import { copy, fill } from '@/copy/index.ts';
 import type { Profile } from '@/lib/api/profile.ts';
 import { cn } from '@/lib/utils.ts';
 import {
+  cityField,
   linkFields,
   MAX_OTHER_LINKS,
   nameFields,
@@ -17,7 +18,6 @@ import {
   putLinks,
   putPhone,
   putText,
-  readCity,
 } from './fields.ts';
 import { type FormSpec, useProfileForm } from './profile-form.tsx';
 
@@ -177,7 +177,11 @@ function Group({
                   ? text.notAdded
                   : typeof value === 'string'
                     ? value
-                    : value.map((line) => <span key={line}>{line}</span>)}
+                    : value.map((line, at) => (
+                        // The same address may be listed twice: placed by where it is.
+                        // biome-ignore lint/suspicious/noArrayIndexKey: a read-only list
+                        <span key={at}>{line}</span>
+                      ))}
               </dd>
             </div>
           ))}
@@ -276,7 +280,7 @@ function NameForm({ profile, ...done }: Done & { profile: Profile }) {
 const contactSpec: FormSpec<'phoneCode' | 'phoneNumber' | 'city'> = {
   fields: {
     ...phoneFields,
-    city: { read: readCity, paths: ['location.city'], invalid: copy.setUp.errors.cityInvalid },
+    city: cityField,
   },
   apply(body, answers) {
     putPhone(body, answers.phoneCode, answers.phoneNumber);
@@ -294,8 +298,8 @@ function ContactForm({ profile, ...done }: Done & { profile: Profile }) {
       {(bind) => (
         <>
           <ul className="col-span-full m-0 grid list-none gap-2 p-0 @[640px]:grid-cols-2">
-            <Fact label={text.email} value={email} pill={text.locked} />
-            <Fact label={text.country} value={copy.setUp.region} pill={text.locked} />
+            <Fact label={text.email} value={email} pill={copy.setUp.locked} />
+            <Fact label={text.country} value={copy.setUp.region} pill={copy.setUp.locked} />
           </ul>
           <div className="col-span-full grid items-start gap-[13px] @[440px]:grid-cols-[minmax(89px,0.35fr)_minmax(0,1fr)]">
             <Field

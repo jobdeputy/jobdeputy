@@ -32,7 +32,7 @@ export type FieldSpec = {
   paths: readonly string[];
   /** Said when the field is wrong. */
   invalid: string;
-  /** Said when the field is required and empty. */
+  /** Said when the field is needed (always, or with another) and empty. */
   missing?: string;
   /** Said when a list holds too many (`{max}`). */
   tooMany?: string;
@@ -75,6 +75,10 @@ export function useProfileForm<N extends string>({
   const names = Object.keys(spec.fields) as N[];
   const form = useRef<HTMLFormElement>(null);
   const [values, setValues] = useState<Values<N>>(() => valuesOf(spec, profile));
+  // This form's fields as saved when it opened (or last read them): a refresh of the profile
+  // meanwhile (the window regaining focus) can bring a newer version, which must not let a save
+  // overwrite these fields changed elsewhere unseen.
+  const [opened, setOpened] = useState<Values<N>>(() => valuesOf(spec, profile));
   const [errors, setErrors] = useState<Errors<N>>({});
   const [refusal, setRefusal] = useState<string | null>(null);
   // Said politely (not an alert): a saved field this form doesn't show that is wrong.
@@ -188,8 +192,20 @@ export function useProfileForm<N extends string>({
       setNote(null);
       setSpoken('');
     });
+    const before = opened;
+    const now = valuesOf(spec, profile);
+    if (!sameAnswers(spec, now, before)) {
+      // This form's fields were saved elsewhere since it opened: show them, so nothing is
+      // overwritten unseen.
+      setValues(now);
+      setOpened(now);
+      setErrors({});
+      setRefusal(spec.changedElsewhere);
+      return;
+    }
+    const answers = answersOf(spec, values);
     const body = saveBody(spec, profile, values);
-    const found = check(spec, body);
+    const found = check(spec, body, answers);
     // Rendered before focus moves, so the field is read with its reason.
     flushSync(() => setErrors(found.fields));
     const first = names.find((name) => found.fields[name]);
@@ -209,7 +225,8 @@ export function useProfileForm<N extends string>({
       onSaved(next);
     } catch (error) {
       if (!here.current) return;
-      await refused(error, values, valuesOf(spec, profile), body.version);
+      // Compared as saved (a phone's +1 added, an empty number dropped), not as typed.
+      await refused(error, valuesOf(spec, body as Profile), before, body.version);
     } finally {
       if (here.current) setPending(false);
     }
@@ -250,6 +267,7 @@ export function useProfileForm<N extends string>({
       } else {
         // This form's fields changed elsewhere: show them, so nothing is overwritten unseen.
         setValues(valuesOf(spec, fresh));
+        setOpened(valuesOf(spec, fresh));
         setRefusal(spec.changedElsewhere);
       }
     } else {
@@ -322,12 +340,16 @@ export function saveBody<N extends string>(
   );
   // A copy: `apply` changes nested objects (location, links) in place.
   const body: SaveBody = { ...structuredClone(saved), version: profile.version };
+  spec.apply(body, answersOf(spec, values));
+  return body;
+}
+
+/** What is typed, as it is saved (each field's `norm`). */
+function answersOf<N extends string>(spec: FormSpec<N>, values: Values<N>): Values<N> {
   const names = Object.keys(spec.fields) as N[];
-  const answers = Object.fromEntries(
+  return Object.fromEntries(
     names.map((name) => [name, normOf(spec.fields[name], values[name])]),
   ) as Values<N>;
-  spec.apply(body, answers);
-  return body;
 }
 
 /** The field an API path belongs to (its own path, or one inside it). */
@@ -344,6 +366,7 @@ function fieldOf<N extends string>(spec: FormSpec<N>, path: string): N | undefin
 function check<N extends string>(
   spec: FormSpec<N>,
   body: unknown,
+  answers: Values<N>,
 ): { fields: Errors<N>; other: boolean } {
   const result = profileInput.safeParse(body);
   const fields: Errors<N> = {};
@@ -363,7 +386,7 @@ function check<N extends string>(
         ? fill(field.tooMany, { max })
         : issue.code === 'too_big'
           ? fill(copy.setUp.errors.tooLong, { max })
-          : issue.code === 'too_small' && field.missing
+          : field.missing && (issue.code === 'too_small' || answers[name] === '')
             ? field.missing
             : field.invalid;
   }
@@ -385,7 +408,7 @@ function fromApi<N extends string>(
   return { fields, other };
 }
 
-/** Whether a saved profile holds these answers (as they are sent). */
+/** Whether two readings of this form's fields from saved profiles (or a sent body) agree. */
 function sameAnswers<N extends string>(
   spec: FormSpec<N>,
   saved: Values<N>,

@@ -47,9 +47,11 @@ export function putText(body: SaveBody, key: string, answer: string) {
   else delete body[key];
 }
 
-export function readCity(profile: Profile): string {
-  return (profile.location as Location | undefined)?.city ?? '';
-}
+export const cityField: FieldSpec = {
+  read: (profile) => (profile.location as Location | undefined)?.city ?? '',
+  paths: ['location.city'],
+  invalid: copy.setUp.errors.cityInvalid,
+};
 
 /** The city, in the location, which keeps its saved region and postal code (and the country). */
 export function putCity(body: SaveBody, city: string) {
@@ -60,6 +62,8 @@ export function putCity(body: SaveBody, city: string) {
 export const phoneFields = {
   phoneCode: {
     read: (profile) => (profile.phone as Phone | undefined)?.countryCode ?? US_CALLING_CODE,
+    // "44" is meant as "+44".
+    norm: (typed) => typed.trim().replace(/^(?=\d)/, '+'),
     paths: ['phone.countryCode'],
     invalid: copy.profilePage.errors.phoneCodeInvalid,
   },
@@ -67,13 +71,20 @@ export const phoneFields = {
     read: (profile) => (profile.phone as Phone | undefined)?.number ?? '',
     paths: ['phone.number', 'phone'],
     invalid: copy.profilePage.errors.phoneNumberInvalid,
+    // Needed once a calling code other than the default is typed.
+    missing: copy.profilePage.errors.phoneNumberMissing,
   },
 } satisfies Record<string, FieldSpec>;
 
-/** The phone: a number with its calling code (+1 when none is typed), or none at all. */
+/**
+ * The phone: a number with its calling code (+1 when none is typed), or none at all when the
+ * number is empty and the code is the default. A code typed without a number is sent as it is, so
+ * the check asks for the number rather than dropping the code unseen.
+ */
 export function putPhone(body: SaveBody, code: string, number: string) {
-  if (number) body.phone = { countryCode: code || US_CALLING_CODE, number };
-  else delete body.phone;
+  if (number || (code && code !== US_CALLING_CODE)) {
+    body.phone = { countryCode: code || US_CALLING_CODE, number };
+  } else delete body.phone;
 }
 
 /**
@@ -82,7 +93,8 @@ export function putPhone(body: SaveBody, code: string, number: string) {
  */
 export function normUrl(typed: string): string {
   const value = typed.trim();
-  return value && !/^[a-z][a-z\d+.-]*:/i.test(value) ? `https://${value}` : value;
+  // A scheme is `name://`; `example.com:8443` is a host and port, so it gets one too.
+  return value && !/^[a-z][a-z\d+.-]*:\/\//i.test(value) ? `https://${value}` : value;
 }
 
 /** Several web addresses, one per line, as they are saved (blank lines dropped). */

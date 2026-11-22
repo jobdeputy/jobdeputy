@@ -409,9 +409,6 @@ export const en = {
         /** The phone's two parts, in its form. */
         phoneCode: 'Country code',
         phoneNumber: 'Phone number',
-        /** Beside the email and the country in the form: they can't be changed here. */
-        emailNote: 'Your sign-in. It can’t be changed here.',
-        locked: 'Locked',
       },
       links: {
         title: 'Links',
@@ -429,6 +426,7 @@ export const en = {
       headlineInvalid: 'Check your headline.',
       phoneCodeInvalid: 'Use a code like +1, +44, or +91.',
       phoneNumberInvalid: 'Use digits, spaces, dashes, or brackets.',
+      phoneNumberMissing: 'Enter the number, or clear the country code.',
       linkInvalid: 'Enter a web address, like linkedin.com/in/your-name (https only).',
       otherLinksInvalid: 'Check each address: one per line, https only.',
       otherLinksTooMany: 'Add at most {max} addresses.',
