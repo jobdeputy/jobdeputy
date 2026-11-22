@@ -40,7 +40,9 @@ describe('the signed-in app', () => {
     const api = createFakeApi({ delay: 0 });
     await api.request('PUT', '/me/profile', { version: 0, firstName: 'Alex', lastName: 'Morgan' });
     await renderApp(await signedIn(), {}, api);
-    expect(await screen.findByRole('heading', { level: 1, name: 'You’re in.' })).toBeTruthy();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'What your deputy knows about you.' }),
+    ).toBeTruthy();
   });
 
   it('says when the profile could not be read, and tries again', async () => {

@@ -1,22 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SignOutButton } from '../src/components/auth/sign-out-button.tsx';
-import { SignedIn } from '../src/components/auth/signed-in.tsx';
 import { createFakeAuth } from '../src/lib/auth/fake.ts';
 import { AuthContext, AuthError } from '../src/lib/auth/index.ts';
 
 afterEach(cleanup);
-
-describe('SignedIn', () => {
-  it('says who is signed in, and focuses its title once', () => {
-    render(<SignedIn email="a@example.com" />);
-    const title = screen.getByRole('heading', { level: 1, name: 'You’re in.' });
-    expect(document.activeElement).toBe(title);
-    expect(
-      screen.getByText('Signed in as a@example.com. Your search desk is on its way.'),
-    ).toBeTruthy();
-  });
-});
 
 function renderSignOut(signOut?: () => Promise<void>) {
   const auth = createFakeAuth({ delay: 0 });

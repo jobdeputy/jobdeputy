@@ -1,17 +1,19 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-import { SignedIn } from '@/components/auth/signed-in.tsx';
+import { AppNav, PAGES } from '@/components/app-shell.tsx';
 import { type AuthControl, AuthDrawer, type AuthMode } from '@/components/landing/auth-drawer.tsx';
 import { Hero } from '@/components/landing/hero.tsx';
 import { SiteHeader } from '@/components/landing/site-header.tsx';
+import { ProfilePage } from '@/components/profile/profile-page.tsx';
 import { SetUp, type SetUpStep } from '@/components/setup/set-up.tsx';
 import { SignedInLayout } from '@/components/signed-in-layout.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { QueryRegion } from '@/components/ui/query-region.tsx';
-import { copy } from '@/copy/index.ts';
+import { copy, fill } from '@/copy/index.ts';
 import { hasProfile, useProfile } from '@/lib/api/profile.ts';
 import { useAuth } from '@/lib/auth/index.ts';
 import { useFinishBoot } from '@/lib/boot-loader.ts';
+import { navigate, usePath } from '@/lib/router.ts';
 
 /**
  * The app: the public landing page (the story of what the deputy does, and the way in), or, for a
@@ -56,8 +58,13 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
     setUpStep === 'done'
       ? null
       : (setUpStep ?? (profile.data !== undefined && !hasProfile(profile.data) ? 'welcome' : null));
+  // The app's pages, once the profile is read and the set-up is done.
+  const pages = !step && profile.data !== undefined;
+  const path = usePath();
+  usePageAddress(pages, path);
   return (
-    <SignedInLayout onSignedOut={signedOut}>
+    // The page shown is the one marked: Profile, also at an address that is no page.
+    <SignedInLayout onSignedOut={signedOut} nav={pages ? <AppNav path="/profile" /> : undefined}>
       {/* The shared loading states (#17): nothing for 300 ms, then a skeleton read out as
           "Opening your search desk", "Still working…" after 8 s, "Waiting for a connection…"
           while offline. The region holds the page's width and gutters. */}
@@ -80,12 +87,34 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
               onBack={() => setSetUpStep(SET_UP_BACK[step])}
             />
           ) : (
-            <SignedIn email={email} />
+            <ProfilePage profile={data} />
           )
         }
       </QueryRegion>
     </SignedInLayout>
   );
+}
+
+/**
+ * The address and title of the app's pages (#33), once they are shown: arriving at a path that is
+ * no page (the landing's `/`, an old link) goes to the Profile page, the only page so far, once
+ * (Back past it later is left alone, and still shows Profile); the tab's title names the page.
+ */
+function usePageAddress(pages: boolean, path: string) {
+  const arrived = useRef(false);
+  useEffect(() => {
+    if (!pages || arrived.current) return;
+    arrived.current = true;
+    if (!PAGES.some((page) => page.path === path)) navigate('/profile', { replace: true });
+  }, [pages, path]);
+  useEffect(() => {
+    if (!pages) return;
+    const before = document.title;
+    document.title = fill(copy.nav.pageTitle, { page: copy.nav.profile });
+    return () => {
+      document.title = before;
+    };
+  }, [pages]);
 }
 
 /** The set-up's order (#33); the last step saved ends it. */
@@ -139,6 +168,9 @@ function ProfileFailed({ onRetry }: { onRetry: () => void }) {
 function Landing({ onSignedIn }: { onSignedIn: (email: string) => void }) {
   const [authMode, setAuthMode] = useState<AuthMode>('sign-up');
   const [authOpen, setAuthOpen] = useState(false);
+  // The landing page is at /: after signing out, or opening a signed-in page's address while
+  // signed out, the address says so.
+  useEffect(() => navigate('/', { replace: true }), []);
   // Four buttons open the drawer; focus returns to whichever one did.
   const opener = useRef<HTMLElement | null>(null);
 

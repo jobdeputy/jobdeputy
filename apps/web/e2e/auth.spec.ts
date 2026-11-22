@@ -109,7 +109,14 @@ test('creates an account, confirms it with the code, lands signed in, and signs 
   await expectNoAccessibilityViolations(page);
   await expectNoHorizontalScroll(page);
   await page.getByRole('button', { name: 'Continue' }).click();
-  await expect(page.getByRole('heading', { level: 1, name: 'You’re in.' })).toBeFocused();
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'What your deputy knows about you.' }),
+  ).toBeFocused();
+  // The Profile page (#33): at its own address, named in the tab, and passing axe.
+  await expect(page).toHaveURL(/\/profile$/);
+  await expect(page).toHaveTitle('Profile · JobDeputy');
+  await expectNoAccessibilityViolations(page);
+  await expectNoHorizontalScroll(page);
 
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(

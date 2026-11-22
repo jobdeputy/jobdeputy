@@ -65,7 +65,7 @@ export const SCREENS: Screen[] = [
     still: true,
     steps: (page) => uploadResume(page, 'Alex_Morgan_Resume.pdf', 'Ready'),
   },
-  { name: 'signed-in', path: '/', open: 'Get started free', still: true, steps: toSignedIn },
+  { name: 'profile', path: '/', open: 'Get started free', still: true, steps: toSignedIn },
   // Every shared component state (#17); the pending buttons and the loading skeleton appear
   // after the 300 ms delay.
   {
@@ -219,5 +219,7 @@ async function uploadResume(page: Page, name: string, stage: string) {
 async function toSignedIn(page: Page) {
   await toStepResume(page);
   await page.getByRole('button', { name: 'Skip for now' }).click();
-  await page.getByRole('heading', { level: 1, name: 'You’re in.' }).waitFor();
+  await page
+    .getByRole('heading', { level: 1, name: 'What your deputy knows about you.' })
+    .waitFor();
 }
