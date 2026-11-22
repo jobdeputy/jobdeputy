@@ -603,12 +603,22 @@ export class CellStack extends Stack {
       entry: 'apps/api/src/jobs.ts',
       timeout: Duration.seconds(10),
       removalPolicy,
-      environment: { JOBS_TABLE_NAME: jobsTable.tableName, USAGE_TABLE_NAME: usageTable.tableName },
+      environment: {
+        JOBS_TABLE_NAME: jobsTable.tableName,
+        USAGE_TABLE_NAME: usageTable.tableName,
+        PREFERENCES_TABLE_NAME: preferencesTable.tableName,
+        CRAWL_LIMITS_PARAMETER: crawlLimits.parameterName,
+      },
     });
     // Read-only for now: the user's own changes to jobs come with the interface (T09).
-    // #49: GET /me/companies reads the `COMPANY#` usage items, then the page's jobs in a batch.
+    // #49: GET /me/companies reads the `COMPANY#` usage items, then the page's jobs in a batch,
+    // capped at the user's jobs per company (their setting, within the admin's limits).
     jobsTable.grant(jobsApi.fn, 'dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:BatchGetItem');
     usageTable.grant(jobsApi.fn, 'dynamodb:Query');
+    preferencesTable.grant(jobsApi.fn, 'dynamodb:GetItem');
+    jobsApi.fn.addToRolePolicy(
+      new PolicyStatement({ actions: ['ssm:GetParameter'], resources: [crawlLimits.parameterArn] }),
+    );
 
     const httpApi = new HttpApi(this, 'HttpApi', {
       apiName: id,

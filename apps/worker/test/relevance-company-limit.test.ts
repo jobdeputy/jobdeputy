@@ -1,5 +1,6 @@
+import { compareRank, type RankedJob } from '@jobdeputy/shared';
 import { describe, expect, it } from 'vitest';
-import { applyCompanyLimit, compareRank, type RankedJob } from '../src/relevance/company-limit.js';
+import { applyCompanyLimit } from '../src/relevance/company-limit.js';
 
 const j = (jobId: string, p = 50, t?: string): RankedJob => ({ jobId, p, ...(t ? { t } : {}) });
 

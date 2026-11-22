@@ -111,7 +111,7 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `jobs/schema-org.ts` | schema.org `JobPosting` |
 | `jobs/job.ts`, `jobs/text.ts` | the normalized job, dedupe key, hashes; HTML to text, limits |
 | `relevance/code-filter.ts` | T08c: the free code filter: title, level, place, workplace, type, salary, excluded words against the roles; `candidate` or `not_relevant`, with reasons |
-| `relevance/company-limit.ts`, `relevance/fit.ts` | T08c: ranking each company's candidates within the limit (`counted`, `over_limit`; by score first since T08d); the crawl's filter-then-rank step; the loader of roles, profile, and limits both workers use |
+| `relevance/company-limit.ts`, `relevance/fit.ts` | T08c: keeping each company's candidates within the limit (the order itself: `shared/src/company-rank.ts`) (`counted`, `over_limit`; by score first since T08d); the crawl's filter-then-rank step; the loader of roles, profile, and limits both workers use |
 | `relevance/llm-inputs.ts` | T08d: the user and each job as the model sees them (short IDs), and the inputs hash that skips unchanged jobs |
 
 ## packages
@@ -121,7 +121,7 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `db/src/transact.ts` | `transactWrite`: retries conflicts with jitter, then `ConcurrentUpdateError` |
 | `db/src/crawl-repository.ts` | sources, crawls, daily and active limits, finish |
 | `db/src/job-repository.ts` | save jobs (idempotent, with the filter verdict and expiry), close missing, mark over the limit, list (shown or all), get |
-| `db/src/company-limit-repository.ts` | T08c: `usage` `COMPANY#`: each company's shown jobs, replaced at the version read |
+| `db/src/company-limit-repository.ts` | T08c: `usage` `COMPANY#`: each company's shown jobs, replaced at the version read; #49 `listShown` for `GET /me/companies` |
 | `db/src/relevance-repository.ts` | T08d: a crawl's scoring run: start, each task call with its tokens and scores in one transaction, end with an audit entry |
 | `db/src/crawl-limits.ts` | the admin crawl limits from SSM, cached 5 minutes (API and crawl worker) |
 | `db/src/document-repository.ts`, `preferences-repository.ts`, `profile-repository.ts` | T05 items, with counters and audit |
@@ -129,7 +129,7 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `db/src/ai-key-repository.ts` | `ai-keys` (save, check, delete, results; daily check limit) and `preferences` `AI_SETTINGS` |
 | `db/src/usage-counters.ts`, `versioned.ts`, `audit-repository.ts` | exact caps; optimistic versions; audit entries and paging |
 | `db/src/account-repository.ts`, `crawl-settings-repository.ts`, `ping-repository.ts`, `client.ts` | deletion record; user crawl and jobs-per-company limits; ping; DynamoDB client and condition helpers |
-| `shared/src/*.ts` | Zod schemas and constants per feature (`auth`, `crawl`, `documents`, `profile`, `ping`), `ai.ts` (the pinned platform model; own-key providers, schemas, and limits), `http.ts` (problem details), `logger.ts` |
+| `shared/src/*.ts` | Zod schemas and constants per feature (`auth`, `crawl`, `documents`, `profile`, `ping`), `company-rank.ts` (T08c/#49: `compareRank`, how a company's shown jobs are ranked, shared by the crawl worker and `GET /me/companies`, and the cursor's schema), `ai.ts` (the pinned platform model; own-key providers, schemas, and limits), `http.ts` (problem details), `logger.ts` |
 | `test-fixtures/src/index.ts` | synthetic PDF, DOCX, zip bomb, EICAR |
 | `llm/src/task.ts` | `defineTask`, `runTask`: 3 turns, token caps, timeout, strict zod output, `partial`, usage (the only Strands caller, 0009) |
 | `llm/src/models.ts` | `resolveModel`: the platform model on Bedrock in the cell Region, or the user's OpenAI or Anthropic key; no client retries |

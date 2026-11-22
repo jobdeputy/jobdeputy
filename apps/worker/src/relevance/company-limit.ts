@@ -7,8 +7,6 @@
 
 import { compareRank, type RankedJob, type ShownEntry } from '@jobdeputy/shared';
 
-export { compareRank, type RankedJob, type ShownEntry };
-
 export interface LimitResult {
   /** The company's shown jobs after this crawl. */
   shown: Record<string, ShownEntry>;
