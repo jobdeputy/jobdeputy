@@ -188,15 +188,16 @@ export function createFakeApi({
         total === 0
           ? { jobsFound: 0, jobsNew: 0, jobsUpdated: 0, companies: { succeeded: 0, failed: 0 } }
           : {
-              jobsFound: 46,
-              jobsNew: 46,
+              // "list-no-jobs": its companies have no open jobs at all.
+              jobsFound: /list-no-jobs/i.test(url) ? 0 : 46,
+              jobsNew: /list-no-jobs/i.test(url) ? 0 : 46,
               jobsUpdated: 0,
               // "jobs-fit-none": its companies' jobs were read, and none fit.
-              jobsRelevant: /jobs-fit-none/i.test(url) ? 0 : 12,
+              jobsRelevant: /jobs-fit-none|list-no-jobs/i.test(url) ? 0 : 12,
               companies: { succeeded: total - 1, failed: 1 },
             },
     };
-    const scored = total > 0 && !/jobs-fit-none/i.test(url);
+    const scored = total > 0 && !/jobs-fit-none|list-no-jobs/i.test(url);
     if (view.aiSource === 'none' || !scored || step < finished + 1) return done;
     return { ...done, relevance: { status: step < finished + 2 ? 'running' : 'done' } };
   }

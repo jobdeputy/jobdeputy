@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { JobsPage, withScheme } from '../src/components/jobs/jobs-page.tsx';
 import { copy } from '../src/copy/index.ts';
 import { ApiError } from '../src/lib/api/client.ts';
+import { companiesKey } from '../src/lib/api/companies.ts';
 import {
   type Crawl,
   crawlName,
@@ -444,6 +445,11 @@ describe('Job matches: a GitHub list (#50)', () => {
         'Done with acme/jobs-fit-none: no jobs at 4 companies fit your roles.',
         '1 company couldn’t be read.',
       ],
+      [
+        'acme/list-no-jobs',
+        'Done with acme/list-no-jobs: no open jobs at 4 companies.',
+        '1 company couldn’t be read.',
+      ],
     ] as const) {
       const api = heldApi();
       await renderPage(api);
@@ -459,18 +465,24 @@ describe('Job matches: a GitHub list (#50)', () => {
 
   it("keeps the companies already loaded as each of a list's companies is read", async () => {
     const api = heldApi();
-    const request = vi.spyOn(api, 'request');
-    await renderPage(api);
+    const { queries } = await renderPage(api);
+    // The companies' queries: a new one would start again from the first page.
+    const lists = () =>
+      queries
+        .getQueryCache()
+        .findAll({ queryKey: companiesKey })
+        .map((query) => JSON.stringify(query.queryKey))
+        .sort();
     type('github.com/acme/list');
     findJobs();
     await waitFor(() => expect(input().value).toBe(''));
     api.next(3);
     expect(await screen.findByRole('article', { name: 'Acme' }, { timeout: 3000 })).toBeTruthy();
+    const during = lists();
     api.next();
     expect(await screen.findByRole('article', { name: 'Globex' }, { timeout: 3000 })).toBeTruthy();
-    // Read again in place (the same query), not as a new list.
-    const reads = request.mock.calls.filter(([, path]) => String(path).startsWith('/me/companies'));
-    expect(reads.length).toBeGreaterThanOrEqual(3);
+    // Read again in place: the same query (its pages kept), not a new list.
+    expect(lists()).toEqual(during);
     expect(screen.getByRole('article', { name: 'Acme' })).toBeTruthy();
   });
 

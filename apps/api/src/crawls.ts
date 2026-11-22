@@ -61,8 +61,6 @@ const logger = createLogger('api-crawls');
  * within it), so a new submit replaces it instead of waiting for it forever.
  */
 export const STALE_CRAWL_MS = 15 * 60 * 1000;
-/** #50: shared with the web app's stall check (packages/shared/src/lists.ts). */
-export { STALE_LIST_MS };
 
 export interface CrawlsDeps {
   repo: Pick<

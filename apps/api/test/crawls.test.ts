@@ -10,18 +10,16 @@ import {
   TooManyActiveCrawlsError,
   VersionConflictError,
 } from '@jobdeputy/db';
-import { type AiKeyStatus, type AiSource, DEFAULT_CRAWL_LIMITS } from '@jobdeputy/shared';
+import {
+  type AiKeyStatus,
+  type AiSource,
+  DEFAULT_CRAWL_LIMITS,
+  STALE_LIST_MS,
+} from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2, APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
 import { route as auditRoute } from '../src/audit.js';
-import {
-  type CrawlsDeps,
-  crawlView,
-  listSourceOf,
-  route,
-  STALE_CRAWL_MS,
-  STALE_LIST_MS,
-} from '../src/crawls.js';
+import { type CrawlsDeps, crawlView, listSourceOf, route, STALE_CRAWL_MS } from '../src/crawls.js';
 import { concurrentUpdateProblem } from '../src/errors.js';
 import { PAGES, handler as testSite } from '../src/test-site.js';
 

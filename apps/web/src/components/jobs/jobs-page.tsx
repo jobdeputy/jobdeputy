@@ -38,11 +38,6 @@ export function JobsPage({ checkEvery }: { checkEvery?: number }) {
   const crawl = latest.data ?? null;
   useRenderAtDeadline(crawl);
   const listVersion = useListVersion(latest);
-  const crawlForList = latest.data ?? null;
-  const progressKey =
-    crawlForList?.kind === 'list' && isCrawling(crawlForList) && crawlForList.list
-      ? `${crawlForList.crawlId}:${crawlForList.list.ended}`
-      : undefined;
   return (
     // Wide enough for the companies beside a job's preview; the link form keeps its measure.
     <div className="grid w-full max-w-[1120px] content-start gap-8">
@@ -70,7 +65,11 @@ export function JobsPage({ checkEvery }: { checkEvery?: number }) {
           </div>
         </Section>
       </div>
-      <CompanyList version={listVersion} progress={progressKey} offline={latest.isPaused} />
+      <CompanyList
+        version={listVersion}
+        progress={listProgressKey(crawl)}
+        offline={latest.isPaused}
+      />
     </div>
   );
 }
@@ -100,6 +99,16 @@ function useListVersion(latest: ReturnType<typeof useLatestCrawl>): string | und
       ].join(':')
     : 'none';
   return last.current;
+}
+
+/**
+ * #50: while a list run's companies are read, a key that changes as each one ends, so the
+ * companies already loaded are read again in place (CompanyList's `progress`). Undefined
+ * otherwise; once its companies are read, its scoring's end reads the list again (the version).
+ */
+export function listProgressKey(crawl: Crawl | null): string | undefined {
+  if (!crawl?.list || crawl.kind !== 'list' || !isCrawling(crawl)) return undefined;
+  return crawlStage(crawl) === 'companies' ? `${crawl.crawlId}:${crawl.list.ended}` : undefined;
 }
 
 /**
@@ -401,12 +410,17 @@ function ListOutcome({ crawl, host }: { crawl: Crawl; host: string }) {
       ? fill(skipped > 0 ? text.result.listNoneReadable : text.result.listNoMatch, { host })
       : read === 0
         ? fill(text.result.listNoneRead, { host })
-        : crawl.stats?.jobsRelevant === 0
-          ? fill(text.result.listNoneFit, { host, companies: plural(text.result.companies, read) })
-          : fill(plural(text.result.listDone, found), {
-              host,
-              companies: plural(text.result.companies, read),
-            });
+        : found === 0
+          ? fill(text.result.listNoJobs, { host, companies: plural(text.result.companies, read) })
+          : crawl.stats?.jobsRelevant === 0
+            ? fill(text.result.listNoneFit, {
+                host,
+                companies: plural(text.result.companies, read),
+              })
+            : fill(plural(text.result.listDone, found), {
+                host,
+                companies: plural(text.result.companies, read),
+              });
   const notes = [
     chosen > 0 && skipped > 0 ? plural(text.result.listSkipped, skipped) : null,
     (crawl.stats?.companies?.failed ?? 0) > 0

@@ -533,6 +533,7 @@ export const en = {
       listNoMatch: 'Done with {host}: none of its roles fit your roles.',
       listNoneRead: 'Done with {host}: none of its companies could be read this time.',
       listNoneFit: 'Done with {host}: no jobs at {companies} fit your roles.',
+      listNoJobs: 'Done with {host}: no open jobs at {companies}.',
       listNoneReadable: 'Done with {host}: none of its companies’ sites can be read yet.',
       listSkipped: {
         one: '{count} company skipped: its site can’t be read yet.',

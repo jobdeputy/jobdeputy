@@ -46,9 +46,11 @@ export function CompanyList({
   const { refetch } = companies;
   const lastProgress = useRef(progress);
   useEffect(() => {
-    if (progress === lastProgress.current) return;
+    const before = lastProgress.current;
     lastProgress.current = progress;
-    if (progress !== undefined) void refetch();
+    if (progress === undefined || before === progress) return;
+    // A read already on its way (the list's first, or More companies) is joined, never cancelled.
+    void refetch({ cancelRefetch: false });
   }, [progress, refetch]);
   const wide = useWide();
   // The job open in the preview: as the list has it now (a list read again may have scored it),
