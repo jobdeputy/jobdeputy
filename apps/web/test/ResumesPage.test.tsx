@@ -351,30 +351,61 @@ describe('a résumé’s actions on the Résumés page', () => {
     expect(rows()[1]).toContain('Default');
   });
 
-  it('takes one Make default at a time', async () => {
+  it('reads the list again when two Make default answer out of order', async () => {
     const api = await renderPage(['First.pdf', 'Second.pdf', 'Third.pdf']);
     const request = api.request.bind(api);
+    const answers: (() => void)[] = [];
+    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      if (method !== 'PUT') return request(method, path, body);
+      // Saved at once, in the order pressed; answered when the test says.
+      const saved = await request(method, path, body);
+      return new Promise((resolve) => answers.push(() => resolve(saved)));
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Make default Third' }));
+    await waitFor(() => expect(answers).toHaveLength(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Make default Second' }));
+    await waitFor(() => expect(answers).toHaveLength(2));
+    // Second (saved last, so the default) answers first; Third's older answer comes last.
+    answers[1]?.();
+    answers[0]?.();
+    await waitFor(() => expect(rows()[1]).toBe('SecondDefaultPDF · 180 kBDelete Second'));
+    await waitFor(() => expect(rows()[0]).toBe('ThirdPDF · 180 kBDelete Third'));
+  });
+
+  it('takes one made the default elsewhere meanwhile as done', async () => {
+    const api = await renderPage();
+    const [second] = await documents(api);
+    await api.request('PUT', `/me/documents/${second?.documentId}`, {
+      version: second?.version,
+      isDefault: true,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Make default Second' }));
+    await waitFor(() =>
+      expect(statusText()).toContain('Second is your default now. Your deputy tailors from it.'),
+    );
+    expect(rows()[0]).toBe('SecondDefaultPDF · 180 kBDelete Second');
+    expect(
+      screen.queryByText('Your résumés changed elsewhere. Look again, then try again.'),
+    ).toBeNull();
+  });
+
+  it('leaves focus where the person moved it while Make default was on its way', async () => {
+    const api = await renderPage();
+    const request = api.request.bind(api);
     let answer = () => {};
-    const put = vi.spyOn(api, 'request').mockImplementation((method, path, body) =>
+    vi.spyOn(api, 'request').mockImplementation((method, path, body) =>
       method === 'PUT'
         ? new Promise((resolve) => {
             answer = () => resolve(request(method, path, body));
           })
         : request(method, path, body),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Make default Third' }));
-    await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: 'Make default Second' }).getAttribute('aria-disabled'),
-      ).toBe('true'),
-    );
     fireEvent.click(screen.getByRole('button', { name: 'Make default Second' }));
-    expect(put.mock.calls.filter(([method]) => method === 'PUT')).toHaveLength(1);
+    const elsewhere = screen.getByRole('button', { name: 'Rename First' });
+    elsewhere.focus();
     answer();
-    await waitFor(() => expect(rows()[0]).toContain('Default'));
-    expect(
-      screen.getByRole('button', { name: 'Make default Second' }).getAttribute('aria-disabled'),
-    ).toBeNull();
+    await waitFor(() => expect(statusText()).toContain('Second is your default now.'));
+    expect(document.activeElement).toBe(elsewhere);
   });
 
   it('says it is gone only once the list shows it', async () => {

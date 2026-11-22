@@ -260,4 +260,10 @@ describe('the download’s file name', () => {
       `attachment; filename="R_sum_ (M_ller).pdf"; filename*=UTF-8''R%C3%A9sum%C3%A9%20%28M%C3%BCller%29.pdf`,
     );
   });
+
+  it('never fails on a name with a broken character', () => {
+    expect(attachment('\ud800x.pdf')).toBe(
+      `attachment; filename="_x.pdf"; filename*=UTF-8''%EF%BF%BDx.pdf`,
+    );
+  });
 });

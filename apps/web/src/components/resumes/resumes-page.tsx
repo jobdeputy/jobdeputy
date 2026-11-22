@@ -79,7 +79,12 @@ export function ResumesPage({
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
   const [rowError, setRowError] = useState<{ documentId: string; words: string } | null>(null);
   // A row's button to focus once the list shows the change (Make default's own button goes).
-  const [focusTo, setFocusTo] = useState<{ documentId: string; action: string } | null>(null);
+  // (`from`: where focus was when the action started.)
+  const [focusTo, setFocusTo] = useState<{
+    documentId: string;
+    action: string;
+    from: Element | null;
+  } | null>(null);
   // Rename: the résumé (kept while the sheet slides away), whether it is open, saving, and why
   // a save failed; focus goes back to its Rename, or to the library's title if it went.
   const [renaming, setRenaming] = useState<Document | null>(null);
@@ -88,6 +93,9 @@ export function ResumesPage({
   const [renameError, setRenameError] = useState<string | null>(null);
   const renameOpener = useRef<HTMLElement | null>(null);
   const renameGone = useRef(false);
+  // How many Make default are on their way, and whether two were at once (see makeDefault).
+  const defaulting = useRef(0);
+  const overlapped = useRef(false);
 
   useEffect(() => {
     if (!focusTo) return;
@@ -97,7 +105,7 @@ export function ResumesPage({
     const button = globalThis.document.querySelector<HTMLElement>(
       `[data-document="${focusTo.documentId}"] [data-action="${focusTo.action}"]`,
     );
-    (button ?? heading.current)?.focus();
+    rescueFocus(button ?? heading.current, focusTo.from);
   }, [focusTo]);
 
   const listKey = documentsQuery(api).queryKey;
@@ -129,28 +137,42 @@ export function ResumesPage({
   /**
    * Why a change to this résumé didn't go through (the one rule for every change on the page):
    * it went or changed elsewhere, so the list is read again ('gone' only once that read shows it
-   * is gone); else the refusal, or `fallback` when trying again can help.
+   * is gone; `now` is the résumé as it read); else the refusal, or `fallback` when trying again
+   * can help.
    */
   async function refusal(
     document: Document,
     failure: unknown,
     fallback: string,
-  ): Promise<{ gone: true } | { gone: false; words: string }> {
+  ): Promise<{ gone: true } | { gone: false; now?: Document; words: string }> {
     const kind = failure instanceof ApiError ? failure.kind : null;
     if (kind === 'not-found' || kind === 'conflict') {
-      const now = await readAgain();
-      if (!now) return { gone: false, words: fallback };
-      if (!now.some((each) => each.documentId === document.documentId)) return { gone: true };
-      return { gone: false, words: text.failed.changed };
+      const list = await readAgain();
+      if (!list) return { gone: false, words: fallback };
+      const now = list.find((each) => each.documentId === document.documentId);
+      if (!now) return { gone: true };
+      return { gone: false, now, words: text.failed.changed };
     }
     return { gone: false, words: isFinal(failure) ? refusalText(failure) : fallback };
   }
 
   /** A row's action didn't go through: says why in its row, or that it is gone. */
-  async function rowRefused(document: Document, failure: unknown, fallback: string) {
-    const why = await refusal(document, failure, fallback);
+  async function rowRefused(
+    document: Document,
+    failure: unknown,
+    fallback: string,
+    from: Element | null,
+  ) {
+    shown(document, await refusal(document, failure, fallback), from);
+  }
+
+  function shown(
+    document: Document,
+    why: Awaited<ReturnType<typeof refusal>>,
+    from: Element | null,
+  ) {
     if (why.gone) {
-      heading.current?.focus();
+      rescueFocus(heading.current, from);
       say(fill(text.said.gone, { name: document.title }));
       return;
     }
@@ -169,32 +191,47 @@ export function ResumesPage({
   }
 
   async function makeDefault(document: Document) {
+    const from = globalThis.document.activeElement;
     setRowError(null);
     track(document, 'default', true);
+    defaulting.current += 1;
+    // Another Make default on its way meanwhile: the answers may come in either order, so the
+    // list is read again (once both are done, the last read is what is saved) instead.
+    if (defaulting.current > 1) overlapped.current = true;
     try {
       const made = await api.request<Document>('PUT', `/me/documents/${document.documentId}`, {
         version: latest(document).version,
         isDefault: true,
       });
-      await change((list) =>
-        list.map((each) =>
-          each.documentId === made.documentId
-            ? made
-            : each.isDefault
-              ? { ...each, isDefault: false }
-              : each,
-        ),
-      );
-      setFocusTo({ documentId: made.documentId, action: 'download' });
+      if (overlapped.current) await readAgain();
+      else
+        await change((list) =>
+          list.map((each) =>
+            each.documentId === made.documentId
+              ? made
+              : each.isDefault
+                ? { ...each, isDefault: false }
+                : each,
+          ),
+        );
+      setFocusTo({ documentId: made.documentId, action: 'download', from });
       say(fill(text.said.madeDefault, { name: made.title }));
     } catch (failure) {
-      await rowRefused(document, failure, text.failed.makeDefault);
+      const why = await refusal(document, failure, text.failed.makeDefault);
+      if (!why.gone && why.now?.isDefault) {
+        // Made the default elsewhere meanwhile: what was asked for.
+        setFocusTo({ documentId: document.documentId, action: 'download', from });
+        say(fill(text.said.madeDefault, { name: why.now.title }));
+      } else shown(document, why, from);
     } finally {
       track(document, 'default', false);
+      defaulting.current -= 1;
+      if (defaulting.current === 0) overlapped.current = false;
     }
   }
 
   async function download(document: Document) {
+    const from = globalThis.document.activeElement;
     setRowError(null);
     track(document, 'download', true);
     try {
@@ -212,7 +249,7 @@ export function ResumesPage({
         say(text.failed.notReady);
       }
     } catch (failure) {
-      await rowRefused(document, failure, text.failed.download);
+      await rowRefused(document, failure, text.failed.download, from);
     } finally {
       track(document, 'download', false);
     }
@@ -257,7 +294,7 @@ export function ResumesPage({
         setRenameOpen(false);
         say(fill(text.said.gone, { name: now.title }));
       } else {
-        setRenameError(why.words === text.failed.changed ? text.renameSheet.changed : why.words);
+        setRenameError(why.now ? text.renameSheet.changed : why.words);
       }
     }
   }
@@ -529,8 +566,6 @@ function Row({
   const unusable = isUnusable(document);
   const ready = document.status === 'ready';
   const waiting = (action: RowAction) => busy.has(`${document.documentId}:${action}`);
-  // One Make default at a time: two on their way could answer in either order.
-  const otherDefaulting = !waiting('default') && [...busy].some((key) => key.endsWith(':default'));
   // The résumé's name after each button's word, for everyone who hears the button alone.
   const named = <span className="sr-only"> {document.title}</span>;
   return (
@@ -573,7 +608,6 @@ function Row({
             data-action="default"
             pending={waiting('default')}
             pendingLabel={text.makingDefault}
-            aria-disabled={otherDefaulting || undefined}
             onClick={() => handlers.onMakeDefault(document)}
           >
             {text.makeDefault}
@@ -612,4 +646,15 @@ function Row({
       </span>
     </li>
   );
+}
+
+/**
+ * Moves focus to `target` only if it is still where it was when the action started (`from`; a
+ * clicked button isn't focused in Safari) or was lost (the pressed button went): a person who
+ * moved on meanwhile stays where they are.
+ */
+function rescueFocus(target: HTMLElement | null, from: Element | null) {
+  const active = globalThis.document.activeElement;
+  const lost = !active || active === globalThis.document.body || !active.isConnected;
+  if (lost || active === from) target?.focus();
 }

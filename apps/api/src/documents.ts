@@ -98,7 +98,12 @@ function s3Deps(
  */
 export function attachment(fileName: string): string {
   const ascii = fileName.replace(/[^\x20-\x7e]|["\\]/g, '_');
-  const utf8 = encodeURIComponent(fileName).replace(
+  // A lone surrogate can't be encoded (encodeURIComponent throws): it becomes U+FFFD.
+  const whole = fileName.replace(
+    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
+    '\uFFFD',
+  );
+  const utf8 = encodeURIComponent(whole).replace(
     /['()*]/g,
     (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
   );
