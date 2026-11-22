@@ -301,6 +301,26 @@ describe('editing About you', () => {
     expect(await saved(api)).toMatchObject({ preferredName: 'Al', headline: 'Staff engineer' });
   });
 
+  it('takes in a phone changed elsewhere whole, never half from each', async () => {
+    const api = await onProfile({ phone: { countryCode: '+1', number: '555 0100' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Contact and location' }));
+    type('Country code', '+44');
+    type('Phone number', '20 7946 0000');
+    // Another tab changes only the number; this one refreshes.
+    const other = await saved(api);
+    await api.request('PUT', '/me/profile', {
+      version: other.version,
+      firstName: 'Alex',
+      lastName: 'Morgan',
+      phone: { countryCode: '+1', number: '555 0199' },
+    });
+    await act(() => queries.invalidateQueries({ queryKey: ['profile'] }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByText(/changed somewhere else/);
+    expect((screen.getByLabelText('Country code') as HTMLInputElement).value).toBe('+1');
+    expect((screen.getByLabelText('Phone number') as HTMLInputElement).value).toBe('555 0199');
+  });
+
   it('takes a lost save that a refresh shows went through as saved', async () => {
     const api = await onProfile();
     const request = api.request.bind(api);
@@ -389,8 +409,10 @@ describe('normUrl', () => {
     expect(normUrl('localhost:3000')).toBe('https://localhost:3000');
     expect(normUrl('https://alex.dev')).toBe('https://alex.dev');
     expect(normUrl('http://alex.dev')).toBe('http://alex.dev');
-    // A scheme mistyped is kept (the URL check reads https:/alex.dev as https://alex.dev).
-    expect(normUrl('https:/alex.dev')).toBe('https:/alex.dev');
+    // A scheme mistyped is put right.
+    expect(normUrl('https:/alex.dev')).toBe('https://alex.dev');
+    expect(normUrl('HTTPS:alex.dev')).toBe('https://alex.dev');
+    expect(normUrl('mailto:alex@example.com')).toBe('mailto:alex@example.com');
     expect(normUrl('  ')).toBe('');
   });
 });

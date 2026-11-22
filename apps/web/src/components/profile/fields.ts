@@ -65,11 +65,13 @@ export const phoneFields = {
     // "44" is meant as "+44".
     norm: (typed) => typed.trim().replace(/^(?=\d)/, '+'),
     paths: ['phone.countryCode'],
+    together: 'phone',
     invalid: copy.profilePage.errors.phoneCodeInvalid,
   },
   phoneNumber: {
     read: (profile) => (profile.phone as Phone | undefined)?.number ?? '',
     paths: ['phone.number', 'phone'],
+    together: 'phone',
     invalid: copy.profilePage.errors.phoneNumberInvalid,
     // Needed once a calling code other than the default is typed.
     missing: copy.profilePage.errors.phoneNumberMissing,
@@ -96,9 +98,12 @@ export function putPhone(body: SaveBody, code: string, number: string) {
  */
 export function normUrl(typed: string): string {
   const value = typed.trim();
-  // A scheme is `name:` (`https://`, or `https:/` mistyped, kept for the URL check to read);
-  // `example.com:8443` is a host and port (a digit after the colon), so it gets https:// too.
-  return value && !/^[a-z][a-z\d+.-]*:(?!\d)/i.test(value) ? `https://${value}` : value;
+  if (!value) return value;
+  // `https:/` or `https:` mistyped is meant as `https://`.
+  if (/^https:(?!\/\/)/i.test(value)) return `https://${value.replace(/^https:\/*/i, '')}`;
+  // A scheme is `name:`; `example.com:8443` is a host and port (a digit after the colon), so it
+  // gets https:// too.
+  return /^[a-z][a-z\d+.-]*:(?!\d)/i.test(value) ? value : `https://${value}`;
 }
 
 /** Several web addresses, one per line, as they are saved (blank lines dropped). */

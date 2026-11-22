@@ -36,6 +36,8 @@ export type FieldSpec = {
   missing?: string;
   /** Said when a list holds too many (`{max}`). */
   tooMany?: string;
+  /** Fields that make one value (a phone's code and number): taken in from elsewhere together. */
+  together?: string;
 };
 
 /** A form's fields, by name, and how their answers go into the profile to save. */
@@ -174,11 +176,15 @@ export function useProfileForm<N extends string>({
    * one place the form starts again from what is saved.
    */
   function takeIn(fresh: Values<N>, was: Values<N>) {
+    const changed = names.filter(
+      (name) => normOf(spec.fields[name], fresh[name]) !== normOf(spec.fields[name], was[name]),
+    );
+    const groups = new Set(changed.map((name) => spec.fields[name].together).filter(Boolean));
     setValues((typed) => {
       const next = { ...typed };
       for (const name of names) {
-        const field = spec.fields[name];
-        if (normOf(field, fresh[name]) !== normOf(field, was[name])) next[name] = fresh[name];
+        const together = spec.fields[name].together;
+        if (changed.includes(name) || (together && groups.has(together))) next[name] = fresh[name];
       }
       return next;
     });
