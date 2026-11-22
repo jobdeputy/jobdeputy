@@ -3,6 +3,7 @@ import {
   DOCUMENT_TYPES,
   MAX_DOCUMENTS,
   MAX_UPLOAD_BYTES,
+  updateDocumentInput,
 } from '@jobdeputy/shared/documents';
 import { createRoleInput, MAX_ROLES, profileInput } from '@jobdeputy/shared/profile';
 import { type ApiClient, ApiError, type UploadForm, type UploadOptions } from './client.ts';
@@ -28,6 +29,12 @@ const OUTCOMES = [
     error: 'The file could not be processed. Please upload it again.',
   },
 ] as const;
+
+/**
+ * The fake's download link: the file itself, inline (the API's is a 5-minute S3 link that sends
+ * it as an attachment). Nothing is fetched from anywhere.
+ */
+export const FAKE_DOWNLOAD_URL = `data:application/pdf;base64,${btoa('%PDF-1.4\n%%EOF\n')}`;
 
 /** Counted across every fake, so a résumé's ID is never reused on a page (as ULIDs aren't). */
 let lastDocument = 0;
@@ -189,7 +196,35 @@ export function createFakeApi({
       }
       const documentId = /^\/me\/documents\/([^/]+)$/.exec(path)?.[1];
       const document = myDocuments.find(({ view }) => view.documentId === documentId);
-      if (document && method === 'GET') return documentView(document) as T;
+      if (document && method === 'GET') {
+        // As the API: only a ready one has a download link.
+        const now = documentView(document);
+        return (now.status === 'ready' ? { ...now, downloadUrl: FAKE_DOWNLOAD_URL } : now) as T;
+      }
+      if (document && method === 'PUT') {
+        // As the API: a rename, then the default, each a new version; a stale version is a
+        // conflict, and making one the default clears any other.
+        const checked = updateDocumentInput.safeParse(body);
+        if (!checked.success) throw refused(checked.error.issues);
+        const { version, title, isDefault } = checked.data;
+        if (version !== document.view.version) {
+          throw new ApiError('conflict', { status: 409, code: 'conflict' });
+        }
+        let next = version;
+        if (title !== undefined) {
+          next += 1;
+          document.view = { ...document.view, title, version: next };
+        }
+        if (isDefault) {
+          for (const each of myDocuments) {
+            if (each !== document && each.view.isDefault) {
+              each.view = { ...each.view, isDefault: false };
+            }
+          }
+          document.view = { ...document.view, isDefault: true, version: next + 1 };
+        }
+        return documentView(document) as T;
+      }
       if (document && method === 'DELETE') {
         const left = myDocuments.filter((each) => each !== document);
         documents.set(me, left);

@@ -415,8 +415,36 @@ export const en = {
         unusable: '{name} couldn’t be used.',
       },
     },
+    /** A row's actions; its résumé's name follows each, for screen readers. */
+    makeDefault: 'Make default',
+    makingDefault: 'Saving…',
+    download: 'Download',
+    downloading: 'Getting it…',
+    rename: 'Rename',
     delete: 'Delete',
     deleting: 'Deleting…',
+    /** Why a row's action didn't go through, under its name. */
+    failed: {
+      makeDefault: 'That didn’t change your default. Check your connection, then try again.',
+      download: 'That didn’t download. Check your connection, then try again.',
+      /** Résumés changed elsewhere meanwhile: the list is read again, and the person can try again. */
+      changed: 'Your résumés changed elsewhere. Look again, then try again.',
+      /** No longer ready (it was a download): read again, the row says why. */
+      notReady: 'This résumé isn’t ready to download.',
+    },
+    renameSheet: {
+      eyebrow: 'Library',
+      title: 'Rename résumé',
+      line: 'Change the name you see. The file stays exactly as it is.',
+      label: 'Name',
+      hint: 'Up to {max} characters.',
+      empty: 'Enter a name.',
+      save: 'Save name',
+      saving: 'Saving…',
+      cancel: 'Cancel',
+      changed: 'This résumé changed elsewhere since you opened this. Save again to use your name.',
+      failed: 'That didn’t save. Check your connection, then try again.',
+    },
     confirm: {
       eyebrow: 'Library',
       title: 'Delete {name}?',
@@ -433,6 +461,11 @@ export const en = {
       deleted: '{name} deleted.',
       newDefault: '{name} deleted. {next} is your default now.',
       noDefault: '{name} deleted. You have no default résumé now.',
+      madeDefault: '{name} is your default now. Your deputy tailors from it.',
+      renamed: 'Renamed {name} to {next}.',
+      keptName: '{name} kept its name.',
+      downloading: 'Downloading {name}.',
+      gone: '{name} is gone. It was deleted elsewhere.',
     },
     deleteFailed: 'That didn’t delete. Check your connection, then try again.',
     loading: 'Loading your résumés',

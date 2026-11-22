@@ -4,13 +4,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ResumesPage } from '../src/components/resumes/resumes-page.tsx';
 import { ApiError } from '../src/lib/api/client.ts';
 import type { Document, StartedUpload } from '../src/lib/api/documents.ts';
-import { createFakeApi } from '../src/lib/api/fake.ts';
+import { createFakeApi, FAKE_DOWNLOAD_URL } from '../src/lib/api/fake.ts';
 import { ApiContext } from '../src/lib/api/index.ts';
 import { createFakeAuth } from '../src/lib/auth/fake.ts';
+import { saveFile } from '../src/lib/save-file.ts';
 import { renderApp } from './render-app.tsx';
+
+vi.mock('../src/lib/save-file.ts', () => ({ saveFile: vi.fn() }));
 
 afterEach(() => {
   cleanup();
+  vi.mocked(saveFile).mockClear();
   window.history.replaceState(null, '', '/');
 });
 
@@ -46,11 +50,30 @@ async function renderPage(
   return Object.assign(api, { queries });
 }
 
-/** The rows' text (also while the sheet hides the page from assistive tech). */
+/** The rows (also while a sheet hides the page from assistive tech). */
+const rowItems = () =>
+  within(screen.getByRole('list', { name: 'Your résumés', hidden: true })).getAllByRole(
+    'listitem',
+    { hidden: true },
+  );
+
+/** The rows' text, and Delete (the one action every row has): what each row says. */
 const rows = () =>
-  within(screen.getByRole('list', { name: 'Your résumés', hidden: true }))
-    .getAllByRole('listitem', { hidden: true })
-    .map((row) => row.textContent);
+  rowItems().map((row) => {
+    const copy = row.cloneNode(true) as HTMLElement;
+    for (const action of copy.querySelectorAll('[data-action]:not([data-action="delete"])')) {
+      action.remove();
+    }
+    return copy.textContent;
+  });
+
+/** Each row's actions, by their names. */
+const actions = () =>
+  rowItems().map((row) =>
+    within(row)
+      .getAllByRole('button', { hidden: true })
+      .map((button) => button.textContent),
+  );
 
 const statusText = () =>
   screen
@@ -248,6 +271,264 @@ describe('ResumesPage', () => {
     fireEvent.click(within(sheet).getByRole('button', { name: 'Delete résumé' }));
     await waitFor(() => expect(statusText()).toContain('Second deleted.'));
     expect(rows()).toEqual(['FirstDefaultPDF · 180 kBDelete First']);
+  });
+});
+
+describe('a résumé’s actions on the Résumés page', () => {
+  it('offers Make default and Download only on a ready one, Rename and Delete on every one', async () => {
+    await renderPage(['First.pdf', 'Second.pdf', 'malware.pdf']);
+    expect(actions()).toEqual([
+      ['Rename malware', 'Delete malware'],
+      ['Make default Second', 'Download Second', 'Rename Second', 'Delete Second'],
+      ['Download First', 'Rename First', 'Delete First'],
+    ]);
+  });
+
+  it('makes one the default, says so, and moves focus to its Download', async () => {
+    const api = await renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Make default Second' }));
+    await waitFor(() =>
+      expect(statusText()).toContain('Second is your default now. Your deputy tailors from it.'),
+    );
+    expect(rows()).toEqual([
+      'SecondDefaultPDF · 180 kBDelete Second',
+      'FirstPDF · 180 kBDelete First',
+    ]);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Download Second' })),
+    );
+    expect((await documents(api)).map((each) => [each.title, each.isDefault])).toEqual([
+      ['Second', true],
+      ['First', false],
+    ]);
+  });
+
+  it('reads the list again when it changed elsewhere, so trying again works', async () => {
+    const api = await renderPage();
+    const [second] = await documents(api);
+    await api.request('PUT', `/me/documents/${second?.documentId}`, {
+      version: second?.version,
+      title: 'Second, renamed',
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Make default Second' }));
+    expect(
+      await screen.findByText('Your résumés changed elsewhere. Look again, then try again.'),
+    ).toBeTruthy();
+    expect(rows()[0]).toContain('Second, renamed');
+    fireEvent.click(screen.getByRole('button', { name: 'Make default Second, renamed' }));
+    await waitFor(() => expect(rows()[0]).toContain('Default'));
+    expect(
+      screen.queryByText('Your résumés changed elsewhere. Look again, then try again.'),
+    ).toBeNull();
+  });
+
+  it('says one deleted elsewhere is gone, and moves focus to the library', async () => {
+    const api = await renderPage();
+    const [second] = await documents(api);
+    await api.request('DELETE', `/me/documents/${second?.documentId}`);
+    fireEvent.click(screen.getByRole('button', { name: 'Make default Second' }));
+    await waitFor(() =>
+      expect(statusText()).toContain('Second is gone. It was deleted elsewhere.'),
+    );
+    expect(rows()).toEqual(['FirstDefaultPDF · 180 kBDelete First']);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Library' })),
+    );
+  });
+
+  it('says in its row why Make default failed', async () => {
+    const api = await renderPage();
+    const request = api.request.bind(api);
+    vi.spyOn(api, 'request').mockImplementation((method, path, body) =>
+      method === 'PUT'
+        ? Promise.reject(new ApiError('offline', { status: 0 }))
+        : request(method, path, body),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Make default Second' }));
+    const why = 'That didn’t change your default. Check your connection, then try again.';
+    expect(await within(rowItems()[0] as HTMLElement).findByText(why)).toBeTruthy();
+    await waitFor(() => expect(statusText()).toContain(why));
+    expect(rows()[1]).toContain('Default');
+  });
+
+  it('takes one Make default at a time', async () => {
+    const api = await renderPage(['First.pdf', 'Second.pdf', 'Third.pdf']);
+    const request = api.request.bind(api);
+    let answer = () => {};
+    const put = vi.spyOn(api, 'request').mockImplementation((method, path, body) =>
+      method === 'PUT'
+        ? new Promise((resolve) => {
+            answer = () => resolve(request(method, path, body));
+          })
+        : request(method, path, body),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Make default Third' }));
+    const other = screen.getByRole('button', { name: 'Make default Second' });
+    await waitFor(() => expect(other.getAttribute('aria-disabled')).toBe('true'));
+    fireEvent.click(other);
+    expect(put.mock.calls.filter(([method]) => method === 'PUT')).toHaveLength(1);
+    answer();
+    await waitFor(() => expect(rows()[0]).toBe('ThirdDefaultPDF · 180 kBDelete Third'));
+    expect(other.getAttribute('aria-disabled')).toBeNull();
+    await waitFor(() => expect(statusText()).toContain('Third is your default now.'));
+  });
+
+  it('takes one made the default elsewhere meanwhile as done', async () => {
+    const api = await renderPage();
+    const [second] = await documents(api);
+    await api.request('PUT', `/me/documents/${second?.documentId}`, {
+      version: second?.version,
+      isDefault: true,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Make default Second' }));
+    await waitFor(() =>
+      expect(statusText()).toContain('Second is your default now. Your deputy tailors from it.'),
+    );
+    expect(rows()[0]).toBe('SecondDefaultPDF · 180 kBDelete Second');
+    expect(
+      screen.queryByText('Your résumés changed elsewhere. Look again, then try again.'),
+    ).toBeNull();
+  });
+
+  it('leaves focus where the person moved it while Make default was on its way', async () => {
+    const api = await renderPage();
+    const request = api.request.bind(api);
+    let answer = () => {};
+    vi.spyOn(api, 'request').mockImplementation((method, path, body) =>
+      method === 'PUT'
+        ? new Promise((resolve) => {
+            answer = () => resolve(request(method, path, body));
+          })
+        : request(method, path, body),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Make default Second' }));
+    const elsewhere = screen.getByRole('button', { name: 'Rename First' });
+    elsewhere.focus();
+    answer();
+    await waitFor(() => expect(statusText()).toContain('Second is your default now.'));
+    expect(document.activeElement).toBe(elsewhere);
+  });
+
+  it('says it is gone only once the list shows it', async () => {
+    const api = await renderPage();
+    const request = api.request.bind(api);
+    vi.spyOn(api, 'request').mockImplementation((method, path, body) => {
+      if (method === 'PUT') return Promise.reject(new ApiError('not-found', { status: 404 }));
+      if (method === 'GET' && path === '/me/documents') {
+        return Promise.reject(new ApiError('offline', { status: 0 }));
+      }
+      return request(method, path, body);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Make default Second' }));
+    const why = 'That didn’t change your default. Check your connection, then try again.';
+    expect(await within(rowItems()[0] as HTMLElement).findByText(why)).toBeTruthy();
+    expect(statusText()).not.toContain('is gone');
+    expect(rows()).toHaveLength(2);
+  });
+
+  it('downloads a ready one through the API’s link, under its file name', async () => {
+    await renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Download First' }));
+    await waitFor(() => expect(statusText()).toContain('Downloading First.'));
+    expect(saveFile).toHaveBeenCalledExactlyOnceWith(FAKE_DOWNLOAD_URL, 'First.pdf');
+  });
+
+  it('says in its row why it didn’t download', async () => {
+    const api = await renderPage();
+    const request = api.request.bind(api);
+    vi.spyOn(api, 'request').mockImplementation((method, path, body) =>
+      method === 'GET' && path !== '/me/documents'
+        ? Promise.reject(new ApiError('offline', { status: 0 }))
+        : request(method, path, body),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Download First' }));
+    expect(
+      await within(rowItems()[1] as HTMLElement).findByText(
+        'That didn’t download. Check your connection, then try again.',
+      ),
+    ).toBeTruthy();
+    expect(saveFile).not.toHaveBeenCalled();
+  });
+
+  it('renames one: the name selected, an empty one refused, focus back to its Rename', async () => {
+    const api = await renderPage();
+    const opener = screen.getByRole('button', { name: 'Rename Second' });
+    fireEvent.click(opener);
+    const sheet = await screen.findByRole('dialog', { name: 'Rename résumé' });
+    const field = within(sheet).getByRole('textbox', { name: 'Name' }) as HTMLInputElement;
+    await waitFor(() => expect(document.activeElement).toBe(field));
+    expect(field.value).toBe('Second');
+    // Selected, so typing replaces it.
+    expect([field.selectionStart, field.selectionEnd]).toEqual([0, 'Second'.length]);
+    fireEvent.change(field, { target: { value: '   ' } });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save name' }));
+    expect(within(sheet).getByText('Enter a name.')).toBeTruthy();
+    expect(field.getAttribute('aria-invalid')).toBe('true');
+    fireEvent.change(field, { target: { value: '  Second, for design roles ' } });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save name' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() =>
+      expect(statusText()).toContain('Renamed Second to Second, for design roles.'),
+    );
+    expect(rows()[0]).toBe('Second, for design rolesPDF · 180 kBDelete Second, for design roles');
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+    expect((await documents(api))[0]?.title).toBe('Second, for design roles');
+  });
+
+  it('sends nothing when the name is unchanged, and Cancel keeps it', async () => {
+    const api = await renderPage();
+    const put = vi.spyOn(api, 'request');
+    fireEvent.click(screen.getByRole('button', { name: 'Rename First' }));
+    let sheet = await screen.findByRole('dialog', { name: 'Rename résumé' });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save name' }));
+    await waitFor(() => expect(statusText()).toContain('First kept its name.'));
+    fireEvent.click(screen.getByRole('button', { name: 'Rename First' }));
+    sheet = await screen.findByRole('dialog', { name: 'Rename résumé' });
+    fireEvent.change(within(sheet).getByRole('textbox'), { target: { value: 'Other' } });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(put.mock.calls.filter(([method]) => method === 'PUT')).toEqual([]);
+    expect(rows()[1]).toContain('First');
+  });
+
+  it('keeps the sheet open when the name changed elsewhere; saving again uses the typed name', async () => {
+    const api = await renderPage();
+    const [second] = await documents(api);
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Second' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Rename résumé' });
+    await api.request('PUT', `/me/documents/${second?.documentId}`, {
+      version: second?.version,
+      title: 'Changed elsewhere',
+    });
+    fireEvent.change(within(sheet).getByRole('textbox'), { target: { value: 'Mine' } });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save name' }));
+    expect(
+      await within(sheet).findByText(
+        'This résumé changed elsewhere since you opened this. Save again to use your name.',
+      ),
+    ).toBeTruthy();
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save name' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect((await documents(api))[0]?.title).toBe('Mine');
+    await waitFor(() => expect(statusText()).toContain('Renamed Changed elsewhere to Mine.'));
+  });
+
+  it('says why a rename failed, inside the sheet', async () => {
+    const api = await renderPage();
+    const request = api.request.bind(api);
+    vi.spyOn(api, 'request').mockImplementation((method, path, body) =>
+      method === 'PUT'
+        ? Promise.reject(new ApiError('offline', { status: 0 }))
+        : request(method, path, body),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Rename First' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Rename résumé' });
+    fireEvent.change(within(sheet).getByRole('textbox'), { target: { value: 'Other' } });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save name' }));
+    expect(
+      await within(sheet).findByText('That didn’t save. Check your connection, then try again.'),
+    ).toBeTruthy();
+    expect(screen.getByRole('dialog')).toBe(sheet);
   });
 });
 

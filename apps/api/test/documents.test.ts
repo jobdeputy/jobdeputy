@@ -1,7 +1,7 @@
 import { type Document, DocumentLimitError, VersionConflictError } from '@jobdeputy/db';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
-import { type DocumentsDeps, route } from '../src/documents.js';
+import { attachment, type DocumentsDeps, route } from '../src/documents.js';
 
 const ID = '01J8ZQ4Y3N5W6X7Y8Z9A0B1C2D';
 const PDF = 'application/pdf';
@@ -245,5 +245,25 @@ describe('changing documents', () => {
     const d = deps();
     expect((await route(event('GET /me/documents', {}, null), d)).statusCode).toBe(401);
     expect(d.repo.list).not.toHaveBeenCalled();
+  });
+});
+
+describe('the download’s file name', () => {
+  it('keeps a plain name as it is', () => {
+    expect(attachment('Alex_Morgan_Resume.pdf')).toBe(
+      `attachment; filename="Alex_Morgan_Resume.pdf"; filename*=UTF-8''Alex_Morgan_Resume.pdf`,
+    );
+  });
+
+  it('gives browsers the real name in UTF-8, and old clients a plain one', () => {
+    expect(attachment('Résumé (Müller).pdf')).toBe(
+      `attachment; filename="R_sum_ (M_ller).pdf"; filename*=UTF-8''R%C3%A9sum%C3%A9%20%28M%C3%BCller%29.pdf`,
+    );
+  });
+
+  it('never fails on a name with a broken character', () => {
+    expect(attachment('\ud800x.pdf')).toBe(
+      `attachment; filename="_x.pdf"; filename*=UTF-8''%EF%BF%BDx.pdf`,
+    );
   });
 });

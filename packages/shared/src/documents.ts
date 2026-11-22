@@ -41,6 +41,9 @@ export function documentKeys(userId: string, documentId: string) {
 export const ulidId = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/, 'Invalid ID');
 export const documentId = ulidId;
 
+/** The longest name a résumé can be given (its title, shown on the Résumés page). */
+export const MAX_DOCUMENT_TITLE = 200;
+
 const fileName = z
   .string()
   .trim()
@@ -66,7 +69,7 @@ export type CreateDocumentInput = z.infer<typeof createDocumentInput>;
 export const updateDocumentInput = z
   .strictObject({
     version: z.number().int().min(1),
-    title: z.string().trim().min(1).max(200).optional(),
+    title: z.string().trim().min(1).max(MAX_DOCUMENT_TITLE).optional(),
     /** Only `true`: a default is replaced by choosing another one. */
     isDefault: z.literal(true).optional(),
   })

@@ -157,8 +157,23 @@ test('creates an account, confirms it with the code, lands signed in, and signs 
   await expect(library).toContainText('Default');
   await expectNoAccessibilityViolations(page);
   await expectNoHorizontalScroll(page);
-  await library.getByRole('button', { name: 'Delete Alex_Morgan_Resume' }).click();
-  const question = page.getByRole('alertdialog', { name: 'Delete Alex_Morgan_Resume?' });
+  // Download (#33 6b3): the browser saves the file under its own name.
+  const saving = page.waitForEvent('download');
+  await library.getByRole('button', { name: 'Download Alex_Morgan_Resume' }).click();
+  expect((await saving).suggestedFilename()).toBe('Alex_Morgan_Resume.pdf');
+  // Rename: a sheet with the name selected (typing replaces it); focus goes back to Rename.
+  const renameButton = library.getByRole('button', { name: 'Rename Alex_Morgan_Resume' });
+  await renameButton.click();
+  const renameSheet = page.getByRole('dialog', { name: 'Rename résumé' });
+  await expect(renameSheet.getByRole('textbox', { name: 'Name' })).toBeFocused();
+  await expectNoAccessibilityViolations(page);
+  await page.keyboard.type('Alex Morgan, design');
+  await renameSheet.getByRole('button', { name: 'Save name' }).click();
+  await expect(renameSheet).toBeHidden();
+  const renamed = library.getByRole('button', { name: 'Rename Alex Morgan, design' });
+  await expect(renamed).toBeFocused();
+  await library.getByRole('button', { name: 'Delete Alex Morgan, design' }).click();
+  const question = page.getByRole('alertdialog', { name: 'Delete Alex Morgan, design?' });
   await expect(question.getByRole('button', { name: 'Keep it' })).toBeFocused();
   await expectNoAccessibilityViolations(page);
   await question.getByRole('button', { name: 'Delete résumé' }).click();

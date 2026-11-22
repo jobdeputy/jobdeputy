@@ -17,15 +17,31 @@ import {
   wasUploadedHere,
 } from '@/lib/api/documents.ts';
 import { ApiError, isFinal, useApi } from '@/lib/api/index.ts';
+import { saveFile } from '@/lib/save-file.ts';
 import { cn } from '@/lib/utils.ts';
 import { AddResumes } from './add-resumes.tsx';
 import { statusLine } from './document-status.ts';
+import { RenameSheet } from './rename-sheet.tsx';
+
+/** A row's actions that wait for the API in the row itself. */
+type RowAction = 'default' | 'download';
+
+/** What the page does to a row; its button is where focus is when it starts. */
+interface RowHandlers {
+  onMakeDefault: (document: Document) => void;
+  onDownload: (document: Document) => void;
+  onRename: (document: Document, from: HTMLElement) => void;
+  onDelete: (document: Document, from: HTMLElement) => void;
+}
 
 /**
  * The Résumés page (#33 piece 6b, the round 7 prototype's documents-preview Library): every résumé
  * the person keeps, newest first, with its stage or kind and size, the default marked, and how
  * many of the 10 are used. Delete asks first (the file is deleted for good); deleting the default
  * hands it to the newest ready résumé (the API does, in the same step), and the page says which.
+ * A ready one can be made the default or downloaded (the API's 5-minute link); any can be renamed.
+ * A change refused because the résumé changed or went elsewhere reads the list again (one rule),
+ * so trying again uses what is saved now.
  */
 export function ResumesPage({
   checkEvery = CHECK_EVERY_MS,
@@ -58,16 +74,224 @@ export function ResumesPage({
   // Safari doesn't focus a clicked button), or the library's title once its row is gone.
   const opener = useRef<HTMLElement | null>(null);
   const deleted = useRef(false);
+  // The row actions waiting for the API (`<id>:<action>`), and why one didn't go through (shown
+  // in its row until the next action).
+  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
+  const [rowError, setRowError] = useState<{ documentId: string; words: string } | null>(null);
+  // A row's button to focus once the list shows the change (Make default's own button goes).
+  // (`from`: where focus was when the action started.)
+  const [focusTo, setFocusTo] = useState<{
+    documentId: string;
+    action: string;
+    from: Element | null;
+  } | null>(null);
+  // Rename: the résumé (kept while the sheet slides away), whether it is open, saving, and why
+  // a save failed; focus goes back to its Rename, or to the library's title if it went.
+  const [renaming, setRenaming] = useState<Document | null>(null);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renamePending, setRenamePending] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const renameOpener = useRef<HTMLElement | null>(null);
+  const renameGone = useRef(false);
+
+  useEffect(() => {
+    if (!focusTo) return;
+    setFocusTo(null);
+    // Make default's own button is gone: its row's Download, else (the row went meanwhile) the
+    // library's title, so focus never drops to the page.
+    const button = globalThis.document.querySelector<HTMLElement>(
+      `[data-document="${focusTo.documentId}"] [data-action="${focusTo.action}"]`,
+    );
+    rescueFocus(button ?? heading.current, focusTo.from);
+  }, [focusTo]);
+
+  const listKey = documentsQuery(api).queryKey;
+
+  /** The résumé as the list shows it now (its latest version), or as given. */
+  function latest(document: Document): Document {
+    return (
+      queryClient
+        .getQueryData<Document[]>(listKey)
+        ?.find((each) => each.documentId === document.documentId) ?? document
+    );
+  }
+
+  /** Puts a change into the list (a read on its way began before it: dropped, so it can't undo it). */
+  async function change(update: (list: Document[]) => Document[]) {
+    await queryClient.cancelQueries({ queryKey: listKey });
+    queryClient.setQueryData<Document[]>(listKey, (list) => update(list ?? []));
+  }
+
+  /** Reads the list again, from the API itself (a file coming in cancels the list's reads). */
+  async function readAgain(): Promise<Document[] | undefined> {
+    const now = await documentsQuery(api)
+      .queryFn()
+      .catch(() => undefined);
+    if (now) await change(() => now);
+    return now;
+  }
+
+  /**
+   * Why a change to this résumé didn't go through (the one rule for every change on the page):
+   * it went or changed elsewhere, so the list is read again ('gone' only once that read shows it
+   * is gone; `now` is the résumé as it read); else the refusal, or `fallback` when trying again
+   * can help.
+   */
+  async function refusal(
+    document: Document,
+    failure: unknown,
+    fallback: string,
+  ): Promise<{ gone: true } | { gone: false; now?: Document; words: string }> {
+    const kind = failure instanceof ApiError ? failure.kind : null;
+    if (kind === 'not-found' || kind === 'conflict') {
+      const list = await readAgain();
+      if (!list) return { gone: false, words: fallback };
+      const now = list.find((each) => each.documentId === document.documentId);
+      if (!now) return { gone: true };
+      return { gone: false, now, words: text.failed.changed };
+    }
+    return { gone: false, words: isFinal(failure) ? refusalText(failure) : fallback };
+  }
+
+  /** A row's action didn't go through: says why in its row, or that it is gone. */
+  async function rowRefused(
+    document: Document,
+    failure: unknown,
+    fallback: string,
+    from: Element | null,
+  ) {
+    shown(document, await refusal(document, failure, fallback), from);
+  }
+
+  function shown(
+    document: Document,
+    why: Awaited<ReturnType<typeof refusal>>,
+    from: Element | null,
+  ) {
+    if (why.gone) {
+      rescueFocus(heading.current, from);
+      say(fill(text.said.gone, { name: document.title }));
+      return;
+    }
+    setRowError({ documentId: document.documentId, words: why.words });
+    say(why.words);
+  }
+
+  function track(document: Document, action: RowAction, on: boolean) {
+    const key = `${document.documentId}:${action}`;
+    setBusy((was) => {
+      const next = new Set(was);
+      if (on) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }
+
+  async function makeDefault(document: Document) {
+    const from = globalThis.document.activeElement;
+    setRowError(null);
+    track(document, 'default', true);
+    try {
+      const made = await api.request<Document>('PUT', `/me/documents/${document.documentId}`, {
+        version: latest(document).version,
+        isDefault: true,
+      });
+      await change((list) =>
+        list.map((each) =>
+          each.documentId === made.documentId
+            ? made
+            : each.isDefault
+              ? { ...each, isDefault: false }
+              : each,
+        ),
+      );
+      setFocusTo({ documentId: made.documentId, action: 'download', from });
+      say(fill(text.said.madeDefault, { name: made.title }));
+    } catch (failure) {
+      const why = await refusal(document, failure, text.failed.makeDefault);
+      if (!why.gone && why.now?.isDefault) {
+        // Made the default elsewhere meanwhile: what was asked for.
+        setFocusTo({ documentId: document.documentId, action: 'download', from });
+        say(fill(text.said.madeDefault, { name: why.now.title }));
+      } else shown(document, why, from);
+    } finally {
+      track(document, 'default', false);
+    }
+  }
+
+  async function download(document: Document) {
+    const from = globalThis.document.activeElement;
+    setRowError(null);
+    track(document, 'download', true);
+    try {
+      const now = await api.request<Document & { downloadUrl?: string }>(
+        'GET',
+        `/me/documents/${document.documentId}`,
+      );
+      if (now.downloadUrl) {
+        saveFile(now.downloadUrl, now.fileName);
+        say(fill(text.said.downloading, { name: now.title }));
+      } else {
+        // No longer ready (or never was, as this list knew it): the list says where it is now.
+        await readAgain();
+        setRowError({ documentId: document.documentId, words: text.failed.notReady });
+        say(text.failed.notReady);
+      }
+    } catch (failure) {
+      await rowRefused(document, failure, text.failed.download, from);
+    } finally {
+      track(document, 'download', false);
+    }
+  }
+
+  function openRename(document: Document, from: HTMLElement) {
+    renameOpener.current = from;
+    renameGone.current = false;
+    setRowError(null);
+    setRenaming(document);
+    setRenameError(null);
+    setRenameOpen(true);
+  }
+
+  async function rename(name: string) {
+    if (!renaming) return;
+    const now = latest(renaming);
+    if (name === now.title) {
+      setRenameOpen(false);
+      say(fill(text.said.keptName, { name }));
+      return;
+    }
+    setRenameError(null);
+    setRenamePending(true);
+    try {
+      const renamed = await api.request<Document>('PUT', `/me/documents/${now.documentId}`, {
+        version: now.version,
+        title: name,
+      });
+      await change((list) =>
+        list.map((each) => (each.documentId === renamed.documentId ? renamed : each)),
+      );
+      setRenamePending(false);
+      setRenameOpen(false);
+      say(fill(text.said.renamed, { name: now.title, next: renamed.title }));
+    } catch (failure) {
+      // Still saving until the list is read again, so Save can't send the old version again.
+      const why = await refusal(now, failure, text.renameSheet.failed);
+      setRenamePending(false);
+      if (why.gone) {
+        renameGone.current = true;
+        setRenameOpen(false);
+        say(fill(text.said.gone, { name: now.title }));
+      } else {
+        setRenameError(why.now ? text.renameSheet.changed : why.words);
+      }
+    }
+  }
 
   /** A file is in: it joins the library at the top, and is followed while the server checks it. */
   async function sent(document: Document) {
-    const { queryKey } = documentsQuery(api);
-    // A read already on its way began before the upload: dropped, so it can't leave the row out.
-    await queryClient.cancelQueries({ queryKey });
-    queryClient.setQueryData<Document[]>(queryKey, (list) =>
-      list?.some((each) => each.documentId === document.documentId)
-        ? list
-        : [document, ...(list ?? [])],
+    await change((list) =>
+      list.some((each) => each.documentId === document.documentId) ? list : [document, ...list],
     );
   }
 
@@ -96,6 +320,7 @@ export function ResumesPage({
 
   function ask(document: Document, from: HTMLElement) {
     opener.current = from;
+    setRowError(null);
     setAsked(document);
     setMeaning(question(document, documents.data ?? []));
     setError(null);
@@ -115,12 +340,7 @@ export function ResumesPage({
         return;
       }
     }
-    const { queryKey } = documentsQuery(api);
-    // A read already on its way began before the delete: dropped, so it can't bring the row back.
-    await queryClient.cancelQueries({ queryKey });
-    queryClient.setQueryData<Document[]>(queryKey, (list) =>
-      list?.filter((each) => each.documentId !== document.documentId),
-    );
+    await change((list) => list.filter((each) => each.documentId !== document.documentId));
     deleted.current = true;
     setDeleting(false);
     setOpen(false);
@@ -130,11 +350,7 @@ export function ResumesPage({
       return;
     }
     // The default went: read the list again for the one the API handed it to.
-    // Asked of the API itself, not through the list's query: a file coming in meanwhile cancels
-    // the list's reads (see `sent`).
-    const { queryKey: key, queryFn } = documentsQuery(api);
-    const now = await queryFn().catch(() => undefined);
-    if (now) queryClient.setQueryData(key, now);
+    const now = await readAgain();
     const next = now?.find((each) => each.isDefault && each.documentId !== document.documentId);
     say(
       now === undefined
@@ -162,7 +378,20 @@ export function ResumesPage({
         }
       >
         {(saved) => (
-          <Library saved={saved} headingRef={heading} onDelete={ask} onSent={sent} say={say} />
+          <Library
+            saved={saved}
+            headingRef={heading}
+            busy={busy}
+            rowError={rowError}
+            handlers={{
+              onMakeDefault: makeDefault,
+              onDownload: download,
+              onRename: openRename,
+              onDelete: ask,
+            }}
+            onSent={sent}
+            say={say}
+          />
         )}
       </QueryRegion>
       <ConfirmSheet
@@ -181,6 +410,19 @@ export function ResumesPage({
           event.preventDefault();
           (deleted.current ? heading.current : opener.current)?.focus();
           deleted.current = false;
+        }}
+      />
+      <RenameSheet
+        open={renameOpen}
+        onOpenChange={setRenameOpen}
+        name={renaming?.title ?? ''}
+        pending={renamePending}
+        error={renameError}
+        onSave={rename}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          (renameGone.current ? heading.current : renameOpener.current)?.focus();
+          renameGone.current = false;
         }}
       />
       <p role="status" className="sr-only">
@@ -218,18 +460,25 @@ function onItsWay(document: Document): boolean {
 function Library({
   saved,
   headingRef,
-  onDelete,
+  busy,
+  rowError,
+  handlers,
   onSent,
   say,
 }: {
   saved: Document[];
   headingRef: Ref<HTMLHeadingElement>;
-  onDelete: (document: Document, from: HTMLElement) => void;
+  busy: ReadonlySet<string>;
+  rowError: { documentId: string; words: string } | null;
+  handlers: RowHandlers;
   /** A file added here is in. */
   onSent: (document: Document) => Promise<void>;
   say: (words: string) => void;
 }) {
   const text = copy.resumesPage.library;
+  // One Make default at a time: the API refuses a second that overlaps the first (it checks the
+  // default it read is still the default), and their answers could come in either order.
+  const defaulting = [...busy].some((key) => key.endsWith(':default'));
   return (
     <Section
       id="library"
@@ -255,7 +504,14 @@ function Library({
           ) : (
             <ul aria-label={text.listName} className="m-0 grid list-none gap-2 p-0">
               {saved.map((document) => (
-                <Row key={document.documentId} document={document} onDelete={onDelete} />
+                <Row
+                  key={document.documentId}
+                  document={document}
+                  busy={busy}
+                  defaulting={defaulting}
+                  error={rowError?.documentId === document.documentId ? rowError.words : null}
+                  handlers={handlers}
+                />
               ))}
             </ul>
           )}
@@ -289,17 +545,31 @@ function Count({ count }: { count: number }) {
 
 function Row({
   document,
-  onDelete,
+  busy,
+  defaulting,
+  error,
+  handlers,
 }: {
   document: Document;
-  onDelete: (document: Document, from: HTMLElement) => void;
+  busy: ReadonlySet<string>;
+  /** A Make default is on its way (this row's, or another's: this one's waits). */
+  defaulting: boolean;
+  /** Why its last action didn't go through. */
+  error: string | null;
+  handlers: RowHandlers;
 }) {
   const text = copy.resumesPage;
   const unusable = isUnusable(document);
+  const ready = document.status === 'ready';
+  const waiting = (action: RowAction) => busy.has(`${document.documentId}:${action}`);
+  // The résumé's name after each button's word, for everyone who hears the button alone.
+  const named = <span className="sr-only"> {document.title}</span>;
   return (
     <li
+      data-document={document.documentId}
       data-state={document.status}
-      // On a narrow card the actions go under the name, so a long name keeps its width.
+      // On a narrow card the actions go under the name, across the row, so a long name keeps
+      // its width and two actions fit on a line.
       className="grid min-w-0 grid-cols-[34px_minmax(0,1fr)] items-center gap-x-[13px] gap-y-2 rounded-[13px] border border-line bg-surface p-[13px] @md:grid-cols-[34px_minmax(0,1fr)_auto]"
     >
       <span
@@ -325,17 +595,63 @@ function Row({
         {unusable && document.error && (
           <span className="text-[0.8125rem] text-danger-ink">{document.error}</span>
         )}
+        {error && <span className="text-[0.8125rem] font-[650] text-danger-ink">{error}</span>}
       </span>
-      <span className="col-start-2 flex flex-wrap items-center gap-2 @md:col-start-auto @md:justify-end">
+      <span className="col-span-full flex flex-wrap items-center gap-2 @md:col-span-1 @md:justify-end">
+        {ready && !document.isDefault && (
+          <Button
+            variant="outline"
+            data-action="default"
+            pending={waiting('default')}
+            pendingLabel={text.makingDefault}
+            aria-disabled={(defaulting && !waiting('default')) || undefined}
+            onClick={() => handlers.onMakeDefault(document)}
+          >
+            {text.makeDefault}
+            {named}
+          </Button>
+        )}
+        {ready && (
+          <Button
+            variant="outline"
+            data-action="download"
+            pending={waiting('download')}
+            pendingLabel={text.downloading}
+            onClick={() => handlers.onDownload(document)}
+          >
+            {text.download}
+            {named}
+          </Button>
+        )}
+        <Button
+          variant="outline"
+          data-action="rename"
+          onClick={(event) => handlers.onRename(document, event.currentTarget)}
+        >
+          {text.rename}
+          {named}
+        </Button>
         <Button
           variant="outline"
           className="text-danger-ink"
-          onClick={(event) => onDelete(document, event.currentTarget)}
+          data-action="delete"
+          onClick={(event) => handlers.onDelete(document, event.currentTarget)}
         >
           {text.delete}
-          <span className="sr-only"> {document.title}</span>
+          {named}
         </Button>
       </span>
     </li>
   );
+}
+
+/**
+ * Moves focus to `target` only if it is still where it was when the action started (`from`; a
+ * clicked button isn't focused in Safari) or was lost (the pressed button went): a person who
+ * moved on meanwhile stays where they are.
+ */
+function rescueFocus(target: HTMLElement | null, from: Element | null) {
+  const active = globalThis.document.activeElement;
+  const lost = !active || active === globalThis.document.body || !active.isConnected;
+  if (lost || active === from) target?.focus();
 }
