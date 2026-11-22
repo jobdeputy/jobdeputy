@@ -21,6 +21,12 @@ export interface JobKeyword {
 
 /** The recommended score before applying (decision 0013). */
 export const MATCH_THRESHOLD = 80;
+
+/**
+ * The score code's version, stored with every score (decision 0015): raise it when weights,
+ * aliases, or matching change, so scores made by different code are never compared.
+ */
+export const MATCH_SCORE_VERSION = 1;
 /** At most this many keywords are kept per job. */
 export const MAX_JOB_KEYWORDS = 30;
 /** Longer "keywords" are sentences, not keywords. */

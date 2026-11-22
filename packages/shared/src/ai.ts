@@ -74,7 +74,7 @@ export function saveAiKeyInput(provider: AiProvider) {
     modelId,
     consent: z.literal(true, {
       error:
-        'Consent is required: job data and your profile, including résumé text, are sent to the provider, outside our Region',
+        'Consent is required: job data and your profile, including your whole résumé (to tailor it), are sent to the provider, outside our Region',
     }),
   });
 }

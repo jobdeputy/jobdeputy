@@ -1,6 +1,7 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { BatchGetCommand, GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { isConditionFailure } from './client.js';
+import type { JobKeywordsCache } from './tailoring-repository.js';
 
 /**
  * `jobs` (docs/data-model.md §8, decision 0008): jobs found for the user. Keys: `userId`,
@@ -92,6 +93,18 @@ export const isHidden = (fit: JobFit) =>
 
 export type JobStatus = 'new' | 'shortlisted' | 'dismissed' | 'applying' | 'applied' | 'archived';
 
+/** #51: a tailored version's score for this job (decision 0015). */
+export interface JobMatch {
+  resumeDocumentId: string;
+  /** The tailored and base résumés' scores (null: no keyword that counts). */
+  score: number | null;
+  base: number | null;
+  missing: string[];
+  /** The score code's version (MATCH_SCORE_VERSION). */
+  version: number;
+  scoredAt: string;
+}
+
 export interface Job extends JobPosting {
   userId: string;
   type: 'job';
@@ -106,6 +119,11 @@ export interface Job extends JobPosting {
   limitState?: LimitState;
   /** T08d: the LLM's score, when it has scored the job. */
   relevance?: JobRelevance;
+  /** #51: the job's keywords, cached by its description hash (TailoringRepository). */
+  keywords?: JobKeywordsCache;
+  /** #51: the score of the tailored résumé made for it, and that version. */
+  match?: JobMatch;
+  materials?: { resumeDocumentId?: string };
   /** Epoch seconds: DynamoDB deletes the job after this (T08c, hidden or closed and untouched). */
   ttl?: number;
   status: JobStatus;

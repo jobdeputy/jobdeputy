@@ -1,8 +1,8 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import type { DocumentFormat, DocumentStatus } from '@jobdeputy/shared';
 import { type AuditWrite, auditPut } from './audit-repository.js';
-import { cancelledAt } from './client.js';
+import { cancelledAt, isConditionFailure } from './client.js';
 import { ConcurrentUpdateError, transactWrite } from './transact.js';
 import {
   countDown,
@@ -39,6 +39,11 @@ export interface Document {
     noText: boolean;
     truncated: boolean;
   };
+  /**
+   * #51: the résumé as structured data (the tailoring worker makes it once, on the first
+   * Tailor click): in S3 at `s3Key`, for the file with this `eTag` (a re-upload makes it again).
+   */
+  structured?: StructuredCache;
   /** Shown to the user when rejected or failed. */
   error?: string;
   /** Set only while pending: an upload that never arrives expires after 1 day. */
@@ -46,6 +51,17 @@ export interface Document {
   createdAt: string;
   updatedAt: string;
   schemaVersion: 1;
+}
+
+export interface StructuredCache {
+  s3Key: string;
+  eTag: string;
+  promptVersion: string;
+  /** Share of the résumé's text the structured copy covers (0–1). */
+  coverage: number;
+  /** Fields and lines dropped for not being in the text. */
+  rejections: number;
+  createdAt: string;
 }
 
 const PENDING_TTL_SECONDS = 24 * 60 * 60;
@@ -70,18 +86,31 @@ export class DocumentRepository {
     return this.usageTable;
   }
 
+  /**
+   * The user's uploaded documents. Tailored versions (#51, `origin: generated`) share the table
+   * but are left out: they are not counted, listed, or made the default (TailoringRepository).
+   */
   async list(userId: string): Promise<Document[]> {
-    const res = await this.client.send(
-      new QueryCommand({
-        TableName: this.tableName,
-        KeyConditionExpression: 'userId = :u',
-        ExpressionAttributeValues: { ':u': userId },
-        ConsistentRead: true,
-      }),
-    );
-    return (res.Items ?? []) as Document[];
+    const items: Document[] = [];
+    let start: Record<string, unknown> | undefined;
+    do {
+      const res = await this.client.send(
+        new QueryCommand({
+          TableName: this.tableName,
+          KeyConditionExpression: 'userId = :u',
+          FilterExpression: 'attribute_not_exists(origin) OR origin <> :generated',
+          ExpressionAttributeValues: { ':u': userId, ':generated': 'generated' },
+          ConsistentRead: true,
+          ...(start ? { ExclusiveStartKey: start } : {}),
+        }),
+      );
+      items.push(...((res.Items ?? []) as Document[]));
+      start = res.LastEvaluatedKey;
+    } while (start);
+    return items;
   }
 
+  /** An uploaded document (a tailored version is not one: undefined). */
   async get(userId: string, documentId: string): Promise<Document | undefined> {
     const res = await this.client.send(
       new GetCommand({
@@ -90,7 +119,39 @@ export class DocumentRepository {
         ConsistentRead: true,
       }),
     );
-    return res.Item as Document | undefined;
+    const item = res.Item as (Document | { origin: 'generated' }) | undefined;
+    return item && item.origin !== 'generated' ? (item as Document) : undefined;
+  }
+
+  /**
+   * #51: records the structured copy of a ready résumé, only while it is still the file it
+   * was made from (same ETag). False when the file changed or went meanwhile.
+   */
+  async saveStructured(
+    userId: string,
+    documentId: string,
+    structured: StructuredCache,
+  ): Promise<boolean> {
+    try {
+      await this.client.send(
+        new UpdateCommand({
+          TableName: this.tableName,
+          Key: { userId, documentId },
+          UpdateExpression: 'SET structured = :structured',
+          ConditionExpression: '#status = :ready AND eTag = :eTag',
+          ExpressionAttributeNames: { '#status': 'status' },
+          ExpressionAttributeValues: {
+            ':structured': structured,
+            ':ready': 'ready',
+            ':eTag': structured.eTag,
+          },
+        }),
+      );
+      return true;
+    } catch (error) {
+      if (isConditionFailure(error)) return false;
+      throw error;
+    }
   }
 
   /**

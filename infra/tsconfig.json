@@ -3,5 +3,13 @@
   "compilerOptions": {
     "noEmit": true
   },
-  "include": ["bin", "bootstrap", "config", "lib", "test", "vitest.config.ts"]
+  "include": [
+    "bin",
+    "bootstrap",
+    "config",
+    "lib",
+    "test",
+    "vitest.config.ts",
+    "../apps/worker/src/fonts.d.ts"
+  ]
 }

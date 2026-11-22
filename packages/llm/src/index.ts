@@ -15,3 +15,4 @@ export * from './tasks/relevance-stub.js';
 export * from './tasks/smoke.js';
 export * from './tasks/structure-resume.js';
 export * from './tasks/tailor-resume.js';
+export * from './tasks/tailoring-stub.js';

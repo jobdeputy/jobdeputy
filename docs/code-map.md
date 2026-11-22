@@ -81,6 +81,7 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `documents.ts` | résumé upload (presigned POST), list, rename, default, delete |
 | `crawls.ts` | `POST/GET /me/crawls` (with the crawl's `aiSource`; counts the free platform run, T08b3; #50: a GitHub list link is a list run, `listSourceOf`, and its view shows its progress), `GET /me/crawls/{id}`, `/me/crawl-settings` (daily and, T08c, jobs-per-company limits); replaces stale active crawls |
 | `jobs.ts` | `GET /me/jobs` (shown jobs, or `view=all`, with each job's `fit` and why), `GET /me/jobs/{jobId}` (read-only), `GET /me/companies` (#49: companies by their best job, each with its shown jobs ranked; from `usage` `COMPANY#`) |
+| `tailoring.ts` | #51: `POST /me/tailorings` (a version for a company's top 3 shown jobs on the default résumé: allowance, one run per company), `GET /me/tailorings?companyKey=` (versions, free runs left), `GET /me/tailorings/{documentId}` (scores, the résumé to preview, PDF and DOCX links) |
 | `ai.ts` | `/me/ai-keys` (save with consent, list, check, delete; encrypts the key with KMS), `/me/ai-settings` (T08b2), `GET /me/ai-usage` (T08b3) |
 | `audit.ts` | `GET /me/audit` |
 | `account-guard.ts` | 410 on writes while a deletion is pending |
@@ -101,6 +102,8 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `key-check-worker.ts` | ai-keys queue: decrypts a key, one check call, records `valid` or `invalid` (T08b2) |
 | `deletion-worker.ts` | erases every user table and S3 prefix (T12) |
 | `test-data-reaper.ts` | dev only: requests deletion of old test users |
+| `tailoring-worker.ts` | #51: tailoring queue (documents stream): structure the base résumé (cached per file), job keywords (cached per description), tailor, render, store the files, end the version; at most 5 task calls a run across retries; keeps 10 versions per company |
+| `ai-source.ts` | `modelLoader`: an AI source's model (platform, own key through KMS, dev stub), for the relevance and tailoring workers |
 | `relevance-worker.ts` | T08d: relevance queue: scores a crawl's candidates with the LLM (stored per call with its tokens), hides low scores, ranks each company by score |
 | `queue-health.ts` | T08d1: every 5 minutes, checks each worker queue (dead letters, backlog) and emails the alarm topic on changes |
 | `ping-worker.ts` | dev only: T04 async test |
@@ -128,6 +131,7 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `db/src/list-run-repository.ts` | #50: a list run's writes on its `crawls` item: `choose`, `queueCompany` (one transaction with the company crawl and its board's source), `skipCompany` |
 | `db/src/job-repository.ts` | save jobs (idempotent, with the filter verdict and expiry), close missing, mark over the limit, list (shown or all), get |
 | `db/src/company-limit-repository.ts` | T08c: `usage` `COMPANY#`: each company's shown jobs, replaced at the version read; #49 `listShown` for `GET /me/companies` |
+| `db/src/tailoring-repository.ts` | #51: generated versions in `documents`: request (allowance, company lock, audit; one transaction), claim, each call with its tokens, finish, job keywords and matches, versions list and delete |
 | `db/src/relevance-repository.ts` | T08d: a crawl's scoring run: start, each task call with its tokens and scores in one transaction, end with an audit entry |
 | `db/src/crawl-limits.ts` | the admin crawl limits from SSM, cached 5 minutes (API and crawl worker) |
 | `db/src/document-repository.ts`, `preferences-repository.ts`, `profile-repository.ts` | T05 items, with counters and audit |
@@ -145,6 +149,7 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `llm/src/stub-model.ts` | `@jobdeputy/llm/testing`: scripted model for unit and integration tests |
 | `llm/src/tasks/smoke.ts`, `llm/src/tasks/index.ts` | the fixed check Nightly and the eval run against the real model; `TASKS`, every task with a sample input |
 | `llm/src/tasks/relevance.ts` | T08d: the `relevance` task (score 0–100, best role, reasons) and `scoreRelevance` (batches of 10, one follow-up, at most 6 task calls) |
+| `llm/src/tasks/tailoring-stub.ts` | #51: dev stacks only: the `stub` provider's fixed answers for structure, keywords, and tailoring (integration tests) |
 | `llm/src/tasks/relevance-stub.ts` | T08d: dev stacks only: the `stub` provider's fixed relevance answers, for integration tests |
 | `llm/src/tasks/job-keywords.ts` | #51: the `job-keywords` task (a company's top jobs in one call, a field per job) and `extractJobKeywords` (grounded in each posting) |
 | `llm/src/tasks/tailor-resume.ts` | #51: the `tailor-resume` task (summary, skills, bullets by entry ID) and `tailorResume` (a draft and at most two repairs, keeps the best honest draft, scores each job) |
@@ -161,7 +166,7 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `lib/cell-stack.ts` | everything in one Region cell: tables, Lambdas, grants, routes, pipelines, alarms |
 | `lib/keys-stack.ts` | the cell's KMS key for own AI keys, in its own stack (kept on delete); its ARN in SSM |
 | `lib/web-stack.ts`, `lib/web-dns-stack.ts` | the web app (0011): private S3 bucket, CloudFront with security headers and SPA routing, certificate, DNS records, upload of `apps/web/dist`; the delegated zone (kept on delete). Domains in `config/web.ts` |
-| `lib/constructs/` | `ai-keys` (key API, key-check worker, KMS grants), `llm-monitoring` (LLM dashboard, alarms, `llmMetricsEnvironment`), `async-pipeline` (stream → Pipe → queue → worker), `queue-worker`, `queue-health` (the scheduled check that watches every queue; T08d1), `relevance` (T08d: the relevance worker, its Pipe on the crawls stream, its grants), `auth`, `documents` (bucket, malware scan), `node-function` (`AppFunction`; `BUNDLING`, the esbuild options, run by `test/bundling.test.ts`; #51 `banner` and `copyFiles`, set together for functions that render résumés by `RENDERS_RESUMES`) |
+| `lib/constructs/` | `ai-keys` (key API, key-check worker, KMS grants), `llm-monitoring` (LLM dashboard, alarms, `llmMetricsEnvironment`), `async-pipeline` (stream → Pipe → queue → worker), `queue-worker`, `queue-health` (the scheduled check that watches every queue; T08d1), `relevance` (T08d: the relevance worker, its Pipe on the crawls stream, its grants), `tailoring` (#51: the tailoring API and worker, its Pipe on the documents stream, its grants), `auth`, `documents` (bucket, malware scan), `node-function` (`AppFunction`; `BUNDLING`, the esbuild options, run by `test/bundling.test.ts`; #51 `banner` and `copyFiles`, set together for functions that render résumés by `RENDERS_RESUMES`) |
 | `lib/cicd-stack.ts` | GitHub OIDC roles (deploy, PR integration) |
 | `lib/guards.ts` | cost and Region guard checks |
 

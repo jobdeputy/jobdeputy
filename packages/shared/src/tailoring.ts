@@ -1,0 +1,71 @@
+import { z } from 'zod';
+import { type AiSource, aiSource } from './ai.js';
+import { DERIVED_PREFIX, documentId } from './documents.js';
+
+// #51 (decision 0015): tailored résumés. One run per Tailor click makes one version for a
+// company: a `documents` item (`origin: generated`) whose files the tailoring worker writes.
+
+/** Versions kept per company; older ones are deleted when a new one is ready. */
+export const TAILORING_VERSIONS_KEPT = 10;
+/** The free platform tailoring allowance (decision 0015); own-key runs are not capped. */
+export const PLATFORM_TAILORINGS_PER_MONTH = 10;
+/**
+ * Below this share of the résumé's text covered by its structured copy, the version says
+ * part of the résumé could not be read (the model stopped early or skipped entries).
+ */
+export const COVERAGE_WARNING = 0.85;
+/** How long a run may stay queued or running before another Tailor click may replace it. */
+export const TAILORING_STALE_MS = 20 * 60 * 1000;
+
+/** The longest company key we accept (`workday:<host>/<site>` is the longest kind). */
+const MAX_COMPANY_KEY = 300;
+
+export const createTailoringInput = (allowTestProvider: boolean) =>
+  z.strictObject({
+    /** The company whose shown jobs (at most 3) the résumé is for. */
+    companyKey: z.string().trim().min(1).max(MAX_COMPANY_KEY),
+    /** Default: the user's AI setting. `none` is refused: tailoring needs a model. */
+    aiSource: aiSource(allowTestProvider).optional(),
+  });
+export type CreateTailoringInput = { companyKey: string; aiSource?: AiSource };
+
+export const tailoringsQuery = z.strictObject({
+  companyKey: z.string().trim().min(1).max(MAX_COMPANY_KEY),
+});
+
+export const tailoringId = documentId;
+
+/** The queue message: IDs only. */
+export const tailoringMessage = z.object({
+  userId: z.string().min(1).max(128),
+  documentId,
+});
+
+/** Why a run made no version, as shown to the user. */
+export const TAILORING_ERRORS = {
+  no_resume: 'Upload a résumé (PDF or DOCX with text) and make it your default first.',
+  resume_unreadable: 'We could not read the entries of your default résumé. Try another file.',
+  no_jobs: 'This company has no jobs shown for you now.',
+  key_missing: 'The key for this AI source was deleted.',
+  key_invalid: 'The key for this AI source does not work. Check it, then try again.',
+  key_rejected: 'The provider rejected the key. Check it, then try again.',
+  model_unavailable: 'The AI model was unavailable. Try again later.',
+  no_honest_draft:
+    'Every draft added something your résumé does not show, so none was kept. Try again.',
+  stopped: 'The run stopped before it finished. Try again.',
+} as const;
+export type TailoringError = keyof typeof TAILORING_ERRORS;
+
+/**
+ * S3 keys (docs/data-model.md): a version's files, and a base résumé's structured copy
+ * (cached once per uploaded résumé), all under DERIVED_PREFIX with the document's other files.
+ */
+export function tailoringKeys(userId: string, documentId: string) {
+  const base = `${DERIVED_PREFIX}${userId}/documents/${documentId}`;
+  return {
+    json: `${base}/resume.json`,
+    pdf: `${base}/resume.pdf`,
+    docx: `${base}/resume.docx`,
+    structured: `${base}/structured.json`,
+  };
+}

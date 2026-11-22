@@ -29,6 +29,7 @@ import { LlmMonitoring } from './constructs/llm-monitoring.js';
 import { AppFunction } from './constructs/node-function.js';
 import { QueueHealth } from './constructs/queue-health.js';
 import { Relevance } from './constructs/relevance.js';
+import { Tailoring } from './constructs/tailoring.js';
 
 export interface CellStackProps extends StackProps {
   readonly stage: StageName;
@@ -159,8 +160,9 @@ export class CellStack extends Stack {
     // Stream: a DELETION item starts the account-deletion worker (T12); ttl expires that item.
     const usersTable = userTable('UsersTable', 'users', 'sk', 'ttl', true);
     const preferencesTable = userTable('PreferencesTable', 'preferences');
-    // Pending uploads that never arrive expire (ttl).
-    const documentsTable = userTable('DocumentsTable', 'documents', 'documentId', 'ttl');
+    // Pending uploads that never arrive expire (ttl). #51: stream → the tailoring worker (only
+    // generated versions inserted `queued`; decision 0015).
+    const documentsTable = userTable('DocumentsTable', 'documents', 'documentId', 'ttl', true);
     // T06b (0007): pages the user saved; crawl runs (stream → crawl worker; kept 180 days);
     // the user's audit history (kept a year).
     const sourcesTable = userTable('SourcesTable', 'sources', 'sourceId');
@@ -597,6 +599,25 @@ export class CellStack extends Stack {
       health: queueHealth,
     });
 
+    // #51 (decision 0015): tailored résumés: the API, and the worker on the documents stream.
+    const tailoring = new Tailoring(this, 'Tailoring', {
+      namePrefix: id,
+      stage: props.stage,
+      tables: {
+        documents: documentsTable,
+        jobs: jobsTable,
+        usage: usageTable,
+        audit: auditTable,
+        users: usersTable,
+        preferences: preferencesTable,
+      },
+      documentsBucket: documents.bucket,
+      aiKeys,
+      removalPolicy,
+      maxReceives: MAX_RECEIVES,
+      health: queueHealth,
+    });
+
     const auditApi = new AppFunction(this, 'AuditApi', {
       entry: 'apps/api/src/audit.ts',
       timeout: Duration.seconds(10),
@@ -780,6 +801,21 @@ export class CellStack extends Stack {
       path: '/me/jobs/{jobId}',
       methods: [HttpMethod.GET],
       integration: jobsIntegration,
+    });
+
+    const tailoringIntegration = new HttpLambdaIntegration(
+      'TailoringIntegration',
+      tailoring.api.fn,
+    );
+    httpApi.addRoutes({
+      path: '/me/tailorings',
+      methods: [HttpMethod.GET, HttpMethod.POST],
+      integration: tailoringIntegration,
+    });
+    httpApi.addRoutes({
+      path: '/me/tailorings/{documentId}',
+      methods: [HttpMethod.GET],
+      integration: tailoringIntegration,
     });
 
     if (props.stage === 'dev') {

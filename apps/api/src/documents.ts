@@ -23,6 +23,7 @@ import {
   MAX_UPLOAD_BYTES,
   parseJsonBody,
   problem,
+  tailoringKeys,
   UPLOAD_URL_SECONDS,
   updateDocumentInput,
   validationProblem,
@@ -289,7 +290,13 @@ export async function route(event: Event, deps: DocumentsDeps): Promise<HttpResp
           deps.audit('document.deleted', { type: 'document', id: parsed.data }, 'Résumé deleted'),
         );
         if (!doc) return notFound();
-        await deps.deleteFiles([doc.s3Key, documentKeys(userId, doc.documentId).text]);
+        // #51: and its structured copy, made on the first Tailor click (tailored versions keep
+        // their own files; they were made from this one and stay until their company's limit).
+        await deps.deleteFiles([
+          doc.s3Key,
+          documentKeys(userId, doc.documentId).text,
+          tailoringKeys(userId, doc.documentId).structured,
+        ]);
         return { statusCode: 204, headers: {}, body: '' };
       }
       default:

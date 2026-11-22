@@ -39,7 +39,7 @@ describe('ai-keys (T08b2)', () => {
     });
   });
 
-  it('gives KMS to exactly three functions: encrypt to the key API, decrypt to the two workers that call providers', () => {
+  it('gives KMS to exactly four functions: encrypt to the key API, decrypt to the three workers that call providers', () => {
     for (const t of [dev, cell('prod'), cell('dev', 'pr42')]) {
       const kms = statements(t).filter(([, s]) =>
         [s.Action].flat().some((a) => a.startsWith('kms:')),
@@ -48,6 +48,7 @@ describe('ai-keys (T08b2)', () => {
         ['AiKeysAiApiFnServiceRoleDefaultPolicy', 'kms:Encrypt'],
         ['AiKeysKeyCheckWorkerFnServiceRoleDefaultPolicy', 'kms:Decrypt'],
         ['RelevanceRelevanceWorkerFnServiceRoleDefaultPolicy', 'kms:Decrypt'],
+        ['TailoringTailoringWorkerFnServiceRoleDefaultPolicy', 'kms:Decrypt'],
       ]);
       for (const [, s] of kms) {
         expect(s.Condition).toEqual({
@@ -93,6 +94,7 @@ describe('ai-keys (T08b2)', () => {
         .filter((v) => v !== undefined);
     expect(new Set(flags(dev))).toEqual(new Set(['true']));
     expect(new Set(flags(cell('prod')))).toEqual(new Set(['false']));
-    expect(flags(cell('prod')).length).toBe(4); // AI API, key-check and relevance workers, crawls API
+    // AI API, key-check and relevance workers, crawls API, #51 tailoring API and worker.
+    expect(flags(cell('prod')).length).toBe(6);
   });
 });
