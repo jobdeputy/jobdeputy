@@ -26,6 +26,7 @@ import {
   type CrawlLimitsConfig,
   callerFromEvent,
   crawlId as crawlIdSchema,
+  crawlsCompanies,
   createCrawlInput,
   createLogger,
   dailyLimitMessage,
@@ -44,6 +45,7 @@ import {
   parseJsonBody,
   problem,
   RELEVANCE_ERRORS,
+  STALE_LIST_MS,
   updateCrawlSettingsInput,
   validationProblem,
 } from '@jobdeputy/shared';
@@ -59,13 +61,8 @@ const logger = createLogger('api-crawls');
  * within it), so a new submit replaces it instead of waiting for it forever.
  */
 export const STALE_CRAWL_MS = 15 * 60 * 1000;
-/**
- * #50: a list run that has not moved on for this long has stopped. Every company crawl's
- * attempt marks it, so a quiet spell is one attempt waiting out the crawl queue's visibility
- * timeout (18 minutes), plus any wait behind other users' crawls (the queue runs 2 at a time;
- * a backlog of 15 minutes raises the queue-health alarm).
- */
-export const STALE_LIST_MS = 60 * 60 * 1000;
+/** #50: shared with the web app's stall check (packages/shared/src/lists.ts). */
+export { STALE_LIST_MS };
 
 export interface CrawlsDeps {
   repo: Pick<
@@ -301,7 +298,7 @@ export const ACTIVE_RETRY_AFTER_SECONDS = 30;
 const isActive = (c: Crawl | undefined, now: number) =>
   c !== undefined &&
   ACTIVE_CRAWL_STATUSES.includes(c.status) &&
-  (c.kind === 'list' && (c.childIds?.length ?? 0) > 0
+  (crawlsCompanies({ kind: c.kind, childIds: c.childIds })
     ? now - Date.parse(c.updatedAt) <= STALE_LIST_MS
     : now - Date.parse(c.createdAt) <= STALE_CRAWL_MS);
 

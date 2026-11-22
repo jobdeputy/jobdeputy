@@ -120,12 +120,14 @@ export function createFakeApi({
    * #50: a list run as the API shows it now, one `crawlMs` a step: queued, reading the list, then
    * one company read a step (3 at work at once), then succeeded (its scoring after, as above). The
    * list has 5 companies (the last one's read fails) and 3 skipped. In the link: "not-a-list"
-   * fails; "nothing-fits" chooses none; "unreadable" chooses none, all skipped; "still-crawling"
-   * stays at its second company.
+   * fails; "nothing-fits" chooses none; "unreadable" chooses none, all skipped; "all-busy" finds
+   * both its companies already being read; "jobs-fit-none" reads them, and none fit;
+   * "still-crawling" holds once its first company is read (3 at work).
    */
   function listView({ view, startedAt }: FakeCrawl): Record<string, unknown> {
     const url = String(view.url);
-    const step = /still-crawling/i.test(url) ? 3 : Math.floor((now() - startedAt) / crawlMs);
+    const elapsed = Math.floor((now() - startedAt) / crawlMs);
+    const step = /still-crawling/i.test(url) ? Math.min(elapsed, 3) : elapsed;
     const at = (n: number) => new Date(startedAt + n * crawlMs).toISOString();
     if (step < 1) return { ...view, status: 'queued', updatedAt: at(0) };
     if (step < 2) return { ...view, status: 'running', startedAt: at(1), updatedAt: at(1) };
@@ -136,6 +138,26 @@ export function createFakeApi({
         error: { code: 'not_a_list', message: CRAWL_ERRORS.not_a_list },
         finishedAt: at(2),
         updatedAt: at(2),
+      };
+    }
+    if (/all-busy/i.test(url)) {
+      // Both companies chosen were already being read from other links: nothing read.
+      return {
+        ...view,
+        status: 'succeeded',
+        list: {
+          companies: FAKE_LIST_COMPANIES.slice(0, 2),
+          skipped: 0,
+          busy: 2,
+          waiting: 0,
+          running: 0,
+          ended: 0,
+          crawlIds: [],
+        },
+        startedAt: at(1),
+        updatedAt: at(2),
+        finishedAt: at(2),
+        stats: { jobsFound: 0, jobsNew: 0, jobsUpdated: 0, companies: { succeeded: 0, failed: 0 } },
       };
     }
     const chosen = /nothing-fits|unreadable/i.test(url) ? [] : FAKE_LIST_COMPANIES;
@@ -169,11 +191,13 @@ export function createFakeApi({
               jobsFound: 46,
               jobsNew: 46,
               jobsUpdated: 0,
-              jobsRelevant: 12,
+              // "jobs-fit-none": its companies' jobs were read, and none fit.
+              jobsRelevant: /jobs-fit-none/i.test(url) ? 0 : 12,
               companies: { succeeded: total - 1, failed: 1 },
             },
     };
-    if (view.aiSource === 'none' || total === 0 || step < finished + 1) return done;
+    const scored = total > 0 && !/jobs-fit-none/i.test(url);
+    if (view.aiSource === 'none' || !scored || step < finished + 1) return done;
     return { ...done, relevance: { status: step < finished + 2 ? 'running' : 'done' } };
   }
 

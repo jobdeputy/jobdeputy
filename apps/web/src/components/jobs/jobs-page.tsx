@@ -18,6 +18,7 @@ import {
   isCrawling,
   isStalled,
   latestCrawlQuery,
+  listProgress,
   startCrawl,
   useLatestCrawl,
   workDeadline,
@@ -37,6 +38,11 @@ export function JobsPage({ checkEvery }: { checkEvery?: number }) {
   const crawl = latest.data ?? null;
   useRenderAtDeadline(crawl);
   const listVersion = useListVersion(latest);
+  const crawlForList = latest.data ?? null;
+  const progressKey =
+    crawlForList?.kind === 'list' && isCrawling(crawlForList) && crawlForList.list
+      ? `${crawlForList.crawlId}:${crawlForList.list.ended}`
+      : undefined;
   return (
     // Wide enough for the companies beside a job's preview; the link form keeps its measure.
     <div className="grid w-full max-w-[1120px] content-start gap-8">
@@ -64,7 +70,7 @@ export function JobsPage({ checkEvery }: { checkEvery?: number }) {
           </div>
         </Section>
       </div>
-      <CompanyList version={listVersion} offline={latest.isPaused} />
+      <CompanyList version={listVersion} progress={progressKey} offline={latest.isPaused} />
     </div>
   );
 }
@@ -73,19 +79,14 @@ export function JobsPage({ checkEvery }: { checkEvery?: number }) {
  * What the companies list reflects: the newest crawl whose work ended, and how (read, scored, or
  * stalled; a crawl that failed changed nothing). A new version reads the list again from the
  * start, so a crawl that ended in another tab, or later than it seemed to (a stall that then
- * finished), counts too. While a crawl is at work the version stays, except that a list run's
- * version moves as each of its companies is read. Undefined until the newest
+ * finished), counts too. While a crawl is at work the version stays (a list run's companies are
+ * read again in place as each one ends: `listProgressKey`). Undefined until the newest
  * crawl is known, so the list is never read just before a crawl is seen as ended.
  */
 function useListVersion(latest: ReturnType<typeof useLatestCrawl>): string | undefined {
   const last = useRef<string | undefined>(undefined);
   if (latest.data === undefined && !latest.isError) return undefined;
   const crawl = latest.data ?? null;
-  // #50: a list run's companies come in one by one: read the list again as each one ends.
-  if (crawl && isCrawling(crawl) && crawl.kind === 'list' && (crawl.list?.ended ?? 0) > 0) {
-    last.current = `${crawl.crawlId}:companies:${crawl.list?.ended}`;
-    return last.current;
-  }
   if (crawl && (isCrawling(crawl) || crawl.status === 'failed')) {
     last.current ??= 'open';
     return last.current;
@@ -271,11 +272,6 @@ function refusal(failure: unknown): string {
   return refusalText(failure);
 }
 
-/** The site a crawl reads, as people say it: "boards.greenhouse.io", without "www.". */
-export function hostOf(url: string): string {
-  return crawlName({ url });
-}
-
 /** The newest crawl couldn't be read: say so, and try again where that can help. */
 function ReadFailed({
   error,
@@ -316,7 +312,7 @@ function CrawlProgress({ crawl }: { crawl: Crawl | null }) {
   const host = crawlName(crawl);
   const working = isCrawling(crawl);
   const stage = crawlStage(crawl);
-  const companies = crawl.list?.companies.length ?? 0;
+  const progress = crawl.list ? listProgress(crawl.list) : undefined;
   return (
     <div className="grid">
       <DeputyWorking
@@ -328,13 +324,13 @@ function CrawlProgress({ crawl }: { crawl: Crawl | null }) {
         // Space under the deputy only while he shows (his live regions stay, empty, after).
         className="data-shown:mb-3"
       />
-      {working && stage === 'companies' && companies > 0 && crawl.list && (
+      {working && stage === 'companies' && progress && progress.total > 0 && (
         <Progress
           className="mb-3"
-          label={fill(plural(text.working.companiesBar, companies), {
-            done: String(crawl.list.ended),
+          label={fill(plural(text.working.companiesBar, progress.total), {
+            done: String(progress.done),
           })}
-          value={(crawl.list.ended / companies) * 100}
+          value={(progress.done / progress.total) * 100}
         />
       )}
       <div role="status" className="grid gap-1">
@@ -403,10 +399,14 @@ function ListOutcome({ crawl, host }: { crawl: Crawl; host: string }) {
   const line =
     chosen === 0
       ? fill(skipped > 0 ? text.result.listNoneReadable : text.result.listNoMatch, { host })
-      : fill(plural(text.result.listDone, found), {
-          host,
-          companies: plural(text.result.companies, read),
-        });
+      : read === 0
+        ? fill(text.result.listNoneRead, { host })
+        : crawl.stats?.jobsRelevant === 0
+          ? fill(text.result.listNoneFit, { host, companies: plural(text.result.companies, read) })
+          : fill(plural(text.result.listDone, found), {
+              host,
+              companies: plural(text.result.companies, read),
+            });
   const notes = [
     chosen > 0 && skipped > 0 ? plural(text.result.listSkipped, skipped) : null,
     (crawl.stats?.companies?.failed ?? 0) > 0

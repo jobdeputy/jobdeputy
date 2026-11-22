@@ -1,3 +1,4 @@
+import { crawlsCompanies, githubListFromUrl, STALE_LIST_MS } from '@jobdeputy/shared/lists';
 import { useQuery } from '@tanstack/react-query';
 import { type ApiClient, ApiError, isFinal, useApi } from './index.ts';
 
@@ -66,9 +67,9 @@ export const STALLED_MS = 15 * 60 * 1000;
 
 /**
  * #50: how long a list run may go without moving on (a company queued, started, or ended) once it
- * crawls its companies: the API's STALE_LIST_MS. Its companies share the crawl queue with others.
+ * crawls its companies: the API's own limit, shared.
  */
-export const LIST_STALLED_MS = 60 * 60 * 1000;
+export const LIST_STALLED_MS = STALE_LIST_MS;
 
 type Followed = Pick<
   Crawl,
@@ -97,10 +98,12 @@ export function isReading(crawl: Pick<Crawl, 'status'>): boolean {
  */
 export function workDeadline(crawl: Followed): number | null {
   if (isReading(crawl)) {
-    // A list run crawling its companies is stalled only once it stops moving on (as the API sees it).
-    if (crawl.kind === 'list' && (crawl.list?.crawlIds.length ?? 0) > 0) {
+    // A list run is stalled as the API sees it: crawling its companies, once it stops moving on;
+    // before that, 15 minutes from when it was sent.
+    if (crawlsCompanies(crawl)) {
       return Date.parse(crawl.updatedAt ?? crawl.createdAt) + LIST_STALLED_MS;
     }
+    if (crawl.kind === 'list') return Date.parse(crawl.createdAt) + STALLED_MS;
     return Date.parse(crawl.startedAt ?? crawl.createdAt) + STALLED_MS;
   }
   if (crawl.status !== 'succeeded') return null;
@@ -144,16 +147,22 @@ export function crawlStage(
 }
 
 /** What a crawl reads, as people say it: a site ("boards.greenhouse.io"), or a list ("owner/repo"). */
-export function crawlName(crawl: Pick<Crawl, 'url' | 'kind'>): string {
+export function crawlName(crawl: Pick<Crawl, 'url'> & Partial<Pick<Crawl, 'kind'>>): string {
   try {
     const url = new URL(crawl.url);
-    if (crawl.kind === 'list' && url.hostname === 'github.com') {
-      return url.pathname.split('/').filter(Boolean).slice(0, 2).join('/') || url.hostname;
-    }
-    return url.hostname.replace(/^www\./, '');
+    const list = crawl.kind === 'list' ? githubListFromUrl(url) : undefined;
+    return list ? `${list.owner}/${list.repo}` : url.hostname.replace(/^www\./, '');
   } catch {
     return crawl.url;
   }
+}
+
+/**
+ * #50: a list run's companies being read: how many are read, of those it will read (the chosen
+ * ones, less any passed over because their board was busy or can't be read).
+ */
+export function listProgress(list: CrawlList): { done: number; total: number } {
+  return { done: list.ended, total: list.crawlIds.length + list.waiting };
 }
 
 /**

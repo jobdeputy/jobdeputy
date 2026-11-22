@@ -3,7 +3,7 @@ import { CRAWL_ERRORS } from '@jobdeputy/shared/crawl';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { hostOf, JobsPage, withScheme } from '../src/components/jobs/jobs-page.tsx';
+import { JobsPage, withScheme } from '../src/components/jobs/jobs-page.tsx';
 import { copy } from '../src/copy/index.ts';
 import { ApiError } from '../src/lib/api/client.ts';
 import {
@@ -13,6 +13,7 @@ import {
   isCrawling,
   isStalled,
   LIST_STALLED_MS,
+  listProgress,
   nextCrawlCheck,
   SCORING_START_MS,
   STALLED_MS,
@@ -431,6 +432,48 @@ describe('Job matches: a GitHub list (#50)', () => {
     }
   });
 
+  it('says when none of its companies could be read, or none of their jobs fit', async () => {
+    for (const [repo, words, note] of [
+      [
+        'acme/all-busy',
+        'Done with acme/all-busy: none of its companies could be read this time.',
+        '2 companies were already being read from other links.',
+      ],
+      [
+        'acme/jobs-fit-none',
+        'Done with acme/jobs-fit-none: no jobs at 4 companies fit your roles.',
+        '1 company couldn’t be read.',
+      ],
+    ] as const) {
+      const api = heldApi();
+      await renderPage(api);
+      type(`github.com/${repo}`);
+      findJobs();
+      await waitFor(() => expect(input().value).toBe(''));
+      api.next(8);
+      expect(await screen.findByText(words, {}, { timeout: 3000 })).toBeTruthy();
+      expect(screen.getByText(note)).toBeTruthy();
+      cleanup();
+    }
+  });
+
+  it("keeps the companies already loaded as each of a list's companies is read", async () => {
+    const api = heldApi();
+    const request = vi.spyOn(api, 'request');
+    await renderPage(api);
+    type('github.com/acme/list');
+    findJobs();
+    await waitFor(() => expect(input().value).toBe(''));
+    api.next(3);
+    expect(await screen.findByRole('article', { name: 'Acme' }, { timeout: 3000 })).toBeTruthy();
+    api.next();
+    expect(await screen.findByRole('article', { name: 'Globex' }, { timeout: 3000 })).toBeTruthy();
+    // Read again in place (the same query), not as a new list.
+    const reads = request.mock.calls.filter(([, path]) => String(path).startsWith('/me/companies'));
+    expect(reads.length).toBeGreaterThanOrEqual(3);
+    expect(screen.getByRole('article', { name: 'Acme' })).toBeTruthy();
+  });
+
   it('says why a repository could not be read as a list', async () => {
     const api = heldApi();
     await renderPage(api);
@@ -532,6 +575,29 @@ describe('crawl helpers', () => {
     ).toBe('SimplifyJobs/New-Grad-Positions');
     expect(crawlName({ url: 'https://www.acme.com/jobs' })).toBe('acme.com');
     expect(crawlName({ kind: 'list', url: 'not a url' })).toBe('not a url');
+    // However the list's link was written.
+    for (const url of [
+      'https://www.github.com/SimplifyJobs/New-Grad-Positions/tree/dev',
+      'https://github.com/SimplifyJobs/New-Grad-Positions.git',
+    ]) {
+      expect(crawlName({ kind: 'list', url })).toBe('SimplifyJobs/New-Grad-Positions');
+    }
+  });
+
+  it("#50: counts a list's companies to read without those passed over", () => {
+    const companies = [1, 2, 3, 4].map((n) => ({ name: `C${n}`, url: `https://x/${n}` }));
+    // 4 chosen; 1 busy (no crawl): 2 read, 1 at work, none waiting.
+    expect(
+      listProgress({
+        companies,
+        skipped: 0,
+        busy: 1,
+        waiting: 0,
+        running: 1,
+        ended: 2,
+        crawlIds: ['a', 'b', 'c'],
+      }),
+    ).toEqual({ done: 2, total: 3 });
   });
 
   it('waits for the AI scoring that starts after the crawl, within limits', () => {
@@ -571,8 +637,8 @@ describe('crawl helpers', () => {
     expect(withScheme('http://acme.com')).toBe('http://acme.com');
     expect(withScheme('HTTPS://acme.com')).toBe('HTTPS://acme.com');
     expect(withScheme('ftp://acme.com')).toBe('ftp://acme.com');
-    expect(hostOf('https://www.acme.com/jobs')).toBe('acme.com');
-    expect(hostOf('not a url')).toBe('not a url');
+    expect(crawlName({ url: 'https://www.acme.com/jobs' })).toBe('acme.com');
+    expect(crawlName({ url: 'not a url' })).toBe('not a url');
   });
 });
 
