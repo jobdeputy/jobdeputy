@@ -143,6 +143,27 @@ test('creates an account, confirms it with the code, lands signed in, and signs 
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByRole('button', { name: 'Edit Target roles' })).toBeFocused();
   await expect(page.getByRole('list', { name: 'Target roles' })).toContainText('Backend engineer');
+  // The Résumés page (#33): the set-up's résumé, the default; Delete asks first.
+  await page
+    .getByRole('navigation', { name: 'Primary' })
+    .getByRole('link', { name: 'Résumés' })
+    .click();
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'The résumés your deputy tailors from.' }),
+  ).toBeFocused();
+  await expect(page).toHaveURL(/\/resumes$/);
+  await expect(page).toHaveTitle('Résumés · JobDeputy');
+  const library = page.getByRole('list', { name: 'Your résumés' });
+  await expect(library).toContainText('Default');
+  await expectNoAccessibilityViolations(page);
+  await expectNoHorizontalScroll(page);
+  await library.getByRole('button', { name: 'Delete Alex_Morgan_Resume' }).click();
+  const question = page.getByRole('alertdialog', { name: 'Delete Alex_Morgan_Resume?' });
+  await expect(question.getByRole('button', { name: 'Keep it' })).toBeFocused();
+  await expectNoAccessibilityViolations(page);
+  await question.getByRole('button', { name: 'Delete résumé' }).click();
+  await expect(page.getByRole('heading', { level: 2, name: 'Library' })).toBeFocused();
+  await expect(page.getByText('No résumés yet')).toBeVisible();
 
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(

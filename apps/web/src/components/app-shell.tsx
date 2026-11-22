@@ -1,10 +1,21 @@
-import { PersonIcon } from '@/components/icons.tsx';
+import { DocumentIcon, PersonIcon } from '@/components/icons.tsx';
 import { copy } from '@/copy/index.ts';
 import { followLink } from '@/lib/router.ts';
 import { cn } from '@/lib/utils.ts';
 
 /** The app's pages, in the sidebar's order. Only pages that exist are listed (#33). */
-export const PAGES = [{ path: '/profile', label: copy.nav.profile, icon: <PersonIcon /> }] as const;
+export const PAGES = [
+  { path: '/resumes', label: copy.nav.resumes, icon: <DocumentIcon /> },
+  { path: '/profile', label: copy.nav.profile, icon: <PersonIcon /> },
+] as const;
+
+/** Where the app opens, and the page shown at an address that is no page (not by list order). */
+export const HOME_PAGE = PAGES.find((page) => page.path === '/profile') ?? PAGES[0];
+
+/** The page at this path; Profile at an address that is no page. */
+export function pageAt(path: string): (typeof PAGES)[number] {
+  return PAGES.find((page) => page.path === path) ?? HOME_PAGE;
+}
 
 /**
  * The signed-in app's page list (#33, the round 7 prototype's app shell): the sidebar beside the

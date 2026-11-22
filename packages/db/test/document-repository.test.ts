@@ -379,49 +379,152 @@ describe('DocumentRepository', () => {
     ).rejects.toBeInstanceOf(VersionConflictError);
   });
 
-  it('deletes and returns the document, audited in the same transaction', async () => {
-    const { c, send } = client((cmd) => (cmd instanceof GetCommand ? { Item: doc() } : {}));
-    expect(
-      await new DocumentRepository(c, 'T', undefined, 'U').delete(
-        'u1',
-        'D1',
-        audit('document.deleted'),
-      ),
-    ).toMatchObject({
-      documentId: 'D1',
+  /** A store for delete: documents by Get and Query (Get on 'U' reads the marker). */
+  function store(docs: Record<string, unknown>[], marker?: string) {
+    return client((cmd) => {
+      if (cmd instanceof GetCommand) {
+        if (cmd.input.TableName === 'U')
+          return { Item: marker ? { defaultDocumentId: marker } : {} };
+        return { Item: docs.find((d) => d.documentId === cmd.input.Key?.documentId) };
+      }
+      if (cmd instanceof QueryCommand) return { Items: docs };
+      return {};
     });
-    const [del, entry, counter] = tx(send, 1);
+  }
+  const del = (c: DynamoDBDocumentClient) =>
+    new DocumentRepository(c, 'T', () => NOW, 'U').delete('u1', 'D1', audit('document.deleted'));
+  const lastTx = (send: { mock: { calls: unknown[][] } }) =>
+    tx(
+      send,
+      send.mock.calls.findLastIndex(([cmd]) => cmd instanceof TransactWriteCommand),
+    );
+
+  it('deletes and returns the document, audited in the same transaction', async () => {
+    const { c, send } = store([doc()]);
+    expect(await del(c)).toMatchObject({ documentId: 'D1' });
+    const [item, entry, counter, ...rest] = lastTx(send);
     expect(counter?.Update).toMatchObject({
       TableName: 'U',
       Key: { userId: 'u1', sk: 'DOCUMENTS' },
       UpdateExpression: 'SET itemCount = if_not_exists(itemCount, :one) - :one, updatedAt = :now',
     });
-    expect(del?.Delete?.ConditionExpression).toBe('attribute_exists(userId)');
+    expect(counter?.Update).not.toHaveProperty('ConditionExpression');
+    // Not the default when read: one made the default meanwhile is read again.
+    // (Or never marked at all.)
+    expect(item?.Delete).toMatchObject({
+      ConditionExpression:
+        'attribute_exists(userId) AND (attribute_not_exists(isDefault) OR isDefault = :false)',
+      ExpressionAttributeValues: { ':false': false },
+    });
     expect(entry?.Put?.Item).toMatchObject({ name: 'document.deleted' });
+    expect(rest).toEqual([]);
+    // Only the document is read: the marker and the list matter only for the default.
+    expect(send.mock.calls.filter(([cmd]) => cmd instanceof QueryCommand)).toHaveLength(0);
   });
 
-  it('frees the default marker when the default document is deleted', async () => {
-    const { c, send } = client((cmd) =>
-      cmd instanceof GetCommand ? { Item: doc({ isDefault: true }) } : {},
-    );
-    await new DocumentRepository(c, 'T', undefined, 'U').delete(
-      'u1',
+  it('hands the default on to the newest ready document, in the same transaction', async () => {
+    const { c, send } = store(
+      [
+        doc({ isDefault: true, createdAt: '2026-09-03' }),
+        doc({ documentId: 'OLD', createdAt: '2026-09-01' }),
+        doc({ documentId: 'NEW', createdAt: '2026-09-02' }),
+        doc({ documentId: 'NEWEST', createdAt: '2026-09-04', status: 'pending' }),
+        doc({ documentId: 'BAD', createdAt: '2026-09-05', status: 'failed' }),
+      ],
       'D1',
-      audit('document.deleted'),
     );
-    expect(tx(send, 1)[2]?.Update?.UpdateExpression).toBe(
-      'SET itemCount = if_not_exists(itemCount, :one) - :one, updatedAt = :now REMOVE defaultDocumentId',
+    await del(c);
+    const [item, , counter, next] = lastTx(send);
+    expect(item?.Delete).toMatchObject({
+      ConditionExpression: 'attribute_exists(userId) AND isDefault = :true',
+      ExpressionAttributeValues: { ':true': true },
+    });
+    expect(counter?.Update).toMatchObject({
+      UpdateExpression:
+        'SET itemCount = if_not_exists(itemCount, :one) - :one, updatedAt = :now, defaultDocumentId = :next',
+      ConditionExpression: 'defaultDocumentId = :seen',
+      ExpressionAttributeValues: { ':next': 'NEW', ':seen': 'D1' },
+    });
+    expect(next?.Update).toMatchObject({
+      Key: { userId: 'u1', documentId: 'NEW' },
+      UpdateExpression: 'SET isDefault = :true, version = version + :one, updatedAt = :now',
+      ConditionExpression: 'attribute_exists(userId) AND #status = :ready',
+    });
+  });
+
+  it('frees the default marker when no other document is ready', async () => {
+    const { c, send } = store([
+      doc({ isDefault: true }),
+      doc({ documentId: 'P', status: 'processing' }),
+    ]);
+    await del(c);
+    const items = lastTx(send);
+    expect(items).toHaveLength(3);
+    expect(items[2]?.Update).toMatchObject({
+      UpdateExpression:
+        'SET itemCount = if_not_exists(itemCount, :one) - :one, updatedAt = :now REMOVE defaultDocumentId',
+      // No marker read: it must still be absent.
+      ConditionExpression: 'attribute_not_exists(defaultDocumentId)',
+    });
+  });
+
+  it('reads the default marker before the list (so a switch in between fails, not a second default)', async () => {
+    const { c, send } = store([doc({ isDefault: true })], 'D1');
+    await del(c);
+    const reads = send.mock.calls.map(([cmd]) =>
+      cmd instanceof GetCommand ? `Get ${cmd.input.TableName}` : (cmd as object).constructor.name,
     );
+    expect(reads).toEqual(['Get T', 'Get U', 'QueryCommand', 'TransactWriteCommand']);
+  });
+
+  it('reads again when the document changed meanwhile, and deletes it as it is now', async () => {
+    let round = 0;
+    const { c, send } = client((cmd) => {
+      if (cmd instanceof TransactWriteCommand) {
+        round += 1;
+        if (round === 1) throw cancelled();
+      }
+      if (cmd instanceof GetCommand) {
+        // Made the default after the first read.
+        return { Item: cmd.input.TableName === 'U' ? {} : doc({ isDefault: round > 0 }) };
+      }
+      if (cmd instanceof QueryCommand) return { Items: [doc({ isDefault: true })] };
+      return {};
+    });
+    expect(await del(c)).toMatchObject({ documentId: 'D1', isDefault: true });
+    expect(lastTx(send)[0]?.Delete?.ExpressionAttributeValues).toEqual({ ':true': true });
   });
 
   it('returns undefined, and records nothing, when it vanished between the read and the delete', async () => {
+    let gone = false;
     const { c } = client((cmd) => {
+      if (cmd instanceof GetCommand) return { Item: gone ? undefined : doc() };
+      gone = true;
+      throw cancelled();
+    });
+    await expect(del(c)).resolves.toBeUndefined();
+  });
+
+  it('throws, without trying again, a cancellation a fresh read cannot settle (the audit entry)', async () => {
+    const auditFailed = Object.assign(new Error('no'), {
+      name: 'TransactionCanceledException',
+      CancellationReasons: [{ Code: 'None' }, { Code: 'ConditionalCheckFailed' }, { Code: 'None' }],
+    });
+    const { c, send } = client((cmd) => {
+      if (cmd instanceof GetCommand) return { Item: doc() };
+      throw auditFailed;
+    });
+    await expect(del(c)).rejects.toBe(auditFailed);
+    expect(send.mock.calls.filter(([cmd]) => cmd instanceof TransactWriteCommand)).toHaveLength(1);
+  });
+
+  it('gives up after 3 changed reads, as a concurrent update', async () => {
+    const { c, send } = client((cmd) => {
       if (cmd instanceof GetCommand) return { Item: doc() };
       throw cancelled();
     });
-    await expect(
-      new DocumentRepository(c, 'T', undefined, 'U').delete('u1', 'D1', audit('document.deleted')),
-    ).resolves.toBeUndefined();
+    await expect(del(c)).rejects.toBeInstanceOf(ConcurrentUpdateError);
+    expect(send.mock.calls.filter(([cmd]) => cmd instanceof TransactWriteCommand)).toHaveLength(3);
   });
 
   it("returns undefined, writing nothing, for another user's or a missing document", async () => {

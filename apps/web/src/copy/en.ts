@@ -296,6 +296,8 @@ export const en = {
       ready: 'Ready',
       /** Under the name of a file the server couldn't use (the reason is said below the list). */
       notUsed: 'Couldn’t be used',
+      /** Under the name of a file whose upload started elsewhere: being checked, or never sent. */
+      notReady: 'Not ready yet',
       cancel: 'Cancel',
       remove: 'Remove',
       removing: 'Removing…',
@@ -371,8 +373,49 @@ export const en = {
   nav: {
     label: 'Primary',
     profile: 'Profile',
+    resumes: 'Résumés',
     /** The browser tab's title on a page: "Profile · JobDeputy". */
     pageTitle: '{page} · JobDeputy',
+  },
+  /** The Résumés page: the files the deputy tailors from (#33). */
+  resumesPage: {
+    eyebrow: 'Résumés',
+    title: 'The résumés your deputy tailors from.',
+    intro: 'Your deputy tailors each role from your default. Your originals never change.',
+    library: {
+      title: 'Library',
+      line: 'One is your default. Keep up to {max}.',
+      /** Beside the title: "3 of 10". */
+      count: '{count} of {max}',
+      countName: 'Résumés in your library',
+      listName: 'Your résumés',
+      default: 'Default',
+      emptyTitle: 'No résumés yet',
+      emptyLine: 'Add a résumé so your deputy has something to tailor from.',
+    },
+    delete: 'Delete',
+    deleting: 'Deleting…',
+    confirm: {
+      eyebrow: 'Library',
+      title: 'Delete {name}?',
+      /** The file is deleted for good; a default hands over to the newest ready résumé. */
+      line: 'The file is deleted for good. This can’t be undone.',
+      /** Deleting the default, with others kept (the newest ready one takes over), or the last. */
+      handOver:
+        'The file is deleted for good. This can’t be undone. Your newest ready résumé becomes your default.',
+      noHandOver: 'The file is deleted for good. This can’t be undone.',
+      confirm: 'Delete résumé',
+      keep: 'Keep it',
+    },
+    said: {
+      deleted: '{name} deleted.',
+      newDefault: '{name} deleted. {next} is your default now.',
+      noDefault: '{name} deleted. You have no default résumé now.',
+    },
+    deleteFailed: 'That didn’t delete. Check your connection, then try again.',
+    loading: 'Loading your résumés',
+    loadFailed: 'Your résumés didn’t load. Check your connection, then try again.',
+    retry: 'Try again',
   },
   /** The Profile page: what the deputy knows about the person (#33). */
   profilePage: {
