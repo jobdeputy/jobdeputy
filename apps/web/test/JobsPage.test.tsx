@@ -3,14 +3,19 @@ import { CRAWL_ERRORS } from '@jobdeputy/shared/crawl';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { hostOf, JobsPage, withScheme } from '../src/components/jobs/jobs-page.tsx';
+import { JobsPage, withScheme } from '../src/components/jobs/jobs-page.tsx';
 import { copy } from '../src/copy/index.ts';
 import { ApiError } from '../src/lib/api/client.ts';
+import { companiesKey } from '../src/lib/api/companies.ts';
 import {
   type Crawl,
+  crawlName,
   crawlStage,
   isCrawling,
   isStalled,
+  LIST_STALLED_MS,
+  listProgress,
+  listProgressKey,
   nextCrawlCheck,
   SCORING_START_MS,
   STALLED_MS,
@@ -356,6 +361,184 @@ describe('Job matches: your companies under the link (#49 PR C)', () => {
   });
 });
 
+describe('Job matches: a GitHub list (#50)', () => {
+  const LIST = 'github.com/SimplifyJobs/New-Grad-Positions/tree/dev';
+
+  it('reads the list, then its companies with a bar of how many are read, and says how it went', async () => {
+    const api = heldApi();
+    await renderPage(api);
+    const request = vi.spyOn(api, 'request');
+    type(LIST);
+    findJobs();
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('POST', '/me/crawls', { url: `https://${LIST}` }),
+    );
+    expect(
+      await screen.findByText(
+        'Waiting for my turn to read SimplifyJobs/New-Grad-Positions…',
+        {},
+        { timeout: 2000 },
+      ),
+    ).toBeTruthy();
+    api.next();
+    expect(
+      await screen.findByText(
+        'Reading the list SimplifyJobs/New-Grad-Positions and choosing the companies that fit you…',
+      ),
+    ).toBeTruthy();
+    api.next(2);
+    expect(
+      await screen.findByText('Reading the companies from SimplifyJobs/New-Grad-Positions…'),
+    ).toBeTruthy();
+    const bar = await screen.findByRole('progressbar', { name: '1 of 5 companies read' });
+    expect(bar.getAttribute('aria-valuenow')).toBe('20');
+    // The companies come in as they are read.
+    expect(await screen.findByRole('article', { name: 'Acme' }, { timeout: 3000 })).toBeTruthy();
+    api.next(4);
+    // Read: its one AI run scores them all, then it is done.
+    expect(
+      await screen.findByText(
+        'Scoring the jobs at SimplifyJobs/New-Grad-Positions against your roles…',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    api.next(2);
+    const done = await screen.findByText(
+      'Done with SimplifyJobs/New-Grad-Positions: 46 jobs read at 4 companies.',
+      {},
+      { timeout: 3000 },
+    );
+    expect(done.closest('[role="status"]')).toBeTruthy();
+    expect(screen.getByText('3 companies skipped: their sites can’t be read yet.')).toBeTruthy();
+    expect(screen.getByText('1 company couldn’t be read.')).toBeTruthy();
+    expect(await screen.findByRole('article', { name: 'Umbrella' })).toBeTruthy();
+  });
+
+  it('says when a list fits none of the roles, or none of its sites can be read', async () => {
+    for (const [repo, words] of [
+      ['acme/nothing-fits', 'Done with acme/nothing-fits: none of its roles fit your roles.'],
+      [
+        'acme/unreadable',
+        'Done with acme/unreadable: none of its companies’ sites can be read yet.',
+      ],
+    ] as const) {
+      const api = heldApi();
+      await renderPage(api);
+      type(`github.com/${repo}`);
+      findJobs();
+      await waitFor(() => expect(input().value).toBe(''));
+      api.next(2);
+      expect(await screen.findByText(words, {}, { timeout: 3000 })).toBeTruthy();
+      expect(screen.queryByText(/skipped/)).toBeNull();
+      cleanup();
+    }
+  });
+
+  it('says when none of its companies could be read, or none of their jobs fit', async () => {
+    for (const [repo, words, note] of [
+      [
+        'acme/all-busy',
+        'Done with acme/all-busy: none of its companies could be read this time.',
+        '2 companies were already being read from other links.',
+      ],
+      [
+        'acme/jobs-fit-none',
+        'Done with acme/jobs-fit-none: no jobs at 4 companies fit your roles.',
+        '1 company couldn’t be read.',
+      ],
+      [
+        'acme/list-no-jobs',
+        'Done with acme/list-no-jobs: no open jobs at 4 companies.',
+        '1 company couldn’t be read.',
+      ],
+    ] as const) {
+      const api = heldApi();
+      await renderPage(api);
+      type(`github.com/${repo}`);
+      findJobs();
+      await waitFor(() => expect(input().value).toBe(''));
+      api.next(8);
+      expect(await screen.findByText(words, {}, { timeout: 3000 })).toBeTruthy();
+      expect(screen.getByText(note)).toBeTruthy();
+      cleanup();
+    }
+  });
+
+  it("keeps the companies already loaded as each of a list's companies is read", async () => {
+    const api = heldApi();
+    const request = vi.spyOn(api, 'request');
+    const companyReads = () =>
+      request.mock.calls.filter(([, path]) => String(path).startsWith('/me/companies')).length;
+    const { queries } = await renderPage(api);
+    // The companies' queries: a new one would start again from the first page.
+    const lists = () =>
+      queries
+        .getQueryCache()
+        .findAll({ queryKey: companiesKey })
+        .map((query) => JSON.stringify(query.queryKey))
+        .sort();
+    type('github.com/acme/list');
+    findJobs();
+    await waitFor(() => expect(input().value).toBe(''));
+    api.next(3);
+    expect(await screen.findByRole('article', { name: 'Acme' }, { timeout: 3000 })).toBeTruthy();
+    const during = lists();
+    const reads = companyReads();
+    api.next();
+    expect(await screen.findByRole('article', { name: 'Globex' }, { timeout: 3000 })).toBeTruthy();
+    // Read again in place: the same query (its pages kept), not a new list.
+    expect(lists()).toEqual(during);
+    expect(companyReads()).toBeGreaterThan(reads);
+    // Its last companies end as its scoring starts: they show before the scoring is done.
+    api.next(3);
+    await screen.findByText(
+      'Scoring the jobs at acme/list against your roles…',
+      {},
+      { timeout: 3000 },
+    );
+    expect(
+      await screen.findByRole('article', { name: 'Umbrella' }, { timeout: 3000 }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/^Done with/)).toBeNull();
+    expect(screen.getByRole('article', { name: 'Acme' })).toBeTruthy();
+  });
+
+  it('says why a repository could not be read as a list', async () => {
+    const api = heldApi();
+    await renderPage(api);
+    type('github.com/acme/not-a-list');
+    findJobs();
+    await waitFor(() => expect(input().value).toBe(''));
+    api.next(2);
+    expect(
+      await screen.findByText(
+        'Couldn’t read acme/not-a-list. Your deputy couldn’t find a list of open roles in this repository.',
+        {},
+        { timeout: 3000 },
+      ),
+    ).toBeTruthy();
+  });
+
+  it('says when the day’s lists are used, or lists are off, under the buttons', async () => {
+    await renderPage();
+    type('github.com/acme/list-limit');
+    findJobs();
+    await waitFor(() =>
+      expect(notice()).toBe(
+        'You’ve used today’s lists. More from midnight UTC; company links still work.',
+      ),
+    );
+    expect(fieldError()).toBeNull();
+    type('github.com/acme/lists-off');
+    findJobs();
+    await waitFor(() =>
+      expect(notice()).toBe(
+        'Lists can’t be read right now. Paste a company’s careers link instead.',
+      ),
+    );
+  });
+});
+
 describe('the page’s words for every reason the API gives', () => {
   it('has one for every link and scoring reason', () => {
     expect(Object.keys(copy.jobsPage.linkErrors).sort()).toEqual(Object.keys(CRAWL_ERRORS).sort());
@@ -387,6 +570,100 @@ describe('crawl helpers', () => {
     expect(crawlStage(crawl({ status: 'queued' }))).toBe('waiting');
     expect(crawlStage(crawl({ status: 'running' }))).toBe('reading');
     expect(crawlStage(crawl({ status: 'succeeded' }))).toBe('scoring');
+  });
+
+  it('#50: follows a list through its stages, stalled only once it stops moving on for an hour', () => {
+    const list = (over: Partial<Crawl>) => crawl({ kind: 'list', status: 'running', ...over });
+    const chosen = {
+      companies: [{ name: 'Acme', url: 'https://jobs.lever.co/acme' }],
+      skipped: 0,
+      busy: 0,
+      waiting: 0,
+      running: 1,
+      ended: 0,
+    };
+    expect(crawlStage(list({ status: 'queued' }))).toBe('waiting');
+    expect(crawlStage(list({}))).toBe('readingList');
+    expect(crawlStage(list({ list: { ...chosen, crawlIds: [] } }))).toBe('companies');
+    expect(crawlStage(list({ status: 'succeeded' }))).toBe('scoring');
+    // Reading the list: as a crawl.
+    expect(isStalled(list({ startedAt: T0 }), at(16))).toBe(true);
+    // Its companies at work: from when it last moved on, for an hour.
+    const moving = list({
+      startedAt: T0,
+      updatedAt: new Date(at(30)).toISOString(),
+      list: { ...chosen, crawlIds: ['k1'] },
+    });
+    expect(isCrawling(moving, at(30) + LIST_STALLED_MS - 1)).toBe(true);
+    expect(isStalled(moving, at(30) + LIST_STALLED_MS)).toBe(true);
+  });
+
+  it('#50: names a list by its repository, and a site by its host', () => {
+    expect(
+      crawlName({ kind: 'list', url: 'https://github.com/SimplifyJobs/New-Grad-Positions' }),
+    ).toBe('SimplifyJobs/New-Grad-Positions');
+    expect(crawlName({ url: 'https://www.acme.com/jobs' })).toBe('acme.com');
+    expect(crawlName({ kind: 'list', url: 'not a url' })).toBe('not a url');
+    // However the list's link was written.
+    for (const url of [
+      'https://www.github.com/SimplifyJobs/New-Grad-Positions/tree/dev',
+      'https://github.com/SimplifyJobs/New-Grad-Positions.git',
+    ]) {
+      expect(crawlName({ kind: 'list', url })).toBe('SimplifyJobs/New-Grad-Positions');
+    }
+  });
+
+  it("#50: changes the companies key as each of a list's companies ends, while it is at work", () => {
+    const list = (over: Partial<Crawl>, ended: number) =>
+      crawl({
+        crawlId: 'L',
+        kind: 'list',
+        status: 'running',
+        startedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        list: {
+          companies: [],
+          skipped: 0,
+          busy: 0,
+          waiting: 0,
+          running: 1,
+          ended,
+          crawlIds: ['k'],
+        },
+        ...over,
+      });
+    expect(listProgressKey(list({}, 0))).toBeUndefined();
+    expect(listProgressKey(list({}, 2))).toBe('L:2');
+    // Scoring after its companies: still at work, so its last company counts.
+    const scoring = list(
+      {
+        status: 'succeeded',
+        finishedAt: new Date().toISOString(),
+        aiSource: 'platform',
+        stats: { jobsFound: 9, jobsRelevant: 3 },
+      },
+      3,
+    );
+    expect(listProgressKey(scoring)).toBe('L:3');
+    expect(listProgressKey(list({ status: 'failed' }, 2))).toBeUndefined();
+    expect(listProgressKey(crawl({ status: 'running' }))).toBeUndefined();
+    expect(listProgressKey(null)).toBeUndefined();
+  });
+
+  it("#50: counts a list's companies to read without those passed over", () => {
+    const companies = [1, 2, 3, 4].map((n) => ({ name: `C${n}`, url: `https://x/${n}` }));
+    // 4 chosen; 1 busy (no crawl): 2 read, 1 at work, none waiting.
+    expect(
+      listProgress({
+        companies,
+        skipped: 0,
+        busy: 1,
+        waiting: 0,
+        running: 1,
+        ended: 2,
+        crawlIds: ['a', 'b', 'c'],
+      }),
+    ).toEqual({ done: 2, total: 3 });
   });
 
   it('waits for the AI scoring that starts after the crawl, within limits', () => {
@@ -426,8 +703,8 @@ describe('crawl helpers', () => {
     expect(withScheme('http://acme.com')).toBe('http://acme.com');
     expect(withScheme('HTTPS://acme.com')).toBe('HTTPS://acme.com');
     expect(withScheme('ftp://acme.com')).toBe('ftp://acme.com');
-    expect(hostOf('https://www.acme.com/jobs')).toBe('acme.com');
-    expect(hostOf('not a url')).toBe('not a url');
+    expect(crawlName({ url: 'https://www.acme.com/jobs' })).toBe('acme.com');
+    expect(crawlName({ url: 'not a url' })).toBe('not a url');
   });
 });
 

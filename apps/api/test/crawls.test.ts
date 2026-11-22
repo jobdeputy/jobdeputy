@@ -10,18 +10,16 @@ import {
   TooManyActiveCrawlsError,
   VersionConflictError,
 } from '@jobdeputy/db';
-import { type AiKeyStatus, type AiSource, DEFAULT_CRAWL_LIMITS } from '@jobdeputy/shared';
+import {
+  type AiKeyStatus,
+  type AiSource,
+  DEFAULT_CRAWL_LIMITS,
+  STALE_LIST_MS,
+} from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2, APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
 import { route as auditRoute } from '../src/audit.js';
-import {
-  type CrawlsDeps,
-  crawlView,
-  listSourceOf,
-  route,
-  STALE_CRAWL_MS,
-  STALE_LIST_MS,
-} from '../src/crawls.js';
+import { type CrawlsDeps, crawlView, listSourceOf, route, STALE_CRAWL_MS } from '../src/crawls.js';
 import { concurrentUpdateProblem } from '../src/errors.js';
 import { PAGES, handler as testSite } from '../src/test-site.js';
 
@@ -1050,6 +1048,8 @@ describe('list runs (#50)', () => {
       },
     });
     expect(JSON.stringify(view)).not.toContain('listSource');
+    // PR B: when it last moved on, for the page's stall check.
+    expect(view.updatedAt).toBe(new Date(NOW).toISOString());
     expect(crawlView(crawl({ parentCrawlId: 'L1' }))).toMatchObject({ parentCrawlId: 'L1' });
     expect(crawlView(crawl())).not.toHaveProperty('list');
   });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   crawlLimitsConfig,
+  crawlsCompanies,
   DEFAULT_CRAWL_LIMITS,
   dailyListLimitMessage,
   githubListFromUrl,
@@ -70,5 +71,15 @@ describe('list limits (#50)', () => {
     expect(dailyListLimitMessage(2, 2)).toBe(
       "You've used 2 of 2 list runs today. Resets at 00:00 UTC.",
     );
+  });
+});
+
+describe('crawlsCompanies (#50)', () => {
+  it('is a list run with a company crawl, as the API stores it or shows it', () => {
+    expect(crawlsCompanies({ kind: 'list', childIds: ['k1'] })).toBe(true);
+    expect(crawlsCompanies({ kind: 'list', list: { crawlIds: ['k1'] } })).toBe(true);
+    expect(crawlsCompanies({ kind: 'list', childIds: [] })).toBe(false);
+    expect(crawlsCompanies({ kind: 'list' })).toBe(false);
+    expect(crawlsCompanies({ childIds: ['k1'] })).toBe(false);
   });
 });

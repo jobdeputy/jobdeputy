@@ -30,13 +30,31 @@ const text = copy.jobsPage.companies;
  */
 export function CompanyList({
   version,
+  progress,
   offline = false,
 }: {
   version: string | undefined;
+  /**
+   * #50: changes while a list run's companies are read (one each time one ends): the companies
+   * already loaded are read again in place, so pages opened with More companies stay.
+   */
+  progress?: string | undefined;
   /** The newest crawl's first read is waiting for a connection (the list waits for it). */
   offline?: boolean;
 }) {
   const companies = useCompanies(version);
+  const { refetch, isFetching } = companies;
+  // A company ended: read the loaded pages again, once no read is on its way (a read sent before
+  // it ended may miss it, and More companies on its way is never cancelled).
+  const lastProgress = useRef(progress);
+  const due = useRef(false);
+  useEffect(() => {
+    if (progress !== lastProgress.current && progress !== undefined) due.current = true;
+    lastProgress.current = progress;
+    if (!due.current || isFetching) return;
+    due.current = false;
+    void refetch();
+  }, [progress, isFetching, refetch]);
   const wide = useWide();
   // The job open in the preview: as the list has it now (a list read again may have scored it),
   // else as it was when it was opened (a read that left it out).

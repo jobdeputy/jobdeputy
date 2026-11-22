@@ -78,6 +78,21 @@ export const SCREENS: Screen[] = [
     still: true,
     steps: toJobsAiUsedUp,
   },
+  // #50: a GitHub list: its companies being read (the bar), and how it went.
+  {
+    name: 'jobs-list-working',
+    path: '/',
+    open: 'Get started free',
+    still: true,
+    steps: toJobsListWorking,
+  },
+  {
+    name: 'jobs-list-done',
+    path: '/',
+    open: 'Get started free',
+    still: true,
+    steps: toJobsListDone,
+  },
   { name: 'profile', path: '/', open: 'Get started free', still: true, steps: toSignedIn },
   // A group's form open on the Profile page: Contact and location, a code without its number marked.
   {
@@ -346,6 +361,28 @@ async function toJobsDone(page: Page) {
     .waitFor({ timeout: 15_000 });
   // Its company, read again once the crawl's work ended.
   await page.getByRole('article', { name: 'Acme' }).getByText('Strong fit').waitFor();
+}
+
+/** #50: a GitHub list whose companies are being read (held at its second company). */
+async function toJobsListWorking(page: Page) {
+  await toJobs(page);
+  await page.getByLabel('Careers page link').fill('github.com/acme/still-crawling');
+  await page.getByRole('button', { name: 'Find jobs' }).click();
+  await page
+    .getByRole('progressbar', { name: '1 of 5 companies read' })
+    .waitFor({ timeout: 15_000 });
+  await page.getByRole('article', { name: 'Acme' }).waitFor();
+}
+
+/** #50: a GitHub list read: its jobs at its companies, and what it passed over. */
+async function toJobsListDone(page: Page) {
+  await toJobs(page);
+  await page.getByLabel('Careers page link').fill('github.com/SimplifyJobs/New-Grad-Positions');
+  await page.getByRole('button', { name: 'Find jobs' }).click();
+  await page
+    .getByText('Done with SimplifyJobs/New-Grad-Positions: 46 jobs read at 4 companies.')
+    .waitFor({ timeout: 30_000 });
+  await page.getByRole('article', { name: 'Umbrella' }).waitFor();
 }
 
 /** A job open in its preview: beside the list on a wide screen, a view of its own on a phone. */

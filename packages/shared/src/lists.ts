@@ -15,6 +15,28 @@ export const DEFAULT_LIST_COMPANIES = 20;
 /** Company crawls one list keeps queued or running at the same time. */
 export const LIST_CONCURRENCY = 3;
 
+/**
+ * A list run that has queued a company crawl, and has not moved on since (`updatedAt`: a company
+ * queued, an attempt started, or one ended) for this long, has stopped: the API ends it on the
+ * next submit, and the page shows it as stalled. Every company crawl's attempt marks it, so a
+ * quiet spell is one attempt waiting out the crawl queue's visibility timeout (18 minutes), plus
+ * any wait behind other users' crawls (the queue runs 2 at a time; a backlog of 15 minutes raises
+ * the queue-health alarm). Before its first company crawl, a list run is a crawl (15 minutes).
+ */
+export const STALE_LIST_MS = 60 * 60 * 1000;
+
+/**
+ * Whether a list run is crawling its companies, so `STALE_LIST_MS` applies from `updatedAt`: the
+ * API's item has `childIds`, its view has `list.crawlIds`.
+ */
+export function crawlsCompanies(crawl: {
+  kind?: string | undefined;
+  childIds?: string[] | undefined;
+  list?: { crawlIds: string[] } | undefined;
+}): boolean {
+  return crawl.kind === 'list' && (crawl.childIds ?? crawl.list?.crawlIds ?? []).length > 0;
+}
+
 const NAME = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,99})$/;
 /** github.com paths that are not repositories. */
 const RESERVED_OWNERS = new Set([

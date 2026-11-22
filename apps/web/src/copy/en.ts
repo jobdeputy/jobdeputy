@@ -386,10 +386,10 @@ export const en = {
       'Paste a careers page. Your deputy reads it and keeps the 3 roles that fit you best at each company.',
     find: {
       title: 'Find jobs',
-      line: 'One company’s careers page or job board, as a link.',
+      line: 'A company’s careers page or job board, or a GitHub list of open roles.',
       label: 'Careers page link',
       placeholder: 'boards.greenhouse.io/acme',
-      hint: 'Public pages only. LinkedIn needs a sign-in, so your deputy can’t read it.',
+      hint: 'Public pages only, not LinkedIn. From a list, your deputy reads the 20 companies that fit you best.',
       submit: 'Find jobs',
       /** Read out while the link is sent. */
       sending: 'Sending the link…',
@@ -397,6 +397,10 @@ export const en = {
         empty: 'Paste a link to a careers page.',
         busy: 'Your deputy is already reading a link. Paste the next one when it’s done.',
         daily: 'You’ve used today’s links. More from midnight UTC.',
+        /** #50: the day's GitHub lists (2) are used; single links may still work. */
+        dailyLists: 'You’ve used today’s lists. More from midnight UTC; company links still work.',
+        /** #50: list runs are switched off for now. */
+        listsOff: 'Lists can’t be read right now. Paste a company’s careers link instead.',
         tryLater: 'That didn’t go through. Try again in a moment.',
         /** The API's own words for a refusal it gives no reason for. */
         refused: 'That link can’t be read. Check it, or try another page.',
@@ -452,6 +456,14 @@ export const en = {
       waiting: 'Waiting for my turn to read {host}…',
       reading: 'Reading {host}…',
       scoring: 'Scoring the jobs at {host} against your roles…',
+      /** #50: a GitHub list. */
+      readingList: 'Reading the list {host} and choosing the companies that fit you…',
+      companies: 'Reading the companies from {host}…',
+      /** #50: the bar under the deputy while a list's companies are read. */
+      companiesBar: {
+        one: '{done} of {count} company read',
+        other: '{done} of {count} companies read',
+      },
     },
     /** The companies and their best jobs (#49 PR C). */
     companies: {
@@ -512,6 +524,29 @@ export const en = {
       noScore: 'Your deputy ranked them without AI: {reason}',
       failed: 'Couldn’t read {host}. {reason}',
       tryAnother: 'Check the link, or try another page.',
+      /** #50: a list. `{count}` is jobs read; `{companies}` the companies read ("1 company"). */
+      listDone: {
+        one: 'Done with {host}: {count} job read at {companies}.',
+        other: 'Done with {host}: {count} jobs read at {companies}.',
+      },
+      companies: { one: '{count} company', other: '{count} companies' },
+      listNoMatch: 'Done with {host}: none of its roles fit your roles.',
+      listNoneRead: 'Done with {host}: none of its companies could be read this time.',
+      listNoneFit: 'Done with {host}: no jobs at {companies} fit your roles.',
+      listNoJobs: 'Done with {host}: no open jobs at {companies}.',
+      listNoneReadable: 'Done with {host}: none of its companies’ sites can be read yet.',
+      listSkipped: {
+        one: '{count} company skipped: its site can’t be read yet.',
+        other: '{count} companies skipped: their sites can’t be read yet.',
+      },
+      listFailed: {
+        one: '{count} company couldn’t be read.',
+        other: '{count} companies couldn’t be read.',
+      },
+      listBusy: {
+        one: '{count} company was already being read from another link.',
+        other: '{count} companies were already being read from other links.',
+      },
     },
   },
   /** The Résumés page: the files the deputy tailors from (#33). */
