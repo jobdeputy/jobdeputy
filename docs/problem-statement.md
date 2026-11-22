@@ -23,7 +23,7 @@ The first phase needs to:
 
 ## Phase 2: Job application automation
 
-The second phase will reduce the remaining repetitive work by automating job applications using the jobs and application materials prepared in Phase 1. Application automation must remain traceable and under the user's control.
+The second phase will reduce the remaining repetitive work by automating job applications using the jobs and application materials prepared in Phase 1. Application automation must remain traceable and under the user's control. Its first step, a browser extension that fills application forms while the user reviews and clicks Submit, is part of the apply-flow slice ([scope](scope-current-slice.md), [0013](decisions/0013-apply-flow-rules.md)).
 
 ## Launch
 

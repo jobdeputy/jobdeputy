@@ -6,7 +6,7 @@ Read this first in every session. Keep it short; details live in `docs/`.
 
 JobDeputy discovers jobs from any URL a user gives, keeps the relevant ones, and (later) prepares tailored application materials. Users bring their own AI/API credentials (BYOT). Full statement: [docs/problem-statement.md](docs/problem-statement.md).
 
-**Current slice:** profile (basic details, résumé, target roles) → user submits a URL → **asynchronous** crawl job → relevant jobs stored in the database. Scope and non-goals: [docs/scope-current-slice.md](docs/scope-current-slice.md).
+**Current slice (apply flow):** a link → top jobs per company → one tailored résumé per company with an ATS match score → apply by hand or with the browser extension (the user always clicks Submit) → application history. Built so far: profile, the **asynchronous** crawl, and relevant jobs stored in the database. Scope and non-goals: [docs/scope-current-slice.md](docs/scope-current-slice.md).
 
 ## Where things are
 
