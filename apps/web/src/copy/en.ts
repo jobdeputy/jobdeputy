@@ -393,6 +393,28 @@ export const en = {
       emptyTitle: 'No résumés yet',
       emptyLine: 'Add a résumé so your deputy has something to tailor from.',
     },
+    /** The Library's upload zone, and the files on their way in. */
+    upload: {
+      dropTitle: 'Drop résumés here',
+      dropMeta: 'PDF or DOCX, up to 5 MB each, kept in your United States home Region.',
+      choose: 'Choose files',
+      fullTitle: 'Your library is full',
+      fullMeta: 'Delete a résumé to add another. Your deputy keeps up to {max}.',
+      listName: 'Files you are adding',
+      /** Each upload's progress bar. */
+      uploading: 'Uploading {name}',
+      /** Under the name of a file that wasn't added (why follows). */
+      notAdded: 'Not added',
+      noRoom: 'There’s no room for {name}. Your deputy keeps up to {max} résumés.',
+      retry: 'Try again',
+      dismiss: 'Dismiss',
+      said: {
+        full: 'Your library is full. Delete a résumé to add another.',
+        failed: '{name} wasn’t added. {reason}',
+        dismissed: '{name} dismissed.',
+        unusable: '{name} couldn’t be used.',
+      },
+    },
     delete: 'Delete',
     deleting: 'Deleting…',
     confirm: {

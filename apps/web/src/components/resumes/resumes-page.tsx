@@ -1,6 +1,6 @@
 import { MAX_DOCUMENTS } from '@jobdeputy/shared/documents';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { type Ref, useRef, useState } from 'react';
+import { type Ref, useEffect, useRef, useState } from 'react';
 import { AlertIcon, DocumentIcon } from '@/components/icons.tsx';
 import { PageIntro } from '@/components/page-intro.tsx';
 import { Section } from '@/components/section.tsx';
@@ -18,6 +18,7 @@ import {
 } from '@/lib/api/documents.ts';
 import { ApiError, isFinal, useApi } from '@/lib/api/index.ts';
 import { cn } from '@/lib/utils.ts';
+import { AddResumes } from './add-resumes.tsx';
 import { statusLine } from './document-status.ts';
 
 /**
@@ -26,7 +27,12 @@ import { statusLine } from './document-status.ts';
  * many of the 10 are used. Delete asks first (the file is deleted for good); deleting the default
  * hands it to the newest ready résumé (the API does, in the same step), and the page says which.
  */
-export function ResumesPage() {
+export function ResumesPage({
+  checkEvery = CHECK_EVERY_MS,
+}: {
+  /** How often résumés being checked are asked about (2 s; the tests ask faster). */
+  checkEvery?: number;
+} = {}) {
   const text = copy.resumesPage;
   const api = useApi();
   const queryClient = useQueryClient();
@@ -36,7 +42,7 @@ export function ResumesPage() {
       failures < 1 && error instanceof ApiError && error.kind === 'offline',
     // Read again every 2 s while one is known to be on its way to ready (not a `pending` one
     // whose upload started elsewhere: it may never come, and the server forgets it in a day).
-    refetchInterval: ({ state }) => (state.data?.some(onItsWay) ? CHECK_EVERY_MS : false),
+    refetchInterval: ({ state }) => (state.data?.some(onItsWay) ? checkEvery : false),
   });
   const { spoken, say } = useSaying();
   const heading = useRef<HTMLHeadingElement>(null);
@@ -52,6 +58,38 @@ export function ResumesPage() {
   // Safari doesn't focus a clicked button), or the library's title once its row is gone.
   const opener = useRef<HTMLElement | null>(null);
   const deleted = useRef(false);
+
+  /** A file is in: it joins the library at the top, and is followed while the server checks it. */
+  async function sent(document: Document) {
+    const { queryKey } = documentsQuery(api);
+    // A read already on its way began before the upload: dropped, so it can't leave the row out.
+    await queryClient.cancelQueries({ queryKey });
+    queryClient.setQueryData<Document[]>(queryKey, (list) =>
+      list?.some((each) => each.documentId === document.documentId)
+        ? list
+        : [document, ...(list ?? [])],
+    );
+  }
+
+  // Each stage a résumé sent from here reaches is said as it comes (the library's first read
+  // is not news).
+  const stages = useRef<Map<string, Document['status']> | null>(null);
+  useEffect(() => {
+    const list = documents.data;
+    if (!list) return;
+    const before = stages.current;
+    stages.current = new Map(list.map((each) => [each.documentId, each.status]));
+    if (!before) return;
+    for (const each of list) {
+      const was = before.get(each.documentId);
+      if (was === undefined || was === each.status || !wasUploadedHere(each.documentId)) continue;
+      const name = each.title;
+      const said = copy.setUp.resume.said;
+      if (each.status === 'processing') say(fill(said.reading, { name }));
+      else if (each.status === 'ready') say(fill(said.ready, { name }));
+      else if (isUnusable(each)) say(fill(text.upload.said.unusable, { name }));
+    }
+  }, [documents.data, say]);
 
   function ask(document: Document, from: HTMLElement) {
     opener.current = from;
@@ -118,7 +156,9 @@ export function ResumesPage() {
           />
         }
       >
-        {(saved) => <Library saved={saved} headingRef={heading} onDelete={ask} />}
+        {(saved) => (
+          <Library saved={saved} headingRef={heading} onDelete={ask} onSent={sent} say={say} />
+        )}
       </QueryRegion>
       <ConfirmSheet
         open={open}
@@ -174,10 +214,15 @@ function Library({
   saved,
   headingRef,
   onDelete,
+  onSent,
+  say,
 }: {
   saved: Document[];
   headingRef: Ref<HTMLHeadingElement>;
   onDelete: (document: Document, from: HTMLElement) => void;
+  /** A file added here is in. */
+  onSent: (document: Document) => void;
+  say: (words: string) => void;
 }) {
   const text = copy.resumesPage.library;
   return (
@@ -189,24 +234,28 @@ function Library({
       headingRef={headingRef}
       aside={<Count count={saved.length} />}
     >
-      {saved.length === 0 ? (
-        <div className="mt-6 grid justify-items-center gap-2 rounded-[22px] border-[1.5px] border-dashed border-line-strong p-[21px] text-center sm:p-[34px]">
-          <span
-            aria-hidden="true"
-            className="mb-1 grid size-[55px] place-items-center rounded-full bg-paper-deep text-ink-soft"
-          >
-            <DocumentIcon className="size-6" />
-          </span>
-          <h3 className="m-0 text-[0.9375rem] font-[700]">{text.emptyTitle}</h3>
-          <p className="m-0 max-w-[440px] text-sm text-muted-foreground">{text.emptyLine}</p>
-        </div>
-      ) : (
-        <ul aria-label={text.listName} className="m-0 mt-6 grid list-none gap-2 p-0">
-          {saved.map((document) => (
-            <Row key={document.documentId} document={document} onDelete={onDelete} />
-          ))}
-        </ul>
-      )}
+      <div className="mt-6">
+        <AddResumes count={saved.length} onSent={onSent} say={say}>
+          {saved.length === 0 ? (
+            <div className="mx-auto grid max-w-[440px] justify-items-center gap-2 px-[21px] py-[34px] text-center">
+              <span
+                aria-hidden="true"
+                className="mb-1 grid size-[55px] place-items-center rounded-full bg-paper-deep text-ink-soft"
+              >
+                <DocumentIcon className="size-6" />
+              </span>
+              <h3 className="m-0 text-[0.9375rem] font-[700]">{text.emptyTitle}</h3>
+              <p className="m-0 text-sm text-muted-foreground">{text.emptyLine}</p>
+            </div>
+          ) : (
+            <ul aria-label={text.listName} className="m-0 grid list-none gap-2 p-0">
+              {saved.map((document) => (
+                <Row key={document.documentId} document={document} onDelete={onDelete} />
+              ))}
+            </ul>
+          )}
+        </AddResumes>
+      </div>
     </Section>
   );
 }
