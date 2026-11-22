@@ -24,9 +24,9 @@ export const BUNDLING = {
 } satisfies BundlingOptions;
 
 /**
- * #51: the banner of functions that render résumés: also CommonJS's `__filename` and
- * `__dirname` (no end slash, as in CommonJS), which pdfkit reads when it loads. Only these
- * functions get them, so no other function's dependencies see them defined.
+ * #51: the banner of functions that render résumés (AppFunction `banner`): also CommonJS's
+ * `__filename` and `__dirname` (no end slash, as in CommonJS), which pdfkit reads when it
+ * loads. Only these functions get them, so no other function's dependencies see them.
  */
 export const RENDER_BANNER = [
   "import { createRequire } from 'module';",
@@ -50,7 +50,7 @@ export function packageFile(from: string, chain: readonly string[]): string {
 /**
  * #51: files the résumé renderers read from disk beside their code, which esbuild leaves out:
  * fontkit's line-breaking data (`unicode-properties` reads `./data.trie` next to the module, so
- * next to the bundle). Resolved only when a function that renders is built.
+ * next to the bundle). For AppFunction `copyFiles`.
  */
 export function renderFiles(): string[] {
   return [
@@ -65,11 +65,13 @@ export interface AppFunctionProps {
   readonly memorySize?: number;
   readonly environment?: Record<string, string>;
   readonly removalPolicy: RemovalPolicy;
+  /** Replaces BUNDLING's banner (#51: RENDER_BANNER for functions that render résumés). */
+  readonly banner?: string;
   /**
-   * #51: the function renders résumés (PDF, DOCX): its bundle gets RENDER_BANNER and the
-   * files of renderFiles() beside it.
+   * Files copied beside the bundle, for code that reads them at run time (#51:
+   * renderFiles()). A function, so the paths are resolved only when this function is built.
    */
-  readonly rendersResumes?: boolean;
+  readonly copyFiles?: () => readonly string[];
 }
 
 /** Node 22 on ARM64, bundled with esbuild, logs kept 14 days (decision 0005). */
@@ -98,15 +100,15 @@ export class AppFunction extends Construct {
       },
       bundling: {
         ...BUNDLING,
-        ...(props.rendersResumes
+        ...(props.banner ? { banner: props.banner } : {}),
+        ...(props.copyFiles
           ? {
-              banner: RENDER_BANNER,
               commandHooks: {
                 beforeBundling: () => [],
                 beforeInstall: () => [],
                 // Paths from the input directory, so this works in Docker bundling too.
                 afterBundling: (inputDir: string, outputDir: string) =>
-                  renderFiles().map(
+                  (props.copyFiles?.() ?? []).map(
                     (file) => `cp "${join(inputDir, relative(REPO_ROOT, file))}" "${outputDir}/"`,
                   ),
               },

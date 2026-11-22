@@ -165,13 +165,15 @@ function degreeText(degree?: string, field?: string): string {
 /** The résumé as the template's blocks; empty sections are left out. */
 export function resumeBlocks(resume: StructuredResume): ResumeBlock[] {
   const c = resume.contact;
-  const blocks: ResumeBlock[] = [{ kind: 'name', text: joined('', c.name) }];
+  const blocks: ResumeBlock[] = [{ kind: 'name', text: joined('', c.name) || 'Résumé' }];
   const headline = joined('', c.headline);
   if (headline) blocks.push({ kind: 'line', text: headline });
   const contact = joined(' | ', c.email, c.phone, c.location, ...c.links);
   if (contact) blocks.push({ kind: 'line', text: contact });
+  /** A section, without blocks left empty by `printable` (and without its heading when none are left). */
   const section = (heading: string, body: ResumeBlock[]) => {
-    if (body.length > 0) blocks.push({ kind: 'heading', text: heading }, ...body);
+    const kept = body.filter((b) => (b.kind === 'skills' ? b.items : b.text) !== '');
+    if (kept.length > 0) blocks.push({ kind: 'heading', text: heading }, ...kept);
   };
   const dates = (start?: string, end?: string) => joined(' – ', start, end);
   const meta = (...values: (string | undefined)[]): ResumeBlock[] => {
@@ -192,7 +194,7 @@ export function resumeBlocks(resume: StructuredResume): ResumeBlock[] {
     RESUME_HEADINGS.skills,
     resume.skills.map((g) => ({
       kind: 'skills',
-      group: joined('', g.group),
+      group: joined('', g.group) || RESUME_HEADINGS.skills,
       items: joined(', ', ...g.items),
     })),
   );

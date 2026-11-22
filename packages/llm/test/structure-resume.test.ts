@@ -6,7 +6,6 @@ import {
   coverageOf,
   DEFAULT_SKILL_GROUP,
   FALLBACK_NAME,
-  fit,
   groundStructured,
   STRUCTURE_RESUME_CHARS,
   type StructureResumeOutput,
@@ -251,6 +250,53 @@ describe('groundStructured: limits, names, and plain text (review fixes)', () =>
     expect(cut.coverage).toBeLessThan(whole.coverage / 2);
   });
 
+  it('keeps a phone written with any common separator, or with a number after it', () => {
+    const output = copied();
+    output.contact.phone = '(555) 010-1234';
+    for (const written of [
+      '555\u00a0010\u00a01234',
+      '555/010/1234',
+      '555–010–1234',
+      '555-010-1234 123 Main St',
+    ]) {
+      const resume = groundStructured(output, `Sam Example\n${written}\n${text}`, 'P').resume;
+      expect(resume.contact.phone, written).toBe('(555) 010-1234');
+    }
+  });
+
+  it('drops an email or link longer than its limit rather than keeping a cut one', () => {
+    const link = `github.com/${'a'.repeat(310)}`;
+    const output = copied();
+    output.contact.links = [link];
+    const { resume, rejections } = groundStructured(output, `${text}\n${link}`, 'P');
+    expect(resume.contact.links).toEqual([]);
+    expect(rejections).toBe(1);
+  });
+
+  it('merges skills that differ only in case, and counts what the limits leave out', () => {
+    const skills = Array.from({ length: 22 }, (_, i) => `Skill${i}`);
+    const output = copied();
+    output.skills = [
+      { group: 'Languages', items: ['SQL', 'TypeScript'] },
+      { group: 'LANGUAGES', items: ['sql'] },
+      { group: 'Tools', items: skills },
+    ];
+    const g = groundStructured(output, `${text}\nTools: ${skills.join(', ')}`, 'P');
+    expect(g.resume.skills[0]).toEqual({ group: 'Languages', items: ['SQL', 'TypeScript'] });
+    expect(g.resume.skills[1]?.items).toHaveLength(20);
+    expect(g.trimmed).toBe(2);
+  });
+
+  it('removes control characters a text layer left, so scores read what the file shows', () => {
+    const output = copied();
+    const e = output.experience?.[0];
+    if (!e) throw new Error('fixture');
+    e.bullets = ['Cut p99 latency\u0005 by 40%.'];
+    expect(groundStructured(output, text, 'P').resume.experience[0]?.bullets).toEqual([
+      'Cut p99 latency by 40%.',
+    ]);
+  });
+
   it('keeps a phone only when the text writes it as one number, not digits joined across dates', () => {
     const dated = `${text}\nJan 2019 – Mar 2021\n2021 – 2023`;
     const output = copied();
@@ -287,14 +333,6 @@ describe('groundStructured: limits, names, and plain text (review fixes)', () =>
     expect(groundStructured(output, text, 'P').resume.skills).toEqual([
       { group: 'Languages', items: ['TypeScript', 'SQL'] },
     ]);
-  });
-});
-
-describe('fit', () => {
-  it('cuts at a word boundary, or hard when there is none near the end', () => {
-    expect(fit('short', 10)).toBe('short');
-    expect(fit('one two three four', 15)).toBe('one two three');
-    expect(fit('abcdefghijklmnop', 5)).toBe('abcde');
   });
 });
 

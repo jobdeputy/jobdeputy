@@ -13,7 +13,7 @@ import {
 
 // #51: the résumé renderers run from a Lambda bundle, not from node_modules. A dependency that
 // reads a file beside its own code (unicode-properties' data.trie) works in tests and fails in
-// Lambda unless the file is copied beside the bundle (AppFunction's rendersResumes). This bundles
+// Lambda unless the file is copied beside the bundle (AppFunction's copyFiles). This bundles
 // them exactly as AppFunction does and runs the bundle alone, in an empty folder.
 
 const out = mkdtempSync(join(tmpdir(), 'jd-bundle-'));
@@ -32,7 +32,7 @@ const options = {
   logLevel: 'silent',
 } as const;
 
-/** Bundles `contents` as a function that renders résumés (AppFunction rendersResumes). */
+/** Bundles `contents` as a function that renders résumés (AppFunction banner and copyFiles). */
 async function bundle(contents: string, copy: readonly string[]): Promise<string> {
   await build({
     ...options,
@@ -86,7 +86,8 @@ describe('Lambda bundling (#51)', () => {
     expect(filename).toBe(join(dirname, 'index.mjs'));
   }, 60_000);
 
-  it('keeps every function parseable: the banners clash with nothing bundled', async () => {
+  // Functions that render résumés get RENDER_BANNER: the tests above bundle and run one.
+  it('keeps every function parseable: the banner clashes with nothing bundled', async () => {
     // Every `entry: 'apps/…'` in infra/lib, bundled as its function is, then parsed by Node.
     const entries = new Set<string>();
     const scan = (dir: string) => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { printable, RESUME_HEADINGS, resumeBlocks, type StructuredResume } from '../src/resume.js';
+import { cutAtWord } from '../src/text.js';
 
 const full: StructuredResume = {
   contact: {
@@ -123,5 +124,27 @@ describe('printable', () => {
     expect(blocks).toContainEqual({ kind: 'name', text: 'Sam Example' });
     expect(blocks.filter((b) => b.kind === 'bullet')).toEqual([{ kind: 'bullet', text: 'Built' }]);
     expect(blocks.some((b) => b.kind === 'line')).toBe(false);
+  });
+
+  it('leaves out blocks, and headings, that nothing printable is left in', () => {
+    const blocks = resumeBlocks({
+      contact: { name: '\u0001', links: [] },
+      summary: '\u0007',
+      skills: [{ group: 'Tools', items: ['\u0002'] }],
+      experience: [],
+      education: [],
+      certifications: [{ id: 'c1', name: '\u0003' }],
+      projects: [],
+    });
+    expect(blocks).toEqual([{ kind: 'name', text: 'Résumé' }]);
+  });
+});
+
+describe('cutAtWord', () => {
+  it('cuts at a break in the last 20%, else hard, never inside an emoji', () => {
+    expect(cutAtWord('short', 10)).toBe('short');
+    expect(cutAtWord('one two three four', 15)).toBe('one two three');
+    expect(cutAtWord('abcdefghijklmnop', 5)).toBe('abcde');
+    expect(cutAtWord('abcd😀efgh', 5)).toBe('abcd');
   });
 });

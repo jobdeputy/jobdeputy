@@ -1,5 +1,6 @@
 import {
   type JobKeyword,
+  printable,
   resumeText,
   type StructuredResume,
   TermIndex,
@@ -47,9 +48,13 @@ export function repeatsAllowed(before: number): number {
   return before >= KEYWORD_REPEAT_CAP ? before + 2 : KEYWORD_REPEAT_CAP;
 }
 
-/** Model text as plain text: no Markdown emphasis or code marks, no bullet markers. */
+/**
+ * Model text as plain text: no Markdown emphasis or code marks, no bullet markers, and only
+ * characters a file can hold (`printable`: no control characters), so the scores and checks
+ * read what the file will.
+ */
 export function plainText(text: string): string {
-  return text
+  return printable(text)
     .replace(/\*\*|__|`/g, '')
     .replace(/^\s*(?:[-•*]\s+)+/, '')
     .replace(/\s+/g, ' ')
