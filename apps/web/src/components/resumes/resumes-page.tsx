@@ -17,15 +17,31 @@ import {
   wasUploadedHere,
 } from '@/lib/api/documents.ts';
 import { ApiError, isFinal, useApi } from '@/lib/api/index.ts';
+import { saveFile } from '@/lib/save-file.ts';
 import { cn } from '@/lib/utils.ts';
 import { AddResumes } from './add-resumes.tsx';
 import { statusLine } from './document-status.ts';
+import { RenameSheet } from './rename-sheet.tsx';
+
+/** A row's actions that wait for the API in the row itself. */
+type RowAction = 'default' | 'download';
+
+/** What the page does to a row; its button is where focus is when it starts. */
+interface RowHandlers {
+  onMakeDefault: (document: Document) => void;
+  onDownload: (document: Document) => void;
+  onRename: (document: Document, from: HTMLElement) => void;
+  onDelete: (document: Document, from: HTMLElement) => void;
+}
 
 /**
  * The Résumés page (#33 piece 6b, the round 7 prototype's documents-preview Library): every résumé
  * the person keeps, newest first, with its stage or kind and size, the default marked, and how
  * many of the 10 are used. Delete asks first (the file is deleted for good); deleting the default
  * hands it to the newest ready résumé (the API does, in the same step), and the page says which.
+ * A ready one can be made the default or downloaded (the API's 5-minute link); any can be renamed.
+ * A change refused because the résumé changed or went elsewhere reads the list again (one rule),
+ * so trying again uses what is saved now.
  */
 export function ResumesPage({
   checkEvery = CHECK_EVERY_MS,
@@ -58,6 +74,181 @@ export function ResumesPage({
   // Safari doesn't focus a clicked button), or the library's title once its row is gone.
   const opener = useRef<HTMLElement | null>(null);
   const deleted = useRef(false);
+  // The row actions waiting for the API (`<id>:<action>`), and why one didn't go through (shown
+  // in its row until the next action).
+  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
+  const [rowError, setRowError] = useState<{ documentId: string; words: string } | null>(null);
+  // A row's button to focus once the list shows the change (Make default's own button goes).
+  const [focusTo, setFocusTo] = useState<{ documentId: string; action: string } | null>(null);
+  // Rename: the résumé (kept while the sheet slides away), whether it is open, saving, and why
+  // a save failed; focus goes back to its Rename, or to the library's title if it went.
+  const [renaming, setRenaming] = useState<Document | null>(null);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renamePending, setRenamePending] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const renameOpener = useRef<HTMLElement | null>(null);
+  const renameGone = useRef(false);
+
+  useEffect(() => {
+    if (!focusTo) return;
+    const button = globalThis.document.querySelector<HTMLElement>(
+      `[data-document="${focusTo.documentId}"] [data-action="${focusTo.action}"]`,
+    );
+    if (!button) return;
+    button.focus();
+    setFocusTo(null);
+  }, [focusTo]);
+
+  const listKey = documentsQuery(api).queryKey;
+
+  /** The résumé as the list shows it now (its latest version), or as given. */
+  function latest(document: Document): Document {
+    return (
+      queryClient
+        .getQueryData<Document[]>(listKey)
+        ?.find((each) => each.documentId === document.documentId) ?? document
+    );
+  }
+
+  /** Puts a change the API made into the list (a read on its way began before it: dropped). */
+  async function change(update: (list: Document[]) => Document[]) {
+    await queryClient.cancelQueries({ queryKey: listKey });
+    queryClient.setQueryData<Document[]>(listKey, (list) => list && update(list));
+  }
+
+  /** Reads the list again, from the API itself (a file coming in cancels the list's reads). */
+  async function readAgain(): Promise<Document[] | undefined> {
+    const now = await documentsQuery(api)
+      .queryFn()
+      .catch(() => undefined);
+    if (now) await change(() => now);
+    return now;
+  }
+
+  function track(document: Document, action: RowAction, on: boolean) {
+    const key = `${document.documentId}:${action}`;
+    setBusy((was) => {
+      const next = new Set(was);
+      if (on) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }
+
+  /**
+   * A row's action didn't go through: gone elsewhere (the list is read again, focus goes to the
+   * library's title), changed elsewhere (read again, try again), or `fallback`.
+   */
+  async function refused(document: Document, failure: unknown, fallback: string) {
+    if (failure instanceof ApiError && failure.kind === 'not-found') {
+      await readAgain();
+      heading.current?.focus();
+      say(fill(text.said.gone, { name: document.title }));
+      return;
+    }
+    let words = isFinal(failure) ? refusalText(failure) : fallback;
+    if (failure instanceof ApiError && failure.kind === 'conflict') {
+      await readAgain();
+      words = text.failed.changed;
+    }
+    setRowError({ documentId: document.documentId, words });
+    say(words);
+  }
+
+  async function makeDefault(document: Document) {
+    setRowError(null);
+    track(document, 'default', true);
+    try {
+      const made = await api.request<Document>('PUT', `/me/documents/${document.documentId}`, {
+        version: document.version,
+        isDefault: true,
+      });
+      await change((list) =>
+        list.map((each) =>
+          each.documentId === made.documentId
+            ? made
+            : each.isDefault
+              ? { ...each, isDefault: false }
+              : each,
+        ),
+      );
+      setFocusTo({ documentId: made.documentId, action: 'download' });
+      say(fill(text.said.madeDefault, { name: made.title }));
+    } catch (failure) {
+      await refused(document, failure, text.failed.makeDefault);
+    } finally {
+      track(document, 'default', false);
+    }
+  }
+
+  async function download(document: Document) {
+    setRowError(null);
+    track(document, 'download', true);
+    try {
+      const now = await api.request<Document & { downloadUrl?: string }>(
+        'GET',
+        `/me/documents/${document.documentId}`,
+      );
+      if (now.downloadUrl) {
+        saveFile(now.downloadUrl, now.fileName);
+        say(fill(text.said.downloading, { name: now.title }));
+      } else {
+        // No longer ready (or never was, as this list knew it): the list says where it is now.
+        await readAgain();
+        setRowError({ documentId: document.documentId, words: text.failed.notReady });
+        say(text.failed.notReady);
+      }
+    } catch (failure) {
+      await refused(document, failure, text.failed.download);
+    } finally {
+      track(document, 'download', false);
+    }
+  }
+
+  function openRename(document: Document, from: HTMLElement) {
+    renameOpener.current = from;
+    setRowError(null);
+    setRenaming(document);
+    setRenameError(null);
+    setRenameOpen(true);
+  }
+
+  async function rename(name: string) {
+    if (!renaming) return;
+    const now = latest(renaming);
+    if (name === now.title) {
+      setRenameOpen(false);
+      say(fill(text.said.keptName, { name }));
+      return;
+    }
+    setRenameError(null);
+    setRenamePending(true);
+    try {
+      const renamed = await api.request<Document>('PUT', `/me/documents/${now.documentId}`, {
+        version: now.version,
+        title: name,
+      });
+      await change((list) =>
+        list.map((each) => (each.documentId === renamed.documentId ? renamed : each)),
+      );
+      setRenamePending(false);
+      setRenameOpen(false);
+      say(fill(text.said.renamed, { name: now.title, next: renamed.title }));
+    } catch (failure) {
+      setRenamePending(false);
+      if (failure instanceof ApiError && failure.kind === 'not-found') {
+        await readAgain();
+        renameGone.current = true;
+        setRenameOpen(false);
+        say(fill(text.said.gone, { name: now.title }));
+      } else if (failure instanceof ApiError && failure.kind === 'conflict') {
+        await readAgain();
+        setRenameError(text.renameSheet.changed);
+      } else {
+        setRenameError(isFinal(failure) ? refusalText(failure) : text.renameSheet.failed);
+      }
+    }
+  }
 
   /** A file is in: it joins the library at the top, and is followed while the server checks it. */
   async function sent(document: Document) {
@@ -96,6 +287,7 @@ export function ResumesPage({
 
   function ask(document: Document, from: HTMLElement) {
     opener.current = from;
+    setRowError(null);
     setAsked(document);
     setMeaning(question(document, documents.data ?? []));
     setError(null);
@@ -162,7 +354,20 @@ export function ResumesPage({
         }
       >
         {(saved) => (
-          <Library saved={saved} headingRef={heading} onDelete={ask} onSent={sent} say={say} />
+          <Library
+            saved={saved}
+            headingRef={heading}
+            busy={busy}
+            rowError={rowError}
+            handlers={{
+              onMakeDefault: makeDefault,
+              onDownload: download,
+              onRename: openRename,
+              onDelete: ask,
+            }}
+            onSent={sent}
+            say={say}
+          />
         )}
       </QueryRegion>
       <ConfirmSheet
@@ -181,6 +386,19 @@ export function ResumesPage({
           event.preventDefault();
           (deleted.current ? heading.current : opener.current)?.focus();
           deleted.current = false;
+        }}
+      />
+      <RenameSheet
+        open={renameOpen}
+        onOpenChange={setRenameOpen}
+        name={renaming?.title ?? ''}
+        pending={renamePending}
+        error={renameError}
+        onSave={rename}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          (renameGone.current ? heading.current : renameOpener.current)?.focus();
+          renameGone.current = false;
         }}
       />
       <p role="status" className="sr-only">
@@ -218,13 +436,17 @@ function onItsWay(document: Document): boolean {
 function Library({
   saved,
   headingRef,
-  onDelete,
+  busy,
+  rowError,
+  handlers,
   onSent,
   say,
 }: {
   saved: Document[];
   headingRef: Ref<HTMLHeadingElement>;
-  onDelete: (document: Document, from: HTMLElement) => void;
+  busy: ReadonlySet<string>;
+  rowError: { documentId: string; words: string } | null;
+  handlers: RowHandlers;
   /** A file added here is in. */
   onSent: (document: Document) => Promise<void>;
   say: (words: string) => void;
@@ -255,7 +477,13 @@ function Library({
           ) : (
             <ul aria-label={text.listName} className="m-0 grid list-none gap-2 p-0">
               {saved.map((document) => (
-                <Row key={document.documentId} document={document} onDelete={onDelete} />
+                <Row
+                  key={document.documentId}
+                  document={document}
+                  busy={busy}
+                  error={rowError?.documentId === document.documentId ? rowError.words : null}
+                  handlers={handlers}
+                />
               ))}
             </ul>
           )}
@@ -289,17 +517,28 @@ function Count({ count }: { count: number }) {
 
 function Row({
   document,
-  onDelete,
+  busy,
+  error,
+  handlers,
 }: {
   document: Document;
-  onDelete: (document: Document, from: HTMLElement) => void;
+  busy: ReadonlySet<string>;
+  /** Why its last action didn't go through. */
+  error: string | null;
+  handlers: RowHandlers;
 }) {
   const text = copy.resumesPage;
   const unusable = isUnusable(document);
+  const ready = document.status === 'ready';
+  const waiting = (action: RowAction) => busy.has(`${document.documentId}:${action}`);
+  // The résumé's name after each button's word, for everyone who hears the button alone.
+  const named = <span className="sr-only"> {document.title}</span>;
   return (
     <li
+      data-document={document.documentId}
       data-state={document.status}
-      // On a narrow card the actions go under the name, so a long name keeps its width.
+      // On a narrow card the actions go under the name, across the row, so a long name keeps
+      // its width and two actions fit on a line.
       className="grid min-w-0 grid-cols-[34px_minmax(0,1fr)] items-center gap-x-[13px] gap-y-2 rounded-[13px] border border-line bg-surface p-[13px] @md:grid-cols-[34px_minmax(0,1fr)_auto]"
     >
       <span
@@ -325,15 +564,49 @@ function Row({
         {unusable && document.error && (
           <span className="text-[0.8125rem] text-danger-ink">{document.error}</span>
         )}
+        {error && <span className="text-[0.8125rem] font-[650] text-danger-ink">{error}</span>}
       </span>
-      <span className="col-start-2 flex flex-wrap items-center gap-2 @md:col-start-auto @md:justify-end">
+      <span className="col-span-full flex flex-wrap items-center gap-2 @md:col-span-1 @md:justify-end">
+        {ready && !document.isDefault && (
+          <Button
+            variant="outline"
+            data-action="default"
+            pending={waiting('default')}
+            pendingLabel={text.makingDefault}
+            onClick={() => handlers.onMakeDefault(document)}
+          >
+            {text.makeDefault}
+            {named}
+          </Button>
+        )}
+        {ready && (
+          <Button
+            variant="outline"
+            data-action="download"
+            pending={waiting('download')}
+            pendingLabel={text.downloading}
+            onClick={() => handlers.onDownload(document)}
+          >
+            {text.download}
+            {named}
+          </Button>
+        )}
+        <Button
+          variant="outline"
+          data-action="rename"
+          onClick={(event) => handlers.onRename(document, event.currentTarget)}
+        >
+          {text.rename}
+          {named}
+        </Button>
         <Button
           variant="outline"
           className="text-danger-ink"
-          onClick={(event) => onDelete(document, event.currentTarget)}
+          data-action="delete"
+          onClick={(event) => handlers.onDelete(document, event.currentTarget)}
         >
           {text.delete}
-          <span className="sr-only"> {document.title}</span>
+          {named}
         </Button>
       </span>
     </li>

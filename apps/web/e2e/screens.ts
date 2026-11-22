@@ -95,6 +95,17 @@ export const SCREENS: Screen[] = [
       await page.getByRole('button', { name: 'Keep it' }).waitFor();
     },
   },
+  {
+    name: 'resumes-rename',
+    path: '/',
+    open: 'Get started free',
+    still: true,
+    steps: async (page) => {
+      await toResumes(page);
+      await page.getByRole('button', { name: 'Rename Alex_Morgan_Resume' }).click();
+      await page.getByRole('button', { name: 'Save name' }).waitFor();
+    },
+  },
   // Adding on the Résumés page: one in, being checked; one not added (not a PDF or DOCX).
   {
     name: 'resumes-adding',
