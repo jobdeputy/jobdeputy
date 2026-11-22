@@ -37,7 +37,8 @@ flowchart LR
   RW --> CO
   RW -->|tokens| AI[(usage<br/>AI# per month and model)]
   RW -->|one log line per call| LOG[Logs and metrics<br/>daily LLM report]
-  U -->|GET /me/jobs| JAPI[Jobs API] --> J
+  U -->|GET /me/jobs<br/>GET /me/companies| JAPI[Jobs API] --> J
+  JAPI -->|companies| CO
 ```
 
 ## Before the crawl: choosing the AI
@@ -63,7 +64,7 @@ flowchart TD
   C -->|evidence against it:<br/>title, seniority, place, workplace,<br/>type, salary, excluded word| N[not_relevant<br/>hidden, expires in 7 days]
   K --> R[Rank each company's candidates:<br/>AI score if known, role priority, date]
   K2 --> R
-  R --> T{Within the company limit?<br/>default 10}
+  R --> T{Within the company limit?<br/>default 3}
   T -->|yes| S[limitState: counted<br/>shown]
   T -->|no| O[limitState: over_limit<br/>hidden, expires in 7 days]
   S --> D[Read missing descriptions<br/>for the top 50, T08d3]
@@ -147,6 +148,8 @@ stateDiagram-v2
 ```
 
 `GET /me/jobs` shows **counted** jobs by default; `?view=all` shows everything. A job the user acted on never expires.
+
+`GET /me/companies` (#49) shows the same counted jobs **by company**: it reads the user's `COMPANY#` items, ranks the companies by their best job (the same order the worker ranks a company's jobs: AI score, role priority, newest), pages them (10 at a time, an opaque cursor), and batch-reads that page's jobs. Jobs hidden or closed since are left out. At most 3 jobs per company by default (the admin's `companyJobsDefault`, [runbook](../runbooks/crawl-limits.md)); a lower limit applies from each company's next crawl.
 
 ## Safety rules around the model
 

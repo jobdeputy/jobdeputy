@@ -136,13 +136,16 @@ describe('jobs (deployed)', () => {
     const mine = await callApi(api, 'GET', 'me/jobs', user.accessToken);
     const jobId = mine.body.jobs[0]?.jobId as string;
     expect(jobId).toMatch(/^[0-9a-f]{32}$/);
-    const [peek, theirs] = await Promise.all([
+    const [peek, theirs, theirCompanies] = await Promise.all([
       callApi(api, 'GET', `me/jobs/${jobId}`, other.accessToken),
       callApi(api, 'GET', 'me/jobs', other.accessToken),
+      callApi(api, 'GET', 'me/companies', other.accessToken),
     ]);
     expect(peek.status).toBe(404);
     expect(theirs.body.jobs).toEqual([]);
+    expect(theirCompanies.body).toEqual({ companies: [] });
     expect((await callApi(api, 'GET', 'me/jobs', undefined)).status).toBe(401);
+    expect((await callApi(api, 'GET', 'me/companies', undefined)).status).toBe(401);
   });
 
   // T07c. The test site holds no state, so the page cannot drop a job between crawls:
@@ -256,5 +259,14 @@ describe('jobs (deployed)', () => {
     expect(Date.parse(backend.expiresAt) - Date.now()).toBeGreaterThan(6 * 86_400_000);
     // biome-ignore lint/suspicious/noExplicitAny: tests read arbitrary JSON responses.
     expect(all.find((j: any) => j.title === 'Data Engineer')).not.toHaveProperty('expiresAt');
+
+    // #49: the same jobs by company: one company, with only its shown job.
+    const companies = await callApi(api, 'GET', 'me/companies', token);
+    expect(companies.status, JSON.stringify(companies.body)).toBe(200);
+    expect(
+      // biome-ignore lint/suspicious/noExplicitAny: tests read arbitrary JSON responses.
+      companies.body.companies.map((c: any) => c.jobs.map((j: any) => j.title)),
+    ).toEqual([['Data Engineer']]);
+    expect(companies.body).not.toHaveProperty('nextCursor');
   });
 });

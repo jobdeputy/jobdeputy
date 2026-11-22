@@ -169,6 +169,9 @@ sequenceDiagram
   User->>API: GET /me/jobs (shown) or ?view=all
   API->>DB: Query jobs by userId (paged)
   API-->>User: jobs with title, company, places, fit, and why
+  User->>API: GET /me/companies (#49)
+  API->>DB: Query usage COMPANY# items, then BatchGet the page's jobs
+  API-->>User: companies by their best job, each with its shown jobs ranked
 ```
 
 ## When things go wrong

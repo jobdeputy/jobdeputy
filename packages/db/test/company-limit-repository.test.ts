@@ -1,5 +1,5 @@
 import type { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { GetCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, type QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { describe, expect, it, vi } from 'vitest';
 import { CompanyLimitRepository, ShownConflictError } from '../src/index.js';
 import { fakeTable } from './fake-ddb.js';
@@ -83,5 +83,41 @@ describe('CompanyLimitRepository (T08c)', () => {
       'Usage',
     ).release(USER, 'k', []);
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it('listShown (#49) lists every company with shown jobs, and skips empty ones', async () => {
+    const t = fakeTable();
+    const repo = new CompanyLimitRepository(t.client, 'Usage', () => NOW);
+    expect(await repo.listShown(USER)).toEqual([]);
+    await repo.put(USER, 'greenhouse:acme', { j1: { p: 50, s: 80 } }, 0);
+    await repo.put(USER, 'lever:globex', { j2: { p: 60 } }, 0);
+    await repo.put(USER, 'lever:empty', {}, 0);
+    await repo.put('someone-else', 'greenhouse:initech', { j3: { p: 1 } }, 0);
+    expect(
+      (await repo.listShown(USER)).sort((a, b) => a.companyKey.localeCompare(b.companyKey)),
+    ).toEqual([
+      { companyKey: 'greenhouse:acme', shown: { j1: { p: 50, s: 80 } } },
+      { companyKey: 'lever:globex', shown: { j2: { p: 60 } } },
+    ]);
+  });
+
+  it('listShown reads every page of a long list, only the fields it needs', async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({
+        Items: [{ sk: 'COMPANY#a', shown: { j1: { p: 1 } } }],
+        LastEvaluatedKey: { userId: USER, sk: 'COMPANY#a' },
+      })
+      .mockResolvedValueOnce({ Items: [{ sk: 'COMPANY#b', shown: { j2: { p: 2 } } }] });
+    const repo = new CompanyLimitRepository({ send } as unknown as DynamoDBDocumentClient, 'Usage');
+    expect((await repo.listShown(USER)).map((c) => c.companyKey)).toEqual(['a', 'b']);
+    const [first, second] = send.mock.calls.map((c) => (c[0] as QueryCommand).input);
+    expect(first).toMatchObject({
+      KeyConditionExpression: 'userId = :u AND begins_with(sk, :p)',
+      ExpressionAttributeValues: { ':u': USER, ':p': 'COMPANY#' },
+      ProjectionExpression: 'sk, shown',
+    });
+    expect(first).not.toHaveProperty('ExclusiveStartKey');
+    expect(second).toMatchObject({ ExclusiveStartKey: { userId: USER, sk: 'COMPANY#a' } });
   });
 });

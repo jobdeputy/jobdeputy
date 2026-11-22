@@ -603,10 +603,12 @@ export class CellStack extends Stack {
       entry: 'apps/api/src/jobs.ts',
       timeout: Duration.seconds(10),
       removalPolicy,
-      environment: { JOBS_TABLE_NAME: jobsTable.tableName },
+      environment: { JOBS_TABLE_NAME: jobsTable.tableName, USAGE_TABLE_NAME: usageTable.tableName },
     });
     // Read-only for now: the user's own changes to jobs come with the interface (T09).
-    jobsTable.grant(jobsApi.fn, 'dynamodb:Query', 'dynamodb:GetItem');
+    // #49: GET /me/companies reads the `COMPANY#` usage items, then the page's jobs in a batch.
+    jobsTable.grant(jobsApi.fn, 'dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:BatchGetItem');
+    usageTable.grant(jobsApi.fn, 'dynamodb:Query');
 
     const httpApi = new HttpApi(this, 'HttpApi', {
       apiName: id,
@@ -747,6 +749,11 @@ export class CellStack extends Stack {
     });
 
     const jobsIntegration = new HttpLambdaIntegration('JobsIntegration', jobsApi.fn);
+    httpApi.addRoutes({
+      path: '/me/companies',
+      methods: [HttpMethod.GET],
+      integration: jobsIntegration,
+    });
     httpApi.addRoutes({
       path: '/me/jobs',
       methods: [HttpMethod.GET],
