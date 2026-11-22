@@ -128,14 +128,21 @@ describe('crawl pipeline (T06b)', () => {
     expect(api.flatMap((s) => [s.Action].flat()).some((a) => a.startsWith('s3:'))).toBe(false);
   });
 
-  it('lets the jobs API only read the jobs table (T07b)', () => {
+  it('lets the jobs API only read the jobs table and the companies it shows (T07b, #49)', () => {
     const jobs = statementsFor('JobsApiFn');
     const dynamo = jobs.filter((s) => [s.Action].flat().some((a) => a.startsWith('dynamodb:')));
     expect(dynamo.flatMap((s) => [s.Action].flat()).sort()).toEqual([
+      'dynamodb:BatchGetItem',
+      'dynamodb:GetItem',
+      'dynamodb:Query',
+      'dynamodb:Query',
+    ]);
+    expect(actionsOn(jobs, 'JobsTable')).toEqual([
+      'dynamodb:BatchGetItem',
       'dynamodb:GetItem',
       'dynamodb:Query',
     ]);
-    expect(actionsOn(jobs, 'JobsTable')).toEqual(['dynamodb:GetItem', 'dynamodb:Query']);
+    expect(actionsOn(jobs, 'UsageTable')).toEqual(['dynamodb:Query']);
     expect(jobs.flatMap((s) => [s.Action].flat()).some((a) => a.startsWith('s3:'))).toBe(false);
   });
 

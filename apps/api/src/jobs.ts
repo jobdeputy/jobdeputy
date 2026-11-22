@@ -1,12 +1,16 @@
-import { documentClient, type Job, JobRepository } from '@jobdeputy/db';
+import { CompanyLimitRepository, documentClient, type Job, JobRepository } from '@jobdeputy/db';
 import {
   callerFromEvent,
+  companiesCursor,
+  companiesPageQuery,
+  compareRank,
   createLogger,
   type HttpResponse,
   jobId as jobIdSchema,
   jobsPageQuery,
   json,
   problem,
+  type RankedJob,
   validationProblem,
 } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, Context } from 'aws-lambda';
@@ -14,13 +18,20 @@ import type { APIGatewayProxyEventV2WithJWTAuthorizer, Context } from 'aws-lambd
 const logger = createLogger('api-jobs');
 
 export interface JobsDeps {
-  repo: Pick<JobRepository, 'list' | 'get'>;
+  repo: Pick<JobRepository, 'list' | 'get' | 'getMany'>;
+  /** #49: each company's shown jobs (`usage` `COMPANY#` items), read-only. */
+  companies: Pick<CompanyLimitRepository, 'listShown'>;
 }
 
 function defaultDeps(): JobsDeps {
-  const { JOBS_TABLE_NAME } = process.env;
+  const { JOBS_TABLE_NAME, USAGE_TABLE_NAME } = process.env;
   if (!JOBS_TABLE_NAME) throw new Error('JOBS_TABLE_NAME must be set');
-  return { repo: new JobRepository(documentClient(), JOBS_TABLE_NAME) };
+  if (!USAGE_TABLE_NAME) throw new Error('USAGE_TABLE_NAME must be set');
+  const client = documentClient();
+  return {
+    repo: new JobRepository(client, JOBS_TABLE_NAME),
+    companies: new CompanyLimitRepository(client, USAGE_TABLE_NAME),
+  };
 }
 
 /** What a list shows: everything but the description (which can be long) and internal fields. */
@@ -86,6 +97,64 @@ export function jobView(j: Job) {
   };
 }
 
+const encodeCursor = (best: RankedJob): string =>
+  Buffer.from(JSON.stringify(best)).toString('base64url');
+
+function decodeCursor(cursor: string): unknown {
+  try {
+    return JSON.parse(Buffer.from(cursor, 'base64url').toString());
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * #49: the caller's companies, the one with the best job first, each with its shown jobs
+ * (at most the per-company limit) ranked as the crawl ranked them. Read from the companies'
+ * `COMPANY#` items, then one batch read of the page's jobs. Jobs hidden or closed since are
+ * left out, so a page can be short and still have a next one.
+ */
+async function companiesPage(
+  userId: string,
+  limit: number,
+  after: RankedJob | undefined,
+  deps: JobsDeps,
+) {
+  const ranked = (await deps.companies.listShown(userId))
+    .map((c) => {
+      const jobs = Object.entries(c.shown)
+        .map(([jobId, entry]) => ({ jobId, ...entry }))
+        .sort(compareRank);
+      return { companyKey: c.companyKey, jobs, best: jobs[0] as RankedJob };
+    })
+    .sort((a, b) => compareRank(a.best, b.best));
+  const rest = after ? ranked.filter((c) => compareRank(after, c.best) < 0) : ranked;
+  const page = rest.slice(0, limit);
+  const found = new Map(
+    (
+      await deps.repo.getMany(
+        userId,
+        page.flatMap((c) => c.jobs.map((j) => j.jobId)),
+      )
+    ).map((j) => [j.jobId, j]),
+  );
+  const companies = page.flatMap((c) => {
+    const jobs = c.jobs
+      .map((r) => found.get(r.jobId))
+      .filter((j): j is Job => j !== undefined && j.closedAt === undefined)
+      .map(jobSummary)
+      .filter((j) => !j.hidden);
+    if (jobs.length === 0) return [];
+    const companyName = jobs.find((j) => j.companyName)?.companyName;
+    return [{ companyKey: c.companyKey, ...(companyName ? { companyName } : {}), jobs }];
+  });
+  const last = page.at(-1);
+  return {
+    companies,
+    ...(rest.length > limit && last ? { nextCursor: encodeCursor(last.best) } : {}),
+  };
+}
+
 type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
 
 /**
@@ -108,6 +177,19 @@ export async function route(event: Event, deps: JobsDeps): Promise<HttpResponse>
         jobs: page.items.map(jobSummary),
         ...(page.next !== undefined ? { nextCursor: page.next } : {}),
       });
+    }
+    case 'GET /me/companies': {
+      const query = companiesPageQuery.safeParse(event.queryStringParameters ?? {});
+      if (!query.success) return validationProblem(query.error, requestId);
+      const { limit, cursor } = query.data;
+      let after: RankedJob | undefined;
+      if (cursor !== undefined) {
+        const decoded = companiesCursor.safeParse(decodeCursor(cursor));
+        if (!decoded.success) return validationProblem(decoded.error, requestId);
+        const { jobId, p, t, s } = decoded.data;
+        after = { jobId, p, ...(t !== undefined ? { t } : {}), ...(s !== undefined ? { s } : {}) };
+      }
+      return json(200, await companiesPage(caller.userId, limit, after, deps));
     }
     case 'GET /me/jobs/{jobId}': {
       const id = jobIdSchema.safeParse(event.pathParameters?.jobId);

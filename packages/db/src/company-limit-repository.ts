@@ -1,5 +1,5 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { isConditionFailure } from './client.js';
 
 /**
@@ -12,6 +12,12 @@ export interface ShownJobs {
   shown: Record<string, { p: number; t?: string; s?: number }>;
   /** 0 when the item does not exist yet. */
   version: number;
+}
+
+/** One company's shown jobs, as `GET /me/companies` reads them (#49). */
+export interface CompanyShown {
+  companyKey: string;
+  shown: ShownJobs['shown'];
 }
 
 export class ShownConflictError extends Error {
@@ -99,5 +105,33 @@ export class CompanyLimitRepository {
       // Nothing shown for this company yet: nothing to free.
       if (!isConditionFailure(error)) throw error;
     }
+  }
+
+  /**
+   * #49: every company with shown jobs, in key order (the caller ranks them). One item per
+   * company the user crawled, each at most the per-company maximum, so this stays small;
+   * eventually consistent is enough for a list.
+   */
+  async listShown(userId: string): Promise<CompanyShown[]> {
+    const companies: CompanyShown[] = [];
+    let start: Record<string, unknown> | undefined;
+    do {
+      const res = await this.client.send(
+        new QueryCommand({
+          TableName: this.table,
+          KeyConditionExpression: 'userId = :u AND begins_with(sk, :p)',
+          ExpressionAttributeValues: { ':u': userId, ':p': 'COMPANY#' },
+          ProjectionExpression: 'sk, shown',
+          ...(start ? { ExclusiveStartKey: start } : {}),
+        }),
+      );
+      for (const item of res.Items ?? []) {
+        const shown = (item.shown as ShownJobs['shown'] | undefined) ?? {};
+        if (Object.keys(shown).length === 0) continue;
+        companies.push({ companyKey: String(item.sk).slice('COMPANY#'.length), shown });
+      }
+      start = res.LastEvaluatedKey;
+    } while (start);
+    return companies;
   }
 }

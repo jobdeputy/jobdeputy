@@ -143,6 +143,23 @@ export const jobsPageQuery = z.strictObject({
   view: z.enum(['shown', 'all']).default('shown'),
 });
 
+/**
+ * #49: `GET /me/companies` pages companies by their best job. The cursor is opaque to clients
+ * (base64url JSON of the last company's best job, see `companiesCursor`).
+ */
+export const companiesPageQuery = z.strictObject({
+  limit: z.coerce.number().int().min(1).max(10).default(10),
+  cursor: z.string().min(1).max(400).optional(),
+});
+
+/** The decoded cursor: the rank of the last company's best job. */
+export const companiesCursor = z.strictObject({
+  jobId,
+  p: z.number().int(),
+  t: z.string().max(64).optional(),
+  s: z.number().int().optional(),
+});
+
 /** Queue message from the crawls Pipe: the crawl's key only. */
 export const crawlMessage = z.object({
   userId: z.string().regex(/^[0-9a-f-]{36}$/),
@@ -163,8 +180,8 @@ export const crawlLimitsConfig = z
     /** T08b3 (0009): free platform AI runs per user (one run = one crawl's AI work). */
     platformRunsPerWeek: z.number().int().min(0).max(100).default(1),
     platformRunsPerMonth: z.number().int().min(0).max(400).default(4),
-    /** T08c: jobs shown per company (the rest are `over_limit`); a user may choose fewer. */
-    companyJobsDefault: z.number().int().min(1).max(100).default(10),
+    /** T08c: jobs shown per company (the rest are `over_limit`); a user may choose up to the max. #49: 3. */
+    companyJobsDefault: z.number().int().min(1).max(100).default(3),
     companyJobsMax: z.number().int().min(1).max(100).default(10),
     /** T08c: days before a hidden job (not relevant, over the limit, closed) is deleted. */
     jobExpiryDays: z.number().int().min(1).max(90).default(7),
@@ -190,7 +207,7 @@ export const DEFAULT_CRAWL_LIMITS: CrawlLimitsConfig = {
   maxActive: 1,
   platformRunsPerWeek: 1,
   platformRunsPerMonth: 4,
-  companyJobsDefault: 10,
+  companyJobsDefault: 3,
   companyJobsMax: 10,
   jobExpiryDays: 7,
   relevanceMaxJobs: 50,

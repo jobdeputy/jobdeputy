@@ -79,7 +79,7 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `profile.ts` | profile, search preferences, target roles |
 | `documents.ts` | résumé upload (presigned POST), list, rename, default, delete |
 | `crawls.ts` | `POST/GET /me/crawls` (with the crawl's `aiSource`; counts the free platform run, T08b3), `GET /me/crawls/{id}`, `/me/crawl-settings` (daily and, T08c, jobs-per-company limits); replaces stale active crawls |
-| `jobs.ts` | `GET /me/jobs` (shown jobs, or `view=all`, with each job's `fit` and why), `GET /me/jobs/{jobId}` (read-only) |
+| `jobs.ts` | `GET /me/jobs` (shown jobs, or `view=all`, with each job's `fit` and why), `GET /me/jobs/{jobId}` (read-only), `GET /me/companies` (#49: companies by their best job, each with its shown jobs ranked; from `usage` `COMPANY#`) |
 | `ai.ts` | `/me/ai-keys` (save with consent, list, check, delete; encrypts the key with KMS), `/me/ai-settings` (T08b2), `GET /me/ai-usage` (T08b3) |
 | `audit.ts` | `GET /me/audit` |
 | `account-guard.ts` | 410 on writes while a deletion is pending |

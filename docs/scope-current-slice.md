@@ -9,7 +9,7 @@ The rules are agreed in [0013](decisions/0013-apply-flow-rules.md); the extensio
 ## Already built (the slice before this one)
 
 - Profile backend: basic details, target roles, résumés (upload, malware scan, default résumé). Profile and Résumés pages in the web app (#33, parked while this slice runs; its search preferences come later).
-- A link → asynchronous crawl → jobs extracted from job-board feeds and schema.org → a code relevance filter and an LLM fit score → at most N jobs shown per company (T08c, `companyJobsDefault`, now 10) → stored in the `jobs` table.
+- A link → asynchronous crawl → jobs extracted from job-board feeds and schema.org → a code relevance filter and an LLM fit score → at most N jobs shown per company (T08c, `companyJobsDefault`, 3 since #49) → stored in the `jobs` table.
 - The platform AI model and the user's own keys ([0009](decisions/0009-llm-architecture-and-own-keys.md), [0010](decisions/0010-platform-ai-model.md)).
 
 ## User flow
@@ -28,13 +28,13 @@ Each milestone is one GitHub issue, run as research → align → implement, in 
 | # | Milestone | Decides in its own issue |
 |---|---|---|
 | 0 | This scope and the decision records (#47) | — |
-| 1 | Link → top jobs UI: grouped by company, 3 per company (default changes from 10), ranked within the company | The jobs page from the prototype (`jobs-preview.html`); the ranking signal shown |
-| 2 | Lists of many companies: GitHub lists and public job boards | Which sources for the US launch; each source's terms and robots rules; Naukri waits for the India cell and a terms and anti-bot check |
-| 3 | Tailored résumé (+ cover letter) and the ATS match score | How the score is computed; the résumé's output format (PDF, DOCX) and template; where versions are stored (new tables need a decision record, [0006](decisions/0006-data-model.md)); the re-tailor loop within [0002](decisions/0002-llm-loop-and-token-budget.md)'s cap |
-| 4 | Applications: table, manual apply, tracker, cooldown | The `applications` data model; the statuses the user can set (`applications-preview.html`) |
-| 5 | Application answers: a profile section for the questions forms ask (work authorisation, sponsorship, notice period, links, demographic questions the user may decline) | Which answers are stored, and which are never guessed |
-| 6 | Chrome extension: sign-in, read the API, autofill Greenhouse first, then more ATSs, record the application | How the extension signs in; its permissions; which ATSs follow Greenhouse; store publishing |
-| 7 | Other browsers (Edge, Firefox, Safari) | Order and packaging |
+| 1 | Link → top jobs UI: grouped by company, 3 per company (default changes from 10), ranked within the company (#49) | The jobs page from the prototype (`jobs-preview.html`); the ranking signal shown |
+| 2 | Lists of many companies: GitHub lists and public job boards (#50) | Which sources for the US launch; each source's terms and robots rules; Naukri waits for the India cell and a terms and anti-bot check |
+| 3 | Tailored résumé (+ cover letter) and the ATS match score (#51) | How the score is computed; the résumé's output format (PDF, DOCX) and template; where versions are stored (new tables need a decision record, [0006](decisions/0006-data-model.md)); the re-tailor loop within [0002](decisions/0002-llm-loop-and-token-budget.md)'s cap |
+| 4 | Applications: table, manual apply, tracker, cooldown (#52) | The `applications` data model; the statuses the user can set (`applications-preview.html`) |
+| 5 | Application answers: a profile section for the questions forms ask (work authorisation, sponsorship, notice period, links, demographic questions the user may decline) (#53) | Which answers are stored, and which are never guessed |
+| 6 | Chrome extension: sign-in, read the API, autofill Greenhouse first, then more ATSs, record the application (#54) | How the extension signs in; its permissions; which ATSs follow Greenhouse; store publishing |
+| 7 | Other browsers (Edge, Firefox, Safari) (#55) | Order and packaging |
 
 ## In scope
 

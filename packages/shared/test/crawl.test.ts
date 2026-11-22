@@ -183,9 +183,9 @@ describe('LLM scoring limits (T08d)', () => {
 });
 
 describe('jobs per company and expiry (T08c)', () => {
-  it('a setting saved before T08c gets 10 per company and 7 days', () => {
+  it('a setting without them gets 3 per company (#49), up to 10, and 7 days', () => {
     expect(crawlLimitsConfig.parse({ dailyDefault: 20, dailyMax: 50 })).toMatchObject({
-      companyJobsDefault: 10,
+      companyJobsDefault: 3,
       companyJobsMax: 10,
       jobExpiryDays: 7,
     });

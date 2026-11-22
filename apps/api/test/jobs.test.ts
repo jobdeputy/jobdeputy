@@ -1,4 +1,4 @@
-import type { Job } from '@jobdeputy/db';
+import type { CompanyShown, Job } from '@jobdeputy/db';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
 import { type JobsDeps, route } from '../src/jobs.js';
@@ -51,13 +51,15 @@ const job = (over: Partial<Job> = {}): Job => ({
   ...over,
 });
 
-function deps(over: Partial<JobsDeps['repo']> = {}) {
+function deps(over: Partial<JobsDeps['repo']> = {}, shown: CompanyShown[] = []) {
   const repo = {
     list: vi.fn(async () => ({ items: [job()], next: J1 })),
     get: vi.fn(async (): Promise<Job | undefined> => job()),
+    getMany: vi.fn(async (): Promise<Job[]> => []),
     ...over,
   };
-  return { repo } satisfies JobsDeps;
+  const companies = { listShown: vi.fn(async () => shown) };
+  return { repo, companies } satisfies JobsDeps;
 }
 
 describe('GET /me/jobs', () => {
@@ -194,9 +196,113 @@ describe('GET /me/jobs/{jobId}', () => {
   });
 });
 
+describe('GET /me/companies (#49)', () => {
+  const id = (c: string) => c.repeat(32);
+  // Acme's best is scored 90; Globex's best 95; Initech has no score (scored jobs first).
+  const shown: CompanyShown[] = [
+    {
+      companyKey: 'greenhouse:acme',
+      shown: { [id('a')]: { p: 50, s: 70 }, [id('b')]: { p: 50, s: 90 } },
+    },
+    { companyKey: 'lever:globex', shown: { [id('c')]: { p: 10, s: 95 } } },
+    { companyKey: 'ashby:initech', shown: { [id('d')]: { p: 100, t: '2026-11-01' } } },
+  ];
+  const stored = [
+    job({ jobId: id('a'), title: 'A', companyKey: 'greenhouse:acme' }),
+    job({ jobId: id('b'), title: 'B', companyKey: 'greenhouse:acme' }),
+    job({ jobId: id('c'), title: 'C', companyKey: 'lever:globex', companyName: 'Globex' }),
+    (({ companyName: _, ...rest }) => rest)(
+      job({ jobId: id('d'), title: 'D', companyKey: 'ashby:initech' }),
+    ),
+  ];
+  const getMany = vi.fn(async (_u: string, ids: string[]) =>
+    stored.filter((j) => ids.includes(j.jobId)),
+  );
+  const call = async (query?: Record<string, string>, d = deps({ getMany }, shown)) => {
+    const res = await route(event('GET /me/companies', { queryStringParameters: query }), d);
+    return { status: res.statusCode, body: JSON.parse(res.body as string), d };
+  };
+  const view = (body: {
+    companies: { companyKey: string; companyName?: string; jobs: { title: string }[] }[];
+  }) =>
+    body.companies.map(
+      (c) => `${c.companyKey} ${c.companyName ?? '-'}: ${c.jobs.map((j) => j.title).join(',')}`,
+    );
+
+  it("lists the caller's companies by their best job, each with its jobs ranked", async () => {
+    const { status, body, d } = await call();
+    expect(status).toBe(200);
+    expect(view(body)).toEqual([
+      'lever:globex Globex: C',
+      'greenhouse:acme Acme: B,A',
+      'ashby:initech -: D',
+    ]);
+    expect(body).not.toHaveProperty('nextCursor');
+    // Summaries only: no descriptions or internal fields.
+    expect(body.companies[0].jobs[0]).not.toHaveProperty('description');
+    expect(body.companies[0].jobs[0]).not.toHaveProperty('dedupeKey');
+    expect(d.companies.listShown).toHaveBeenCalledWith('user-a');
+    expect(getMany).toHaveBeenCalledWith('user-a', [id('c'), id('b'), id('a'), id('d')]);
+  });
+
+  it("pages with an opaque cursor, reading only the page's jobs", async () => {
+    const first = await call({ limit: '2' });
+    expect(view(first.body)).toEqual(['lever:globex Globex: C', 'greenhouse:acme Acme: B,A']);
+    expect(typeof first.body.nextCursor).toBe('string');
+    getMany.mockClear();
+    const second = await call({ limit: '2', cursor: first.body.nextCursor });
+    expect(view(second.body)).toEqual(['ashby:initech -: D']);
+    expect(second.body).not.toHaveProperty('nextCursor');
+    expect(getMany).toHaveBeenCalledWith('user-a', [id('d')]);
+  });
+
+  it('leaves out jobs hidden, closed or deleted since, and companies left with none', async () => {
+    const gone = vi.fn(async () => [
+      job({
+        jobId: id('a'),
+        title: 'A',
+        filter: {
+          state: 'not_relevant',
+          roleIds: [],
+          reasons: ['llm_low_score'],
+          priority: 0,
+          version: 1,
+        },
+      }),
+      job({ jobId: id('b'), title: 'B', closedAt: '2026-11-20T00:00:00.000Z' }),
+      job({
+        jobId: id('c'),
+        title: 'C',
+        companyKey: 'lever:globex',
+        limitState: 'over_limit',
+      }),
+    ]);
+    const { body } = await call({}, deps({ getMany: gone }, shown));
+    expect(body.companies).toEqual([]);
+  });
+
+  it('is empty before any crawl', async () => {
+    const { body } = await call({}, deps({}, []));
+    expect(body).toEqual({ companies: [] });
+  });
+
+  it('refuses a bad limit or cursor (400)', async () => {
+    for (const query of [
+      { limit: '0' },
+      { limit: '11' },
+      { cursor: 'not-base64-json' },
+      { cursor: Buffer.from('{"jobId":"x","p":1}').toString('base64url') },
+      { other: '1' },
+    ]) {
+      expect((await call(query)).status, JSON.stringify(query)).toBe(400);
+    }
+  });
+});
+
 describe('access', () => {
   it('401 without a caller; 404 for an unknown route', async () => {
     expect((await route(event('GET /me/jobs', {}, null), deps())).statusCode).toBe(401);
+    expect((await route(event('GET /me/companies', {}, null), deps())).statusCode).toBe(401);
     expect((await route(event('DELETE /me/jobs/{jobId}'), deps())).statusCode).toBe(404);
   });
 });
