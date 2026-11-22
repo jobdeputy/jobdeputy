@@ -1,6 +1,8 @@
 import { MAX_DOCUMENTS } from '@jobdeputy/shared/documents';
 import { type DragEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
+import { AlertIcon, DocumentIcon, UploadIcon } from '@/components/icons.tsx';
+import { stageLine, statusLine } from '@/components/resumes/document-status.ts';
 import { Button } from '@/components/ui/button.tsx';
 import { Progress } from '@/components/ui/progress.tsx';
 import { QueryRegion } from '@/components/ui/query-region.tsx';
@@ -484,95 +486,4 @@ function uploadRefusal(failure: unknown, starting: boolean): string {
   if (!starting && failure.kind === 'invalid') return text.uploadRefused;
   if (isFinal(failure) || failure.kind === 'too-many') return refusalText(failure);
   return text.uploadFailed;
-}
-
-/** Under a résumé's name: its stage while the server checks it, its kind and size once ready. */
-function statusLine(document: Document): string {
-  const text = copy.setUp.resume;
-  if (document.status === 'pending') return stageLine('checking');
-  if (document.status === 'processing') return stageLine('reading');
-  if (document.status !== 'ready') return text.notUsed;
-  const format = document.format.toUpperCase();
-  return document.sizeBytes === undefined
-    ? format
-    : fill(text.readyLine, { format, size: sizeText(document.sizeBytes) });
-}
-
-const STAGES = ['uploading', 'checking', 'reading'] as const;
-
-function stageLine(stage: (typeof STAGES)[number]): string {
-  const text = copy.setUp.resume;
-  return fill(text.stage, {
-    stage: text.stages[stage],
-    current: String(STAGES.indexOf(stage) + 1),
-  });
-}
-
-const kilobytes = new Intl.NumberFormat(copy.locale, {
-  style: 'unit',
-  unit: 'kilobyte',
-  maximumFractionDigits: 0,
-});
-const megabytes = new Intl.NumberFormat(copy.locale, {
-  style: 'unit',
-  unit: 'megabyte',
-  maximumFractionDigits: 1,
-});
-
-/** A file's size as people read it: "180 kB", "2.4 MB" (in 1,024s, as the 5 MB limit counts). */
-export function sizeText(bytes: number): string {
-  return bytes < 1024 * 1024
-    ? kilobytes.format(Math.max(1, Math.round(bytes / 1024)))
-    : megabytes.format(bytes / (1024 * 1024));
-}
-
-/** The prototype's line icons (24 viewBox, 1.75 stroke). */
-function UploadIcon() {
-  return (
-    <Icon>
-      <path d="M12 15.5v-11M7.5 9 12 4.5 16.5 9M4.5 14.5V18a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3.5" />
-    </Icon>
-  );
-}
-
-function DocumentIcon() {
-  return (
-    <Icon className="size-5">
-      <path d="M14 3.5H7.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8z" />
-      <path d="M14 3.5V8h4.5M9 12.5h6M9 16h4" />
-    </Icon>
-  );
-}
-
-function AlertIcon() {
-  return (
-    <Icon className="size-5">
-      <circle cx="12" cy="12" r="8.5" />
-      <path d="M12 7.5V13M12 16.5h.01" />
-    </Icon>
-  );
-}
-
-function Icon({
-  className = 'size-6',
-  children,
-}: {
-  className?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <svg
-      aria-hidden="true"
-      focusable="false"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      {children}
-    </svg>
-  );
 }

@@ -191,10 +191,19 @@ export function createFakeApi({
       const document = myDocuments.find(({ view }) => view.documentId === documentId);
       if (document && method === 'GET') return documentView(document) as T;
       if (document && method === 'DELETE') {
-        documents.set(
-          me,
-          myDocuments.filter((each) => each !== document),
-        );
+        const left = myDocuments.filter((each) => each !== document);
+        documents.set(me, left);
+        // As the API: the default hands over to the newest ready one (none ready: no default).
+        if (document.view.isDefault) {
+          const next = left.findLast((each) => documentView(each).status === 'ready');
+          if (next) {
+            next.view = {
+              ...next.view,
+              isDefault: true,
+              version: (next.view.version as number) + 1,
+            };
+          }
+        }
         return undefined as T;
       }
       const roleId = /^\/me\/roles\/([^/]+)$/.exec(path)?.[1];

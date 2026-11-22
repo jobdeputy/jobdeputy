@@ -353,40 +353,90 @@ export class DocumentRepository {
 
   /**
    * Deletes and returns the item (so its files can be removed), with its audit entry in
-   * the same transaction. Undefined if missing.
+   * the same transaction. Undefined if missing. Deleting the default hands the default on to
+   * the newest ready document (none left ready: no default), in the same transaction (#33).
+   * A condition that failed because the document changed meanwhile (it became or stopped
+   * being the default, or the successor went) is read again, at most 3 times.
    */
   async delete(
     userId: string,
     documentId: string,
     audit: AuditWrite,
   ): Promise<Document | undefined> {
-    const current = await this.get(userId, documentId);
-    if (!current) return undefined;
-    try {
-      await transactWrite(this.client, {
-        TransactItems: [
-          {
-            Delete: {
-              TableName: this.tableName,
-              Key: { userId, documentId },
-              ConditionExpression: 'attribute_exists(userId)',
+    const usage = this.usage();
+    for (let round = 0; round < 3; round += 1) {
+      let current = await this.get(userId, documentId);
+      if (!current) return undefined;
+      let handOver: { seen: string | undefined; next: Document | undefined } | undefined;
+      if (current.isDefault) {
+        // The marker FIRST, then the list (as in setDefault): a switch that lands after the
+        // marker read fails the marker's condition, so the successor is never picked from a
+        // list older than the marker.
+        const seen = (await getUsageCounter(this.client, usage, userId, DOCUMENTS_SK))
+          .defaultDocumentId;
+        const all = await this.list(userId);
+        current = all.find((d) => d.documentId === documentId);
+        if (!current) return undefined;
+        if (current.isDefault) {
+          const next = all
+            .filter((d) => d.documentId !== documentId && d.status === 'ready')
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+          handOver = { seen, next };
+        }
+      }
+      const now = this.now().toISOString();
+      const next = handOver?.next;
+      try {
+        await transactWrite(this.client, {
+          TransactItems: [
+            {
+              Delete: {
+                TableName: this.tableName,
+                Key: { userId, documentId },
+                // Still (not) the default, as read: a switch meanwhile is read again.
+                ConditionExpression: 'attribute_exists(userId) AND isDefault = :was',
+                ExpressionAttributeValues: { ':was': current.isDefault },
+              },
             },
-          },
-          auditPut(audit, userId, this.now()),
-          countDown(
-            this.usage(),
-            userId,
-            DOCUMENTS_SK,
-            this.now().toISOString(),
-            current.isDefault,
-          ),
-        ],
-      });
-      return current;
-    } catch (error) {
-      if (cancelledAt(error, 0)) return undefined;
-      throw error;
+            auditPut(audit, userId, this.now()),
+            countDown(
+              usage,
+              userId,
+              DOCUMENTS_SK,
+              now,
+              handOver && { seen: handOver.seen, next: next?.documentId },
+            ),
+            ...(next
+              ? [
+                  {
+                    Update: {
+                      TableName: this.tableName,
+                      Key: { userId, documentId: next.documentId },
+                      UpdateExpression:
+                        'SET isDefault = :true, version = version + :one, updatedAt = :now',
+                      ConditionExpression: 'attribute_exists(userId) AND #status = :ready',
+                      ExpressionAttributeNames: { '#status': 'status' },
+                      ExpressionAttributeValues: {
+                        ':true': true,
+                        ':one': 1,
+                        ':now': now,
+                        ':ready': 'ready',
+                      },
+                    },
+                  },
+                ]
+              : []),
+          ],
+        });
+        return current;
+      } catch (error) {
+        if (!(error instanceof Error && error.name === 'TransactionCanceledException')) {
+          throw error;
+        }
+        // Read again: gone (undefined), or changed (tried again).
+      }
     }
+    throw new ConcurrentUpdateError('Documents were changed at the same moment');
   }
 
   /**

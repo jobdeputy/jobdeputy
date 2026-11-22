@@ -1,10 +1,11 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-import { AppNav, PAGES } from '@/components/app-shell.tsx';
+import { AppNav, HOME_PAGE, PAGES, pageAt } from '@/components/app-shell.tsx';
 import { type AuthControl, AuthDrawer, type AuthMode } from '@/components/landing/auth-drawer.tsx';
 import { Hero } from '@/components/landing/hero.tsx';
 import { SiteHeader } from '@/components/landing/site-header.tsx';
 import { ProfilePage } from '@/components/profile/profile-page.tsx';
+import { ResumesPage } from '@/components/resumes/resumes-page.tsx';
 import { SetUp, type SetUpStep } from '@/components/setup/set-up.tsx';
 import { SignedInLayout } from '@/components/signed-in-layout.tsx';
 import { Button } from '@/components/ui/button.tsx';
@@ -61,10 +62,11 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
   // The app's pages, once the profile is read and the set-up is done.
   const pages = !step && profile.data !== undefined;
   const path = usePath();
-  usePageAddress(pages, path);
+  // The page shown is the one marked: Profile also at an address that is no page.
+  const page = pageAt(path);
+  usePageAddress(pages, path, page.label);
   return (
-    // The page shown is the one marked: Profile, also at an address that is no page.
-    <SignedInLayout onSignedOut={signedOut} nav={pages ? <AppNav path="/profile" /> : undefined}>
+    <SignedInLayout onSignedOut={signedOut} nav={pages ? <AppNav path={page.path} /> : undefined}>
       {/* The shared loading states (#17): nothing for 300 ms, then a skeleton read out as
           "Opening your search desk", "Still working…" after 8 s, "Waiting for a connection…"
           while offline. The region holds the page's width and gutters. */}
@@ -86,6 +88,8 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
               onNext={() => setSetUpStep(SET_UP_NEXT[step])}
               onBack={() => setSetUpStep(SET_UP_BACK[step])}
             />
+          ) : page.path === '/resumes' ? (
+            <ResumesPage />
           ) : (
             <ProfilePage profile={data} />
           )
@@ -97,24 +101,24 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
 
 /**
  * The address and title of the app's pages (#33), once they are shown: arriving at a path that is
- * no page (the landing's `/`, an old link) goes to the Profile page, the only page so far, once
- * (Back past it later is left alone, and still shows Profile); the tab's title names the page.
+ * no page (the landing's `/`, an old link) goes to the Profile page, once (Back past it later is
+ * left alone, and still shows Profile); the tab's title names the page shown.
  */
-function usePageAddress(pages: boolean, path: string) {
+function usePageAddress(pages: boolean, path: string, label: string) {
   const arrived = useRef(false);
   useEffect(() => {
     if (!pages || arrived.current) return;
     arrived.current = true;
-    if (!PAGES.some((page) => page.path === path)) navigate('/profile', { replace: true });
+    if (!PAGES.some((page) => page.path === path)) navigate(HOME_PAGE.path, { replace: true });
   }, [pages, path]);
   useEffect(() => {
     if (!pages) return;
     const before = document.title;
-    document.title = fill(copy.nav.pageTitle, { page: copy.nav.profile });
+    document.title = fill(copy.nav.pageTitle, { page: label });
     return () => {
       document.title = before;
     };
-  }, [pages]);
+  }, [pages, label]);
 }
 
 /** The set-up's order (#33); the last step saved ends it. */

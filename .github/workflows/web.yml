@@ -36,18 +36,19 @@ concurrency:
 
 jobs:
   browser-tests:
-    name: Browser tests (${{ matrix.shard }}/6)
+    name: Browser tests (${{ matrix.shard }}/16)
     runs-on: ubuntu-24.04
     # The whole suite on one runner reached 23 to 30+ minutes (#43: cut off at the 30-minute limit
-    # about 90% through, every test passing), so it runs in six parts side by side (Playwright's
-    # --shard, about 82 tests each; free on the public repo). Each part pays about 4 minutes of
-    # setup. Still a limit, so a hung run fails.
+    # about 90% through, every test passing), so it runs in parts side by side (Playwright's
+    # --shard; free on the public repo). Sixteen: the free plan runs 20 jobs at once across the
+    # organisation, and a PR push starts 4 others. Each part pays about 4 minutes of setup. Still a
+    # limit, so a hung run fails.
     timeout-minutes: 30
     strategy:
       # Every part always finishes, so one run shows every failure.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     steps:
       # The runner's disk filled during the suite (ENOSPC on #23, #25, #38). The image carries
       # toolchains this job never uses; removing them frees about 20 GB. The space is logged before
@@ -80,7 +81,7 @@ jobs:
         if: steps.browsers.outputs.cache-hit == 'true'
         run: pnpm --filter @jobdeputy/web exec playwright install-deps chromium firefox webkit
       - name: Playwright on every device (desktop, tablet, phones)
-        run: pnpm --filter @jobdeputy/web test:e2e --shard=${{ matrix.shard }}/6
+        run: pnpm --filter @jobdeputy/web test:e2e --shard=${{ matrix.shard }}/16
       - name: Disk space after the suite
         if: always()
         run: df -h /

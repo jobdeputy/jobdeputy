@@ -56,6 +56,14 @@ export function markUploadedHere(documentId: string): void {
 }
 
 /**
+ * Whether this résumé's file was sent from this page: only then is its `pending` known to be the
+ * scan (the server shows the same for an upload that never came; it forgets those within a day).
+ */
+export function wasUploadedHere(documentId: string): boolean {
+  return uploadedHere.has(documentId);
+}
+
+/**
  * The résumé the set-up shows from what is saved (newest first): the newest one whose file was
  * sent from this page, ready or being checked (what the person just did); else a ready one (the default
  * first); else one being read; else the newest the server couldn't use, so the person knows. Any

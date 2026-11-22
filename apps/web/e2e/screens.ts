@@ -82,6 +82,19 @@ export const SCREENS: Screen[] = [
     still: true,
     steps: toProfileRoles,
   },
+  // The Résumés page (#33) with the set-up's résumé, ready and the default; then its Delete question.
+  { name: 'resumes', path: '/', open: 'Get started free', still: true, steps: toResumes },
+  {
+    name: 'resumes-delete',
+    path: '/',
+    open: 'Get started free',
+    still: true,
+    steps: async (page) => {
+      await toResumes(page);
+      await page.getByRole('button', { name: 'Delete Alex_Morgan_Resume' }).click();
+      await page.getByRole('button', { name: 'Keep it' }).waitFor();
+    },
+  },
   // Every shared component state (#17); the pending buttons and the loading skeleton appear
   // after the 300 ms delay.
   {
@@ -230,6 +243,19 @@ async function uploadResume(page: Page, name: string, stage: string) {
     .getByText(stage)
     .first()
     .waitFor({ timeout: 15_000 });
+}
+
+async function toResumes(page: Page) {
+  await uploadResume(page, 'Alex_Morgan_Resume.pdf', 'Ready');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page
+    .getByRole('heading', { level: 1, name: 'What your deputy knows about you.' })
+    .waitFor();
+  await page
+    .getByRole('navigation', { name: 'Primary' })
+    .getByRole('link', { name: 'Résumés' })
+    .click();
+  await page.getByRole('list', { name: 'Your résumés' }).getByText('Default').waitFor();
 }
 
 async function toProfileRoles(page: Page) {

@@ -4,6 +4,7 @@ import { flushSync } from 'react-dom';
 import { Field, TextAreaField } from '@/components/auth/fields.tsx';
 import { EditIcon, PersonIcon, TargetIcon } from '@/components/icons.tsx';
 import { PageIntro } from '@/components/page-intro.tsx';
+import { Section } from '@/components/section.tsx';
 import { Fact, LoadFailed, useSaying } from '@/components/setup/parts.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { QueryRegion } from '@/components/ui/query-region.tsx';
@@ -85,43 +86,6 @@ function AboutYou({ profile, say }: { profile: Profile; say: (words: string) => 
 }
 
 /** A section of the page (the prototype's `.profile-section`): its icon, title and line, then its groups. */
-function Section({
-  id,
-  icon,
-  title,
-  line,
-  children,
-}: {
-  id: string;
-  icon: ReactNode;
-  title: string;
-  line: string;
-  children: ReactNode;
-}) {
-  return (
-    <section
-      aria-labelledby={`${id}-title`}
-      className="@container min-w-0 rounded-[34px] border border-line-soft bg-surface p-[21px] shadow-panel sm:p-[34px]"
-    >
-      <div className="grid grid-cols-[44px_minmax(0,1fr)] items-start gap-[21px]">
-        <span
-          aria-hidden="true"
-          className="grid size-11 place-items-center rounded-full bg-paper-deep text-ink-soft"
-        >
-          {icon}
-        </span>
-        <div className="grid gap-1">
-          <h2 id={`${id}-title`} className="m-0 text-xl font-[700] tracking-[-0.02em]">
-            {title}
-          </h2>
-          <p className="m-0 text-sm text-muted-foreground">{line}</p>
-        </div>
-      </div>
-      {children}
-    </section>
-  );
-}
-
 /**
  * Job preferences (#33 piece 6a3): what the deputy looks for. Its Target roles group lists the
  * titles it searches for; Edit opens the set-up's roles editor in place (`RolesForm`).

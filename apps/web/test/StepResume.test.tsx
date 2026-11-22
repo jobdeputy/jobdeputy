@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { StepResume, sizeText } from '../src/components/setup/step-resume.tsx';
+import { sizeText } from '../src/components/resumes/document-status.ts';
+import { StepResume } from '../src/components/setup/step-resume.tsx';
 import { ApiError } from '../src/lib/api/client.ts';
 import {
   checkFile,
@@ -472,9 +473,10 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     // Read afresh: the new one, ready (not the older ready one).
     expect(await item().findByText('Ready')).toBeTruthy();
     expect(item().getByRole('listitem').textContent).toContain('Alex_Morgan_Resume.pdf');
-    // As the API does: with the default gone, the new one is the default.
+    // As the API does: the default's removal handed it to the newest ready one left (#33), so the
+    // new upload is not the default.
     const defaults = (await documents(api)).filter((each) => each.isDefault);
-    expect(defaults.map((each) => each.fileName)).toEqual(['Alex_Morgan_Resume.pdf']);
+    expect(defaults.map((each) => each.fileName)).toEqual(['Second.pdf']);
   });
 
   it('lets the zone take a dragged file', async () => {

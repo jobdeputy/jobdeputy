@@ -23,16 +23,22 @@ const PROCESS_TIMEOUT_MS = 300_000;
 let api: string;
 let alice: TestUser;
 let bob: TestUser;
+/** Only the default hand-over's: whose default no other test touches. */
+let carol: TestUser;
 
 beforeAll(async () => {
   const outputs = await stackOutputs();
   api = outputs.ApiUrl ?? '';
   await waitForMalwareScanning(outputs);
-  [alice, bob] = await Promise.all([createTestUser(outputs), createTestUser(outputs)]);
+  [alice, bob, carol] = await Promise.all([
+    createTestUser(outputs),
+    createTestUser(outputs),
+    createTestUser(outputs),
+  ]);
 }, 360_000);
 
 afterAll(async () => {
-  await Promise.allSettled([alice?.delete(), bob?.delete()]);
+  await Promise.allSettled([alice?.delete(), bob?.delete(), carol?.delete()]);
 });
 
 const upload = (
@@ -90,6 +96,28 @@ describe.concurrent('résumés (deployed)', () => {
     expect(
       (await callApi(api, 'GET', `me/documents/${documentId}`, alice.accessToken)).status,
     ).toBe(404);
+  });
+
+  it('hands the default on to the newest ready résumé when the default is deleted (#33)', async () => {
+    const pdf = makePdf([['JobDeputy integration test', 'Default hand-over']]);
+    const first = await upload(carol, 'First.pdf', PDF, pdf);
+    const second = await upload(carol, 'Second.pdf', PDF, pdf);
+    const [a, b] = await Promise.all([
+      finalState(carol, first.documentId),
+      finalState(carol, second.documentId),
+    ]);
+    expect([a.status, a.isDefault, b.status, b.isDefault]).toEqual(['ready', true, 'ready', false]);
+    expect(
+      (await callApi(api, 'DELETE', `me/documents/${first.documentId}`, carol.accessToken)).status,
+    ).toBe(204);
+    const left = (await callApi(api, 'GET', 'me/documents', carol.accessToken)).body.documents;
+    expect(left).toEqual([
+      expect.objectContaining({
+        documentId: second.documentId,
+        isDefault: true,
+        version: b.version + 1,
+      }),
+    ]);
   });
 
   it('extracts text from a DOCX', async () => {

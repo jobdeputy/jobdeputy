@@ -44,20 +44,48 @@ export function countUp(
   };
 }
 
-/** The transaction item that counts one fewer (and frees the default, when it was this one). */
+/**
+ * The transaction item that counts one fewer. Deleting the default document passes `handOver`:
+ * the marker moves to `next` (or is freed when there is none), on condition that it still names
+ * `seen` (as read before the list the successor was picked from), so a default switched meanwhile
+ * fails the transaction instead of leaving two defaults.
+ */
 export function countDown(
   table: string,
   userId: string,
   sk: string,
   now: string,
-  freeDefault = false,
+  handOver?: { seen: string | undefined; next: string | undefined },
 ) {
+  const base = 'SET itemCount = if_not_exists(itemCount, :one) - :one, updatedAt = :now';
+  if (!handOver) {
+    return {
+      Update: {
+        TableName: table,
+        Key: { userId, sk },
+        UpdateExpression: base,
+        ExpressionAttributeValues: { ':one': 1, ':now': now },
+      },
+    };
+  }
+  const { seen, next } = handOver;
   return {
     Update: {
       TableName: table,
       Key: { userId, sk },
-      UpdateExpression: `SET itemCount = if_not_exists(itemCount, :one) - :one, updatedAt = :now${freeDefault ? ' REMOVE defaultDocumentId' : ''}`,
-      ExpressionAttributeValues: { ':one': 1, ':now': now },
+      UpdateExpression: next
+        ? `${base}, defaultDocumentId = :next`
+        : `${base} REMOVE defaultDocumentId`,
+      ConditionExpression:
+        seen === undefined
+          ? 'attribute_not_exists(defaultDocumentId)'
+          : 'defaultDocumentId = :seen',
+      ExpressionAttributeValues: {
+        ':one': 1,
+        ':now': now,
+        ...(next ? { ':next': next } : {}),
+        ...(seen !== undefined ? { ':seen': seen } : {}),
+      },
     },
   };
 }

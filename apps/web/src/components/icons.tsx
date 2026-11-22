@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+
 /** The prototype's line icons (24 viewBox, 1.75 stroke), shared where they repeat. */
 
 /** A person: the Profile page, in the sidebar and on its About you section. */
@@ -56,6 +58,53 @@ export function TargetIcon({ className = 'size-5' }: { className?: string }) {
       <circle cx="12" cy="12" r="8.25" />
       <circle cx="12" cy="12" r="4.5" />
       <circle cx="12" cy="12" r="1" />
+    </svg>
+  );
+}
+
+/** A document: a résumé's line (the set-up's step 3, the Résumés page) and the sidebar. */
+export function DocumentIcon({ className = 'size-5' }: { className?: string }) {
+  return (
+    <LineIcon className={className}>
+      <path d="M14 3.5H7.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8z" />
+      <path d="M14 3.5V8h4.5M9 12.5h6M9 16h4" />
+    </LineIcon>
+  );
+}
+
+/** A file the server couldn't use. */
+export function AlertIcon({ className = 'size-5' }: { className?: string }) {
+  return (
+    <LineIcon className={className}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V13M12 16.5h.01" />
+    </LineIcon>
+  );
+}
+
+/** A file going up: the résumé drop zone. */
+export function UploadIcon({ className = 'size-6' }: { className?: string }) {
+  return (
+    <LineIcon className={className}>
+      <path d="M12 15.5v-11M7.5 9 12 4.5 16.5 9M4.5 14.5V18a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3.5" />
+    </LineIcon>
+  );
+}
+
+function LineIcon({ className, children }: { className: string; children: ReactNode }) {
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`shrink-0 ${className}`}
+    >
+      {children}
     </svg>
   );
 }
