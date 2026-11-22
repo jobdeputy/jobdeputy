@@ -478,7 +478,9 @@ describe('reads', () => {
     expect(query.input).toMatchObject({
       TableName: 'Crawls',
       ScanIndexForward: false,
-      Limit: 1,
+      // #50: room for a list's company crawls, which are left out.
+      Limit: 51,
+      FilterExpression: 'attribute_not_exists(parentCrawlId)',
       ExclusiveStartKey: { userId: USER, crawlId: 'C3' },
     });
 
@@ -625,5 +627,124 @@ describe('CrawlSettingsRepository', () => {
     await expect(
       new CrawlSettingsRepository(racing, 'Prefs').save(USER, { dailyLimit: 5 }, 0, change),
     ).rejects.toBeInstanceOf(VersionConflictError);
+  });
+});
+
+describe('list runs (#50)', () => {
+  const cancelled = (...codes: string[]) =>
+    named('TransactionCanceledException', {
+      CancellationReasons: codes.map((Code) => ({ Code })),
+    });
+  const listInput = {
+    userId: USER,
+    crawlId: 'C1',
+    sourceId: 'S1',
+    url: 'https://github.com/SimplifyJobs/New-Grad-Positions/tree/dev',
+    normalizedUrl: 'https://github.com/simplifyjobs/new-grad-positions',
+    audit: audit('crawl.requested'),
+    dailyLimit: 20,
+    maxActive: 1,
+    list: {
+      source: { kind: 'github' as const, owner: 'SimplifyJobs', repo: 'New-Grad-Positions' },
+      perDay: 2,
+    },
+  };
+
+  it("queues a list run as a crawl that is also counted against the day's lists", async () => {
+    const { c, send } = client();
+    const crawl = await repo(c).request(listInput);
+    expect(crawl).toMatchObject({
+      kind: 'list',
+      listSource: listInput.list.source,
+      trigger: 'user',
+    });
+    const items = sent<TransactWriteCommand>(send, 0).input.TransactItems ?? [];
+    expect(items[0]?.Update?.UpdateExpression).toContain('#kind = :kind');
+    expect(items[0]?.Update?.ExpressionAttributeValues?.[':kind']).toBe('list');
+    const day = items[3]?.Update;
+    expect(day?.UpdateExpression).toContain('lists = if_not_exists(lists, :zero) + :one');
+    expect(day?.ConditionExpression).toBe(
+      '(attribute_not_exists(crawls) OR crawls < :limit) AND (attribute_not_exists(lists) OR lists < :lists)',
+    );
+    expect(day?.ExpressionAttributeValues?.[':lists']).toBe(2);
+  });
+
+  it("keeps a single crawl's day count and source kind as they were", async () => {
+    const { c, send } = client();
+    const { list: _list, ...single } = listInput;
+    await repo(c).request(single);
+    const items = sent<TransactWriteCommand>(send, 0).input.TransactItems ?? [];
+    expect(items[0]?.Update?.UpdateExpression).toContain('#kind = if_not_exists(#kind, :kind)');
+    expect(items[0]?.Update?.ExpressionAttributeValues?.[':kind']).toBe('unknown');
+    expect(items[3]?.Update?.UpdateExpression).not.toContain('lists');
+    expect(items[3]?.Update?.ConditionExpression).toBe(
+      'attribute_not_exists(crawls) OR crawls < :limit',
+    );
+  });
+
+  it("refuses every list run when the admin allows none, even before the day's first", async () => {
+    const { c, send } = client();
+    await expect(
+      repo(c).request({ ...listInput, list: { ...listInput.list, perDay: 0 } }),
+    ).rejects.toBeInstanceOf(DailyLimitError);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('reports a full day of lists as the daily limit', async () => {
+    const { c } = client(() => {
+      throw cancelled('None', 'None', 'None', 'ConditionalCheckFailed', 'None', 'None');
+    });
+    await expect(repo(c).request(listInput)).rejects.toBeInstanceOf(DailyLimitError);
+  });
+
+  it("tells the list run that a company crawl ended, in the crawl's own transaction", async () => {
+    const { c, send } = client();
+    await repo(c).finish(
+      { userId: USER, crawlId: 'C2', sourceId: 'S2', parentCrawlId: 'C1' },
+      { status: 'failed', error: { code: 'blocked', message: 'x' } },
+      audit('crawl.failed'),
+    );
+    const items = sent<TransactWriteCommand>(send, 0).input.TransactItems ?? [];
+    const parent = items.find((i) => i.Update?.Key?.crawlId === 'C1')?.Update;
+    expect(parent).toMatchObject({
+      TableName: 'Crawls',
+      UpdateExpression: 'DELETE runningIds :id ADD childrenEnded :one SET updatedAt = :now',
+      ExpressionAttributeValues: { ':id': new Set(['C2']), ':one': 1 },
+    });
+    expect(parent?.ConditionExpression).toBeUndefined();
+  });
+
+  it("lists only top-level crawls, reading on past a list's company crawls to fill the page", async () => {
+    const pages = [
+      { Items: [], LastEvaluatedKey: { userId: USER, crawlId: 'C9' } },
+      {
+        Items: [{ crawlId: 'C5' }, { crawlId: 'C4' }],
+        LastEvaluatedKey: { userId: USER, crawlId: 'C4' },
+      },
+    ];
+    const { c, send } = client(() => pages.shift() ?? { Items: [] });
+    expect(await repo(c).listCrawls(USER, 2)).toEqual({
+      items: [{ crawlId: 'C5' }, { crawlId: 'C4' }],
+      next: 'C4',
+    });
+    expect(sent<QueryCommand>(send, 1).input.ExclusiveStartKey).toEqual({
+      userId: USER,
+      crawlId: 'C9',
+    });
+    expect(sent<QueryCommand>(send, 1).input.Limit).toBe(52);
+  });
+
+  it('stops after five reads, with a cursor to go on from', async () => {
+    const { c, send } = client(() => ({
+      Items: [],
+      LastEvaluatedKey: { userId: USER, crawlId: 'C1' },
+    }));
+    expect(await repo(c).listCrawls(USER, 20)).toEqual({ items: [], next: 'C1' });
+    expect(send).toHaveBeenCalledTimes(5);
+  });
+
+  it('ends at the last page without a cursor', async () => {
+    const { c } = client(() => ({ Items: [{ crawlId: 'C1' }] }));
+    expect(await repo(c).listCrawls(USER, 20)).toEqual({ items: [{ crawlId: 'C1' }] });
   });
 });

@@ -5,7 +5,6 @@ import {
   type Crawl,
   CrawlRepository,
   CrawlSettingsRepository,
-  crawlsToday,
   DailyLimitError,
   documentClient,
   PlatformAllowanceError,
@@ -13,6 +12,7 @@ import {
   sourceIdFor,
   ssmCrawlLimits,
   TooManyActiveCrawlsError,
+  usageToday,
   VersionConflictError,
 } from '@jobdeputy/db';
 import {
@@ -29,10 +29,14 @@ import {
   createCrawlInput,
   createLogger,
   dailyLimitMessage,
+  dailyListLimitMessage,
   effectiveCompanyJobsLimit,
   effectiveDailyLimit,
+  githubListFromUrl,
   type HttpResponse,
   json,
+  type ListSource,
+  listUrl,
   nextPlatformRunAt,
   nextUtcMidnight,
   pageQuery,
@@ -55,6 +59,13 @@ const logger = createLogger('api-crawls');
  * within it), so a new submit replaces it instead of waiting for it forever.
  */
 export const STALE_CRAWL_MS = 15 * 60 * 1000;
+/**
+ * #50: a list run that has not moved on for this long has stopped. Every company crawl's
+ * attempt marks it, so a quiet spell is one attempt waiting out the crawl queue's visibility
+ * timeout (18 minutes), plus any wait behind other users' crawls (the queue runs 2 at a time;
+ * a backlog of 15 minutes raises the queue-health alarm).
+ */
+export const STALE_LIST_MS = 60 * 60 * 1000;
 
 export interface CrawlsDeps {
   repo: Pick<
@@ -70,7 +81,8 @@ export interface CrawlsDeps {
   settings: Pick<CrawlSettingsRepository, 'get' | 'save'>;
   /** The admin's default and maximum (T06c), cached for at most 5 minutes. */
   limits: () => Promise<CrawlLimitsConfig>;
-  usedToday: (userId: string) => Promise<number>;
+  /** Crawls (and, #50, list runs) started today, in one read. */
+  usageToday: (userId: string) => Promise<{ crawls: number; lists: number }>;
   /** T08b3: the free platform runs used this week and month. */
   platformRunsUsed: (userId: string) => Promise<{ week: number; month: number }>;
   auditTable: string;
@@ -82,6 +94,8 @@ export interface CrawlsDeps {
   aiKeyStatus: (userId: string, provider: AiProvider) => Promise<AiKeyStatus | undefined>;
   /** Dev stacks only: the `stub` provider for integration tests. */
   allowTestProvider: boolean;
+  /** #50, dev stacks only: this stack's test site, whose `/test-site/list-*` pages are lists (integration tests). */
+  testListHost?: string;
 }
 
 function defaultDeps(): CrawlsDeps {
@@ -95,6 +109,7 @@ function defaultDeps(): CrawlsDeps {
     CRAWL_LIMITS_PARAMETER,
     AI_KEYS_TABLE_NAME,
     ALLOW_TEST_AI_PROVIDER,
+    TEST_LIST_HOST,
   } = process.env;
   if (
     !CRAWLS_TABLE_NAME ||
@@ -125,7 +140,7 @@ function defaultDeps(): CrawlsDeps {
     settings: new CrawlSettingsRepository(client, PREFERENCES_TABLE_NAME),
     auditTable: AUDIT_TABLE_NAME,
     limits: ssmCrawlLimits(CRAWL_LIMITS_PARAMETER),
-    usedToday: (userId) => crawlsToday(client, USAGE_TABLE_NAME, userId, new Date()),
+    usageToday: (userId) => usageToday(client, USAGE_TABLE_NAME, userId, new Date()),
     platformRunsUsed: (userId) => platformRunsUsed(client, USAGE_TABLE_NAME, userId, new Date()),
     newId: ulid,
     now: Date.now,
@@ -133,6 +148,7 @@ function defaultDeps(): CrawlsDeps {
     aiDefault: async (userId) => (await aiKeys.getSettings(userId))?.defaultSource ?? 'platform',
     aiKeyStatus: async (userId, provider) => (await aiKeys.get(userId, provider))?.status,
     allowTestProvider: ALLOW_TEST_AI_PROVIDER === 'true',
+    ...(TEST_LIST_HOST ? { testListHost: TEST_LIST_HOST } : {}),
   };
 }
 
@@ -173,7 +189,7 @@ async function settingsView(userId: string, deps: CrawlsDeps) {
   const [config, settings, usedToday, active] = await Promise.all([
     deps.limits(),
     deps.settings.get(userId),
-    deps.usedToday(userId),
+    deps.usageToday(userId).then((today) => today.crawls),
     deps.repo.getActiveCrawlIds(userId),
   ]);
   return {
@@ -195,11 +211,37 @@ async function settingsView(userId: string, deps: CrawlsDeps) {
 }
 
 /** What the API shows: no storage keys or internal fields. */
+/**
+ * #50: a list run's progress: what it read and chose, and its company crawls (queued or
+ * running now, and ended). `waiting` companies are not queued yet.
+ */
+function listView(c: Crawl) {
+  if (!c.list) return {};
+  const companies = c.list.companies.length;
+  const queued = c.queuedCount ?? 0;
+  return {
+    list: {
+      rows: c.list.rows,
+      matched: c.list.matched,
+      companiesMatched: c.list.companiesMatched,
+      companies: c.list.companies.map(({ name, url }) => ({ name, url })),
+      skipped: c.list.skipped,
+      busy: c.list.busy ?? 0,
+      waiting: Math.max(0, companies - queued),
+      running: c.runningIds?.size ?? 0,
+      ended: c.childrenEnded ?? 0,
+      crawlIds: c.childIds ?? [],
+    },
+  };
+}
+
 export function crawlView(c: Crawl) {
   return {
     crawlId: c.crawlId,
     sourceId: c.sourceId,
     url: c.url,
+    ...(c.kind ? { kind: c.kind } : {}),
+    ...(c.parentCrawlId ? { parentCrawlId: c.parentCrawlId } : {}),
     status: c.status,
     ...(c.aiSource ? { aiSource: c.aiSource } : {}),
     attempts: c.attempts,
@@ -218,6 +260,7 @@ export function crawlView(c: Crawl) {
     // T07b: what the crawl read and saved.
     ...(c.stats ? { stats: c.stats } : {}),
     ...(c.extraction ? { extraction: c.extraction } : {}),
+    ...listView(c),
     // T08d: the AI scoring of the candidates, and the model and tokens it used.
     ...(c.relevance
       ? {
@@ -248,10 +291,34 @@ type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
 /** How long a client should wait before submitting again when its active crawls are full. */
 export const ACTIVE_RETRY_AFTER_SECONDS = 30;
 
+/**
+ * Queued or running, and still moving. #50: once a list run has queued a company crawl, it lasts
+ * as long as its company crawls: it is stale when it has not moved on (`updatedAt`: a company
+ * queued, an attempt started, or one ended) for `STALE_LIST_MS`. Until then it is a crawl.
+ */
 const isActive = (c: Crawl | undefined, now: number) =>
   c !== undefined &&
   ACTIVE_CRAWL_STATUSES.includes(c.status) &&
-  now - Date.parse(c.createdAt) <= STALE_CRAWL_MS;
+  (c.kind === 'list' && (c.childIds?.length ?? 0) > 0
+    ? now - Date.parse(c.updatedAt) <= STALE_LIST_MS
+    : now - Date.parse(c.createdAt) <= STALE_CRAWL_MS);
+
+/**
+ * #50: the list a link points at: a GitHub repository, or (dev stacks only) a list page on this
+ * stack's own test site, `testHost`.
+ */
+export function listSourceOf(url: URL, testHost: string | undefined): ListSource | undefined {
+  const github = githubListFromUrl(url);
+  if (github) return github;
+  if (
+    testHost !== undefined &&
+    url.hostname === testHost &&
+    url.pathname.startsWith('/test-site/list-')
+  ) {
+    return { kind: 'test', url: url.href };
+  }
+  return undefined;
+}
 
 /**
  * Ends a crawl that stopped without finishing (for example its message was lost):
@@ -342,9 +409,24 @@ async function submit(
       requestId,
     });
   }
-  const { normalizedUrl, url } = checked;
+  const { url } = checked;
+  const list = listSourceOf(url, deps.testListHost);
+  // #50: one source per list, however its link is written.
+  const normalizedUrl = list ? listUrl(list) : checked.normalizedUrl;
   const sourceId = sourceIdFor(normalizedUrl);
   const [config, settings] = await Promise.all([deps.limits(), deps.settings.get(userId)]);
+  // #50: the admin turned list runs off (not a daily limit: no reset brings them back). A list
+  // already in progress is still returned, as for any page. 409, not 403: the web app reads a
+  // 403 as a closed account.
+  if (list && config.listsPerDay < 1) {
+    const running = await activeCrawlOf(userId, sourceIdFor(normalizedUrl), deps);
+    if (running) return json(200, crawlView(running));
+    return problem(409, 'List runs are turned off', {
+      detail: 'Lists of roles cannot be crawled right now. Paste a company’s careers link instead.',
+      code: 'lists-turned-off',
+      requestId,
+    });
+  }
   const dailyLimit = effectiveDailyLimit(config, settings?.dailyLimit);
   let replacing: string | undefined;
   let healed = false;
@@ -364,11 +446,14 @@ async function submit(
           name: 'crawl.requested',
           entity: { type: 'crawl', id: crawlId },
           actor: 'user',
-          summary: `Crawl requested: ${url.hostname}`,
+          summary: list
+            ? `List run requested: ${normalizedUrl}`
+            : `Crawl requested: ${url.hostname}`,
           detail: { sourceId },
         },
         dailyLimit,
         maxActive: config.maxActive,
+        ...(list ? { list: { source: list, perDay: config.listsPerDay } } : {}),
         ...(replacing !== undefined ? { replacing } : {}),
         aiSource,
         ...(aiSource === 'platform'
@@ -380,7 +465,7 @@ async function submit(
             }
           : {}),
       });
-      logger.info('Crawl queued', { crawlId, sourceId });
+      logger.info('Crawl queued', { crawlId, sourceId, ...(list ? { kind: 'list' } : {}) });
       return json(202, crawlView(crawl));
     } catch (error) {
       if (
@@ -398,7 +483,16 @@ async function submit(
         return platformAllowanceProblem(userId, config, deps, requestId);
       }
       if (error instanceof DailyLimitError) {
-        const used = await deps.usedToday(userId);
+        // #50: the day's lists can be full while its crawls are not.
+        const today = await deps.usageToday(userId);
+        if (list && today.lists >= config.listsPerDay) {
+          return problem(429, 'Daily list limit reached', {
+            detail: dailyListLimitMessage(today.lists, config.listsPerDay),
+            code: 'daily-list-limit-reached',
+            requestId,
+          });
+        }
+        const used = today.crawls;
         return problem(429, 'Daily crawl limit reached', {
           detail: dailyLimitMessage(used, dailyLimit),
           code: 'daily-limit-reached',

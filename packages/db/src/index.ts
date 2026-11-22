@@ -9,6 +9,7 @@ export * from './crawl-repository.js';
 export * from './crawl-settings-repository.js';
 export * from './document-repository.js';
 export * from './job-repository.js';
+export * from './list-run-repository.js';
 export * from './ping-repository.js';
 export * from './preferences-repository.js';
 export * from './profile-repository.js';

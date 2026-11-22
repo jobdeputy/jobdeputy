@@ -156,6 +156,54 @@ A re-crawl sets what it read and never removes a field it did not read: a board'
 
 The source remembers which jobs it listed (`listedJobIds`). After a **complete** crawl, a job the page no longer lists loses that source; with no source left it gets `closedAt`. A **partial** crawl (limits, or a later page that failed) never closes anything. A job listed again is reopened.
 
+## 3b. A list of roles (#50)
+
+A link to a GitHub list of open roles (for example SimplifyJobs New-Grad-Positions) is a **list run**: the list only finds companies, and each company's own board is crawled like a link the user gave. The list's rows are never saved as jobs. Decision: the 2026-11-22 comment on [#50](https://github.com/jobdeputy/jobdeputy/issues/50).
+
+- **Submit:** the same `POST /me/crawls`. A `github.com/<owner>/<repo>` link (any path inside it) becomes a crawl with `kind: list`; its source is the repository, in lowercase. It counts as 1 crawl and 1 of the day's **2 lists** (`usage` `DAY#` `lists`), holds the user's one active slot, and uses one AI run (counted at submit, as for a crawl).
+- **Read:** the crawl worker reads the repository's files from its default branch on `raw.githubusercontent.com`: Simplify's `.github/scripts/listings.json` where there is one, else the README's tables (HTML or Markdown, read by their Company, Role, and Location headers). At most 25 MB and 60 s. Neither has roles: `failed`, `not_a_list`.
+- **Choose:** every open role goes through the keyword filter (T08c) and must be in the US (or not say where). Companies are ranked by matching roles, then the best role's priority, the newest role, and the name. The first **20** whose board we can read (Greenhouse, Lever, Ashby, Workday) are chosen; companies above the cut on other sites are **skipped and counted** (more readers: #64).
+- **Crawl:** each chosen company becomes a **company crawl**: a `crawls` item (`trigger: list`, `parentCrawlId`, `aiSource: none`) written `queued`, so the same stream, Pipe, and queue hand it to the crawl worker. At most **3** are queued or running at once (the queue's own concurrency, 2, still applies). A board with a crawl in progress is passed over (`list.busy`); a board whose crawl has ended is taken over. Company crawls are not counted against the day, and `GET /me/crawls` leaves them out.
+- **End:** each company crawl's `finish` tells its list run in the same transaction; the worker then moves the list on. The last one ends the list: its stats are the company crawls' added up, and its candidates are the **50** best across them (each company's first, then each one's second, …). Ending `succeeded` with an AI source starts the [relevance](relevance.md) run on the list, once.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor User
+  participant API as Crawls API
+  participant DB as DynamoDB (crawls, sources, usage)
+  participant W as Crawl worker
+  participant GH as raw.githubusercontent.com
+  participant B as Company boards
+  User->>API: POST /me/crawls { url: github.com/owner/repo }
+  API->>DB: request: list crawl queued, DAY# crawls + 1 and lists + 1, ACTIVE slot
+  DB-->>W: stream → Pipe → queue: the list crawl
+  W->>GH: listings.json, else README.md
+  W->>W: keyword filter, US places, rank companies, top 20 readable
+  W->>DB: list: companies chosen, skipped (once)
+  loop while fewer than 3 in progress and companies wait
+    W->>DB: transaction: list moves on, company crawl queued, board claimed
+  end
+  DB-->>W: stream → Pipe → queue: each company crawl
+  W->>B: read the board (as any crawl)
+  W->>DB: finish the company crawl + tell its list (one transaction)
+  W->>DB: move the list on: queue the next company
+  Note over W,DB: the last company crawl to end ends the list:<br/>totals, 50 best candidates, ACTIVE slot freed
+  DB-->>W: stream MODIFY succeeded → relevance Pipe: one AI run for the list
+```
+
+| What happened | The list run |
+|---|---|
+| The repository has no list we can read | `failed`, `not_a_list` (no retry) |
+| GitHub unreachable or 5xx | retried like a crawl, then `failed` |
+| A company crawl fails | counted (`stats.companies.failed`); the list goes on |
+| No company can be crawled | `succeeded` at once, 0 jobs, with `skipped` |
+| A worker stops after a company crawl ended | the next delivery of that crawl's message moves the list on |
+| The list stops moving for 60 minutes once a company crawl is queued (`updatedAt`: a company queued, an attempt started, or one ended; before that, 15 minutes like a crawl) | the next submit ends it `failed` (`internal`) and frees the slot; its company crawls still finish |
+| The admin set `listsPerDay` to 0 | `409 lists-turned-off` at submit (a list already in progress is still returned); nothing counted |
+| The list cannot be moved on after a company crawl ended (a DynamoDB error) | the crawl stays `succeeded`; its message comes back (30 s, 120 s) and moves the list on; the 3rd failure is dead-lettered at once (alarm) |
+| A company's board link is one we would refuse to crawl | not readable when choosing: skipped and counted (the worker checks again before queueing, as a guard) |
+
 ## 4. The user sees the result
 
 ```mermaid
@@ -192,9 +240,9 @@ Every table is keyed by `userId` first. Details: [data-model.md](../data-model.m
 | Store | Key | What it holds | Written by |
 |---|---|---|---|
 | `sources` | `userId`, `sourceId` | Each saved page: URL, normalized URL, kind, board, `activeCrawlId`, jobs it listed last time | API (submit), worker (finish) |
-| `crawls` | `userId`, `crawlId` | Each run: status, attempts, AI source, result, stats, reason, candidates for AI. Kept 180 days. | API (`queued`), worker |
+| `crawls` | `userId`, `crawlId` | Each run: status, attempts, AI source, result, stats, reason, candidates for AI; #50 a list run's companies and progress, and each company crawl's list. Kept 180 days. | API (`queued`), worker (company crawls `queued`) |
 | `jobs` | `userId`, `jobId` | The posting, where and when it was found, `closedAt`, the filter verdict and score, the user's own fields | Crawl worker; relevance worker (T08) |
-| `usage` | `userId`, `sk` | `DAY#` crawls today, `ACTIVE` running crawls, `MONTH#` totals, `COMPANY#` shown jobs per company | API (counts), worker (frees the slot) |
+| `usage` | `userId`, `sk` | `DAY#` crawls and lists today, `ACTIVE` running crawls, `MONTH#` totals, `COMPANY#` shown jobs per company | API (counts), worker (frees the slot) |
 | `audit` | `userId`, `auditId` | `crawl.requested`, `crawl.succeeded`, `crawl.failed`. Kept 1 year. | API and worker, in the same transaction as the change |
 | S3 | `derived/users/<userId>/crawls/<crawlId>/page` | The fetched page. Deleted after 30 days. | Crawl worker |
 | SSM | `/jobdeputy/<stack>/crawl-limits` | Admin limits: crawls per day, active crawls, jobs per company, expiry | Admin; read by API and worker |
@@ -203,7 +251,7 @@ Every table is keyed by `userId` first. Details: [data-model.md](../data-model.m
 
 | Scope | Limit |
 |---|---|
-| Per user (T06c) | 20 crawls a day by default (admin max 50); 1 crawl at a time; 1 crawl per page at a time |
+| Per user (T06c) | 20 crawls a day by default (admin max 50); 1 crawl at a time; 1 crawl per page at a time; #50: 2 list runs a day (each also 1 crawl), 20 companies a list, 3 company crawls at once |
 | Per crawl (T07c) | 500 jobs saved; 10 extra requests; 150 s budget; 1 s gap per host |
 | Per request (T06a) | 5 s to connect; 20 s and 5 MB per page; 5 redirects |
 | Retries | 3 attempts; waits of 30 s and 120 s; then the dead-letter queue |

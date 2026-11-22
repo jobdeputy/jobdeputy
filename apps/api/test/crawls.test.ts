@@ -10,11 +10,18 @@ import {
   TooManyActiveCrawlsError,
   VersionConflictError,
 } from '@jobdeputy/db';
-import type { AiKeyStatus, AiSource } from '@jobdeputy/shared';
+import { type AiKeyStatus, type AiSource, DEFAULT_CRAWL_LIMITS } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2, APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
 import { route as auditRoute } from '../src/audit.js';
-import { type CrawlsDeps, crawlView, route, STALE_CRAWL_MS } from '../src/crawls.js';
+import {
+  type CrawlsDeps,
+  crawlView,
+  listSourceOf,
+  route,
+  STALE_CRAWL_MS,
+  STALE_LIST_MS,
+} from '../src/crawls.js';
 import { concurrentUpdateProblem } from '../src/errors.js';
 import { PAGES, handler as testSite } from '../src/test-site.js';
 
@@ -94,8 +101,9 @@ function deps(over: Partial<CrawlsDeps['repo']> = {}) {
       jobExpiryDays: 7,
       relevanceMaxJobs: 50,
       relevanceMinScore: 30,
+      listsPerDay: 2,
+      listCompanies: 20,
     })),
-    usedToday: vi.fn(async () => 3),
     platformRunsUsed: vi.fn(async () => ({ week: 1, month: 1 })),
     auditTable: 'Audit',
     newId: () => `01J8ZQ4Y3N5W6X7Y8Z9A0B1C${String(10 + (n++ % 90))}`,
@@ -104,6 +112,7 @@ function deps(over: Partial<CrawlsDeps['repo']> = {}) {
     aiDefault: vi.fn(async (): Promise<AiSource> => 'platform'),
     aiKeyStatus: vi.fn(async (): Promise<AiKeyStatus | undefined> => undefined),
     allowTestProvider: false,
+    usageToday: vi.fn(async () => ({ crawls: 3, lists: 0 })),
   };
   return { d, repo, settings };
 }
@@ -418,6 +427,8 @@ describe('daily crawl limit (T06c)', () => {
       jobExpiryDays: 7,
       relevanceMaxJobs: 50,
       relevanceMinScore: 30,
+      listsPerDay: 2,
+      listCompanies: 20,
     });
     await route(post(URL_), d);
     expect(vi.mocked(repo.request).mock.calls[1]?.[0].dailyLimit).toBe(30);
@@ -429,7 +440,7 @@ describe('daily crawl limit (T06c)', () => {
         throw new DailyLimitError();
       }),
     });
-    vi.mocked(d.usedToday).mockResolvedValue(20);
+    vi.mocked(d.usageToday).mockResolvedValue({ crawls: 20, lists: 0 });
     const res = await route(post(URL_), d);
     expect(res.statusCode).toBe(429);
     expect(body(res)).toMatchObject({
@@ -790,7 +801,10 @@ describe('GET /me/audit', () => {
 
 describe('dev test site', () => {
   const visit = (page: string) =>
-    testSite({ pathParameters: { page } } as unknown as APIGatewayProxyEventV2);
+    testSite({
+      pathParameters: { page },
+      requestContext: { domainName: 'abc123.execute-api.us-east-1.amazonaws.com' },
+    } as unknown as APIGatewayProxyEventV2);
 
   it('serves each fixed page in dev', async () => {
     process.env.STAGE = 'dev';
@@ -811,10 +825,23 @@ describe('dev test site', () => {
       'Data Engineer',
     ]);
     expect(block).not.toContain('</');
+    // #50: the list links to this site's own pages, and the second company has one posting.
+    const list = JSON.parse((await visit('list-simplify')).body as string);
+    expect(list).toHaveLength(6);
+    expect(list[0].url).toBe(
+      'https://abc123.execute-api.us-east-1.amazonaws.com/test-site/jobs-schema-org',
+    );
+    const second = (await visit('jobs-second')).body as string;
+    expect(second).toContain('Platform Engineer');
+    expect(/<script type="application\/ld\+json">(.*?)<\/script>/s.exec(second)?.[1]).not.toContain(
+      '</',
+    );
     expect(Object.keys(PAGES).sort()).toEqual([
       'blocked',
       'jobs',
       'jobs-schema-org',
+      'jobs-second',
+      'list-simplify',
       'login',
       'redirect-metadata',
       'shell',
@@ -833,6 +860,198 @@ describe('dev test site', () => {
     process.env.STAGE = 'prod';
     expect((await visit('jobs')).statusCode).toBe(404);
     delete process.env.STAGE;
+  });
+});
+
+describe('list runs (#50)', () => {
+  const LIST_URL = 'https://github.com/SimplifyJobs/New-Grad-Positions/tree/dev';
+  const TEST_LIST = 'https://abc123.execute-api.us-east-1.amazonaws.com/test-site/list-simplify';
+
+  it('queues a GitHub list as a list run: one source per repository, counted against the lists', async () => {
+    const { d, repo } = deps();
+    const res = await route(post(LIST_URL), d);
+    expect(res.statusCode).toBe(202);
+    const input = vi.mocked(repo.request).mock.calls[0]?.[0];
+    expect(input).toMatchObject({
+      url: LIST_URL,
+      normalizedUrl: 'https://github.com/simplifyjobs/new-grad-positions',
+      list: {
+        source: { kind: 'github', owner: 'SimplifyJobs', repo: 'New-Grad-Positions' },
+        perDay: 2,
+      },
+      maxActive: 3,
+    });
+    expect(input?.audit.summary).toBe(
+      'List run requested: https://github.com/simplifyjobs/new-grad-positions',
+    );
+    await route(post('https://github.com/simplifyjobs/new-grad-positions'), d);
+    expect(vi.mocked(repo.request).mock.calls[1]?.[0].sourceId).toBe(input?.sourceId);
+  });
+
+  it('crawls any other link as before', async () => {
+    const { d, repo } = deps();
+    await route(post(URL_), d);
+    expect(vi.mocked(repo.request).mock.calls[0]?.[0].list).toBeUndefined();
+  });
+
+  it("says when the day's lists are used, apart from its crawls", async () => {
+    const { d } = deps({
+      request: vi.fn(async () => {
+        throw new DailyLimitError();
+      }),
+    });
+    vi.mocked(d.usageToday).mockResolvedValue({ crawls: 2, lists: 2 });
+    const res = await route(post(LIST_URL), d);
+    expect(res.statusCode).toBe(429);
+    expect(body(res)).toMatchObject({
+      code: 'daily-list-limit-reached',
+      detail: "You've used 2 of 2 list runs today. Resets at 00:00 UTC.",
+    });
+
+    // Lists left, but no crawls left today.
+    vi.mocked(d.usageToday).mockResolvedValue({ crawls: 20, lists: 1 });
+    expect(body(await route(post(LIST_URL), d))).toMatchObject({
+      code: 'daily-limit-reached',
+      detail: "You've used 20 of 20 crawls today. Resets at 00:00 UTC.",
+    });
+  });
+
+  it('refuses lists, without counting anything, when the admin turned them off', async () => {
+    const { d, repo } = deps();
+    vi.mocked(d.limits).mockResolvedValue({
+      ...DEFAULT_CRAWL_LIMITS,
+      maxActive: 3,
+      listsPerDay: 0,
+    });
+    const res = await route(post(LIST_URL), d);
+    // Not 403: the web app reads that as a closed account.
+    expect(res.statusCode).toBe(409);
+    expect(body(res).code).toBe('lists-turned-off');
+    expect(repo.request).not.toHaveBeenCalled();
+    expect((await route(post(URL_), d)).statusCode).toBe(202);
+
+    // A list run already in progress is still returned.
+    vi.mocked(repo.getSource).mockResolvedValue({ activeCrawlId: C1 } as Source);
+    vi.mocked(repo.getCrawl).mockResolvedValue(crawl({ kind: 'list', status: 'running' }));
+    const again = await route(post(LIST_URL), d);
+    expect(again.statusCode).toBe(200);
+    expect(body(again)).toMatchObject({ crawlId: C1, kind: 'list' });
+  });
+
+  it("treats only this stack's own test site's lists as lists (dev stacks)", () => {
+    const host = 'abc123.execute-api.us-east-1.amazonaws.com';
+    const url = new URL(TEST_LIST);
+    expect(listSourceOf(url, host)).toEqual({ kind: 'test', url: TEST_LIST });
+    expect(listSourceOf(url, undefined)).toBeUndefined();
+    expect(listSourceOf(new URL(`https://${host}/test-site/jobs`), host)).toBeUndefined();
+    // Another API Gateway endpoint is not this stack's test site.
+    const other = 'https://other99.execute-api.us-east-1.amazonaws.com/test-site/list-x';
+    expect(listSourceOf(new URL(other), host)).toBeUndefined();
+  });
+
+  it('keeps a list run active while it moves on, and ends it once it stops moving', async () => {
+    const old = new Date(NOW - STALE_LIST_MS - 1).toISOString();
+    // Started long ago, last moved on 30 minutes ago: longer than a crawl may take, still moving.
+    const chosen = { rows: 1, matched: 1, companiesMatched: 1, companies: [], skipped: 0 };
+    const moving = crawl({
+      kind: 'list',
+      status: 'running',
+      list: chosen,
+      childIds: ['K1'],
+      createdAt: old,
+      updatedAt: new Date(NOW - 2 * STALE_CRAWL_MS).toISOString(),
+    });
+    const { d, repo } = deps({
+      request: vi.fn(async () => {
+        throw new ActiveCrawlError();
+      }),
+    });
+    vi.mocked(repo.getSource).mockResolvedValue({ activeCrawlId: C1 } as Source);
+    vi.mocked(repo.getCrawl).mockResolvedValue(moving);
+    const res = await route(post(LIST_URL), d);
+    expect(res.statusCode).toBe(200);
+    expect(repo.finish).not.toHaveBeenCalled();
+
+    vi.mocked(repo.getCrawl).mockResolvedValue({ ...moving, updatedAt: old });
+    await route(post(LIST_URL), d);
+    expect(repo.finish).toHaveBeenCalledWith(
+      expect.objectContaining({ crawlId: C1 }),
+      expect.objectContaining({ status: 'failed' }),
+      expect.anything(),
+    );
+  });
+
+  it('gives a list run with no company crawl yet the time of a crawl', async () => {
+    const quiet = new Date(NOW - 2 * STALE_CRAWL_MS).toISOString();
+    // Chosen, but no company crawl queued yet (the worker stopped in between): nothing moves it on.
+    const reading = crawl({
+      kind: 'list',
+      status: 'running',
+      list: { rows: 1, matched: 1, companiesMatched: 1, companies: [], skipped: 0 },
+      queuedCount: 0,
+      createdAt: quiet,
+      updatedAt: quiet,
+    });
+    const { d, repo } = deps({
+      request: vi.fn(async () => {
+        throw new ActiveCrawlError();
+      }),
+    });
+    vi.mocked(repo.getSource).mockResolvedValue({ activeCrawlId: C1 } as Source);
+    vi.mocked(repo.getCrawl).mockResolvedValue(reading);
+    await route(post(LIST_URL), d);
+    expect(repo.finish).toHaveBeenCalledWith(
+      expect.objectContaining({ crawlId: C1 }),
+      expect.objectContaining({ status: 'failed' }),
+      expect.anything(),
+    );
+  });
+
+  it("shows a list run's progress, and a company crawl's list", () => {
+    const view = crawlView(
+      crawl({
+        kind: 'list',
+        status: 'running',
+        listSource: { kind: 'github', owner: 'a', repo: 'b' },
+        list: {
+          rows: 100,
+          matched: 30,
+          companiesMatched: 12,
+          companies: [
+            { name: 'Acme', url: 'https://jobs.lever.co/acme', matches: 3 },
+            { name: 'Beta', url: 'https://jobs.ashbyhq.com/beta', matches: 2 },
+            { name: 'Gamma', url: 'https://jobs.ashbyhq.com/gamma', matches: 1 },
+          ],
+          skipped: 4,
+        },
+        queuedCount: 2,
+        runningIds: new Set(['K2']),
+        childIds: ['K1', 'K2'],
+        childrenEnded: 1,
+      }),
+    );
+    expect(view).toMatchObject({
+      kind: 'list',
+      list: {
+        rows: 100,
+        matched: 30,
+        companiesMatched: 12,
+        companies: [
+          { name: 'Acme', url: 'https://jobs.lever.co/acme' },
+          { name: 'Beta', url: 'https://jobs.ashbyhq.com/beta' },
+          { name: 'Gamma', url: 'https://jobs.ashbyhq.com/gamma' },
+        ],
+        skipped: 4,
+        busy: 0,
+        waiting: 1,
+        running: 1,
+        ended: 1,
+        crawlIds: ['K1', 'K2'],
+      },
+    });
+    expect(JSON.stringify(view)).not.toContain('listSource');
+    expect(crawlView(crawl({ parentCrawlId: 'L1' }))).toMatchObject({ parentCrawlId: 'L1' });
+    expect(crawlView(crawl())).not.toHaveProperty('list');
   });
 });
 

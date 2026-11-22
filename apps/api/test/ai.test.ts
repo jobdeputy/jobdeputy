@@ -76,6 +76,8 @@ function deps(allowTestProvider = false) {
       jobExpiryDays: 7,
       relevanceMaxJobs: 50,
       relevanceMinScore: 30,
+      listsPerDay: 2,
+      listCompanies: 20,
     })),
   };
   return { d, keys };

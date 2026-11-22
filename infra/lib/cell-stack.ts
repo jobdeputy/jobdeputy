@@ -534,7 +534,14 @@ export class CellStack extends Stack {
     jobsTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem', 'dynamodb:BatchGetItem');
     // The deletion record, and (T08c) the profile's headline and skills for the filter.
     usersTable.grant(crawlWorker.fn, 'dynamodb:GetItem');
-    crawlsTable.grant(crawlWorker.fn, 'dynamodb:UpdateItem');
+    // #50: a list run reads itself and its company crawls (GetItem), and queues each company
+    // crawl (PutItem, in the transaction that moves the list on).
+    crawlsTable.grant(
+      crawlWorker.fn,
+      'dynamodb:UpdateItem',
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+    );
     // Frees the crawl's active slot when it ends (same transaction). T08c: each company's
     // shown jobs (`COMPANY#`): read, replaced at the version read, places freed.
     usageTable.grant(crawlWorker.fn, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem');
@@ -803,6 +810,11 @@ export class CellStack extends Stack {
         integration: new HttpLambdaIntegration('TestSiteIntegration', testSite.fn),
       });
       new CfnOutput(this, 'TestSiteUrl', { value: testSiteStage.url });
+      // #50: this test site's list pages are lists (integration tests); no other host is.
+      crawlsApi.fn.addEnvironment(
+        'TEST_LIST_HOST',
+        `${testSiteApi.apiId}.execute-api.${this.region}.${this.urlSuffix}`,
+      );
     }
 
     // With a trailing slash (the integration tests join paths onto it); the web app's apiUrl is

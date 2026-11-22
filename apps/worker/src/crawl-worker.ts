@@ -6,12 +6,14 @@ import {
   type AuditInput,
   type ClosedJob,
   CompanyLimitRepository,
+  type Crawl,
   type CrawlError,
   CrawlRepository,
   CrawlSettingsRepository,
   documentClient,
   type JobPosting,
   JobRepository,
+  ListRunRepository,
   PreferencesRepository,
   ProfileRepository,
   type SaveContext,
@@ -32,6 +34,8 @@ import { createFetcher, FetchError, type FetchedPage } from './fetch/fetcher.js'
 import type { Board } from './jobs/boards.js';
 import { type FetchFn, readJobs } from './jobs/crawl-jobs.js';
 import { type DescriptionReading, readDescriptions } from './jobs/descriptions.js';
+import { advanceList, type ListRunDeps, type ListRunSummary, runList } from './lists/list-run.js';
+import { LIST_FETCH_LIMITS } from './lists/read-list.js';
 import {
   type FitInputs,
   type FitResult,
@@ -50,7 +54,13 @@ export const RETRY_BACKOFF_SECONDS = [30, 120] as const;
 export const SAFETY_MARGIN_MS = 5_000;
 
 export interface CrawlWorkerDeps {
-  repo: Pick<CrawlRepository, 'start' | 'recordRetry' | 'finish'>;
+  repo: Pick<CrawlRepository, 'start' | 'recordRetry' | 'finish' | 'getCrawl'>;
+  /** #50: a list run's own step: read the list, choose its companies, start their crawls. */
+  runList: (crawl: Crawl) => Promise<ListRunSummary | undefined>;
+  /** #50: moves a list run on after one of its company crawls ended. */
+  advanceList: (userId: string, listId: string) => Promise<void>;
+  /** #50: marks a running list run as still moving (its `updatedAt`). */
+  touchList: (userId: string, listId: string) => Promise<void>;
   isBeingDeleted: (userId: string) => Promise<boolean>;
   /** A fresh fetcher for one crawl attempt (its robots.txt memory lasts that attempt). */
   newFetcher: () => FetchFn;
@@ -104,6 +114,11 @@ export function listed(seen: string[], previous: string[]): string[] {
 /** Asks SQS for another attempt (the message is not deleted). */
 export class RetryLaterError extends Error {
   override name = 'RetryLaterError';
+}
+
+/** #50: the crawl ended, but its list run was not moved on (retried by the message, never the crawl). */
+export class ListHandOffError extends Error {
+  override name = 'ListHandOffError';
 }
 
 /** The user-facing message, with a safe technical detail (for example "HTTP 502") when there is one. */
@@ -164,10 +179,48 @@ export async function processRecord(
     logger.info('Account is being deleted; skipping', { crawlId });
     return 'skipped';
   }
+  // #50: a company crawl's end moves its list run on (queues the next company, or ends the list).
+  // The crawl itself has ended by then: a failure here is the list's, never the crawl's. The
+  // message comes back (`start` finds the crawl ended and moves the list on); on its last
+  // receive it is dead-lettered at once, so the alarm says a list is stuck.
+  const handOff = async (listId: string) => {
+    try {
+      await deps.advanceList(userId, listId);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      if (receiveCount < MAX_RECEIVES) {
+        const seconds = RETRY_BACKOFF_SECONDS[receiveCount - 1] ?? 0;
+        await deps.delayRetry(record, seconds).catch(() => undefined);
+        logger.warn('List run not moved on; will retry', { crawlId, receiveCount, reason });
+      } else {
+        logger.error('List run not moved on after the last attempt', { crawlId, reason });
+        await deps.delayRetry(record, 0).catch(() => undefined);
+      }
+      throw new ListHandOffError(reason);
+    }
+  };
   const crawl = await deps.repo.start(userId, crawlId);
   if (!crawl) {
     logger.info('Crawl missing or already finished; skipping', { crawlId });
+    // #50: a company crawl that ended, but whose list was not moved on (the attempt failed
+    // after `finish`): move it on now.
+    const ended = await deps.repo.getCrawl(userId, crawlId);
+    if (ended?.parentCrawlId) await handOff(ended.parentCrawlId);
     return 'skipped';
+  }
+  const moveListOn = async () => {
+    if (crawl.parentCrawlId) await handOff(crawl.parentCrawlId);
+  };
+  // #50: each attempt of a company crawl shows its list is still moving (a retried attempt can
+  // wait out the queue's visibility timeout first).
+  // Best effort: the crawl goes on if the mark fails.
+  if (crawl.parentCrawlId) {
+    await deps.touchList(userId, crawl.parentCrawlId).catch((error: unknown) => {
+      logger.warn('List run not marked as moving', {
+        crawlId,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    });
   }
   const host = new URL(crawl.url).hostname;
   const audit = (
@@ -188,6 +241,7 @@ export async function processRecord(
       { status: 'failed', error },
       audit('crawl.failed', `Crawl failed: ${host} (${error.code})`, { code: error.code }),
     );
+    await moveListOn();
     logger.info('Crawl failed', {
       crawlId,
       code: error.code,
@@ -205,6 +259,14 @@ export async function processRecord(
   // One fetcher for the crawl: it remembers robots.txt for the descriptions too.
   const fetch = deps.newFetcher();
   try {
+    if (crawl.kind === 'list') {
+      const summary = await withDeadline(
+        deps.runList(crawl),
+        deps.remainingMs() - SAFETY_MARGIN_MS,
+      );
+      logger.info('List run started', { crawlId, attempts: crawl.attempts, ...summary });
+      return 'succeeded';
+    }
     const { page, jobs, extraction, board, requests, complete } = await withDeadline(
       (async () => {
         const reading = await readJobs(crawl.url, fetch, {
@@ -217,15 +279,17 @@ export async function processRecord(
       deps.remainingMs() - SAFETY_MARGIN_MS,
     );
     const key = crawlKeys(userId, crawlId).page;
-    const { saved, closed, listedJobIds, fit, inputs, described } = await withDeadline(
+    const { saved, closed, listedJobIds, fit, share, described } = await withDeadline(
       (async () => {
         // T08c: filter every job, rank each company's candidates, then save with the result.
         const inputs = await deps.fitInputs(userId);
+        // #50: a list's company crawl keeps only its share of the list's one AI run.
+        const share = crawl.listShare ?? inputs.relevanceMaxJobs;
         const expiresAt = Math.floor(deps.now().getTime() / 1000) + inputs.expiryDays * 86_400;
         const fit = await fitJobs(userId, jobs, inputs, deps.shown);
         // T08d3: the top candidates' descriptions, where the board's list has none.
         const described = board
-          ? await describeCandidates(userId, board, fit, inputs.relevanceMaxJobs, fetch, deps)
+          ? await describeCandidates(userId, board, fit, share, fetch, deps)
           : undefined;
         const found = described
           ? fit.jobs.map((j) => ({ ...j, ...described.descriptions.get(j.jobId) }))
@@ -247,7 +311,7 @@ export async function processRecord(
         const done = {
           saved,
           fit,
-          inputs,
+          share,
           described,
           listedJobIds: undefined as string[] | undefined,
         };
@@ -288,13 +352,10 @@ export async function processRecord(
           s3Key: key,
         },
         stats,
-        // T08d: what the LLM scores next, when this crawl has an AI source.
-        ...(crawl.aiSource && crawl.aiSource !== 'none'
-          ? {
-              candidates: fit.ranked
-                .filter((id) => !gone.has(id))
-                .slice(0, inputs.relevanceMaxJobs),
-            }
+        // T08d: what the LLM scores next, when this crawl has an AI source. #50: a company
+        // crawl of a list keeps its share for the list's AI run.
+        ...((crawl.aiSource && crawl.aiSource !== 'none') || crawl.parentCrawlId
+          ? { candidates: fit.ranked.filter((id) => !gone.has(id)).slice(0, share) }
           : {}),
         extraction,
         source: {
@@ -324,9 +385,10 @@ export async function processRecord(
       skipped: extraction.skipped,
       partial: extraction.partial?.reason,
     });
+    await moveListOn();
     return 'succeeded';
   } catch (error) {
-    if (error instanceof RetryLaterError) throw error;
+    if (error instanceof RetryLaterError || error instanceof ListHandOffError) throw error;
     const lastAttempt = receiveCount >= MAX_RECEIVES;
     const backoff = RETRY_BACKOFF_SECONDS[receiveCount - 1] ?? 0;
 
@@ -411,8 +473,45 @@ function defaultDeps(): CrawlWorkerDeps {
   const limits = ssmCrawlLimits(CRAWL_LIMITS_PARAMETER);
   const s3 = new S3Client({});
   const sqs = new SQSClient({});
+  const fitInputs = fitInputsLoader({ preferences, profiles, crawlSettings, limits });
+  const storePage = async (key: string, page: FetchedPage) => {
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: DOCUMENTS_BUCKET_NAME,
+        Key: key,
+        Body: page.body,
+        ContentType: page.charset
+          ? `${page.contentType}; charset=${page.charset}`
+          : page.contentType,
+        // Expired by the bucket's lifecycle rule after 30 days.
+        Tagging: `${CRAWL_PAGE_RETENTION_TAG.key}=${CRAWL_PAGE_RETENTION_TAG.value}`,
+      }),
+    );
+  };
+  const listRuns = new ListRunRepository(client, {
+    crawls: CRAWLS_TABLE_NAME,
+    sources: SOURCES_TABLE_NAME,
+    audit: AUDIT_TABLE_NAME,
+  });
+  const lists: ListRunDeps = {
+    lists: listRuns,
+    getCrawl: (userId, crawlId) => crawls.getCrawl(userId, crawlId),
+    getSource: (userId, sourceId) => crawls.getSource(userId, sourceId),
+    finish: (crawl, outcome, audit) => crawls.finish(crawl, outcome, audit),
+    newListFetcher: () => {
+      const fetcher = createFetcher({ limits: LIST_FETCH_LIMITS });
+      return (url, options) => fetcher.fetch(url, options);
+    },
+    storePage,
+    fitInputs,
+    limits,
+    newId: ulid,
+  };
   return {
     repo: crawls,
+    runList: (crawl) => runList(crawl, lists),
+    advanceList: (userId, listId) => advanceList(userId, listId, lists),
+    touchList: (userId, listId) => listRuns.touch(userId, listId),
     isBeingDeleted: (userId) => account.isBeingDeleted(userId),
     newFetcher: () => {
       const fetcher = createFetcher();
@@ -427,25 +526,12 @@ function defaultDeps(): CrawlWorkerDeps {
       jobs.closeMissing(userId, sourceId, jobIds, expiresAt),
     withDescription: (userId, jobIds) => jobs.withDescription(userId, jobIds),
     closeGone: (userId, jobIds, expiresAt) => jobs.closeGone(userId, jobIds, expiresAt),
-    fitInputs: fitInputsLoader({ preferences, profiles, crawlSettings, limits }),
+    fitInputs,
     shown,
     markOverLimit: (userId, jobIds, expiresAt) => jobs.markOverLimit(userId, jobIds, expiresAt),
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     now: () => new Date(),
-    storePage: async (key, page) => {
-      await s3.send(
-        new PutObjectCommand({
-          Bucket: DOCUMENTS_BUCKET_NAME,
-          Key: key,
-          Body: page.body,
-          ContentType: page.charset
-            ? `${page.contentType}; charset=${page.charset}`
-            : page.contentType,
-          // Expired by the bucket's lifecycle rule after 30 days.
-          Tagging: `${CRAWL_PAGE_RETENTION_TAG.key}=${CRAWL_PAGE_RETENTION_TAG.value}`,
-        }),
-      );
-    },
+    storePage,
     delayRetry: async (record, seconds) => {
       await sqs.send(
         new ChangeMessageVisibilityCommand({
