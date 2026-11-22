@@ -270,7 +270,7 @@ describe('Job matches: following the newest link (#49)', () => {
     await renderPage(api);
     expect(await screen.findByText('Couldn’t check on your last link.')).toBeTruthy();
     spy.mockImplementation(request);
-    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
     await waitFor(() => expect(screen.queryByText('Couldn’t check on your last link.')).toBeNull());
   });
 
@@ -291,6 +291,68 @@ describe('Job matches: following the newest link (#49)', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('Job matches: your companies under the link (#49 PR C)', () => {
+  /** Counts the companies list's reads from now on. */
+  function companyReads(api: FakeApi) {
+    const request = vi.spyOn(api, 'request');
+    return () => request.mock.calls.filter(([, path]) => String(path).startsWith('/me/companies'));
+  }
+
+  it('reads the companies once the newest crawl is known, and again only when its work ends', async () => {
+    const api = heldApi();
+    const reads = companyReads(api);
+    await renderPage(api);
+    expect(await screen.findByText('No matches yet')).toBeTruthy();
+    expect(reads()).toHaveLength(1);
+    type('boards.greenhouse.io/acme');
+    findJobs();
+    await waitFor(() => expect(input().value).toBe(''));
+    api.next(3);
+    // Read, and its scoring under way: the list is not read again yet.
+    await screen.findByText(
+      'Scoring the jobs at boards.greenhouse.io against your roles…',
+      {},
+      { timeout: 2000 },
+    );
+    expect(reads()).toHaveLength(1);
+    api.next();
+    expect(await screen.findByRole('article', { name: 'Acme' }, { timeout: 3000 })).toBeTruthy();
+    expect(reads()).toHaveLength(2);
+  });
+
+  it('reads them again for a crawl that ended in another tab, but not for one ended before', async () => {
+    const api = heldApi();
+    await api.request('POST', '/me/crawls', { url: 'https://boards.greenhouse.io/acme' });
+    api.next(4);
+    const reads = companyReads(api);
+    await renderPage(api);
+    expect(await screen.findByRole('article', { name: 'Acme' })).toBeTruthy();
+    expect(reads()).toHaveLength(1);
+    // Another tab sends a link and it ends; back here, the newest crawl is read on focus.
+    await api.request('POST', '/me/crawls', { url: 'https://jobs.lever.co/globex' });
+    api.next(4);
+    fireEvent.focus(window);
+    window.dispatchEvent(new Event('visibilitychange'));
+    expect(await screen.findByRole('article', { name: 'Globex' }, { timeout: 3000 })).toBeTruthy();
+    expect(reads()).toHaveLength(2);
+    // The list stayed on screen while it was read again (no skeleton in between).
+    expect(screen.getByRole('article', { name: 'Acme' })).toBeTruthy();
+  });
+
+  it('does not read them again for a link that failed (it changed nothing)', async () => {
+    const api = heldApi();
+    const reads = companyReads(api);
+    await renderPage(api);
+    await screen.findByText('No matches yet');
+    type('unreachable.example.com/careers');
+    findJobs();
+    await waitFor(() => expect(input().value).toBe(''));
+    api.next(2);
+    await screen.findByText(/^Couldn’t read unreachable\.example\.com\./);
+    expect(reads()).toHaveLength(1);
   });
 });
 

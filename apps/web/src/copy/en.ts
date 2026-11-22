@@ -408,7 +408,7 @@ export const en = {
       withoutAi: 'Find jobs without AI scores',
       /** The newest link couldn't be checked on. */
       readFailed: 'Couldn’t check on your last link.',
-      retry: 'Try again',
+      retry: 'Check again',
       retrying: 'Checking…',
     },
     /**
@@ -451,6 +451,31 @@ export const en = {
       waiting: 'Waiting for my turn to read {host}…',
       reading: 'Reading {host}…',
       scoring: 'Scoring the jobs at {host} against your roles…',
+    },
+    /** The companies and their best jobs (#49 PR C). */
+    companies: {
+      title: 'Your companies',
+      loading: 'Loading your matches',
+      loadFailed: 'Your matches didn’t load.',
+      retry: 'Try again',
+      emptyTitle: 'No matches yet',
+      emptyLine: 'Paste a careers page above. The best roles at each company land here.',
+      /** Beside a company: how many of its best roles show (not how many it has). */
+      roles: { one: 'Its best role', other: 'Its best {count} roles' },
+      more: 'More companies',
+      moreFailed: 'More companies didn’t load. Press More companies to try again.',
+      loadingMore: 'Loading more…',
+      /** After a job's title, read out only: its link opens the posting on its own site. */
+      opensNewTab: '(opens the posting in a new tab)',
+      /** Where a job is worked (the API's `onsite`, `hybrid`, `remote`). */
+      workplace: { onsite: 'On-site', hybrid: 'Hybrid', remote: 'Remote' },
+      /** How well a job fits, from the AI's score (#49). */
+      fit: {
+        strong: 'Strong fit',
+        good: 'Good fit',
+        stretch: 'Stretch',
+        unscored: 'Not scored yet',
+      },
     },
     /** How the last link went. */
     result: {

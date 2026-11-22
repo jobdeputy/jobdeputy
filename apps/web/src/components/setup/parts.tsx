@@ -94,12 +94,15 @@ export function LoadFailed({
   message,
   retry,
   onRetry,
+  retrying = false,
 }: {
   error: unknown;
   /** Why, when trying again can help. */
   message: string;
   retry: string;
   onRetry: () => void;
+  /** The retry is on its way: its button shows it (#49). */
+  retrying?: boolean;
 }) {
   const final = isFinal(error);
   return (
@@ -108,7 +111,7 @@ export function LoadFailed({
         {final ? refusalText(error) : message}
       </p>
       {!final && (
-        <Button variant="outline" onClick={onRetry}>
+        <Button variant="outline" pending={retrying} onClick={onRetry}>
           {retry}
         </Button>
       )}

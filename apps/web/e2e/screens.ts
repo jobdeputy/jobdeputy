@@ -343,6 +343,8 @@ async function toJobsDone(page: Page) {
   await page
     .getByText('Done with boards.greenhouse.io: 12 jobs read.')
     .waitFor({ timeout: 15_000 });
+  // Its company, read again once the crawl's work ended.
+  await page.getByRole('article', { name: 'Acme' }).getByText('Strong fit').waitFor();
 }
 
 /** A link that could not be read, its reason beside it. */
