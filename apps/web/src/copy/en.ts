@@ -436,6 +436,17 @@ export const en = {
       changedElsewhere:
         'Your profile changed somewhere else. It shows here now: check it, then save.',
     },
+    preferences: {
+      title: 'Job preferences',
+      line: 'What your deputy looks for.',
+      roles: {
+        title: 'Target roles',
+        none: 'None yet. Add the job titles your deputy should look for.',
+        tooMany: 'Up to {max} roles fit, and {count} are chosen. Remove {extra} to save.',
+        changedElsewhere:
+          'Your roles changed somewhere else. They show here now: check them, then save.',
+      },
+    },
     /** Country codes as shown (the US-only launch). */
     countries: { US: 'United States' } as Record<string, string>,
   },

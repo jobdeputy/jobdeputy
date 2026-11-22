@@ -17,6 +17,9 @@ async function openDrawer(page: Page, name: string) {
 test('creates an account, confirms it with the code, lands signed in, and signs out', async ({
   page,
 }) => {
+  // The whole journey (sign-up, the set-up's three steps with the résumé check's 3 s, then the
+  // Profile page's forms, axe at each): over the 30 s limit on CI's WebKit (main run 44968165243).
+  test.slow();
   await openDrawer(page, 'Get started free');
   const drawer = page.getByRole('dialog');
   await drawer.getByLabel('Email').fill('new@example.com');
@@ -131,6 +134,15 @@ test('creates an account, confirms it with the code, lands signed in, and signs 
   await expectNoAccessibilityViolations(page);
   await expectNoHorizontalScroll(page);
   await page.getByRole('button', { name: 'Cancel' }).click();
+  // Target roles: the set-up's editor, in place.
+  await page.getByRole('button', { name: 'Edit Target roles' }).click();
+  await expect(page.getByLabel('Job title')).toBeFocused();
+  await expectNoAccessibilityViolations(page);
+  await expectNoHorizontalScroll(page);
+  await page.getByRole('checkbox', { name: 'Backend engineer' }).check();
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByRole('button', { name: 'Edit Target roles' })).toBeFocused();
+  await expect(page.getByRole('list', { name: 'Target roles' })).toContainText('Backend engineer');
 
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(

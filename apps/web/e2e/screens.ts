@@ -74,6 +74,14 @@ export const SCREENS: Screen[] = [
     still: true,
     steps: toProfileEdit,
   },
+  // Target roles' editor open on the Profile page, a typed title added.
+  {
+    name: 'profile-roles',
+    path: '/',
+    open: 'Get started free',
+    still: true,
+    steps: toProfileRoles,
+  },
   // Every shared component state (#17); the pending buttons and the loading skeleton appear
   // after the 300 ms delay.
   {
@@ -222,6 +230,13 @@ async function uploadResume(page: Page, name: string, stage: string) {
     .getByText(stage)
     .first()
     .waitFor({ timeout: 15_000 });
+}
+
+async function toProfileRoles(page: Page) {
+  await toSignedIn(page);
+  await page.getByRole('button', { name: 'Edit Target roles' }).click();
+  await page.getByLabel('Job title').fill('Data engineer');
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
 }
 
 async function toProfileEdit(page: Page) {
