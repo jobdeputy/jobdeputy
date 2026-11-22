@@ -16,6 +16,8 @@ Short records of choices that shape the project. Agents and contributors treat a
 | [0010](0010-platform-ai-model.md) | Platform AI model (Ministral 3 14B) and prompt-injection rules | Accepted |
 | [0011](0011-web-hosting.md) | Web app hosting: dev.jobdeputy.com on S3 and CloudFront, with a delegated zone | Accepted |
 | [0012](0012-web-ui-styling-and-testing.md) | Web UI: Tailwind + shadcn/ui, Playwright on seven devices, translation-ready copy | Accepted |
+| [0013](0013-apply-flow-rules.md) | Apply flow: one résumé per company, an 80% match score, a per-company cooldown, and the user submits | Accepted |
+| [0014](0014-browser-extension-in-monorepo.md) | The browser extension lives in the monorepo (`apps/extension`) | Accepted |
 
 ## Template
 
