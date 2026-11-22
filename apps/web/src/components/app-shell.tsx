@@ -9,8 +9,8 @@ export const PAGES = [
   { path: '/profile', label: copy.nav.profile, icon: <PersonIcon /> },
 ] as const;
 
-/** Where the app opens, and the page shown at an address that is no page. */
-export const HOME_PAGE = PAGES[1];
+/** Where the app opens, and the page shown at an address that is no page (not by list order). */
+export const HOME_PAGE = PAGES.find((page) => page.path === '/profile') ?? PAGES[0];
 
 /** The page at this path; Profile at an address that is no page. */
 export function pageAt(path: string): (typeof PAGES)[number] {

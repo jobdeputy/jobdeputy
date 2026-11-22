@@ -1,5 +1,6 @@
 import { AlertDialog } from 'radix-ui';
 import { Button } from '@/components/ui/button.tsx';
+import { SHEET_OVERLAY, SHEET_PANEL } from '@/components/ui/sheet.tsx';
 import { cn } from '@/lib/utils.ts';
 
 /**
@@ -46,11 +47,14 @@ export function ConfirmSheet({
       }}
     >
       <AlertDialog.Portal>
-        <AlertDialog.Overlay className="fixed inset-0 z-50 bg-ink/32 backdrop-blur-[3px] motion-safe:data-[state=closed]:animate-fade-out motion-safe:data-[state=open]:animate-fade-in" />
+        <AlertDialog.Overlay className={SHEET_OVERLAY} />
         <AlertDialog.Content
           data-slot="confirm-sheet"
           onCloseAutoFocus={onCloseAutoFocus}
-          className="fixed inset-y-0 right-0 z-50 grid h-dvh w-[min(500px,100vw)] content-start gap-3 overflow-y-auto border-line bg-paper px-[18px] pt-[60px] pb-8 shadow-[-30px_0_80px_color-mix(in_oklab,var(--color-ink)_18%,transparent)] outline-none sm:border-l md:px-10 md:pt-16 md:pb-10 motion-safe:data-[state=closed]:animate-drawer-out motion-safe:data-[state=open]:animate-drawer-in"
+          className={cn(
+            SHEET_PANEL,
+            'grid content-start gap-3 px-[18px] pt-[60px] pb-8 md:px-10 md:pt-16 md:pb-10',
+          )}
         >
           <p className="m-0 flex items-center gap-2 text-xs font-[750] tracking-[0.12em] uppercase before:block before:h-[3px] before:w-[13px] before:rounded-full before:bg-green">
             {eyebrow}

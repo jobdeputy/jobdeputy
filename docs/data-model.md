@@ -402,3 +402,4 @@ Everything under `users/<userId>/` and `derived/users/<userId>/` goes with accou
 | 2026-10-01 | `jobs.relevance` built (`score`, `bestRoleId`, `reasons`, `model`, `promptVersion`, `inputsHash`, `scoredAt`; replaces the `byRole`/`method` design); `filter.reasons` `llm_low_score`; `crawls.candidates`, `relevance`, and `llm` (replaces the T07d `llm` design); `usage` `COMPANY#` `shown` entries gain `s`; audit `crawl.scored` | T08d2 |
 | 2026-10-01 | `crawls.stats.descriptions`; `jobs.closedAt` also set when a candidate's posting is gone; the crawl worker batch-reads `jobs` (`jobId`, `descriptionHash`) | T08d3 |
 | 2026-10-01 | `jobs.relevance` from `relevance@v2`: `reasons` never quote a short ID | #62 |
+| 2026-11-21 | `documents`: deleting the default hands `isDefault` (and `usage` `DOCUMENTS.defaultDocumentId`) to the newest `ready` document in the same transaction, instead of freeing it | #33 6b1 |

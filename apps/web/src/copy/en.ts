@@ -400,10 +400,10 @@ export const en = {
       title: 'Delete {name}?',
       /** The file is deleted for good; a default hands over to the newest ready résumé. */
       line: 'The file is deleted for good. This can’t be undone.',
-      /** Deleting the default: "{next}" is the ready résumé the default goes to, or there is none. */
-      handOver: 'The file is deleted for good. This can’t be undone. {next} becomes your default.',
-      noHandOver:
-        'The file is deleted for good. This can’t be undone. You’ll have no default résumé until one is ready.',
+      /** Deleting the default, with others kept (the newest ready one takes over), or the last. */
+      handOver:
+        'The file is deleted for good. This can’t be undone. Your newest ready résumé becomes your default.',
+      noHandOver: 'The file is deleted for good. This can’t be undone.',
       confirm: 'Delete résumé',
       keep: 'Keep it',
     },

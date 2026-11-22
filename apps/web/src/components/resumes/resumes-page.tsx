@@ -70,7 +70,10 @@ export function ResumesPage() {
         return;
       }
     }
-    queryClient.setQueryData<Document[]>(documentsQuery(api).queryKey, (list) =>
+    const { queryKey } = documentsQuery(api);
+    // A read already on its way began before the delete: dropped, so it can't bring the row back.
+    await queryClient.cancelQueries({ queryKey });
+    queryClient.setQueryData<Document[]>(queryKey, (list) =>
       list?.filter((each) => each.documentId !== document.documentId),
     );
     deleted.current = true;
@@ -85,7 +88,7 @@ export function ResumesPage() {
     const now = await queryClient
       .fetchQuery({ ...documentsQuery(api), staleTime: 0 })
       .catch(() => undefined);
-    const next = now?.find((each) => each.isDefault);
+    const next = now?.find((each) => each.isDefault && each.documentId !== document.documentId);
     say(
       now === undefined
         ? fill(text.said.deleted, { name })
@@ -138,15 +141,17 @@ export function ResumesPage() {
   );
 }
 
-/** What deleting it means: for the default, which ready résumé it goes to (as the API picks). */
+/**
+ * What deleting it means. For the default, which one takes over is not named here: the API picks
+ * the newest ready one as it deletes, and this list may be behind (one being checked elsewhere is
+ * not followed); the page says which once it is done.
+ */
 function question(asked: Document | null, saved: readonly Document[]): string {
   const text = copy.resumesPage.confirm;
   if (!asked?.isDefault) return text.line;
-  // Newest first, as listed.
-  const next = saved.find(
-    (each) => each.documentId !== asked.documentId && each.status === 'ready',
-  );
-  return next ? fill(text.handOver, { next: next.title }) : text.noHandOver;
+  return saved.some((each) => each.documentId !== asked.documentId)
+    ? text.handOver
+    : text.noHandOver;
 }
 
 /** Being checked or read, and known to be: worth asking about again. */

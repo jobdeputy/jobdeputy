@@ -394,8 +394,12 @@ export class DocumentRepository {
                 TableName: this.tableName,
                 Key: { userId, documentId },
                 // Still (not) the default, as read: a switch meanwhile is read again.
-                ConditionExpression: 'attribute_exists(userId) AND isDefault = :was',
-                ExpressionAttributeValues: { ':was': current.isDefault },
+                ConditionExpression: current.isDefault
+                  ? 'attribute_exists(userId) AND isDefault = :true'
+                  : 'attribute_exists(userId) AND (attribute_not_exists(isDefault) OR isDefault = :false)',
+                ExpressionAttributeValues: current.isDefault
+                  ? { ':true': true }
+                  : { ':false': false },
               },
             },
             auditPut(audit, userId, this.now()),
@@ -430,10 +434,9 @@ export class DocumentRepository {
         });
         return current;
       } catch (error) {
-        if (!(error instanceof Error && error.name === 'TransactionCanceledException')) {
-          throw error;
-        }
-        // Read again: gone (undefined), or changed (tried again).
+        // Only what a fresh read can settle is tried again: the document (gone, or its default
+        // changed), the marker (a switch meanwhile), or the successor (gone, or no longer ready).
+        if (![0, 2, 3].some((item) => cancelledAt(error, item))) throw error;
       }
     }
     throw new ConcurrentUpdateError('Documents were changed at the same moment');

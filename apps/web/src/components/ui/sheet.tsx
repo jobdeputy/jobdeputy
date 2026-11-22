@@ -8,6 +8,14 @@ import { cn } from '@/lib/utils.ts';
  * closes on Escape or a click outside, hides the page from screen readers, and stops it scrolling.
  * It is pinned to the physical right (not `end`) because its slide keyframes move along x.
  */
+/** The dimmed, blurred page behind a sheet; shared with ConfirmSheet. */
+export const SHEET_OVERLAY =
+  'fixed inset-0 z-50 bg-ink/32 backdrop-blur-[3px] motion-safe:data-[state=closed]:animate-fade-out motion-safe:data-[state=open]:animate-fade-in';
+
+/** The sheet itself, from the right; shared with ConfirmSheet. */
+export const SHEET_PANEL =
+  'fixed inset-y-0 right-0 z-50 h-dvh w-[min(500px,100vw)] overflow-y-auto sm:border-l border-line bg-paper shadow-[-30px_0_80px_color-mix(in_oklab,var(--color-ink)_18%,transparent)] outline-none motion-safe:data-[state=closed]:animate-drawer-out motion-safe:data-[state=open]:animate-drawer-in';
+
 const Sheet = SheetPrimitive.Root;
 const SheetTitle = SheetPrimitive.Title;
 const SheetDescription = SheetPrimitive.Description;
@@ -20,16 +28,10 @@ function SheetContent({
 }: React.ComponentProps<typeof SheetPrimitive.Content>) {
   return (
     <SheetPrimitive.Portal>
-      <SheetPrimitive.Overlay
-        data-slot="sheet-overlay"
-        className="fixed inset-0 z-50 bg-ink/32 backdrop-blur-[3px] motion-safe:data-[state=closed]:animate-fade-out motion-safe:data-[state=open]:animate-fade-in"
-      />
+      <SheetPrimitive.Overlay data-slot="sheet-overlay" className={SHEET_OVERLAY} />
       <SheetPrimitive.Content
         data-slot="sheet-content"
-        className={cn(
-          'fixed inset-y-0 right-0 z-50 h-dvh w-[min(500px,100vw)] overflow-y-auto sm:border-l border-line bg-paper shadow-[-30px_0_80px_color-mix(in_oklab,var(--color-ink)_18%,transparent)] outline-none motion-safe:data-[state=closed]:animate-drawer-out motion-safe:data-[state=open]:animate-drawer-in',
-          className,
-        )}
+        className={cn(SHEET_PANEL, className)}
         {...props}
       >
         {children}

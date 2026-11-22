@@ -41,7 +41,7 @@ async function renderPage(names: string[] = ['First.pdf', 'Second.pdf']) {
   );
   if (names.length) await screen.findByRole('list', { name: 'Your résumés' });
   else await screen.findByText('No résumés yet');
-  return api;
+  return Object.assign(api, { queries });
 }
 
 /** The rows' text (also while the sheet hides the page from assistive tech). */
@@ -123,7 +123,7 @@ describe('ResumesPage', () => {
     const api = await renderPage(['First.pdf', 'Second.pdf', 'Third.pdf']);
     fireEvent.click(screen.getByRole('button', { name: 'Delete First' }));
     const sheet = await screen.findByRole('alertdialog', { name: 'Delete First?' });
-    expect(sheet.textContent).toContain('Third becomes your default.');
+    expect(sheet.textContent).toContain('Your newest ready résumé becomes your default.');
     fireEvent.click(within(sheet).getByRole('button', { name: 'Delete résumé' }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     await waitFor(() =>
@@ -150,7 +150,7 @@ describe('ResumesPage', () => {
     expect(statusText()).not.toContain('default');
     fireEvent.click(await screen.findByRole('button', { name: 'Delete First' }));
     sheet = await screen.findByRole('alertdialog');
-    expect(sheet.textContent).toContain('You’ll have no default résumé until one is ready.');
+    expect(sheet.textContent).not.toContain('default');
     fireEvent.click(within(sheet).getByRole('button', { name: 'Delete résumé' }));
     await waitFor(() =>
       expect(statusText()).toContain('First deleted. You have no default résumé now.'),
@@ -189,6 +189,33 @@ describe('ResumesPage', () => {
     fireEvent.click(within(sheet).getByRole('button', { name: 'Keep it' }));
     await new Promise((done) => setTimeout(done, 50));
     expect(screen.getByRole('alertdialog')).toBe(sheet);
+  });
+
+  it('never lets a read that began before the delete bring the row back', async () => {
+    const api = await renderPage(['First.pdf', 'Second.pdf', 'Third.pdf']);
+    const before = await documents(api);
+    const request = api.request.bind(api);
+    let answer: (value: unknown) => void = () => undefined;
+    let held = true;
+    vi.spyOn(api, 'request').mockImplementation((method, path, body) => {
+      if (method === 'GET' && path === '/me/documents' && held) {
+        held = false;
+        // The old list, answered only after the delete.
+        return new Promise((done) => {
+          answer = () => done({ documents: before });
+        });
+      }
+      return request(method, path, body);
+    });
+    // A re-read on its way (as the 2 s beat starts one).
+    void api.queries.refetchQueries({ queryKey: ['documents'] });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Third' }));
+    const sheet = await screen.findByRole('alertdialog');
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Delete résumé' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    answer(undefined);
+    await waitFor(() => expect(statusText()).toContain('Third deleted.'));
+    expect(rows().some((row) => row?.startsWith('Third'))).toBe(false);
   });
 
   it('treats one already gone as deleted', async () => {

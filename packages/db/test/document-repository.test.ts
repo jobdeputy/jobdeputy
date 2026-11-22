@@ -410,9 +410,11 @@ describe('DocumentRepository', () => {
     });
     expect(counter?.Update).not.toHaveProperty('ConditionExpression');
     // Not the default when read: one made the default meanwhile is read again.
+    // (Or never marked at all.)
     expect(item?.Delete).toMatchObject({
-      ConditionExpression: 'attribute_exists(userId) AND isDefault = :was',
-      ExpressionAttributeValues: { ':was': false },
+      ConditionExpression:
+        'attribute_exists(userId) AND (attribute_not_exists(isDefault) OR isDefault = :false)',
+      ExpressionAttributeValues: { ':false': false },
     });
     expect(entry?.Put?.Item).toMatchObject({ name: 'document.deleted' });
     expect(rest).toEqual([]);
@@ -433,7 +435,10 @@ describe('DocumentRepository', () => {
     );
     await del(c);
     const [item, , counter, next] = lastTx(send);
-    expect(item?.Delete?.ExpressionAttributeValues).toEqual({ ':was': true });
+    expect(item?.Delete).toMatchObject({
+      ConditionExpression: 'attribute_exists(userId) AND isDefault = :true',
+      ExpressionAttributeValues: { ':true': true },
+    });
     expect(counter?.Update).toMatchObject({
       UpdateExpression:
         'SET itemCount = if_not_exists(itemCount, :one) - :one, updatedAt = :now, defaultDocumentId = :next',
@@ -487,7 +492,7 @@ describe('DocumentRepository', () => {
       return {};
     });
     expect(await del(c)).toMatchObject({ documentId: 'D1', isDefault: true });
-    expect(lastTx(send)[0]?.Delete?.ExpressionAttributeValues).toEqual({ ':was': true });
+    expect(lastTx(send)[0]?.Delete?.ExpressionAttributeValues).toEqual({ ':true': true });
   });
 
   it('returns undefined, and records nothing, when it vanished between the read and the delete', async () => {
@@ -498,6 +503,19 @@ describe('DocumentRepository', () => {
       throw cancelled();
     });
     await expect(del(c)).resolves.toBeUndefined();
+  });
+
+  it('throws, without trying again, a cancellation a fresh read cannot settle (the audit entry)', async () => {
+    const auditFailed = Object.assign(new Error('no'), {
+      name: 'TransactionCanceledException',
+      CancellationReasons: [{ Code: 'None' }, { Code: 'ConditionalCheckFailed' }, { Code: 'None' }],
+    });
+    const { c, send } = client((cmd) => {
+      if (cmd instanceof GetCommand) return { Item: doc() };
+      throw auditFailed;
+    });
+    await expect(del(c)).rejects.toBe(auditFailed);
+    expect(send.mock.calls.filter(([cmd]) => cmd instanceof TransactWriteCommand)).toHaveLength(1);
   });
 
   it('gives up after 3 changed reads, as a concurrent update', async () => {
