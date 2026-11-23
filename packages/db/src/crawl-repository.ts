@@ -156,6 +156,12 @@ export interface CrawlRelevance {
   calls: number;
   /** Jobs sent to the model in this run: a retried message never sends them again. */
   sent: string[];
+  /**
+   * Until when the delivery working on the run holds it (ISO time): a duplicate delivery of
+   * the same crawl arriving meanwhile skips, and a retry after a failed attempt (which comes
+   * after the queue's visibility timeout, past this) takes it over.
+   */
+  leaseUntil?: string;
   reason?: RelevanceFailure;
   stats?: RelevanceStats;
 }

@@ -54,6 +54,12 @@ export const MAX_RECEIVES = 3;
  * longer ago than this without a run are left alone (they were never meant to be scored).
  */
 export const STALE_AFTER_MS = 30 * 60 * 1000;
+/**
+ * How long a delivery holds a run: longer than the worker's timeout (5 minutes,
+ * RELEVANCE_WORKER_TIMEOUT), and far shorter than the queue's visibility timeout (6 × that),
+ * so a retry after a failed attempt always finds the lease passed.
+ */
+export const LEASE_MS = 6 * 60 * 1000;
 /** Stop starting task calls this long before Lambda's own timeout. */
 export const SAFETY_MARGIN_MS = 10_000;
 export const LOW_SCORE_REASON = 'llm_low_score';
@@ -61,7 +67,7 @@ export const LOW_SCORE_REASON = 'llm_low_score';
 export interface RelevanceWorkerDeps {
   isBeingDeleted: (userId: string) => Promise<boolean>;
   getCrawl: (userId: string, crawlId: string) => Promise<Crawl | undefined>;
-  runs: Pick<RelevanceRepository, 'begin' | 'saveCall' | 'finish'>;
+  runs: Pick<RelevanceRepository, 'begin' | 'claim' | 'saveCall' | 'finish'>;
   /** The model for the crawl's AI source, or why there is none. */
   model: (userId: string, aiSource: AiSource) => Promise<ModelSource | RelevanceFailure>;
   fitInputs: (userId: string) => Promise<FitInputs>;
@@ -98,15 +104,27 @@ export async function processRecord(
     logger.info('Nothing to score', { crawlId });
     return 'skipped';
   }
+  // One delivery at a time scores a crawl: the one that starts the run, or a retry once the
+  // failed attempt's lease has passed. A duplicate delivery arriving meanwhile skips; without
+  // this, it found the first one's scores, called them reused, and ended the run early.
   if (!crawl.relevance) {
     const finished = Date.parse(crawl.finishedAt ?? '');
     if (!(deps.now().getTime() - finished < STALE_AFTER_MS)) {
       logger.info('Crawl finished too long ago (a replayed stream record); skipping', { crawlId });
       return 'skipped';
     }
-    await deps.runs.begin(userId, crawlId);
-    crawl = await deps.getCrawl(userId, crawlId);
+    if (!(await deps.runs.begin(userId, crawlId, LEASE_MS))) {
+      logger.info('Another delivery started this run; skipping', { crawlId });
+      return 'skipped';
+    }
+  } else if (
+    crawl.relevance.status === 'running' &&
+    !(await deps.runs.claim(userId, crawlId, LEASE_MS))
+  ) {
+    logger.info('Another delivery is scoring this crawl; skipping', { crawlId });
+    return 'skipped';
   }
+  crawl = await deps.getCrawl(userId, crawlId);
   const run = crawl?.relevance;
   if (!crawl || run?.status !== 'running') {
     logger.info('Run already ended', { crawlId });

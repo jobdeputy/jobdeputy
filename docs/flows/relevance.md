@@ -129,6 +129,8 @@ sequenceDiagram
 
 Each task call is its own transaction: the crawl stores `relevance.calls` and `relevance.sent` with the scores and the tokens, so a retried message never sends a job twice, never counts tokens twice, and never goes past 6 task calls.
 
+One delivery scores a crawl at a time. The one that starts the run holds it for 6 minutes (`relevance.leaseUntil`, longer than the worker runs); a duplicate delivery of the same crawl arriving meanwhile skips. A retry after a failed attempt comes after the queue's 30-minute visibility timeout, finds the lease passed, and takes the run over.
+
 ## What a job's state can be
 
 ```mermaid

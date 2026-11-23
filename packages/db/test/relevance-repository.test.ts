@@ -66,12 +66,18 @@ const items = (cmd: unknown) => (cmd as TransactWriteCommand).input.TransactItem
 describe('RelevanceRepository.begin', () => {
   it('starts a run only on a succeeded crawl that has none', async () => {
     const { repo, send } = setup();
-    expect(await repo.begin(USER, CRAWL)).toBe(true);
+    expect(await repo.begin(USER, CRAWL, 60_000)).toBe(true);
     const update = send.mock.calls[0]?.[0] as UpdateCommand;
     expect(update.input).toMatchObject({
       ConditionExpression: 'attribute_not_exists(relevance) AND #status = :succeeded',
       ExpressionAttributeValues: expect.objectContaining({
-        ':relevance': { status: 'running', startedAt: NOW.toISOString(), calls: 0, sent: [] },
+        ':relevance': {
+          status: 'running',
+          startedAt: NOW.toISOString(),
+          calls: 0,
+          sent: [],
+          leaseUntil: new Date(NOW.getTime() + 60_000).toISOString(),
+        },
       }),
     });
   });
@@ -80,7 +86,29 @@ describe('RelevanceRepository.begin', () => {
     const { repo } = setup(() => {
       throw named('ConditionalCheckFailedException');
     });
-    expect(await repo.begin(USER, CRAWL)).toBe(false);
+    expect(await repo.begin(USER, CRAWL, 60_000)).toBe(false);
+  });
+});
+
+describe('RelevanceRepository.claim', () => {
+  it('takes over a running run only once its lease has passed', async () => {
+    const { repo, send } = setup();
+    expect(await repo.claim(USER, CRAWL, 60_000)).toBe(true);
+    const update = send.mock.calls[0]?.[0] as UpdateCommand;
+    expect(update.input.ConditionExpression).toBe(
+      'relevance.#status = :running AND (attribute_not_exists(relevance.leaseUntil) OR relevance.leaseUntil < :now)',
+    );
+    expect(update.input.ExpressionAttributeValues).toMatchObject({
+      ':now': NOW.toISOString(),
+      ':until': new Date(NOW.getTime() + 60_000).toISOString(),
+    });
+  });
+
+  it('false while another delivery holds it, or once it ended', async () => {
+    const { repo } = setup(() => {
+      throw named('ConditionalCheckFailedException');
+    });
+    expect(await repo.claim(USER, CRAWL, 60_000)).toBe(false);
   });
 });
 

@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { FitInputs } from '../src/relevance/fit.js';
 import { inputsHash, modelProfile } from '../src/relevance/llm-inputs.js';
 import {
+  LEASE_MS,
   processRecord,
   type RelevanceWorkerDeps,
   STALE_AFTER_MS,
@@ -131,6 +132,7 @@ function setup(
         if (stored && !stored.relevance) stored = { ...stored, relevance: RUNNING };
         return true;
       }),
+      claim: vi.fn(async () => true),
       saveCall: vi.fn<RelevanceWorkerDeps['runs']['saveCall']>(async () => undefined),
       finish: vi.fn<RelevanceWorkerDeps['runs']['finish']>(async () => true),
     },
@@ -186,7 +188,7 @@ describe('relevance worker: a run', () => {
   it('scores the candidates, stores the call with its usage, hides low scores, and ranks by score', async () => {
     const { deps } = setup();
     expect(await processRecord(record(), deps)).toBe('done');
-    expect(deps.runs.begin).toHaveBeenCalledWith(USER, CRAWL);
+    expect(deps.runs.begin).toHaveBeenCalledWith(USER, CRAWL, LEASE_MS);
 
     // Sent best first (the crawl's order), with the résumé; one call for both jobs.
     const saved = deps.runs.saveCall.mock.calls[0]?.[0];
@@ -318,6 +320,27 @@ describe('relevance worker: retries and the fixed worst case', () => {
       usage: { runs: 0 },
     });
     expect(deps.runs.finish.mock.calls[0]?.[0].stats).toMatchObject({ scored: 1, unscored: 1 });
+  });
+
+  it('skips a duplicate delivery: the run another one started, or one whose lease it holds', async () => {
+    const started = setup();
+    started.deps.runs.begin.mockResolvedValueOnce(false);
+    expect(await processRecord(record(), started.deps)).toBe('skipped');
+    expect(started.deps.runs.saveCall).not.toHaveBeenCalled();
+    expect(started.deps.runs.finish).not.toHaveBeenCalled();
+
+    // Before the fix, this one found the other's scores, called them reused, and ended the run.
+    const held = setup({ crawl: { relevance: { ...RUNNING, calls: 1, sent: ['weak', 'good'] } } });
+    held.deps.runs.claim.mockResolvedValueOnce(false);
+    expect(await processRecord(record(), held.deps)).toBe('skipped');
+    expect(held.deps.runs.finish).not.toHaveBeenCalled();
+    expect(held.deps.runs.claim).toHaveBeenCalledWith(USER, CRAWL, LEASE_MS);
+  });
+
+  it('holds the run longer than the worker runs, and well under the queue retry', () => {
+    // RELEVANCE_WORKER_TIMEOUT is 5 minutes; the queue shows a failed message again after 30.
+    expect(LEASE_MS).toBeGreaterThan(5 * 60_000);
+    expect(LEASE_MS).toBeLessThan(30 * 60_000);
   });
 
   it('makes no call once the crawl has used its 6 task calls', async () => {

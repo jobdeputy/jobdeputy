@@ -40,13 +40,20 @@ export class RelevanceRepository {
   ) {}
 
   /**
-   * Starts the run on a succeeded crawl. False if it has started already (a retried
-   * message: the caller reads the crawl and goes on) or the crawl did not succeed. The
-   * Pipe passes only crawls without `relevance`, so this write never starts a run again.
+   * Starts the run on a succeeded crawl, held by this delivery for `leaseMs`. False if it has
+   * started already (another delivery started it: the caller skips) or the crawl did not
+   * succeed. The Pipe passes only crawls without `relevance`, so this never starts a run again.
    */
-  async begin(userId: string, crawlId: string): Promise<boolean> {
-    const now = this.now().toISOString();
-    const relevance: CrawlRelevance = { status: 'running', startedAt: now, calls: 0, sent: [] };
+  async begin(userId: string, crawlId: string, leaseMs: number): Promise<boolean> {
+    const at = this.now();
+    const now = at.toISOString();
+    const relevance: CrawlRelevance = {
+      status: 'running',
+      startedAt: now,
+      calls: 0,
+      sent: [],
+      leaseUntil: new Date(at.getTime() + leaseMs).toISOString(),
+    };
     try {
       await this.client.send(
         new UpdateCommand({
@@ -59,6 +66,36 @@ export class RelevanceRepository {
             ':relevance': relevance,
             ':now': now,
             ':succeeded': 'succeeded',
+          },
+        }),
+      );
+      return true;
+    } catch (error) {
+      if (isConditionFailure(error)) return false;
+      throw error;
+    }
+  }
+
+  /**
+   * Takes over a running run whose lease has passed (the delivery that held it failed: this is
+   * the queue's retry), for `leaseMs`. False while another delivery holds it, or once the run
+   * has ended: the caller skips, so two deliveries never score one crawl at once.
+   */
+  async claim(userId: string, crawlId: string, leaseMs: number): Promise<boolean> {
+    const at = this.now();
+    try {
+      await this.client.send(
+        new UpdateCommand({
+          TableName: this.tables.crawls,
+          Key: { userId, crawlId },
+          UpdateExpression: 'SET relevance.leaseUntil = :until, updatedAt = :now',
+          ConditionExpression:
+            'relevance.#status = :running AND (attribute_not_exists(relevance.leaseUntil) OR relevance.leaseUntil < :now)',
+          ExpressionAttributeNames: { '#status': 'status' },
+          ExpressionAttributeValues: {
+            ':until': new Date(at.getTime() + leaseMs).toISOString(),
+            ':now': at.toISOString(),
+            ':running': 'running',
           },
         }),
       );
