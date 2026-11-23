@@ -66,7 +66,9 @@ const items = (cmd: unknown) => (cmd as TransactWriteCommand).input.TransactItem
 describe('RelevanceRepository.begin', () => {
   it('starts a run only on a succeeded crawl that has none', async () => {
     const { repo, send } = setup();
-    expect(await repo.begin(USER, CRAWL, 60_000)).toBe(true);
+    expect(await repo.begin(USER, CRAWL, 60_000)).toBe(
+      new Date(NOW.getTime() + 60_000).toISOString(),
+    );
     const update = send.mock.calls[0]?.[0] as UpdateCommand;
     expect(update.input).toMatchObject({
       ConditionExpression: 'attribute_not_exists(relevance) AND #status = :succeeded',
@@ -86,14 +88,16 @@ describe('RelevanceRepository.begin', () => {
     const { repo } = setup(() => {
       throw named('ConditionalCheckFailedException');
     });
-    expect(await repo.begin(USER, CRAWL, 60_000)).toBe(false);
+    expect(await repo.begin(USER, CRAWL, 60_000)).toBeUndefined();
   });
 });
 
 describe('RelevanceRepository.claim', () => {
   it('takes over a running run only once its lease has passed', async () => {
     const { repo, send } = setup();
-    expect(await repo.claim(USER, CRAWL, 60_000)).toBe(true);
+    expect(await repo.claim(USER, CRAWL, 60_000)).toBe(
+      new Date(NOW.getTime() + 60_000).toISOString(),
+    );
     const update = send.mock.calls[0]?.[0] as UpdateCommand;
     expect(update.input.ConditionExpression).toBe(
       'relevance.#status = :running AND (relevance.leaseUntil < :now OR (attribute_not_exists(relevance.leaseUntil) AND relevance.startedAt < :startedBefore))',
@@ -109,7 +113,40 @@ describe('RelevanceRepository.claim', () => {
     const { repo } = setup(() => {
       throw named('ConditionalCheckFailedException');
     });
-    expect(await repo.claim(USER, CRAWL, 60_000)).toBe(false);
+    expect(await repo.claim(USER, CRAWL, 60_000)).toBeUndefined();
+  });
+});
+
+describe('RelevanceRepository fencing', () => {
+  it('stores a call and ends a run only while this delivery holds the lease', async () => {
+    const { repo, send } = setup();
+    await repo.saveCall({ ...call(['j1']), lease: 'L1' });
+    const store = items(send.mock.calls[0]?.[0])[0]?.Update;
+    expect(store?.ConditionExpression).toBe(
+      'relevance.#status = :running AND relevance.calls = :before AND relevance.leaseUntil = :lease',
+    );
+    expect(store?.ExpressionAttributeValues?.[':lease']).toBe('L1');
+    await repo.finish({
+      userId: USER,
+      crawlId: CRAWL,
+      status: 'done',
+      stats: { candidates: 0, scored: 0, reused: 0, unscored: 0, hidden: 0, overLimit: 0 },
+      audit: {
+        table: 'audit',
+        entry: {
+          auditId: 'a',
+          name: 'crawl.scored',
+          entity: { type: 'crawl', id: CRAWL },
+          actor: 'system',
+          summary: 's',
+        },
+      },
+      lease: 'L1',
+    });
+    const end = items(send.mock.calls[1]?.[0])[0]?.Update;
+    expect(end?.ConditionExpression).toBe(
+      'relevance.#status = :running AND relevance.leaseUntil = :lease',
+    );
   });
 });
 

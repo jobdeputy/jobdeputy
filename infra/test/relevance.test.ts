@@ -62,6 +62,7 @@ describe('relevance (T08d)', () => {
     const [queue] = Object.values(template.findResources('AWS::SQS::Queue')).filter(
       (q) => q.Properties.QueueName === 'jobdeputy-dev-iad-relevance',
     );
+    expect(queue, 'the relevance queue').toBeDefined();
     expect(LEASE_MS).toBeLessThan(Number(queue?.Properties.VisibilityTimeout) * 1000);
   });
 

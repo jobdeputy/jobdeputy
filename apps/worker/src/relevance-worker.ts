@@ -107,25 +107,28 @@ export async function processRecord(
   }
   // One delivery at a time scores a crawl: the one that starts the run, or a retry once the
   // failed attempt's lease has passed. A duplicate delivery arriving meanwhile skips; without
-  // this, it found the first one's scores, called them reused, and ended the run early.
+  // this, it found the first one's scores, called them reused, and ended the run early. Its
+  // calls and its end are stored only while it still holds the lease (fencing).
+  let lease: string | undefined;
   if (!crawl.relevance) {
     const finished = Date.parse(crawl.finishedAt ?? '');
     if (!(deps.now().getTime() - finished < STALE_AFTER_MS)) {
       logger.info('Crawl finished too long ago (a replayed stream record); skipping', { crawlId });
       return 'skipped';
     }
-    if (!(await deps.runs.begin(userId, crawlId, LEASE_MS))) {
+    lease = await deps.runs.begin(userId, crawlId, LEASE_MS);
+    if (!lease) {
       logger.info('Run not started: another delivery started it, or the crawl changed', {
         crawlId,
       });
       return 'skipped';
     }
-  } else if (
-    crawl.relevance.status === 'running' &&
-    !(await deps.runs.claim(userId, crawlId, LEASE_MS))
-  ) {
-    logger.info('Another delivery is scoring this crawl; skipping', { crawlId });
-    return 'skipped';
+  } else if (crawl.relevance.status === 'running') {
+    lease = await deps.runs.claim(userId, crawlId, LEASE_MS);
+    if (!lease) {
+      logger.info('Another delivery is scoring this crawl; skipping', { crawlId });
+      return 'skipped';
+    }
   }
   crawl = await deps.getCrawl(userId, crawlId);
   const run = crawl?.relevance;
@@ -152,8 +155,11 @@ export async function processRecord(
       scores.set(j.jobId, j.relevance);
   }
   const sentBefore = new Set(run.sent);
-  // Jobs this run scored in an earlier attempt (a retry) count as scored, not as reused.
-  const scoredBefore = [...scores.keys()].filter((id) => sentBefore.has(id)).length;
+  // Jobs this run scored in an earlier attempt (a retry) count as scored, not as reused: sent
+  // by this run, and scored since it started (not by another crawl's run).
+  const scoredBefore = [...scores].filter(
+    ([id, r]) => sentBefore.has(id) && r.scoredAt >= run.startedAt,
+  ).length;
   const reused = scores.size - scoredBefore;
   const toScore = jobs.filter((j) => !scores.has(j.jobId) && !sentBefore.has(j.jobId));
 
@@ -169,6 +175,7 @@ export async function processRecord(
     await deps.runs.finish({
       userId,
       crawlId,
+      ...(lease ? { lease } : {}),
       status,
       ...(reason ? { reason } : {}),
       stats,
@@ -192,7 +199,7 @@ export async function processRecord(
 
   if (toScore.length === 0) return end('done', scoredBefore);
   const model = await deps.model(userId, aiSource);
-  if (typeof model === 'string') return end('failed', 0, model);
+  if (typeof model === 'string') return end('failed', scoredBefore, model);
 
   const short = new Map(toScore.map((j, i) => [`j${i + 1}`, j]));
   let calls = run.calls;
@@ -252,6 +259,7 @@ export async function processRecord(
           await deps.runs.saveCall({
             userId,
             crawlId,
+            ...(lease ? { lease } : {}),
             callsBefore: calls,
             sent: call.sent.map((id) => (short.get(id) as Job).jobId),
             llm,

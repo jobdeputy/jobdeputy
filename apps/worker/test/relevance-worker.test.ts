@@ -15,6 +15,7 @@ import {
 const USER = '0f8fad5b-d9cb-469f-a165-70867728950e';
 const CRAWL = '01J8ZQ4Y3N5W6X7Y8Z9A0B1C2D';
 const NOW = new Date('2026-10-01T06:00:00.000Z');
+const LEASE = '2026-10-01T06:06:00.000Z';
 
 const record = (body: unknown = { userId: USER, crawlId: CRAWL }, receiveCount = 1) =>
   ({
@@ -128,11 +129,11 @@ function setup(
     isBeingDeleted: vi.fn(async () => false),
     getCrawl: vi.fn(async () => stored),
     runs: {
-      begin: vi.fn(async () => {
+      begin: vi.fn(async (): Promise<string | undefined> => {
         if (stored && !stored.relevance) stored = { ...stored, relevance: RUNNING };
-        return true;
+        return LEASE;
       }),
-      claim: vi.fn(async () => true),
+      claim: vi.fn(async (): Promise<string | undefined> => LEASE),
       saveCall: vi.fn<RelevanceWorkerDeps['runs']['saveCall']>(async () => undefined),
       finish: vi.fn<RelevanceWorkerDeps['runs']['finish']>(async () => true),
     },
@@ -189,6 +190,9 @@ describe('relevance worker: a run', () => {
     const { deps } = setup();
     expect(await processRecord(record(), deps)).toBe('done');
     expect(deps.runs.begin).toHaveBeenCalledWith(USER, CRAWL, LEASE_MS);
+    // Its calls and its end are stored only while it holds the lease.
+    expect(deps.runs.saveCall.mock.calls[0]?.[0].lease).toBe(LEASE);
+    expect(deps.runs.finish.mock.calls[0]?.[0].lease).toBe(LEASE);
 
     // Sent best first (the crawl's order), with the résumé; one call for both jobs.
     const saved = deps.runs.saveCall.mock.calls[0]?.[0];
@@ -324,14 +328,14 @@ describe('relevance worker: retries and the fixed worst case', () => {
 
   it('skips a duplicate delivery: the run another one started, or one whose lease it holds', async () => {
     const started = setup();
-    started.deps.runs.begin.mockResolvedValueOnce(false);
+    started.deps.runs.begin.mockResolvedValueOnce(undefined);
     expect(await processRecord(record(), started.deps)).toBe('skipped');
     expect(started.deps.runs.saveCall).not.toHaveBeenCalled();
     expect(started.deps.runs.finish).not.toHaveBeenCalled();
 
     // Before the fix, this one found the other's scores, called them reused, and ended the run.
     const held = setup({ crawl: { relevance: { ...RUNNING, calls: 1, sent: ['weak', 'good'] } } });
-    held.deps.runs.claim.mockResolvedValueOnce(false);
+    held.deps.runs.claim.mockResolvedValueOnce(undefined);
     expect(await processRecord(record(), held.deps)).toBe('skipped');
     expect(held.deps.runs.saveCall).not.toHaveBeenCalled();
     expect(held.deps.runs.finish).not.toHaveBeenCalled();

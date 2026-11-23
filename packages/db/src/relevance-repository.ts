@@ -40,11 +40,12 @@ export class RelevanceRepository {
   ) {}
 
   /**
-   * Starts the run on a succeeded crawl, held by this delivery for `leaseMs`. False if it has
-   * started already (another delivery started it: the caller skips) or the crawl did not
-   * succeed. The Pipe passes only crawls without `relevance`, so this never starts a run again.
+   * Starts the run on a succeeded crawl, held by this delivery for `leaseMs`: returns the lease
+   * (pass it to saveCall and finish). Undefined if it has started already (another delivery
+   * started it: the caller skips) or the crawl did not succeed. The Pipe passes only crawls
+   * without `relevance`, so this never starts a run again.
    */
-  async begin(userId: string, crawlId: string, leaseMs: number): Promise<boolean> {
+  async begin(userId: string, crawlId: string, leaseMs: number): Promise<string | undefined> {
     const at = this.now();
     const now = at.toISOString();
     const relevance: CrawlRelevance = {
@@ -69,20 +70,22 @@ export class RelevanceRepository {
           },
         }),
       );
-      return true;
+      return relevance.leaseUntil;
     } catch (error) {
-      if (isConditionFailure(error)) return false;
+      if (isConditionFailure(error)) return undefined;
       throw error;
     }
   }
 
   /**
    * Takes over a running run whose lease has passed (the delivery that held it failed: this is
-   * the queue's retry), for `leaseMs`. False while another delivery holds it, or once the run
-   * has ended: the caller skips, so two deliveries never score one crawl at once.
+   * the queue's retry), for `leaseMs`: returns the new lease. Undefined while another delivery
+   * holds it, or once the run has ended: the caller skips, so two deliveries never score one
+   * crawl at once.
    */
-  async claim(userId: string, crawlId: string, leaseMs: number): Promise<boolean> {
+  async claim(userId: string, crawlId: string, leaseMs: number): Promise<string | undefined> {
     const at = this.now();
+    const until = new Date(at.getTime() + leaseMs).toISOString();
     try {
       await this.client.send(
         new UpdateCommand({
@@ -95,16 +98,16 @@ export class RelevanceRepository {
             'relevance.#status = :running AND (relevance.leaseUntil < :now OR (attribute_not_exists(relevance.leaseUntil) AND relevance.startedAt < :startedBefore))',
           ExpressionAttributeNames: { '#status': 'status' },
           ExpressionAttributeValues: {
-            ':until': new Date(at.getTime() + leaseMs).toISOString(),
+            ':until': until,
             ':now': at.toISOString(),
             ':startedBefore': new Date(at.getTime() - leaseMs).toISOString(),
             ':running': 'running',
           },
         }),
       );
-      return true;
+      return until;
     } catch (error) {
-      if (isConditionFailure(error)) return false;
+      if (isConditionFailure(error)) return undefined;
       throw error;
     }
   }
@@ -122,6 +125,8 @@ export class RelevanceRepository {
     llm: CrawlLlm;
     usage: AiUsageRecord;
     scores: { jobId: string; relevance: JobRelevance }[];
+    /** The lease this delivery holds (begin, claim): a call is stored only while it still does. */
+    lease?: string;
   }): Promise<void> {
     const { userId, crawlId } = input;
     const at = this.now();
@@ -138,7 +143,7 @@ export class RelevanceRepository {
                 Key: { userId, crawlId },
                 UpdateExpression:
                   'SET relevance.calls = :calls, relevance.sent = list_append(relevance.sent, :sent), llm = :llm, updatedAt = :now',
-                ConditionExpression: 'relevance.#status = :running AND relevance.calls = :before',
+                ConditionExpression: `relevance.#status = :running AND relevance.calls = :before${input.lease ? ' AND relevance.leaseUntil = :lease' : ''}`,
                 ExpressionAttributeNames: { '#status': 'status' },
                 ExpressionAttributeValues: {
                   ':calls': input.callsBefore + 1,
@@ -147,6 +152,7 @@ export class RelevanceRepository {
                   ':now': now,
                   ':running': 'running',
                   ':before': input.callsBefore,
+                  ...(input.lease ? { ':lease': input.lease } : {}),
                 },
               },
             },
@@ -192,6 +198,8 @@ export class RelevanceRepository {
     reason?: RelevanceFailure;
     stats: RelevanceStats;
     audit: AuditWrite;
+    /** The lease this delivery holds: the run is ended only while it still does. */
+    lease?: string;
   }): Promise<boolean> {
     const { userId, crawlId } = input;
     const at = this.now();
@@ -204,9 +212,10 @@ export class RelevanceRepository {
               TableName: this.tables.crawls,
               Key: { userId, crawlId },
               UpdateExpression: `SET relevance.#status = :status, relevance.finishedAt = :now, relevance.stats = :stats, updatedAt = :now${input.reason ? ', relevance.reason = :reason' : ''}`,
-              ConditionExpression: 'relevance.#status = :running',
+              ConditionExpression: `relevance.#status = :running${input.lease ? ' AND relevance.leaseUntil = :lease' : ''}`,
               ExpressionAttributeNames: { '#status': 'status' },
               ExpressionAttributeValues: {
+                ...(input.lease ? { ':lease': input.lease } : {}),
                 ':status': input.status,
                 ':now': now,
                 ':stats': input.stats,
