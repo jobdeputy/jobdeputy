@@ -54,3 +54,10 @@ export function compareRank(a: RankedJob, b: RankedJob): number {
   if ((a.t ?? '') !== (b.t ?? '')) return (b.t ?? '') < (a.t ?? '') ? -1 : 1;
   return a.jobId < b.jobId ? -1 : a.jobId > b.jobId ? 1 : 0;
 }
+
+/** A company's shown jobs (`usage` `COMPANY#` `shown`), best first. */
+export function rankShown(shown: Record<string, ShownEntry>): RankedJob[] {
+  return Object.entries(shown)
+    .map(([jobId, entry]) => ({ jobId, ...entry }))
+    .sort(compareRank);
+}

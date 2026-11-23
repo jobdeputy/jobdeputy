@@ -10,4 +10,5 @@ export * from './match-score.js';
 export * from './ping.js';
 export * from './profile.js';
 export * from './resume.js';
+export * from './tailoring.js';
 export * from './text.js';

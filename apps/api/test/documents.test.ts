@@ -241,6 +241,20 @@ describe('changing documents', () => {
     expect((await route(event('DELETE /me/documents/{documentId}', path), d)).statusCode).toBe(404);
   });
 
+  it('deletes its structured copy too, when tailoring made one (#51)', async () => {
+    const d = deps();
+    const copy = `derived/users/user-a/documents/${ID}/structured-etag1.json`;
+    d.repo.delete.mockImplementationOnce(
+      async () =>
+        ({
+          ...(await d.repo.get('user-a', ID)),
+          structured: { s3Key: copy },
+        }) as never,
+    );
+    expect((await route(event('DELETE /me/documents/{documentId}', path), d)).statusCode).toBe(204);
+    expect(d.deleteFiles).toHaveBeenCalledWith(expect.arrayContaining([copy]));
+  });
+
   it('rejects requests without verified claims', async () => {
     const d = deps();
     expect((await route(event('GET /me/documents', {}, null), d)).statusCode).toBe(401);

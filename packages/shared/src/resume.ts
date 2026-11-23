@@ -145,7 +145,6 @@ export const RESUME_HEADINGS = {
 export function printable(text: string): string {
   return (
     text
-      // biome-ignore lint/suspicious/noControlCharactersInRegex: removing them is the point.
       .replace(/[\t\n\r\v\f]/g, ' ')
       // biome-ignore lint/suspicious/noControlCharactersInRegex: removing them is the point.
       .replace(/[\u0000-\u001f\u007f\ufffe\uffff]/g, '')

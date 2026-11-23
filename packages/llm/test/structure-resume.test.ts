@@ -319,10 +319,7 @@ describe('groundStructured: limits, names, and plain text (review fixes)', () =>
   it('counts every skill in a group past the group limit as trimmed', () => {
     const output = copied();
     output.skills = Array.from({ length: 10 }, (_, i) => ({
-      group: 'Languages',
-      items: ['TypeScript'],
-    })).map((g, i) => ({
-      group: i === 0 ? g.group : `G${i}`,
+      group: i === 0 ? 'Languages' : `G${i}`,
       items: [`Skill${i}a`, `Skill${i}b`],
     }));
     const all = output.skills.flatMap((g) => [g.group, ...(g.items ?? [])]);

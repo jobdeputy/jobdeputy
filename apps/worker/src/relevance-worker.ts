@@ -1,5 +1,5 @@
 import { BatchProcessor, EventType, processPartialResponse } from '@aws-lambda-powertools/batch';
-import { DecryptCommand, KMSClient } from '@aws-sdk/client-kms';
+import { KMSClient } from '@aws-sdk/client-kms';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import {
   AccountRepository,
@@ -30,19 +30,13 @@ import {
   RELEVANCE_RESUME_CHARS,
   recordTaskMetrics,
   relevanceTask,
-  resolveModel,
   scoreRelevance,
   stubRelevanceSource,
 } from '@jobdeputy/llm';
-import {
-  type AiSource,
-  aiProvider,
-  crawlMessage,
-  createLogger,
-  RELEVANCE_ERRORS,
-} from '@jobdeputy/shared';
+import { type AiSource, crawlMessage, createLogger, RELEVANCE_ERRORS } from '@jobdeputy/shared';
 import type { Context, SQSBatchResponse, SQSEvent, SQSRecord } from 'aws-lambda';
 import { ulid } from 'ulid';
+import { modelLoader } from './ai-source.js';
 import { type FitInputs, fitInputsLoader, rankCompany, type ShownStore } from './relevance/fit.js';
 import { inputsHash, modelJob, modelProfile } from './relevance/llm-inputs.js';
 
@@ -398,26 +392,13 @@ function defaultDeps(): RelevanceWorkerDeps {
       usage: USAGE_TABLE_NAME,
       audit: AUDIT_TABLE_NAME,
     }),
-    model: async (userId, aiSource) => {
-      if (aiSource === 'platform') return resolveModel({ source: 'platform', region: AWS_REGION });
-      const provider = aiProvider(aiSource, allowTestProvider);
-      if (!provider) return 'key_missing';
-      const key = await keys.get(userId, provider);
-      if (!key) return 'key_missing';
-      if (key.status !== 'valid') return 'key_invalid';
-      // Dev stacks only: the pretend provider answers by a fixed rule, with no outside call.
-      if (provider === 'stub') return stubRelevanceSource(key.modelId);
-      // KMS refuses unless the context matches the one used to encrypt: this user, this provider.
-      const res = await kms.send(
-        new DecryptCommand({
-          CiphertextBlob: key.ciphertext,
-          EncryptionContext: { userId, provider },
-        }),
-      );
-      if (!res.Plaintext) throw new Error('KMS returned no plaintext');
-      const apiKey = new TextDecoder().decode(res.Plaintext);
-      return resolveModel({ source: 'own', provider, modelId: key.modelId, apiKey });
-    },
+    model: modelLoader({
+      keys,
+      kms,
+      region: AWS_REGION,
+      allowTestProvider,
+      stub: stubRelevanceSource,
+    }),
     fitInputs: fitInputsLoader({
       preferences: new PreferencesRepository(client, PREFERENCES_TABLE_NAME),
       profiles: new ProfileRepository(client, USERS_TABLE_NAME),

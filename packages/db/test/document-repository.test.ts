@@ -539,3 +539,42 @@ describe('DocumentRepository', () => {
     expect(send.mock.calls.some(([cmd]) => cmd instanceof TransactWriteCommand)).toBe(false);
   });
 });
+
+describe('DocumentRepository and tailored versions (#51)', () => {
+  it('lists and gets uploads only: a generated version is never counted or shown', async () => {
+    const { c, send } = client((cmd) => {
+      if (cmd instanceof QueryCommand) return { Items: [{ documentId: 'U1' }] };
+      if (cmd instanceof GetCommand) return { Item: { documentId: 'G1', origin: 'generated' } };
+      return {};
+    });
+    const repo = new DocumentRepository(c, 'Docs', () => NOW);
+    expect(await repo.list('u')).toEqual([{ documentId: 'U1' }]);
+    expect((send.mock.calls[0]?.[0] as QueryCommand | undefined)?.input.FilterExpression).toBe(
+      'attribute_not_exists(origin) OR origin <> :generated',
+    );
+    expect(await repo.get('u', 'G1')).toBeUndefined();
+  });
+
+  it('records a structured copy only for the ready file it was made from', async () => {
+    let fail = false;
+    const { c, send } = client(() => {
+      if (fail) throw Object.assign(new Error('no'), { name: 'ConditionalCheckFailedException' });
+      return {};
+    });
+    const repo = new DocumentRepository(c, 'Docs', () => NOW);
+    const cache = {
+      s3Key: 'derived/users/u/documents/D1/structured.json',
+      eTag: 'e1',
+      promptVersion: 'structure-resume@v1',
+      coverage: 0.95,
+      rejections: 0,
+      createdAt: NOW.toISOString(),
+    };
+    expect(await repo.saveStructured('u', 'D1', cache)).toBe(true);
+    const input = (send.mock.calls[0]?.[0] as UpdateCommand | undefined)?.input;
+    expect(input?.ConditionExpression).toBe('#status = :ready AND eTag = :eTag');
+    expect(input?.ExpressionAttributeValues?.[':eTag']).toBe('e1');
+    fail = true;
+    expect(await repo.saveStructured('u', 'D1', cache)).toBe(false);
+  });
+});

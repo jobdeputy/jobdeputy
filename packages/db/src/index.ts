@@ -14,6 +14,7 @@ export * from './ping-repository.js';
 export * from './preferences-repository.js';
 export * from './profile-repository.js';
 export * from './relevance-repository.js';
+export * from './tailoring-repository.js';
 export * from './transact.js';
 export * from './usage-counters.js';
 export * from './versioned.js';
