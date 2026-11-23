@@ -40,7 +40,7 @@ Claims are judged only in the text the model wrote, not in base fields it cannot
 
 **The run (decision [0002](0002-llm-loop-and-token-budget.md)).** It starts only on a **Tailor** or **Re-tailor** click, and makes at most **5 task calls**:
 
-1. Structure the base résumé: 1 call, cached per base document.
+1. Structure the base résumé: 1 call, cached per base document. The model copies the first 10,000 characters of the résumé's text into fields (about 2.5 dense pages; more would not fit its 4,000 output tokens), and code keeps only what the text contains (`groundStructured`, fitted to the structured résumé's limits) and records how much of the whole text the copy covers, so a résumé the model cut short, or one longer than what was sent, can be flagged.
 2. Job keywords: 1 call, cached per job.
 3. Tailoring: at most 3 iterations. Iteration 1 is a draft. Each repair names the failed checks (including those of earlier drafts, so a fixed one does not come back) and the jobs below 80% that still miss keywords the user has shown to be true. The run ends early on a cancelled or timed-out call, on a second call in a row without valid output, and on a provider error after the first call (it ends with its best honest draft, or none; only an error on the first call goes to the queue, so a retry never repeats finished calls). The run stops when nothing is left to fix, and keeps the best draft that passed every check (highest lowest-job score, then the mean). The run is `ok` when every job reaches 80%, `partial` when kept below 80%, and `failed` when no draft passed.
 
@@ -58,6 +58,7 @@ A cover letter is a separate run, on demand per job: 1 call plus at most 2 repai
 |---|---|---|---|---|
 | `job-keywords@v1` | 12/12 | 126/136 labelled keywords found | 2/2 | 4.1 s |
 | `tailor-resume@v1` | 18/18 calls, 1.5 calls per run | 12/12 runs kept an honest draft; 20/20 jobs have every keyword the person has shown to be true | 2/2 | 3.9 s |
+| `structure-resume@v1` (PR B) | 8/8, all on the first try | 116/116 entries, bullets, and skills copied word for word (the 12-job case counts its jobs only; two more evals: 116 and 114, the misses that case's last job) | 2/2 | 5.5 s |
 
 The mean score rose from 59 (base) to 66 (tailored). The honest ceiling (every proven keyword present) averages 66 on these cases, so tailoring reaches the best a truthful résumé can. The eval's `--model` option compares another Bedrock model against these baselines. `gpt-oss-120b` was not run: the cost guardrails deny every model but the platform one, and Ministral passed.
 

@@ -1,5 +1,7 @@
 import {
   type JobKeyword,
+  printable,
+  RESUME_HEADINGS,
   resumeText,
   type StructuredResume,
   TermIndex,
@@ -47,9 +49,13 @@ export function repeatsAllowed(before: number): number {
   return before >= KEYWORD_REPEAT_CAP ? before + 2 : KEYWORD_REPEAT_CAP;
 }
 
-/** Model text as plain text: no Markdown emphasis or code marks, no bullet markers. */
+/**
+ * Model text as plain text: no Markdown emphasis or code marks, no bullet markers, and only
+ * characters a file can hold (`printable`: no control characters), so the scores and checks
+ * read what the file will.
+ */
 export function plainText(text: string): string {
-  return text
+  return printable(text)
     .replace(/\*\*|__|`/g, '')
     .replace(/^\s*(?:[-•*]\s+)+/, '')
     .replace(/\s+/g, ' ')
@@ -60,9 +66,10 @@ export function plainText(text: string): string {
 export function plainParts(parts: TailoredParts): TailoredParts {
   const list = (items: string[]) => items.map(plainText).filter((t) => t !== '');
   return {
-    summary: plainText(parts.summary) || parts.summary,
+    // Never the raw text back: what is left after cleaning is what the file will show.
+    summary: plainText(parts.summary),
     skills: parts.skills
-      .map((g) => ({ group: plainText(g.group) || g.group, items: list(g.items) }))
+      .map((g) => ({ group: plainText(g.group) || RESUME_HEADINGS.skills, items: list(g.items) }))
       .filter((g) => g.items.length > 0),
     experience: parts.experience.map((e) => ({ id: e.id, bullets: list(e.bullets) })),
     projects: parts.projects.map((p) => ({ id: p.id, bullets: list(p.bullets) })),
@@ -93,7 +100,8 @@ const NUMBER = /(?<![A-Za-z])\d+(?:[.,]\d+)*/g;
 const LINK =
   /\b(?:https?:\/\/|www\.)\S+|\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+|\b[a-z0-9-]+\.(?:com|io|net|org|dev|ai|app|co|uk|in)\b/gi;
 
-const numbers = (text: string) =>
+/** The numbers a text writes, without thousands separators ("1,200" is "1200"). */
+export const numbersIn = (text: string) =>
   new Set((text.match(NUMBER) ?? []).map((n) => n.replace(/,/g, '')));
 
 /** Every date and number the base résumé writes, contact excluded. */
@@ -164,8 +172,8 @@ export function checkTailored(
   const original = baseText(base);
 
   // Numbers: no invented metrics, years, or sizes ("Python 3" may come from a confirmed skill).
-  const known = numbers(`${original}\n${evidence.join('\n')}`);
-  for (const n of numbers(written)) {
+  const known = numbersIn(`${original}\n${evidence.join('\n')}`);
+  for (const n of numbersIn(written)) {
     if (!known.has(n)) add('number', `the number ${n} is not in the résumé`);
   }
 

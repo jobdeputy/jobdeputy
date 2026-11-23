@@ -1,3 +1,5 @@
+import { cutAtWord } from '@jobdeputy/shared';
+
 /**
  * Text helpers for job data (T07a). Everything read from a site is untrusted: HTML is
  * turned into plain text here and never stored or served as HTML. Linear scans only,
@@ -131,10 +133,5 @@ export function oneLine(value: unknown, max: number): string | undefined {
 /** Cuts long text at a line or word break, never mid-character. */
 export function truncate(text: string, max: number): { text: string; truncated: boolean } {
   if (text.length <= max) return { text, truncated: false };
-  let cut = text.slice(0, max);
-  const lastBreak = Math.max(cut.lastIndexOf('\n'), cut.lastIndexOf(' '));
-  if (lastBreak > max * 0.8) cut = cut.slice(0, lastBreak);
-  // Never leave half of a surrogate pair.
-  if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1);
-  return { text: `${cut.trimEnd()}…`, truncated: true };
+  return { text: `${cutAtWord(text, max)}…`, truncated: true };
 }

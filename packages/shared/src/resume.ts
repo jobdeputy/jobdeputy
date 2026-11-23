@@ -105,3 +105,142 @@ export function resumeText(resume: StructuredResume): string {
     ...resume.projects.flatMap((p) => [p.name, ...p.bullets]),
   ].join('\n');
 }
+
+/**
+ * One piece of the ATS-safe template (decision 0015): a single column, standard headings,
+ * plain text. The PDF, the DOCX, and the in-app preview all lay out these blocks, in order.
+ */
+export type ResumeBlock =
+  | { kind: 'name'; text: string }
+  /** The headline, then the contact line. */
+  | { kind: 'line'; text: string }
+  | { kind: 'heading'; text: string }
+  /** An entry's first line, for example "Software Engineer, Example Logistics". */
+  | { kind: 'entry'; text: string }
+  /** An entry's place and dates, or a project's link. */
+  | { kind: 'meta'; text: string }
+  | { kind: 'bullet'; text: string }
+  | { kind: 'paragraph'; text: string }
+  /** A skills line: "Languages: TypeScript, SQL". */
+  | { kind: 'skills'; group: string; items: string };
+
+/** The name a résumé shows when it has no usable one (neither the résumé's nor the profile's). */
+export const FALLBACK_RESUME_NAME = 'Résumé';
+
+/** The section headings, in order; ATSs look for these words. */
+export const RESUME_HEADINGS = {
+  summary: 'Summary',
+  skills: 'Skills',
+  experience: 'Experience',
+  education: 'Education',
+  certifications: 'Certifications',
+  projects: 'Projects',
+} as const;
+
+/**
+ * Text a file can hold: no control characters (tabs and line breaks become spaces), no
+ * U+FFFE or U+FFFF, and no lone surrogates. XML 1.0 forbids them, so a DOCX with one is
+ * reported as corrupt; PDF text extraction can leave them in a résumé's text.
+ */
+export function printable(text: string): string {
+  return (
+    text
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: removing them is the point.
+      .replace(/[\t\n\r\v\f]/g, ' ')
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: removing them is the point.
+      .replace(/[\u0000-\u001f\u007f\ufffe\uffff]/g, '')
+      .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '')
+  );
+}
+
+const joined = (separator: string, ...values: (string | undefined)[]) =>
+  values
+    .map((v) => (v === undefined ? '' : printable(v).trim()))
+    .filter((v) => v !== '')
+    .join(separator);
+
+/** "BSc in Computer Science"; the field once when the degree already names it. */
+function degreeText(degree?: string, field?: string): string {
+  if (degree && field && degree.toLowerCase().includes(field.toLowerCase())) return degree;
+  return joined(' in ', degree, field);
+}
+
+/** The résumé as the template's blocks; empty sections are left out. */
+export function resumeBlocks(resume: StructuredResume): ResumeBlock[] {
+  const c = resume.contact;
+  const blocks: ResumeBlock[] = [
+    { kind: 'name', text: joined('', c.name) || FALLBACK_RESUME_NAME },
+  ];
+  const headline = joined('', c.headline);
+  if (headline) blocks.push({ kind: 'line', text: headline });
+  const contact = joined(' | ', c.email, c.phone, c.location, ...c.links);
+  if (contact) blocks.push({ kind: 'line', text: contact });
+  /**
+   * A section, without blocks left empty by `printable` (and without its heading when none
+   * are left). An entry whose own line is empty goes with its place, dates, and bullets
+   * (`entry`), so they never show under the entry before it.
+   */
+  const section = (heading: string, body: ResumeBlock[]) => {
+    const kept = body.filter((b) => (b.kind === 'skills' ? b.items : b.text) !== '');
+    if (kept.length > 0) blocks.push({ kind: 'heading', text: heading }, ...kept);
+  };
+  const dates = (start?: string, end?: string) => joined(' – ', start, end);
+  const meta = (...values: (string | undefined)[]): ResumeBlock[] => {
+    const text = joined(' | ', ...values);
+    return text ? [{ kind: 'meta', text }] : [];
+  };
+  const entry = (text: string, ...rest: ResumeBlock[]): ResumeBlock[] =>
+    text === '' ? [] : [{ kind: 'entry', text }, ...rest];
+  const bullets = (items: string[]): ResumeBlock[] =>
+    items
+      .map((item) => joined('', item))
+      .filter(Boolean)
+      .map((text) => ({ kind: 'bullet', text }));
+
+  section(
+    RESUME_HEADINGS.summary,
+    resume.summary ? [{ kind: 'paragraph', text: joined('', resume.summary) }] : [],
+  );
+  section(
+    RESUME_HEADINGS.skills,
+    resume.skills.map((g) => ({
+      kind: 'skills',
+      group: joined('', g.group) || RESUME_HEADINGS.skills,
+      items: joined(', ', ...g.items),
+    })),
+  );
+  section(
+    RESUME_HEADINGS.experience,
+    resume.experience.flatMap((e) =>
+      entry(
+        joined(', ', e.title, e.employer),
+        ...meta(e.location, dates(e.start, e.end)),
+        ...bullets(e.bullets),
+      ),
+    ),
+  );
+  section(
+    RESUME_HEADINGS.education,
+    resume.education.flatMap((d) =>
+      entry(
+        joined(', ', degreeText(d.degree, d.field), d.school),
+        ...meta(dates(d.start, d.end)),
+        ...bullets(d.details),
+      ),
+    ),
+  );
+  section(
+    RESUME_HEADINGS.certifications,
+    resume.certifications.map((x) => ({
+      kind: 'paragraph',
+      text: joined(', ', x.name, x.issuer, x.date),
+    })),
+  );
+  section(
+    RESUME_HEADINGS.projects,
+    resume.projects.flatMap((p) =>
+      entry(joined('', p.name), ...meta(p.link), ...bullets(p.bullets)),
+    ),
+  );
+  return blocks;
+}

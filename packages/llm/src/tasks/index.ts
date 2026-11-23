@@ -2,6 +2,7 @@ import type { Task } from '../task.js';
 import { jobKeywordsTask } from './job-keywords.js';
 import { relevanceTask } from './relevance.js';
 import { smokeTask } from './smoke.js';
+import { structureResumeTask } from './structure-resume.js';
 import { tailorResumeTask } from './tailor-resume.js';
 
 export interface TaskEntry {
@@ -93,5 +94,8 @@ export const TASKS: TaskEntry[] = [
       draft: { summary: 'Sample draft.', skills: [], experience: [], projects: [] },
       fixes: ['Sample fix.'],
     },
+  }),
+  entry(structureResumeTask, {
+    text: 'Sample Person\nSample headline\nExperience\nSample title, Sample employer, 2020 – Present\n• Sample bullet.',
   }),
 ];
