@@ -1,4 +1,4 @@
-import type { Crawl, Job, JobRelevance } from '@jobdeputy/db';
+import { type Crawl, type Job, type JobRelevance, RelevanceConflictError } from '@jobdeputy/db';
 import { promptVersion, relevanceTask } from '@jobdeputy/llm';
 import { type StubReply, stubSource } from '@jobdeputy/llm/testing';
 import type { SQSRecord } from 'aws-lambda';
@@ -129,11 +129,17 @@ function setup(
     isBeingDeleted: vi.fn(async () => false),
     getCrawl: vi.fn(async () => stored),
     runs: {
+      // Like the repository: the run records which delivery holds it.
       begin: vi.fn(async (): Promise<string | undefined> => {
-        if (stored && !stored.relevance) stored = { ...stored, relevance: RUNNING };
+        if (stored && !stored.relevance)
+          stored = { ...stored, relevance: { ...RUNNING, leaseId: LEASE } };
         return LEASE;
       }),
-      claim: vi.fn(async (): Promise<string | undefined> => LEASE),
+      claim: vi.fn(async (): Promise<string | undefined> => {
+        if (stored?.relevance)
+          stored = { ...stored, relevance: { ...stored.relevance, leaseId: LEASE } };
+        return LEASE;
+      }),
       saveCall: vi.fn<RelevanceWorkerDeps['runs']['saveCall']>(async () => undefined),
       finish: vi.fn<RelevanceWorkerDeps['runs']['finish']>(async () => true),
     },
@@ -363,6 +369,66 @@ describe('relevance worker: retries and the fixed worst case', () => {
     expect(deps.runs.claim).toHaveBeenCalledWith(USER, CRAWL, LEASE_MS);
     expect(deps.runs.saveCall.mock.calls[0]?.[0].sent).toEqual(['good']);
     expect(deps.runs.finish.mock.calls[0]?.[0].stats).toMatchObject({ scored: 2, reused: 0 });
+  });
+
+  it('a delivery that lost its lease stops: no call stored, no job changed, no end', async () => {
+    // The fence refused its call: another delivery holds the run now.
+    const refused = setup();
+    refused.deps.runs.saveCall.mockRejectedValueOnce(new RelevanceConflictError());
+    expect(await processRecord(record(), refused.deps)).toBe('skipped');
+    expect(refused.deps.jobs.applyRelevance).not.toHaveBeenCalled();
+    expect(refused.deps.runs.finish).not.toHaveBeenCalled();
+
+    // Taken over before it ended: it changes no job.
+    const taken = setup({ jobs: [] });
+    taken.deps.getCrawl.mockImplementation(async () => ({
+      ...crawlItem(),
+      relevance: { ...RUNNING, leaseId: 'someone-else' },
+    }));
+    taken.deps.runs.claim.mockResolvedValueOnce(LEASE);
+    expect(await processRecord(record(), taken.deps)).toBe('skipped');
+    expect(taken.deps.jobs.applyRelevance).not.toHaveBeenCalled();
+    expect(taken.deps.runs.finish).not.toHaveBeenCalled();
+
+    // Its end did not take (the fence): it says so rather than claiming the run ended.
+    const late = setup();
+    late.deps.runs.finish.mockResolvedValueOnce(false);
+    expect(await processRecord(record(), late.deps)).toBe('skipped');
+  });
+
+  it('on a retry, a score from before the run started is reused; a missing key keeps the earlier scores', async () => {
+    const version = promptVersion(relevanceTask);
+    const user = modelProfile(INPUTS.profile, 'Résumé text');
+    const weak = job('weak', { title: 'Data Engineer' });
+    const scoredAt = (at: Date) => ({
+      score: 10,
+      reasons: ['x'],
+      model: 'm',
+      promptVersion: version,
+      inputsHash: inputsHash(weak, user.hash, version),
+      scoredAt: at.toISOString(),
+    });
+    const before = setup({
+      jobs: [{ ...weak, relevance: scoredAt(new Date(NOW.getTime() - 60_000)) }],
+      crawl: { candidates: ['weak'], relevance: { ...RUNNING, calls: 1, sent: ['weak'] } },
+    });
+    await processRecord(record(undefined, 2), before.deps);
+    expect(before.deps.runs.finish.mock.calls[0]?.[0].stats).toMatchObject({
+      scored: 0,
+      reused: 1,
+    });
+
+    const keyGone = setup({
+      model: 'key_missing',
+      jobs: [{ ...weak, relevance: scoredAt(NOW) }, job('good')],
+      crawl: { aiSource: 'openai', relevance: { ...RUNNING, calls: 1, sent: ['weak'] } },
+    });
+    expect(await processRecord(record(undefined, 2), keyGone.deps)).toBe('failed');
+    expect(keyGone.deps.runs.finish.mock.calls[0]?.[0].stats).toMatchObject({
+      scored: 1,
+      reused: 0,
+      unscored: 1,
+    });
   });
 
   it('makes no call once the crawl has used its 6 task calls', async () => {

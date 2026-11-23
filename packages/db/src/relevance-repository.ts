@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { type AiUsageRecord, aiUsageUpdate } from './ai-usage-repository.js';
@@ -54,6 +55,7 @@ export class RelevanceRepository {
       calls: 0,
       sent: [],
       leaseUntil: new Date(at.getTime() + leaseMs).toISOString(),
+      leaseId: randomUUID(),
     };
     try {
       await this.client.send(
@@ -70,7 +72,7 @@ export class RelevanceRepository {
           },
         }),
       );
-      return relevance.leaseUntil;
+      return relevance.leaseId;
     } catch (error) {
       if (isConditionFailure(error)) return undefined;
       throw error;
@@ -86,12 +88,14 @@ export class RelevanceRepository {
   async claim(userId: string, crawlId: string, leaseMs: number): Promise<string | undefined> {
     const at = this.now();
     const until = new Date(at.getTime() + leaseMs).toISOString();
+    const leaseId = randomUUID();
     try {
       await this.client.send(
         new UpdateCommand({
           TableName: this.tables.crawls,
           Key: { userId, crawlId },
-          UpdateExpression: 'SET relevance.leaseUntil = :until, updatedAt = :now',
+          UpdateExpression:
+            'SET relevance.leaseUntil = :until, relevance.leaseId = :leaseId, updatedAt = :now',
           // A run started before leases existed has none: taken over only once it is older than
           // a lease, so a delivery still at work on it is never joined.
           ConditionExpression:
@@ -99,13 +103,14 @@ export class RelevanceRepository {
           ExpressionAttributeNames: { '#status': 'status' },
           ExpressionAttributeValues: {
             ':until': until,
+            ':leaseId': leaseId,
             ':now': at.toISOString(),
             ':startedBefore': new Date(at.getTime() - leaseMs).toISOString(),
             ':running': 'running',
           },
         }),
       );
-      return until;
+      return leaseId;
     } catch (error) {
       if (isConditionFailure(error)) return undefined;
       throw error;
@@ -126,7 +131,7 @@ export class RelevanceRepository {
     usage: AiUsageRecord;
     scores: { jobId: string; relevance: JobRelevance }[];
     /** The lease this delivery holds (begin, claim): a call is stored only while it still does. */
-    lease?: string;
+    lease: string;
   }): Promise<void> {
     const { userId, crawlId } = input;
     const at = this.now();
@@ -143,7 +148,8 @@ export class RelevanceRepository {
                 Key: { userId, crawlId },
                 UpdateExpression:
                   'SET relevance.calls = :calls, relevance.sent = list_append(relevance.sent, :sent), llm = :llm, updatedAt = :now',
-                ConditionExpression: `relevance.#status = :running AND relevance.calls = :before${input.lease ? ' AND relevance.leaseUntil = :lease' : ''}`,
+                ConditionExpression:
+                  'relevance.#status = :running AND relevance.calls = :before AND relevance.leaseId = :lease',
                 ExpressionAttributeNames: { '#status': 'status' },
                 ExpressionAttributeValues: {
                   ':calls': input.callsBefore + 1,
@@ -152,7 +158,7 @@ export class RelevanceRepository {
                   ':now': now,
                   ':running': 'running',
                   ':before': input.callsBefore,
-                  ...(input.lease ? { ':lease': input.lease } : {}),
+                  ':lease': input.lease,
                 },
               },
             },
@@ -199,7 +205,7 @@ export class RelevanceRepository {
     stats: RelevanceStats;
     audit: AuditWrite;
     /** The lease this delivery holds: the run is ended only while it still does. */
-    lease?: string;
+    lease: string;
   }): Promise<boolean> {
     const { userId, crawlId } = input;
     const at = this.now();
@@ -212,10 +218,10 @@ export class RelevanceRepository {
               TableName: this.tables.crawls,
               Key: { userId, crawlId },
               UpdateExpression: `SET relevance.#status = :status, relevance.finishedAt = :now, relevance.stats = :stats, updatedAt = :now${input.reason ? ', relevance.reason = :reason' : ''}`,
-              ConditionExpression: `relevance.#status = :running${input.lease ? ' AND relevance.leaseUntil = :lease' : ''}`,
+              ConditionExpression: 'relevance.#status = :running AND relevance.leaseId = :lease',
               ExpressionAttributeNames: { '#status': 'status' },
               ExpressionAttributeValues: {
-                ...(input.lease ? { ':lease': input.lease } : {}),
+                ':lease': input.lease,
                 ':status': input.status,
                 ':now': now,
                 ':stats': input.stats,

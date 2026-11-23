@@ -162,6 +162,8 @@ export interface CrawlRelevance {
    * after the queue's visibility timeout, past this) takes it over.
    */
   leaseUntil?: string;
+  /** Which delivery holds the lease (random): its calls and its end must name it (fencing). */
+  leaseId?: string;
   reason?: RelevanceFailure;
   stats?: RelevanceStats;
 }

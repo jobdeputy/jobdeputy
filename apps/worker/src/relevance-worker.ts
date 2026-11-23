@@ -16,6 +16,7 @@ import {
   JobRepository,
   PreferencesRepository,
   ProfileRepository,
+  RelevanceConflictError,
   type RelevanceDecision,
   type RelevanceFailure,
   RelevanceRepository,
@@ -132,10 +133,11 @@ export async function processRecord(
   }
   crawl = await deps.getCrawl(userId, crawlId);
   const run = crawl?.relevance;
-  if (!crawl || run?.status !== 'running') {
+  if (!crawl || run?.status !== 'running' || !lease) {
     logger.info('Run already ended', { crawlId });
     return 'skipped';
   }
+  const held = lease;
   const aiSource = crawl.aiSource as AiSource;
 
   const [inputs, resume] = await Promise.all([deps.fitInputs(userId), deps.resume(userId)]);
@@ -164,6 +166,12 @@ export async function processRecord(
   const toScore = jobs.filter((j) => !scores.has(j.jobId) && !sentBefore.has(j.jobId));
 
   const end = async (status: 'done' | 'failed', scored: number, reason?: RelevanceFailure) => {
+    // Still this delivery's run? One that lost its lease changes no job (the other has them).
+    const now = await deps.getCrawl(userId, crawlId);
+    if (now?.relevance?.status !== 'running' || now.relevance.leaseId !== held) {
+      logger.info('Lease lost before ending; skipping', { crawlId });
+      return 'skipped' as const;
+    }
     const applied = await applyScores(userId, jobs, scores, inputs, deps);
     const stats: RelevanceStats = {
       candidates: jobs.length,
@@ -172,10 +180,10 @@ export async function processRecord(
       unscored: jobs.length - scores.size,
       ...applied,
     };
-    await deps.runs.finish({
+    const ended = await deps.runs.finish({
       userId,
       crawlId,
-      ...(lease ? { lease } : {}),
+      lease: held,
       status,
       ...(reason ? { reason } : {}),
       stats,
@@ -193,6 +201,10 @@ export async function processRecord(
         },
       },
     });
+    if (!ended) {
+      logger.info('Run ended elsewhere (lease lost); skipping', { crawlId });
+      return 'skipped' as const;
+    }
     logger.info('Scoring ended', { crawlId, status, reason, ...stats });
     return status;
   };
@@ -259,7 +271,7 @@ export async function processRecord(
           await deps.runs.saveCall({
             userId,
             crawlId,
-            ...(lease ? { lease } : {}),
+            lease: held,
             callsBefore: calls,
             sent: call.sent.map((id) => (short.get(id) as Job).jobId),
             llm,
@@ -281,6 +293,11 @@ export async function processRecord(
       },
     );
   } catch (error) {
+    // The fence refused the call: another delivery holds the run now and goes on with it.
+    if (storing && error instanceof RelevanceConflictError) {
+      logger.info('Lease lost while storing a call; skipping', { crawlId });
+      return 'skipped';
+    }
     if (storing) throw error;
     // The user's key stopped working: no retry helps.
     if (model.keySource === 'own' && invalidReason(error)) {
