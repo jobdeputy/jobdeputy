@@ -315,7 +315,12 @@ describe('a résumé’s actions on the Résumés page', () => {
       await screen.findByText('Your résumés changed elsewhere. Look again, then try again.'),
     ).toBeTruthy();
     expect(rows()[0]).toContain('Second, renamed');
-    fireEvent.click(screen.getByRole('button', { name: 'Make default Second, renamed' }));
+    // Make default stays aria-disabled (one at a time) until the failed one ends, a step
+    // after its message shows: wait for it to be pressable rather than press it once (under
+    // load the press came in that step and was ignored).
+    const again = () => screen.getByRole('button', { name: 'Make default Second, renamed' });
+    await waitFor(() => expect(again().getAttribute('aria-disabled')).toBeNull());
+    fireEvent.click(again());
     await waitFor(() => expect(rows()[0]).toContain('Default'));
     expect(
       screen.queryByText('Your résumés changed elsewhere. Look again, then try again.'),
