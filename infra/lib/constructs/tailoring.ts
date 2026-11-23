@@ -96,20 +96,20 @@ export class Tailoring extends Construct {
     fn.addToRolePolicy(
       new PolicyStatement({
         actions: ['s3:GetObject'],
-        resources: [derived('text.txt'), derived('structured.json')],
+        resources: [derived('text.txt'), derived('structured-*.json')],
       }),
     );
     fn.addToRolePolicy(
       new PolicyStatement({
         actions: ['s3:PutObject'],
-        resources: [derived('structured.json'), ...versionFiles],
+        resources: [derived('structured-*.json'), ...versionFiles],
       }),
     );
     // A structured copy is deleted when its résumé was replaced or deleted while it was made.
     fn.addToRolePolicy(
       new PolicyStatement({
         actions: ['s3:DeleteObject'],
-        resources: [derived('structured.json'), ...versionFiles],
+        resources: [derived('structured-*.json'), ...versionFiles],
       }),
     );
     // The user's own key (GetItem), decrypted only with this user and provider as context.

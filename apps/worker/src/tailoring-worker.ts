@@ -15,10 +15,12 @@ import {
   documentClient,
   type GeneratedDocument,
   type Generation,
+  isConditionFailure,
   type Job,
   JobRepository,
   ProfileRepository,
   type StructuredCache,
+  TailoringConflictError,
   TailoringRepository,
 } from '@jobdeputy/db';
 import {
@@ -40,8 +42,10 @@ import {
   type JobKeyword,
   MATCH_SCORE_VERSION,
   type StructuredResume,
+  structuredKey,
   structuredResume,
   TAILORING_ERRORS,
+  TAILORING_STALE_MS,
   TAILORING_VERSIONS_KEPT,
   type TailoringError,
   tailoringKeys,
@@ -152,11 +156,18 @@ export async function processRecord(
     calls: doc.tailoring.calls,
     generation: doc.generation,
     storing: false,
+    stage: 'setup',
   };
   try {
     return await tailor(run, deps);
   } catch (error) {
     const { calls } = run;
+    // Another delivery of this message is working on the run (it stored a call, kept a draft,
+    // or ended it first): this one stops, and never ends the run itself.
+    if (error instanceof TailoringConflictError || isConditionFailure(error)) {
+      logger.info('Another delivery has this run; skipping', { documentId });
+      return 'skipped';
+    }
     // The user's key stopped working: no retry helps.
     if (!run.storing && doc.aiSource !== 'platform' && invalidReason(error)) {
       return fail(run, deps, 'key_rejected');
@@ -169,13 +180,21 @@ export async function processRecord(
         error: (error as Error).name,
       });
       try {
-        return await fail(run, deps, run.storing ? 'stopped' : 'model_unavailable');
+        // The model's own failure, or ours (storing, files): each says what to try.
+        return await fail(
+          run,
+          deps,
+          run.stage === 'model' && !run.storing ? 'model_unavailable' : 'stopped',
+        );
       } catch {
         throw error;
       }
     }
     // Try again soon, not after the queue's visibility timeout (6 × the worker's).
-    await deps.delayRetry(record, RETRY_DELAY_SECONDS[receives - 1] ?? 60).catch(() => undefined);
+    await deps.delayRetry(record, RETRY_DELAY_SECONDS[receives - 1] ?? 60).catch((e: unknown) => {
+      // The retry then waits out the visibility timeout; the stale check ends it then.
+      logger.warn('Could not shorten the retry wait', { documentId, error: (e as Error).name });
+    });
     logger.warn('Tailoring failed; the queue tries again', {
       documentId,
       calls,
@@ -195,6 +214,8 @@ interface Run {
   generation: Generation | undefined;
   /** True while a call is being stored: an error then is ours, not the model's. */
   storing: boolean;
+  /** What the run is doing: an error while the model works is the model's. */
+  stage: 'setup' | 'model' | 'files';
 }
 
 type FinishOutcome = Parameters<TailoringWorkerDeps['runs']['finish']>[0]['outcome'];
@@ -255,14 +276,19 @@ async function fail(
 async function tailor(run: Run, deps: TailoringWorkerDeps): Promise<TailoringOutcome> {
   const { doc } = run;
   const { userId, documentId } = doc;
-  const company = doc.companyName ?? doc.companyKey;
   const keys = tailoringKeys(userId, documentId);
+
+  // A message back after the run went stale (the app shows it stopped, and a new Tailor click
+  // may hold the company's lock): it ends here, without another model call.
+  if (deps.now().getTime() - Date.parse(doc.createdAt) > TAILORING_STALE_MS) {
+    return fail(run, deps, 'stopped');
+  }
 
   // A retry after the draft was kept: render it, with no model call.
   if (doc.tailoring.drafted && doc.tailoring.scores && doc.tailoring.result) {
     const kept = structuredResume.safeParse(await deps.files.readJson(keys.json));
     if (kept.success) {
-      return render(run, deps, kept.data, {
+      return render(run, deps, kept.data, doc.companyName ?? doc.companyKey, {
         result: doc.tailoring.result,
         scores: doc.tailoring.scores,
         ...(doc.tailoring.coverage !== undefined ? { coverage: doc.tailoring.coverage } : {}),
@@ -282,9 +308,11 @@ async function tailor(run: Run, deps: TailoringWorkerDeps): Promise<TailoringOut
     .filter((j) => j.closedAt === undefined)
     .sort((a, b) => (order.get(a.jobId) ?? 0) - (order.get(b.jobId) ?? 0));
   if (jobs.length === 0) return fail(run, deps, 'no_jobs');
+  const company = doc.companyName ?? jobs.find((j) => j.companyName)?.companyName ?? doc.companyKey;
   const model = await deps.model(userId, doc.aiSource);
   if (typeof model === 'string') return fail(run, deps, model);
   const profile = await deps.profile(userId);
+  run.stage = 'model';
 
   const canStart = (timeoutMs: number) =>
     run.calls < TAILORING_MAX_CALLS && deps.remainingMs() > timeoutMs + SAFETY_MARGIN_MS;
@@ -328,7 +356,9 @@ async function tailor(run: Run, deps: TailoringWorkerDeps): Promise<TailoringOut
     cache.eTag === base.eTag &&
     cache.promptVersion === promptVersion(structureResumeTask)
   ) {
-    const read = structuredResume.safeParse(await deps.files.readJson(cache.s3Key));
+    const read = structuredResume.safeParse(
+      await deps.files.readJson(cache.s3Key).catch(() => undefined),
+    );
     if (read.success) {
       structured = read.data;
       coverage = cache.coverage;
@@ -429,9 +459,10 @@ async function tailor(run: Run, deps: TailoringWorkerDeps): Promise<TailoringOut
     promptVersion: promptVersion(tailorResumeTask),
     scoreVersion: MATCH_SCORE_VERSION,
   };
+  run.stage = 'files';
   await deps.files.put(keys.json, JSON.stringify(best.resume), 'application/json');
-  await deps.runs.saveDraft(userId, documentId, draft);
-  return render(run, deps, best.resume, draft);
+  if (!(await deps.runs.saveDraft(userId, documentId, draft))) return 'skipped';
+  return render(run, deps, best.resume, company, draft);
 }
 
 /** The files, then the version ready, then each job's link to it (only if this ended it). */
@@ -439,11 +470,12 @@ async function render(
   run: Run,
   deps: TailoringWorkerDeps,
   resume: StructuredResume,
+  company: string,
   draft: Parameters<TailoringWorkerDeps['runs']['saveDraft']>[2],
 ): Promise<TailoringOutcome> {
+  run.stage = 'files';
   const { doc } = run;
   const { userId, documentId } = doc;
-  const company = doc.companyName ?? doc.companyKey;
   const keys = tailoringKeys(userId, documentId);
   const [pdf, docx] = await Promise.all([deps.render.pdf(resume), deps.render.docx(resume)]);
   await Promise.all([deps.files.put(keys.pdf, pdf, PDF), deps.files.put(keys.docx, docx, DOCX)]);
@@ -460,8 +492,16 @@ async function render(
     `Tailored résumé ready for ${company}`,
   );
   if (!ended) return 'skipped';
-  await deps.runs.saveMatches(userId, documentId, draft.scores ?? [], MATCH_SCORE_VERSION);
-  await prune(userId, doc.companyKey, deps);
+  // The version is ready: what follows is best effort (a retry would find the run ended).
+  try {
+    await deps.runs.saveMatches(userId, documentId, draft.scores ?? [], MATCH_SCORE_VERSION);
+    await prune(userId, doc.companyKey, deps);
+  } catch (error) {
+    logger.error('Version ready, but its jobs or old versions were not updated', {
+      documentId,
+      error: (error as Error).name,
+    });
+  }
   return 'ready';
 }
 
@@ -472,7 +512,7 @@ async function cacheStructured(
   grounded: { resume: StructuredResume; coverage: number; rejections: number },
   deps: TailoringWorkerDeps,
 ): Promise<void> {
-  const key = tailoringKeys(userId, base.documentId).structured;
+  const key = structuredKey(userId, base.documentId, base.eTag as string);
   await deps.files.put(key, JSON.stringify(grounded.resume), 'application/json');
   const cache: StructuredCache = {
     s3Key: key,

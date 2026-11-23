@@ -1,7 +1,17 @@
-import type { Document, GeneratedDocument, Job } from '@jobdeputy/db';
+import {
+  type Document,
+  type GeneratedDocument,
+  type Job,
+  TailoringConflictError,
+} from '@jobdeputy/db';
 import { jobKeywordsTask, promptVersion, stubTailoringSource } from '@jobdeputy/llm';
 import { stubSource } from '@jobdeputy/llm/testing';
-import { MATCH_SCORE_VERSION, tailoringKeys } from '@jobdeputy/shared';
+import {
+  MATCH_SCORE_VERSION,
+  structuredKey,
+  TAILORING_STALE_MS,
+  tailoringKeys,
+} from '@jobdeputy/shared';
 import type { SQSRecord } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -113,7 +123,7 @@ function setup(over: Partial<TailoringWorkerDeps> = {}, doc = version()) {
   const runs = {
     claim: vi.fn(async () => doc),
     saveCall: vi.fn(async () => {}),
-    saveDraft: vi.fn(async () => {}),
+    saveDraft: vi.fn(async () => true),
     finish: vi.fn(async () => true),
     saveKeywords: vi.fn(async () => {}),
     saveMatches: vi.fn(async () => {}),
@@ -180,7 +190,7 @@ describe('tailoring worker', () => {
     expect(documents.saveStructured).toHaveBeenCalledWith(
       USER,
       BASE,
-      expect.objectContaining({ eTag: 'etag-1', s3Key: tailoringKeys(USER, BASE).structured }),
+      expect.objectContaining({ eTag: 'etag-1', s3Key: structuredKey(USER, BASE, 'etag-1') }),
     );
     expect(runs.saveKeywords).toHaveBeenCalledWith(USER, 'job-1', {
       descriptionHash: 'dh-1',
@@ -353,7 +363,8 @@ describe('tailoring worker', () => {
       },
     });
     expect(await processRecord(record(undefined, 3), deps)).toBe('failed');
-    expect(finished(runs).outcome.error).toBe('model_unavailable');
+    // Before any model call: our failure, not the model's.
+    expect(finished(runs).outcome.error).toBe('stopped');
   });
 
   it('keeps the draft before rendering: a retry renders it with no model call', async () => {
@@ -414,7 +425,71 @@ describe('tailoring worker', () => {
       documents: { get: async () => base(), saveStructured: vi.fn(async () => false) },
     });
     await processRecord(record(), deps);
-    expect(deps.files.remove).toHaveBeenCalledWith([tailoringKeys(USER, BASE).structured]);
+    expect(deps.files.remove).toHaveBeenCalledWith([structuredKey(USER, BASE, 'etag-1')]);
+  });
+
+  it('ends a run back after it went stale, with no model call', async () => {
+    const { deps, runs } = setup(
+      { model: vi.fn(async () => stubTailoringSource('stub-model')) },
+      version({ createdAt: new Date(NOW.getTime() - TAILORING_STALE_MS - 1).toISOString() }),
+    );
+    expect(await processRecord(record(undefined, 2), deps)).toBe('failed');
+    expect(finished(runs).outcome.error).toBe('stopped');
+    expect(deps.model).not.toHaveBeenCalled();
+  });
+
+  it('never ends a run another delivery is working on, even on its last try', async () => {
+    const conflict = setup();
+    conflict.runs.saveCall.mockRejectedValueOnce(new TailoringConflictError());
+    expect(await processRecord(record(undefined, 3), conflict.deps)).toBe('skipped');
+    expect(conflict.runs.finish).not.toHaveBeenCalled();
+    const ended = setup();
+    ended.runs.saveDraft.mockResolvedValueOnce(false);
+    expect(await processRecord(record(), ended.deps)).toBe('skipped');
+    expect(ended.runs.finish).not.toHaveBeenCalled();
+  });
+
+  it('says stopped, not model unavailable, when its files fail on the last try', async () => {
+    const { deps, runs } = setup({
+      render: {
+        pdf: vi.fn(async () => {
+          throw new Error('font');
+        }),
+        docx: vi.fn(async () => Buffer.from('PK')),
+      },
+    });
+    expect(await processRecord(record(undefined, 3), deps)).toBe('failed');
+    expect(finished(runs).outcome.error).toBe('stopped');
+  });
+
+  it('stays ready when linking its jobs fails afterwards (logged, not retried)', async () => {
+    const { deps, runs } = setup();
+    runs.saveMatches.mockRejectedValueOnce(new Error('Throttled'));
+    expect(await processRecord(record(), deps)).toBe('ready');
+    expect(deps.delayRetry).not.toHaveBeenCalled();
+  });
+
+  it('makes the structure again when its cached copy cannot be read', async () => {
+    const first = setup();
+    await processRecord(record(), first.deps);
+    // biome-ignore lint/suspicious/noExplicitAny: reading the mock's argument.
+    const cache = (first.documents.saveStructured.mock.calls[0] as any[])[2];
+    const { deps, runs } = setup({
+      documents: {
+        get: async () => base({ structured: cache }),
+        saveStructured: vi.fn(async () => true),
+      },
+    });
+    // The copy's file is missing: reading it throws.
+    expect(await processRecord(record(), deps)).toBe('ready');
+    expect(runs.saveCall).toHaveBeenCalledTimes(3);
+  });
+
+  it('names the company from its jobs when the version has no name', async () => {
+    const { companyName: _, ...unnamed } = version();
+    const { deps, runs } = setup({}, unnamed as GeneratedDocument);
+    await processRecord(record(), deps);
+    expect(finished(runs).outcome.fileName).toBe('Sam Example – Example Test Co.pdf');
   });
 
   it('lets an error while storing a call go to the queue', async () => {
@@ -447,9 +522,7 @@ describe('tailoring worker', () => {
     const old = versions.slice(11).map((v) => v.documentId);
     expect(runs.deleteVersions).toHaveBeenCalledWith(USER, old);
     expect(deps.files.remove).toHaveBeenCalledWith(
-      old.flatMap((id) =>
-        Object.values(tailoringKeys(USER, id)).filter((k) => !k.endsWith('structured.json')),
-      ),
+      old.flatMap((id) => Object.values(tailoringKeys(USER, id))),
     );
     expect(files.size).toBeGreaterThan(0);
   });

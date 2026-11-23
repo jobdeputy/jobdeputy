@@ -2,6 +2,7 @@ import {
   CompanyLimitRepository,
   CrawlSettingsRepository,
   documentClient,
+  isHidden,
   type Job,
   JobRepository,
   type JobSummaryItem,
@@ -14,7 +15,6 @@ import {
   compareRank,
   createLogger,
   type HttpResponse,
-  isHiddenJob,
   jobId as jobIdSchema,
   jobsPageQuery,
   json,
@@ -99,7 +99,7 @@ export function jobSummary(j: JobSummaryItem) {
           },
         }
       : {}),
-    hidden: isHiddenJob(j),
+    hidden: isHidden(j),
     ...(j.ttl !== undefined ? { expiresAt: new Date(j.ttl * 1000).toISOString() } : {}),
   };
 }

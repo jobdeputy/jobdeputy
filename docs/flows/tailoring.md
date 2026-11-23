@@ -14,7 +14,7 @@ flowchart LR
   API -->|one transaction: version queued,<br/>free run, company lock, audit| D[(documents<br/>origin generated)]
   D -->|stream INSERT<br/>Pipe: generated, queued| Q[[tailoring queue]]
   Q --> W[Tailoring worker]
-  W -->|1. structure once per file| S3[(S3 derived/<br/>structured.json)]
+  W -->|1. structure once per file| S3[(S3 derived/<br/>structured-eTag.json)]
   W -->|2. keywords once per description| J[(jobs<br/>keywords)]
   W -->|3. tailor: a draft, at most 2 repairs| M[Bedrock Ministral 3 14B<br/>or the user's key]
   W -->|4. render| F[(S3 derived/<br/>resume.json, .pdf, .docx)]
@@ -59,14 +59,14 @@ sequenceDiagram
   participant M as Model
   Q->>W: {userId, documentId}
   W->>DB: claim (queued/processing → processing, attempts + 1)
-  Note over W: ended → skip · a kept draft → render it (no model call) · 5 calls used → failed stopped
+  Note over W: ended → skip · asked over 60 min ago → failed stopped · a kept draft → render it (no model call) · 5 calls used → failed stopped
   W->>DB: base résumé, jobs, key (KMS for an own key), profile
   alt no cached structure for this file (ETag) and prompt
     W->>S3: text.txt
     W->>M: structure-resume (first 10,000 characters)
     W->>DB: store the call (tokens) before anything else
     Note over W: grounded in the text; no entries left → failed resume_unreadable
-    W->>S3: structured.json
+    W->>S3: structured-<eTag>.json
     W->>DB: documents.structured (only for this ETag)
   end
   alt a job without cached keywords for its description
@@ -95,7 +95,9 @@ sequenceDiagram
 - **Calls:** at most 5 task calls a run (structure 1, keywords 1, tailoring 3), counted on the version (`tailoring.calls`) across retries. Each call is stored with its tokens before the next starts; a duplicate delivery cannot store one twice (the count's condition).
 - **Retries:** an error goes back to the queue, which tries again 1, then 2 minutes later (not after its visibility timeout). Finished calls are cached (structure, keywords, the kept draft) or counted, and tailoring ends with its best honest draft rather than throwing after its first call, so a retry never repeats a finished call. The last attempt ends the run `failed` whatever went wrong, so it never stays in progress; a rejected own key fails it at once (`key_rejected`).
 - **The free allowance:** 10 platform runs a month, counted when asked; given back when no model call was made (no résumé, no jobs, no key). Own-key runs are not counted.
-- A structured copy made for a résumé replaced or deleted meanwhile is deleted, not kept.
+- A structured copy made for a résumé replaced or deleted meanwhile is deleted (only that file version's copy).
+- Another delivery of the same message never ends a run: a lost conditional write (a call stored, a draft kept, the run ended) makes it stop quietly.
+- Once a version is ready, linking its jobs and pruning old versions are best effort (logged).
 
 ## What a version's state can be
 
@@ -111,7 +113,7 @@ sequenceDiagram
 | What | Where |
 |---|---|
 | A version | `documents` item, `origin: generated` (never listed, counted, or the default with uploads) |
-| A base résumé's structured copy | `documents.structured` on the upload, JSON at `derived/users/<userId>/documents/<id>/structured.json` |
+| A base résumé's structured copy | `documents.structured` on the upload, JSON at `derived/users/<userId>/documents/<id>/structured-<eTag>.json` |
 | A version's files | `derived/users/<userId>/documents/<id>/resume.{json,pdf,docx}` |
 | A job's keywords and score | `jobs.keywords`, `jobs.match`, `jobs.materials` |
 | The free runs, the company lock | `usage` `MONTH#` `tailoringRunIds`, `TAILOR#<companyKey>` |

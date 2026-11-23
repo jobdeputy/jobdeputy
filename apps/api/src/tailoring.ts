@@ -8,6 +8,7 @@ import {
   DocumentRepository,
   documentClient,
   type GeneratedDocument,
+  isHidden,
   JobRepository,
   ssmCrawlLimits,
   TailoringAllowanceError,
@@ -22,7 +23,6 @@ import {
   createTailoringInput,
   DOWNLOAD_URL_SECONDS,
   type HttpResponse,
-  isHiddenJob,
   json,
   nextUtcMonthStart,
   PLATFORM_TAILORINGS_PER_MONTH,
@@ -92,9 +92,12 @@ export function tailoringView(v: GeneratedDocument, now: Date) {
     aiSource: v.aiSource,
     status,
     ...(error ? { error, message: TAILORING_ERRORS[error] } : {}),
-    ...(v.tailoring.result ? { result: v.tailoring.result } : {}),
-    ...(v.tailoring.scores ? { scores: v.tailoring.scores } : {}),
-    ...(v.tailoring.coverage !== undefined ? { coverage: v.tailoring.coverage } : {}),
+    // Scores only for a ready version: a kept draft's scores show once its files exist.
+    ...(status === 'ready' && v.tailoring.result ? { result: v.tailoring.result } : {}),
+    ...(status === 'ready' && v.tailoring.scores ? { scores: v.tailoring.scores } : {}),
+    ...(status === 'ready' && v.tailoring.coverage !== undefined
+      ? { coverage: v.tailoring.coverage }
+      : {}),
     ...(v.fileName ? { fileName: v.fileName } : {}),
     ...(v.sizeBytes !== undefined ? { sizeBytes: v.sizeBytes } : {}),
     createdAt: v.createdAt,
@@ -172,7 +175,7 @@ async function request(
     .map((id) => found.get(id))
     .filter(
       (j): j is NonNullable<typeof j> =>
-        j !== undefined && j.closedAt === undefined && !isHiddenJob(j),
+        j !== undefined && j.closedAt === undefined && !isHidden(j),
     )
     .slice(0, Math.min(TAILORING_JOBS, perCompany));
   if (jobs.length === 0) {

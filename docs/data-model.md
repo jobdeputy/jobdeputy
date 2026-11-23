@@ -184,7 +184,7 @@ Key: `userId`, `documentId` (ULID).
 `status`: `pending` (upload link issued, waiting for the file and its malware scan) → `processing` → `ready`, or `rejected` (failed the malware scan; the file is deleted) or `failed` (unusable file, scan not possible, or processing error; the file is deleted). A re-upload with a new ETag goes back through `processing`.
 
 - For uploaded résumés: `parsed? {textS3Key, pageCount?, charCount, noText B, truncated B}`. `noText` means the file has no text layer (for example a scanned image PDF). Structured fields (`skills`, `experienceIds`) come with AI later.
-- For uploaded résumés (#51): `structured? {s3Key, eTag, promptVersion, coverage, rejections, createdAt}`: the résumé as structured data (`structure-resume`), made on the first Tailor click and kept for the file with that `eTag`; the JSON is in S3 at `…/<documentId>/structured.json`.
+- For uploaded résumés (#51): `structured? {s3Key, eTag, promptVersion, coverage, rejections, createdAt}`: the résumé as structured data (`structure-resume`), made on the first Tailor click and kept for the file with that `eTag`; the JSON is in S3 at `…/<documentId>/structured-<eTag>.json` (`structuredKey`).
 - For generated documents (#51, decision 0015: tailored résumés, one per company and Tailor click): `origin: generated`, `kind: resume`, `status` `queued` → `processing` → `ready` or `failed`, `title`, `companyKey`, `companyName?`, `jobIds L` (the company's top shown jobs, at most 3, best first), `baseDocumentId`, `aiSource`, `platformRun B` (counted in the free tailoring allowance), `tailoring {calls N (task calls, at most 5 across retries), attempts N, startedAt?, finishedAt?, drafted? B (the kept draft's `resume.json` and scores are stored: a retry only renders), result? (ok or partial), scores? L<{jobId, base, tailored, missingProven L, missingUnproven L}>, coverage?, promptVersion?, scoreVersion?}`, `generation? {keySource, provider, model, calls, inputTokens, outputTokens}`, `error?` (`TAILORING_ERRORS`). When ready: `s3Key` (the PDF), `fileName` ("Name – Company.pdf"), `sizeBytes`. Not counted in `DOCUMENTS`, never the default, never in `GET /me/documents`; the last 10 ended versions per company are kept.
 
 ## 4. `sources`: pages the user saved
@@ -379,7 +379,7 @@ Audit entries: `ai_key.saved`, `ai_key.check_requested`, `ai_key.checked` (syste
 ```text
 users/<userId>/documents/<documentId>/original             the uploaded file (PDF or DOCX, at most 5 MB)
 derived/users/<userId>/documents/<documentId>/text.txt     its extracted text (at most 200,000 characters)
-derived/users/<userId>/documents/<documentId>/structured.json   #51: an uploaded résumé as structured data
+derived/users/<userId>/documents/<documentId>/structured-<eTag>.json   #51: an uploaded résumé as structured data (one per file version)
 derived/users/<userId>/documents/<documentId>/resume.{json,pdf,docx}   #51: a tailored version: the résumé and its two files
 derived/users/<userId>/crawls/<crawlId>/page             the fetched page (at most 5 MB; expires after 30 days)
 users/<userId>/applications/<applicationId>/...    screenshots and confirmations
@@ -391,7 +391,7 @@ Everything under `users/<userId>/` and `derived/users/<userId>/` goes with accou
 - **`users/`** holds what users upload. GuardDuty scans every new object there and tags it `GuardDutyMalwareScanStatus`; the API can only read an `original` tagged `NO_THREATS_FOUND` (bucket policy).
 - **`derived/users/`** holds files we produce: text extracted from clean uploads, and pages the crawl worker fetched (T06b). It is not scanned, so each upload is scanned exactly once; fetched pages are never served to a browser. Only workers can write there (the crawl worker only to `…/crawls/*/page`).
 - Fetched pages carry the tag `retention=crawl-page`; a lifecycle rule deletes them after 30 days.
-- The prefixes and key format are defined once, in `packages/shared` (`documentKeys`, `crawlKeys`, `tailoringKeys`). The bucket is private, S3-encrypted, HTTPS-only, and never replicated.
+- The prefixes and key format are defined once, in `packages/shared` (`documentKeys`, `crawlKeys`, `tailoringKeys`, `structuredKey`). The bucket is private, S3-encrypted, HTTPS-only, and never replicated.
 
 ## Change log
 
@@ -423,5 +423,5 @@ Everything under `users/<userId>/` and `derived/users/<userId>/` goes with accou
 | 2026-10-01 | `jobs.relevance` from `relevance@v2`: `reasons` never quote a short ID | #62 |
 | 2026-11-21 | No new fields: `GET /me/companies` reads `usage` `COMPANY#` items and batch-reads `jobs`; the admin default for jobs shown per company is 3 (was 10) | #49 |
 | 2026-11-22 | List runs: `crawls.kind`, `listSource`, `list`, `queuedCount`, `runningIds`, `childIds`, `childrenEnded`, `parentCrawlId`, `listShare`; `trigger` `list`; `stats.companies`; `sources.kind` `list`; `usage` `DAY#` `lists`. Company crawls are `crawls` items too; `GET /me/crawls` leaves them out | #50 |
-| 2026-11-22 | `documents`: stream (only generated `queued` inserts → the tailoring worker); generated versions (`origin: generated`, `companyKey`, `jobIds`, `baseDocumentId`, `aiSource`, `platformRun`, `tailoring`, `generation`, `fileName`), never listed or counted with uploads; uploads' `structured`. `jobs`: `keywords`, `match` (built), `materials.resumeDocumentId`. `usage`: `MONTH#` `tailoringRunIds`, `TAILOR#<companyKey>` lock. S3: `structured.json`, `resume.{json,pdf,docx}` | #51 |
+| 2026-11-22 | `documents`: stream (only generated `queued` inserts → the tailoring worker); generated versions (`origin: generated`, `companyKey`, `jobIds`, `baseDocumentId`, `aiSource`, `platformRun`, `tailoring`, `generation`, `fileName`), never listed or counted with uploads; uploads' `structured`. `jobs`: `keywords`, `match` (built), `materials.resumeDocumentId`. `usage`: `MONTH#` `tailoringRunIds`, `TAILOR#<companyKey>` lock. S3: `structured-<eTag>.json`, `resume.{json,pdf,docx}` | #51 |
 | 2026-11-21 | `documents`: deleting the default hands `isDefault` (and `usage` `DOCUMENTS.defaultDocumentId`) to the newest `ready` document in the same transaction, instead of freeing it | #33 6b1 |

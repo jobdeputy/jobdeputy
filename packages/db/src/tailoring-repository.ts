@@ -506,32 +506,39 @@ export class TailoringRepository {
 
   /**
    * Keeps the chosen draft's scores on the version (its résumé is already in S3), only while
-   * the run is still processing: a retry renders it rather than tailoring again.
+   * the run is still processing: a retry renders it rather than tailoring again. False when the
+   * run had ended (another delivery ended it).
    */
   async saveDraft(
     userId: string,
     documentId: string,
     draft: Pick<TailoringRun, 'result' | 'scores' | 'coverage' | 'promptVersion' | 'scoreVersion'>,
-  ): Promise<void> {
-    await this.client.send(
-      new UpdateCommand({
-        TableName: this.tables.documents,
-        Key: { userId, documentId },
-        UpdateExpression: `SET tailoring.drafted = :true, tailoring.#result = :result, tailoring.scores = :scores, tailoring.promptVersion = :promptVersion, tailoring.scoreVersion = :scoreVersion${draft.coverage !== undefined ? ', tailoring.coverage = :coverage' : ''}, updatedAt = :now`,
-        ConditionExpression: '#status = :processing',
-        ExpressionAttributeNames: { '#status': 'status', '#result': 'result' },
-        ExpressionAttributeValues: {
-          ':true': true,
-          ':result': draft.result,
-          ':scores': draft.scores,
-          ':promptVersion': draft.promptVersion,
-          ':scoreVersion': draft.scoreVersion,
-          ...(draft.coverage !== undefined ? { ':coverage': draft.coverage } : {}),
-          ':now': this.now().toISOString(),
-          ':processing': 'processing',
-        },
-      }),
-    );
+  ): Promise<boolean> {
+    try {
+      await this.client.send(
+        new UpdateCommand({
+          TableName: this.tables.documents,
+          Key: { userId, documentId },
+          UpdateExpression: `SET tailoring.drafted = :true, tailoring.#result = :result, tailoring.scores = :scores, tailoring.promptVersion = :promptVersion, tailoring.scoreVersion = :scoreVersion${draft.coverage !== undefined ? ', tailoring.coverage = :coverage' : ''}, updatedAt = :now`,
+          ConditionExpression: '#status = :processing',
+          ExpressionAttributeNames: { '#status': 'status', '#result': 'result' },
+          ExpressionAttributeValues: {
+            ':true': true,
+            ':result': draft.result,
+            ':scores': draft.scores,
+            ':promptVersion': draft.promptVersion,
+            ':scoreVersion': draft.scoreVersion,
+            ...(draft.coverage !== undefined ? { ':coverage': draft.coverage } : {}),
+            ':now': this.now().toISOString(),
+            ':processing': 'processing',
+          },
+        }),
+      );
+      return true;
+    } catch (error) {
+      if (isConditionFailure(error)) return false;
+      throw error;
+    }
   }
 
   /** Caches a job's grounded keywords; skipped when the job has gone. */

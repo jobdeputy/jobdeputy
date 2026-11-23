@@ -226,7 +226,7 @@ describe('changing documents', () => {
     expect(res.statusCode).toBe(409);
   });
 
-  it('deletes the item, both files, and its structured copy (#51)', async () => {
+  it('deletes the item and both files', async () => {
     const d = deps();
     expect((await route(event('DELETE /me/documents/{documentId}', path), d)).statusCode).toBe(204);
     expect(d.repo.delete).toHaveBeenCalledWith('user-a', ID, {
@@ -236,10 +236,23 @@ describe('changing documents', () => {
     expect(d.deleteFiles).toHaveBeenCalledWith([
       `users/user-a/documents/${ID}/original`,
       `derived/users/user-a/documents/${ID}/text.txt`,
-      `derived/users/user-a/documents/${ID}/structured.json`,
     ]);
     d.repo.delete.mockResolvedValueOnce(undefined);
     expect((await route(event('DELETE /me/documents/{documentId}', path), d)).statusCode).toBe(404);
+  });
+
+  it('deletes its structured copy too, when tailoring made one (#51)', async () => {
+    const d = deps();
+    const copy = `derived/users/user-a/documents/${ID}/structured-etag1.json`;
+    d.repo.delete.mockImplementationOnce(
+      async () =>
+        ({
+          ...(await d.repo.get('user-a', ID)),
+          structured: { s3Key: copy },
+        }) as never,
+    );
+    expect((await route(event('DELETE /me/documents/{documentId}', path), d)).statusCode).toBe(204);
+    expect(d.deleteFiles).toHaveBeenCalledWith(expect.arrayContaining([copy]));
   });
 
   it('rejects requests without verified claims', async () => {

@@ -348,6 +348,18 @@ describe('GET /me/tailorings/{documentId}', () => {
 });
 
 describe('tailoringView', () => {
+  it('shows scores only once a version is ready (a kept draft has them earlier)', () => {
+    const drafted = version({
+      status: 'processing',
+      tailoring: { calls: 3, attempts: 1, drafted: true, result: 'ok', scores: [], coverage: 1 },
+    });
+    expect(tailoringView(drafted, NOW)).not.toHaveProperty('scores');
+    expect(tailoringView(drafted, NOW)).not.toHaveProperty('result');
+    expect(
+      tailoringView({ ...drafted, status: 'failed', error: 'stopped' }, NOW),
+    ).not.toHaveProperty('scores');
+  });
+
   it('shows a run past its time as stopped, and a failure with its message', () => {
     const old = version({
       createdAt: new Date(NOW.getTime() - TAILORING_STALE_MS - 1).toISOString(),

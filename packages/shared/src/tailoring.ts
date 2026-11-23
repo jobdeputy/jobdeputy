@@ -60,16 +60,21 @@ export const TAILORING_ERRORS = {
 } as const;
 export type TailoringError = keyof typeof TAILORING_ERRORS;
 
-/**
- * S3 keys (docs/data-model.md): a version's files, and a base résumé's structured copy
- * (cached once per uploaded résumé), all under DERIVED_PREFIX with the document's other files.
- */
+/** S3 keys (docs/data-model.md) of a version's files, under DERIVED_PREFIX. */
 export function tailoringKeys(userId: string, documentId: string) {
   const base = `${DERIVED_PREFIX}${userId}/documents/${documentId}`;
   return {
     json: `${base}/resume.json`,
     pdf: `${base}/resume.pdf`,
     docx: `${base}/resume.docx`,
-    structured: `${base}/structured.json`,
   };
+}
+
+/**
+ * The S3 key of an uploaded résumé's structured copy, for the file with this ETag: a copy made
+ * for one upload never overwrites, or is deleted as, the copy of a re-upload.
+ */
+export function structuredKey(userId: string, documentId: string, eTag: string): string {
+  const tag = eTag.replace(/[^A-Za-z0-9-]/g, '').slice(0, 64) || 'none';
+  return `${DERIVED_PREFIX}${userId}/documents/${documentId}/structured-${tag}.json`;
 }

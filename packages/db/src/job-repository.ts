@@ -88,8 +88,8 @@ export interface RelevanceDecision {
 }
 
 /** Hidden jobs expire (T08c): the filter dropped them, or the company limit did. */
-export const isHidden = (fit: JobFit) =>
-  fit.filter.state === 'not_relevant' || fit.limitState === 'over_limit';
+export const isHidden = (fit: { filter?: { state: string }; limitState?: LimitState }) =>
+  fit.filter?.state === 'not_relevant' || fit.limitState === 'over_limit';
 
 export type JobStatus = 'new' | 'shortlisted' | 'dismissed' | 'applying' | 'applied' | 'archived';
 

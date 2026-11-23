@@ -61,8 +61,3 @@ export function rankShown(shown: Record<string, ShownEntry>): RankedJob[] {
     .map(([jobId, entry]) => ({ jobId, ...entry }))
     .sort(compareRank);
 }
-
-/** A job kept out of the user's lists (T08c): by the filter, or past the company's limit. */
-export function isHiddenJob(job: { filter?: { state: string }; limitState?: string }): boolean {
-  return job.filter?.state === 'not_relevant' || job.limitState === 'over_limit';
-}

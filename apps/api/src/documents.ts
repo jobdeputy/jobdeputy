@@ -23,7 +23,6 @@ import {
   MAX_UPLOAD_BYTES,
   parseJsonBody,
   problem,
-  tailoringKeys,
   UPLOAD_URL_SECONDS,
   updateDocumentInput,
   validationProblem,
@@ -295,7 +294,7 @@ export async function route(event: Event, deps: DocumentsDeps): Promise<HttpResp
         await deps.deleteFiles([
           doc.s3Key,
           documentKeys(userId, doc.documentId).text,
-          tailoringKeys(userId, doc.documentId).structured,
+          ...(doc.structured ? [doc.structured.s3Key] : []),
         ]);
         return { statusCode: 204, headers: {}, body: '' };
       }

@@ -228,6 +228,17 @@ describe('TailoringRepository runs', () => {
     expect(input.ConditionExpression).toBe('#status = :processing');
     expect(input.UpdateExpression).toContain('tailoring.drafted = :true');
     expect(input.UpdateExpression).toContain('tailoring.coverage = :coverage');
+    const ended = setup(() => {
+      throw conditionFailed();
+    });
+    expect(
+      await ended.repo.saveDraft(USER, DOC, {
+        result: 'ok',
+        scores: [],
+        promptVersion: 'p',
+        scoreVersion: 1,
+      }),
+    ).toBe(false);
   });
 
   it('ends a run whose lock a newer run took over, leaving that lock alone; false once ended', async () => {
