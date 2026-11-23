@@ -69,6 +69,30 @@ describe('eval harness', () => {
     expect(broken.failures).toEqual(['backend#0: turn-limit', 'analyst#0: turn-limit']);
   });
 
+  it('allows one call without valid output (model variance), not two', () => {
+    const base = {
+      promptVersion: 'x@v1',
+      provider: 'p',
+      modelId: 'm',
+      calls: 12,
+      validOutputs: 12,
+      firstTryValid: 12,
+      labelsCorrect: 100,
+      labelsTotal: 100,
+      injectionResisted: 0,
+      injectionTotal: 0,
+      groundingDropped: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      medianMs: 0,
+      failures: [],
+    };
+    expect(compare({ ...base, validOutputs: 11 }, base).regressions).toEqual([]);
+    expect(compare({ ...base, validOutputs: 10 }, base).regressions).toEqual([
+      'valid output 83% (baseline 100%)',
+    ]);
+  });
+
   it('drops results for IDs that were not sent, and counts them', async () => {
     const source = stubSource(() => ({ tool: { results: [{ id: 'fake', match: true }] } }));
     const report = await evalSmoke(smokeCases.slice(0, 1), source, 1);

@@ -425,22 +425,28 @@ export function compare(report: EvalReport, baseline: EvalReport | undefined) {
     warnings.push('no baseline for this prompt version yet: save one with --update-baseline');
     return { regressions, warnings };
   }
-  const checks: [string, number, number][] = [
+  // [name, now, baseline, how far below the baseline it may be]
+  const checks: [string, number, number, number][] = [
     // Tailoring (#51) repairs a call without valid output within its run, so it is judged
     // by its runs (no honest draft) and labels; one call of ~17 would swing this by 6%.
+    // Elsewhere one call without valid output is allowed: Ministral 3 14B is not fully
+    // repeatable even at temperature 0, and in a 12-call eval one call is 8% (#51 B2: CI
+    // failed job-keywords at 11/12 with its prompt unchanged). Two or more still fail.
     ...(report.runs === undefined
       ? [
           [
             'valid output',
             rate(report.validOutputs, report.calls),
             rate(baseline.validOutputs, baseline.calls),
-          ] as [string, number, number],
+            Math.max(TOLERANCE, 1 / Math.max(report.calls, 1)),
+          ] as [string, number, number, number],
         ]
       : []),
     [
       'label accuracy',
       rate(report.labelsCorrect, report.labelsTotal),
       rate(baseline.labelsCorrect, baseline.labelsTotal),
+      TOLERANCE,
     ],
   ];
   if (report.reasonsTotal !== undefined) {
@@ -466,8 +472,10 @@ export function compare(report: EvalReport, baseline: EvalReport | undefined) {
       regressions.push(`mean tailored score ${now} (baseline ${before})`);
     }
   }
-  for (const [name, now, before] of checks) {
-    if (now < before - TOLERANCE) regressions.push(`${name} ${pct(now)} (baseline ${pct(before)})`);
+  for (const [name, now, before, tolerance] of checks) {
+    // A small margin so that exactly one call below is not read as more (floating point).
+    if (now < before - tolerance - 1e-9)
+      regressions.push(`${name} ${pct(now)} (baseline ${pct(before)})`);
   }
   const tokens = (r: EvalReport) => (r.inputTokens + r.outputTokens) / Math.max(r.calls, 1);
   if (tokens(report) > 1.5 * tokens(baseline)) {
