@@ -53,6 +53,11 @@ export interface TailoringRun {
   scores?: JobScoreRecord[];
   /** Share of the base résumé's text its structured copy covers (0–1). */
   coverage?: number;
+  /**
+   * The kept draft's scores and result, saved (with `resume.json` in S3) before the files are
+   * rendered: a retry renders this draft instead of calling the model again.
+   */
+  drafted?: boolean;
   /** `tailor-resume@v1`, and the score's code version. */
   promptVersion?: string;
   scoreVersion?: number;
@@ -476,17 +481,54 @@ export class TailoringRepository {
 
   /**
    * Gives a free run back (a string set: idempotent). In the month the run was asked for:
-   * its ID is a ULID, so its own time says which month that was.
+   * its ID is a ULID, so its own time says which month that was. Only where the run was
+   * counted: an item without the set is never created or touched.
    */
   private async giveBack(userId: string, documentId: string): Promise<void> {
+    try {
+      await this.client.send(
+        new UpdateCommand({
+          TableName: this.tables.usage,
+          Key: { userId, sk: `MONTH#${utcMonth(new Date(decodeTime(documentId)))}` },
+          UpdateExpression: 'DELETE tailoringRunIds :id SET updatedAt = :now',
+          ConditionExpression: 'contains(tailoringRunIds, :one)',
+          ExpressionAttributeValues: {
+            ':id': new Set([documentId]),
+            ':one': documentId,
+            ':now': this.now().toISOString(),
+          },
+        }),
+      );
+    } catch (error) {
+      if (!isConditionFailure(error)) throw error;
+    }
+  }
+
+  /**
+   * Keeps the chosen draft's scores on the version (its résumé is already in S3), only while
+   * the run is still processing: a retry renders it rather than tailoring again.
+   */
+  async saveDraft(
+    userId: string,
+    documentId: string,
+    draft: Pick<TailoringRun, 'result' | 'scores' | 'coverage' | 'promptVersion' | 'scoreVersion'>,
+  ): Promise<void> {
     await this.client.send(
       new UpdateCommand({
-        TableName: this.tables.usage,
-        Key: { userId, sk: `MONTH#${utcMonth(new Date(decodeTime(documentId)))}` },
-        UpdateExpression: 'DELETE tailoringRunIds :id SET updatedAt = :now',
+        TableName: this.tables.documents,
+        Key: { userId, documentId },
+        UpdateExpression: `SET tailoring.drafted = :true, tailoring.#result = :result, tailoring.scores = :scores, tailoring.promptVersion = :promptVersion, tailoring.scoreVersion = :scoreVersion${draft.coverage !== undefined ? ', tailoring.coverage = :coverage' : ''}, updatedAt = :now`,
+        ConditionExpression: '#status = :processing',
+        ExpressionAttributeNames: { '#status': 'status', '#result': 'result' },
         ExpressionAttributeValues: {
-          ':id': new Set([documentId]),
+          ':true': true,
+          ':result': draft.result,
+          ':scores': draft.scores,
+          ':promptVersion': draft.promptVersion,
+          ':scoreVersion': draft.scoreVersion,
+          ...(draft.coverage !== undefined ? { ':coverage': draft.coverage } : {}),
           ':now': this.now().toISOString(),
+          ':processing': 'processing',
         },
       }),
     );

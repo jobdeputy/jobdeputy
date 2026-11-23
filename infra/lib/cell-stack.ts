@@ -613,6 +613,7 @@ export class CellStack extends Stack {
       },
       documentsBucket: documents.bucket,
       aiKeys,
+      limitsParameter: crawlLimits,
       removalPolicy,
       maxReceives: MAX_RECEIVES,
       health: queueHealth,

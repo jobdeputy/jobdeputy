@@ -1,11 +1,12 @@
 import type { Document, GeneratedDocument, Job } from '@jobdeputy/db';
 import { jobKeywordsTask, promptVersion, stubTailoringSource } from '@jobdeputy/llm';
 import { stubSource } from '@jobdeputy/llm/testing';
-import { MATCH_SCORE_VERSION, TAILORING_STALE_MS, tailoringKeys } from '@jobdeputy/shared';
+import { MATCH_SCORE_VERSION, tailoringKeys } from '@jobdeputy/shared';
 import type { SQSRecord } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
 import {
   processRecord,
+  RETRY_DELAY_SECONDS,
   TAILORING_MAX_CALLS,
   type TailoringWorkerDeps,
   versionFileName,
@@ -112,6 +113,7 @@ function setup(over: Partial<TailoringWorkerDeps> = {}, doc = version()) {
   const runs = {
     claim: vi.fn(async () => doc),
     saveCall: vi.fn(async () => {}),
+    saveDraft: vi.fn(async () => {}),
     finish: vi.fn(async () => true),
     saveKeywords: vi.fn(async () => {}),
     saveMatches: vi.fn(async () => {}),
@@ -141,6 +143,7 @@ function setup(over: Partial<TailoringWorkerDeps> = {}, doc = version()) {
       pdf: vi.fn(async () => Buffer.from('%PDF-fake')),
       docx: vi.fn(async () => Buffer.from('PK-fake')),
     },
+    delayRetry: vi.fn(async () => {}),
     recordMetrics: vi.fn(),
     auditTable: 'audit',
     newId: () => 'audit-1',
@@ -264,28 +267,32 @@ describe('tailoring worker', () => {
   ] as [string, Partial<TailoringWorkerDeps>, string][])(
     'fails with nothing to call for %s, giving the free run back',
     async (_, over, error) => {
-      const { deps, runs } = setup(over);
+      const { deps, runs } = setup(over, version({ aiSource: 'platform', platformRun: true }));
       expect(await processRecord(record(), deps)).toBe('failed');
       expect(finished(runs).outcome).toEqual({ status: 'failed', error, giveBack: true });
       expect(runs.saveCall).not.toHaveBeenCalled();
     },
   );
 
-  it('stops a run that used its calls, or that was queued too long ago', async () => {
-    for (const doc of [
+  it('stops a run that used its calls', async () => {
+    const { deps, runs } = setup(
+      {},
       version({ tailoring: { calls: TAILORING_MAX_CALLS, attempts: 3 } }),
-      version({ createdAt: new Date(NOW.getTime() - TAILORING_STALE_MS - 1).toISOString() }),
-    ]) {
-      const { deps, runs } = setup({}, doc);
-      expect(await processRecord(record(), deps)).toBe('failed');
-      expect(finished(runs).outcome.error).toBe('stopped');
-    }
+    );
+    expect(await processRecord(record(), deps)).toBe('failed');
+    expect(finished(runs).outcome).toEqual({ status: 'failed', error: 'stopped', giveBack: false });
+  });
+
+  it('gives a free run back only for a platform run', async () => {
+    const { deps, runs } = setup({ jobs: { getMany: async () => [] } });
+    await processRecord(record(), deps);
+    expect(finished(runs).outcome.giveBack).toBe(false);
   });
 
   it('starts no call without the time to finish it', async () => {
     const { deps, runs } = setup({ remainingMs: () => 20_000 });
     expect(await processRecord(record(), deps)).toBe('failed');
-    expect(finished(runs).outcome).toEqual({ status: 'failed', error: 'stopped', giveBack: true });
+    expect(finished(runs).outcome).toEqual({ status: 'failed', error: 'stopped', giveBack: false });
   });
 
   it('fails a résumé with no entries left after grounding (no tailoring call)', async () => {
@@ -307,7 +314,15 @@ describe('tailoring worker', () => {
     const first = setup({ model: async () => failing });
     await expect(processRecord(record(), first.deps)).rejects.toThrow('Throttled');
     expect(first.runs.finish).not.toHaveBeenCalled();
-    const last = setup({ model: async () => failing });
+    // Soon, not after the queue's 72-minute visibility timeout.
+    expect(first.deps.delayRetry).toHaveBeenCalledWith(expect.anything(), RETRY_DELAY_SECONDS[0]);
+    const second = setup({ model: async () => failing });
+    await expect(processRecord(record(undefined, 2), second.deps)).rejects.toThrow('Throttled');
+    expect(second.deps.delayRetry).toHaveBeenCalledWith(expect.anything(), RETRY_DELAY_SECONDS[1]);
+    const last = setup(
+      { model: async () => failing },
+      version({ aiSource: 'platform', platformRun: true }),
+    );
     expect(await processRecord(record(undefined, 3), last.deps)).toBe('failed');
     expect(finished(last.runs).outcome).toEqual({
       status: 'failed',
@@ -326,6 +341,80 @@ describe('tailoring worker', () => {
     const { deps, runs } = setup({ model: async () => rejected });
     expect(await processRecord(record(), deps)).toBe('failed');
     expect(finished(runs).outcome.error).toBe('key_rejected');
+  });
+
+  it('ends the run on the last try whatever failed, so it never stays processing', async () => {
+    const { deps, runs } = setup({
+      documents: {
+        get: async () => {
+          throw new Error('Throttled');
+        },
+        saveStructured: vi.fn(),
+      },
+    });
+    expect(await processRecord(record(undefined, 3), deps)).toBe('failed');
+    expect(finished(runs).outcome.error).toBe('model_unavailable');
+  });
+
+  it('keeps the draft before rendering: a retry renders it with no model call', async () => {
+    const first = setup({
+      render: {
+        pdf: vi.fn(async () => {
+          throw new Error('S3 blip');
+        }),
+        docx: vi.fn(async () => Buffer.from('PK')),
+      },
+    });
+    await expect(processRecord(record(), first.deps)).rejects.toThrow('S3 blip');
+    // biome-ignore lint/suspicious/noExplicitAny: reading the mock's argument.
+    const draft = (first.runs.saveDraft.mock.calls[0] as any[])[2];
+    expect(draft).toMatchObject({
+      result: 'partial',
+      scores: [expect.objectContaining({ jobId: 'job-1' })],
+    });
+    const keys = tailoringKeys(USER, DOC);
+    const retry = setup(
+      { model: vi.fn(async () => stubTailoringSource('stub-model')) },
+      version({ tailoring: { calls: 3, attempts: 2, drafted: true, ...draft } }),
+    );
+    retry.files.set(keys.json, first.files.get(keys.json));
+    expect(await processRecord(record(undefined, 2), retry.deps)).toBe('ready');
+    expect(retry.deps.model).not.toHaveBeenCalled();
+    expect(retry.runs.saveCall).not.toHaveBeenCalled();
+    expect(finished(retry.runs).outcome.tailoring).toMatchObject(draft);
+  });
+
+  it('links the jobs only when this delivery ended the run', async () => {
+    const { deps, runs } = setup();
+    runs.finish.mockResolvedValueOnce(false);
+    expect(await processRecord(record(), deps)).toBe('skipped');
+    expect(runs.saveMatches).not.toHaveBeenCalled();
+    expect(runs.list).not.toHaveBeenCalled();
+  });
+
+  it('says the model was unavailable when no draft came back, not that drafts were dishonest', async () => {
+    const first = setup();
+    await processRecord(record(), first.deps);
+    // biome-ignore lint/suspicious/noExplicitAny: reading the mock's argument.
+    const cache = (first.documents.saveStructured.mock.calls[0] as any[])[2];
+    // biome-ignore lint/suspicious/noExplicitAny: reading the mock's argument.
+    const terms = (first.runs.saveKeywords.mock.calls[0] as any[])[2];
+    const { deps, runs, files } = setup({
+      documents: { get: async () => base({ structured: cache }), saveStructured: vi.fn() },
+      jobs: { getMany: async () => [job({ keywords: terms })] },
+      model: async () => stubSource(() => ({ text: 'no tool call' })),
+    });
+    files.set(cache.s3Key, first.files.get(cache.s3Key));
+    expect(await processRecord(record(), deps)).toBe('failed');
+    expect(finished(runs).outcome.error).toBe('model_unavailable');
+  });
+
+  it('removes a structured copy made for a résumé replaced or deleted meanwhile', async () => {
+    const { deps } = setup({
+      documents: { get: async () => base(), saveStructured: vi.fn(async () => false) },
+    });
+    await processRecord(record(), deps);
+    expect(deps.files.remove).toHaveBeenCalledWith([tailoringKeys(USER, BASE).structured]);
   });
 
   it('lets an error while storing a call go to the queue', async () => {

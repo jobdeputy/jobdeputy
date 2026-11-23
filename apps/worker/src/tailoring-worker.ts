@@ -6,6 +6,7 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
+import { ChangeMessageVisibilityCommand, SQSClient } from '@aws-sdk/client-sqs';
 import {
   AccountRepository,
   AiKeyRepository,
@@ -41,7 +42,6 @@ import {
   type StructuredResume,
   structuredResume,
   TAILORING_ERRORS,
-  TAILORING_STALE_MS,
   TAILORING_VERSIONS_KEPT,
   type TailoringError,
   tailoringKeys,
@@ -59,9 +59,10 @@ import { renderResumePdf } from './tailoring/render-pdf.js';
 // calls), render the PDF and DOCX, and end the version `ready` or `failed`.
 //
 // Decision 0002: at most TAILORING_MAX_CALLS task calls per run, counted on the item across
-// retries. Every finished call is cached (the structured résumé, the keywords) or counted
-// before the next starts, and only an error before any tailoring draft goes back to the
-// queue, so a retried message never repeats a finished call.
+// retries. Every finished call is cached (the structured résumé, the keywords, the kept draft)
+// or counted before the next starts, so a retried message never repeats a finished call;
+// tailoring itself ends with its best draft rather than throwing after its first call. A
+// retry comes 1 or 2 minutes later; the last attempt ends the run failed.
 
 const logger = createLogger('tailoring-worker');
 
@@ -84,8 +85,17 @@ export interface TailoringWorkerDeps {
   isBeingDeleted: (userId: string) => Promise<boolean>;
   runs: Pick<
     TailoringRepository,
-    'claim' | 'saveCall' | 'finish' | 'saveKeywords' | 'saveMatches' | 'list' | 'deleteVersions'
+    | 'claim'
+    | 'saveCall'
+    | 'saveDraft'
+    | 'finish'
+    | 'saveKeywords'
+    | 'saveMatches'
+    | 'list'
+    | 'deleteVersions'
   >;
+  /** Shows the message again after `seconds` (instead of the queue's visibility timeout). */
+  delayRetry: (record: SQSRecord, seconds: number) => Promise<void>;
   documents: Pick<DocumentRepository, 'get' | 'saveStructured'>;
   jobs: Pick<JobRepository, 'getMany'>;
   /** The profile's name (the résumé's fallback) and skills (evidence the user confirmed). */
@@ -129,239 +139,330 @@ export async function processRecord(
     logger.info('Account is being deleted; skipping', { documentId });
     return 'skipped';
   }
+  // Only a queued or processing version is claimed: a replayed or duplicate message for an
+  // ended one stops here.
   const doc = await deps.runs.claim(userId, documentId);
   if (!doc) {
     logger.info('Run already ended', { documentId });
     return 'skipped';
   }
-  const lastTry = Number(record.attributes.ApproximateReceiveCount) >= MAX_RECEIVES;
-  let calls = doc.tailoring.calls;
-  let generation: Generation | undefined = doc.generation;
-
-  const finish = async (
-    outcome: Parameters<TailoringWorkerDeps['runs']['finish']>[0]['outcome'],
-    summary: string,
-  ): Promise<TailoringOutcome> => {
-    await deps.runs.finish({
-      userId,
+  const receives = Number(record.attributes.ApproximateReceiveCount);
+  const run: Run = {
+    doc,
+    calls: doc.tailoring.calls,
+    generation: doc.generation,
+    storing: false,
+  };
+  try {
+    return await tailor(run, deps);
+  } catch (error) {
+    const { calls } = run;
+    // The user's key stopped working: no retry helps.
+    if (!run.storing && doc.aiSource !== 'platform' && invalidReason(error)) {
+      return fail(run, deps, 'key_rejected');
+    }
+    if (receives >= MAX_RECEIVES) {
+      // The last attempt ends the run, so it never stays processing (or holds its lock).
+      logger.error('Tailoring failed on its last attempt', {
+        documentId,
+        calls,
+        error: (error as Error).name,
+      });
+      try {
+        return await fail(run, deps, run.storing ? 'stopped' : 'model_unavailable');
+      } catch {
+        throw error;
+      }
+    }
+    // Try again soon, not after the queue's visibility timeout (6 × the worker's).
+    await deps.delayRetry(record, RETRY_DELAY_SECONDS[receives - 1] ?? 60).catch(() => undefined);
+    logger.warn('Tailoring failed; the queue tries again', {
       documentId,
-      companyKey: doc.companyKey,
-      outcome,
-      audit: {
-        table: deps.auditTable,
-        entry: {
-          auditId: deps.newId(),
-          name: outcome.status === 'ready' ? 'tailoring.ready' : 'tailoring.failed',
-          entity: { type: 'document', id: documentId },
-          actor: 'system',
-          summary,
-          detail: {
-            companyKey: doc.companyKey,
-            calls,
-            ...(outcome.status === 'failed' ? { error: outcome.error } : {}),
-          },
+      calls,
+      error: (error as Error).name,
+    });
+    throw error;
+  }
+}
+
+/** Seconds before the queue tries a failed attempt again (after the 1st, then the 2nd). */
+export const RETRY_DELAY_SECONDS = [60, 120];
+
+interface Run {
+  doc: GeneratedDocument;
+  /** Task calls stored so far (on the version, across retries). */
+  calls: number;
+  generation: Generation | undefined;
+  /** True while a call is being stored: an error then is ours, not the model's. */
+  storing: boolean;
+}
+
+type FinishOutcome = Parameters<TailoringWorkerDeps['runs']['finish']>[0]['outcome'];
+
+/** Ends the run; false when it had ended already (another delivery ended it). */
+async function finish(
+  run: Run,
+  deps: TailoringWorkerDeps,
+  outcome: FinishOutcome,
+  summary: string,
+): Promise<boolean> {
+  const { doc } = run;
+  const ended = await deps.runs.finish({
+    userId: doc.userId,
+    documentId: doc.documentId,
+    companyKey: doc.companyKey,
+    outcome,
+    audit: {
+      table: deps.auditTable,
+      entry: {
+        auditId: deps.newId(),
+        name: outcome.status === 'ready' ? 'tailoring.ready' : 'tailoring.failed',
+        entity: { type: 'document', id: doc.documentId },
+        actor: 'system',
+        summary,
+        detail: {
+          companyKey: doc.companyKey,
+          calls: run.calls,
+          ...(outcome.status === 'failed' ? { error: outcome.error } : {}),
         },
       },
-    });
-    logger.info('Tailoring ended', { documentId, status: outcome.status, calls });
-    return outcome.status;
-  };
-  /** A free platform run is given back only when no model call was made. */
-  const fail = (error: TailoringError) =>
-    finish(
-      { status: 'failed', error, giveBack: calls === 0 },
-      `Tailored résumé not made: ${TAILORING_ERRORS[error]}`,
-    );
+    },
+  });
+  logger.info('Tailoring ended', {
+    documentId: doc.documentId,
+    status: outcome.status,
+    calls: run.calls,
+    ended,
+  });
+  return ended;
+}
 
-  // A version queued long ago (a replayed stream record, or a run whose lock was taken over).
-  if (deps.now().getTime() - Date.parse(doc.createdAt) > TAILORING_STALE_MS) return fail('stopped');
-  if (calls >= TAILORING_MAX_CALLS) return fail('stopped');
+/** A free platform run is given back only when no model call was made. */
+async function fail(
+  run: Run,
+  deps: TailoringWorkerDeps,
+  error: TailoringError,
+): Promise<TailoringOutcome> {
+  const ended = await finish(
+    run,
+    deps,
+    { status: 'failed', error, giveBack: run.doc.platformRun && run.calls === 0 },
+    `Tailored résumé not made: ${TAILORING_ERRORS[error]}`,
+  );
+  return ended ? 'failed' : 'skipped';
+}
+
+async function tailor(run: Run, deps: TailoringWorkerDeps): Promise<TailoringOutcome> {
+  const { doc } = run;
+  const { userId, documentId } = doc;
+  const company = doc.companyName ?? doc.companyKey;
+  const keys = tailoringKeys(userId, documentId);
+
+  // A retry after the draft was kept: render it, with no model call.
+  if (doc.tailoring.drafted && doc.tailoring.scores && doc.tailoring.result) {
+    const kept = structuredResume.safeParse(await deps.files.readJson(keys.json));
+    if (kept.success) {
+      return render(run, deps, kept.data, {
+        result: doc.tailoring.result,
+        scores: doc.tailoring.scores,
+        ...(doc.tailoring.coverage !== undefined ? { coverage: doc.tailoring.coverage } : {}),
+        promptVersion: doc.tailoring.promptVersion ?? promptVersion(tailorResumeTask),
+        scoreVersion: doc.tailoring.scoreVersion ?? MATCH_SCORE_VERSION,
+      });
+    }
+  }
+  if (run.calls >= TAILORING_MAX_CALLS) return fail(run, deps, 'stopped');
 
   const base = await deps.documents.get(userId, doc.baseDocumentId);
   if (!base || base.status !== 'ready' || !base.parsed || base.parsed.noText || !base.eTag) {
-    return fail('no_resume');
+    return fail(run, deps, 'no_resume');
   }
   const order = new Map(doc.jobIds.map((id, i) => [id, i]));
   const jobs = (await deps.jobs.getMany(userId, doc.jobIds))
     .filter((j) => j.closedAt === undefined)
     .sort((a, b) => (order.get(a.jobId) ?? 0) - (order.get(b.jobId) ?? 0));
-  if (jobs.length === 0) return fail('no_jobs');
+  if (jobs.length === 0) return fail(run, deps, 'no_jobs');
   const model = await deps.model(userId, doc.aiSource);
-  if (typeof model === 'string') return fail(model);
+  if (typeof model === 'string') return fail(run, deps, model);
   const profile = await deps.profile(userId);
 
   const canStart = (timeoutMs: number) =>
-    calls < TAILORING_MAX_CALLS && deps.remainingMs() > timeoutMs + SAFETY_MARGIN_MS;
-  let storing = false;
+    run.calls < TAILORING_MAX_CALLS && deps.remainingMs() > timeoutMs + SAFETY_MARGIN_MS;
   /** Stores a task call (its tokens) before anything else happens. */
   const store = async (result: TaskResult<unknown>, groundingRejections: number) => {
     deps.recordMetrics(result, { groundingRejections });
     const { usage } = result;
-    generation = {
+    run.generation = {
       keySource: model.keySource,
       provider: model.provider,
       model: model.modelId,
-      calls: (generation?.calls ?? 0) + usage.calls,
-      inputTokens: (generation?.inputTokens ?? 0) + usage.inputTokens,
-      outputTokens: (generation?.outputTokens ?? 0) + usage.outputTokens,
+      calls: (run.generation?.calls ?? 0) + usage.calls,
+      inputTokens: (run.generation?.inputTokens ?? 0) + usage.inputTokens,
+      outputTokens: (run.generation?.outputTokens ?? 0) + usage.outputTokens,
     };
-    storing = true;
+    run.storing = true;
     await deps.runs.saveCall({
       userId,
       documentId,
-      callsBefore: calls,
-      generation,
+      callsBefore: run.calls,
+      generation: run.generation,
       usage: {
         keySource: model.keySource,
         provider: model.provider,
         modelId: model.modelId,
         task: result.task,
         ...usage,
-        runs: calls === 0 ? 1 : 0,
+        runs: run.calls === 0 ? 1 : 0,
       },
     });
-    storing = false;
-    calls += 1;
+    run.storing = false;
+    run.calls += 1;
   };
 
-  try {
-    // 1. The base résumé as structured data: once per uploaded file (its ETag) and prompt.
-    let structured: StructuredResume | undefined;
-    let coverage: number | undefined;
-    const cache = base.structured;
+  // 1. The base résumé as structured data: once per uploaded file (its ETag) and prompt.
+  let structured: StructuredResume | undefined;
+  let coverage: number | undefined;
+  const cache = base.structured;
+  if (
+    cache &&
+    cache.eTag === base.eTag &&
+    cache.promptVersion === promptVersion(structureResumeTask)
+  ) {
+    const read = structuredResume.safeParse(await deps.files.readJson(cache.s3Key));
+    if (read.success) {
+      structured = read.data;
+      coverage = cache.coverage;
+    }
+  }
+  if (!structured) {
+    if (!canStart(structureResumeTask.limits.timeoutMs)) return fail(run, deps, 'stopped');
+    const text = await deps.files.readText(base.parsed.textS3Key);
+    const call = await structureResume(text, profile.name, model);
+    await store(call.result, call.grounded?.rejections ?? 0);
+    if (!call.grounded) return fail(run, deps, 'model_unavailable');
+    if (call.grounded.empty) return fail(run, deps, 'resume_unreadable');
+    structured = call.grounded.resume;
+    coverage = call.grounded.coverage;
+    await cacheStructured(userId, base, call.grounded, deps);
+  }
+
+  // 2. Each job's keywords: once per description and prompt; the missing ones in one call.
+  const keywordsVersion = promptVersion(jobKeywordsTask);
+  const keywords = new Map<string, JobKeyword[]>();
+  for (const job of jobs) {
+    const cached = job.keywords;
     if (
-      cache &&
-      cache.eTag === base.eTag &&
-      cache.promptVersion === promptVersion(structureResumeTask)
+      cached &&
+      cached.descriptionHash === (job.descriptionHash ?? '') &&
+      cached.promptVersion === keywordsVersion
     ) {
-      const read = structuredResume.safeParse(await deps.files.readJson(cache.s3Key));
-      if (read.success) {
-        structured = read.data;
-        coverage = cache.coverage;
-      }
+      keywords.set(job.jobId, cached.terms);
     }
-    if (!structured) {
-      if (!canStart(structureResumeTask.limits.timeoutMs)) return fail('stopped');
-      const text = await deps.files.readText(base.parsed.textS3Key);
-      const call = await structureResume(text, profile.name, model);
-      await store(call.result, call.grounded?.rejections ?? 0);
-      if (!call.grounded) return fail('stopped');
-      if (call.grounded.empty) return fail('resume_unreadable');
-      structured = call.grounded.resume;
-      coverage = call.grounded.coverage;
-      await cacheStructured(userId, base, call.grounded, deps);
-    }
-
-    // 2. Each job's keywords: once per description and prompt; the missing ones in one call.
-    const keywordsVersion = promptVersion(jobKeywordsTask);
-    const keywords = new Map<string, JobKeyword[]>();
-    for (const job of jobs) {
-      const cached = job.keywords;
-      if (
-        cached &&
-        cached.descriptionHash === (job.descriptionHash ?? '') &&
-        cached.promptVersion === keywordsVersion
-      ) {
-        keywords.set(job.jobId, cached.terms);
-      }
-    }
-    const missing = jobs.filter((j) => !keywords.has(j.jobId));
-    if (missing.length > 0) {
-      if (!canStart(jobKeywordsTask.limits.timeoutMs)) return fail('stopped');
-      const call = await extractJobKeywords(
-        missing.map((j) => ({ title: j.title, description: j.description ?? '' })),
-        model,
-      );
-      await store(call.result, call.groundingRejections);
-      if (call.result.status !== 'ok') return fail('stopped');
-      for (const [i, job] of missing.entries()) {
-        const terms = call.keywords[i];
-        keywords.set(job.jobId, terms ?? []);
-        // A job the model listed nothing for is asked again next run (extractJobKeywords).
-        if (terms) {
-          await deps.runs.saveKeywords(userId, job.jobId, {
-            descriptionHash: job.descriptionHash ?? '',
-            promptVersion: keywordsVersion,
-            terms,
-          });
-        }
-      }
-    }
-
-    // 3. Tailor: a draft and at most two repairs, the best honest draft kept.
-    const short = jobs.map((job, i) => ({ id: `j${i + 1}`, job }));
-    const run = await tailorResume(
-      {
-        company: doc.companyName ?? jobs[0]?.companyName ?? doc.companyKey,
-        base: structured,
-        evidence: profile.skills,
-        jobs: short.map(({ id, job }) => ({
-          id,
-          title: job.title,
-          keywords: keywords.get(job.jobId) ?? [],
-        })),
-      },
+  }
+  const missing = jobs.filter((j) => !keywords.has(j.jobId));
+  if (missing.length > 0) {
+    if (!canStart(jobKeywordsTask.limits.timeoutMs)) return fail(run, deps, 'stopped');
+    const call = await extractJobKeywords(
+      missing.map((j) => ({ title: j.title, description: j.description ?? '' })),
       model,
-      {
-        canStart: () => canStart(tailorResumeTask.limits.timeoutMs),
-        onCall: (attempt) => store(attempt.result, attempt.issues.length),
-      },
     );
-    if (!run.best?.resume) return fail(run.attempts.length === 0 ? 'stopped' : 'no_honest_draft');
-    const best = run.best;
-    const resume = best.resume as StructuredResume;
+    await store(call.result, call.groundingRejections);
+    if (call.result.status !== 'ok') return fail(run, deps, 'model_unavailable');
+    for (const [i, job] of missing.entries()) {
+      const terms = call.keywords[i];
+      keywords.set(job.jobId, terms ?? []);
+      // A job the model listed nothing for is asked again next run (extractJobKeywords).
+      if (terms) {
+        await deps.runs.saveKeywords(userId, job.jobId, {
+          descriptionHash: job.descriptionHash ?? '',
+          promptVersion: keywordsVersion,
+          terms,
+        });
+      }
+    }
+  }
 
-    // 4. The files, then the version ready, then each job's link to it.
-    const keys = tailoringKeys(userId, documentId);
-    const [pdf, docx] = await Promise.all([deps.render.pdf(resume), deps.render.docx(resume)]);
-    await Promise.all([
-      deps.files.put(keys.json, JSON.stringify(resume), 'application/json'),
-      deps.files.put(keys.pdf, pdf, PDF),
-      deps.files.put(keys.docx, docx, DOCX),
-    ]);
-    const byShort = new Map(short.map(({ id, job }) => [id, job.jobId]));
-    const scores = best.scores.map((s) => ({
+  // 3. Tailor: a draft and at most two repairs, the best honest draft kept.
+  const short = jobs.map((job, i) => ({ id: `j${i + 1}`, job }));
+  const tailored = await tailorResume(
+    {
+      company,
+      base: structured,
+      evidence: profile.skills,
+      jobs: short.map(({ id, job }) => ({
+        id,
+        title: job.title,
+        keywords: keywords.get(job.jobId) ?? [],
+      })),
+    },
+    model,
+    {
+      canStart: () => canStart(tailorResumeTask.limits.timeoutMs),
+      onCall: (attempt) => store(attempt.result, attempt.issues.length),
+    },
+  );
+  const best = tailored.best;
+  if (!best?.resume) {
+    // Drafts came back but none was honest; or no draft came back at all (the model's
+    // output was invalid, it was too slow, or it failed after the first call).
+    const drafted = tailored.attempts.some((a) => a.result.status === 'ok');
+    const reason = drafted
+      ? 'no_honest_draft'
+      : tailored.attempts.length === 0
+        ? 'stopped'
+        : 'model_unavailable';
+    return fail(run, deps, reason);
+  }
+
+  // 4. Keep the draft before rendering: a retry from here makes no model call.
+  const byShort = new Map(short.map(({ id, job }) => [id, job.jobId]));
+  const draft = {
+    result: tailored.status === 'ok' ? ('ok' as const) : ('partial' as const),
+    scores: best.scores.map((s) => ({
       jobId: byShort.get(s.id) as string,
       base: s.base,
       tailored: s.tailored,
       missingProven: s.missingProven,
       missingUnproven: s.missingUnproven,
-    }));
-    const company = doc.companyName ?? jobs[0]?.companyName ?? doc.companyKey;
-    const ended = await finish(
-      {
-        status: 'ready',
-        s3Key: keys.pdf,
-        sizeBytes: pdf.length,
-        fileName: versionFileName(resume.contact.name, company),
-        tailoring: {
-          result: run.status === 'ok' ? 'ok' : 'partial',
-          scores,
-          ...(coverage !== undefined ? { coverage } : {}),
-          promptVersion: promptVersion(tailorResumeTask),
-          scoreVersion: MATCH_SCORE_VERSION,
-        },
-      },
-      `Tailored résumé ready for ${company}`,
-    );
-    await deps.runs.saveMatches(userId, documentId, scores, MATCH_SCORE_VERSION);
-    await prune(userId, doc.companyKey, deps);
-    return ended;
-  } catch (error) {
-    // Errors while storing a call are ours: the queue tries again (the call is not stored,
-    // and the count's condition keeps a duplicate delivery from storing it twice).
-    if (storing) throw error;
-    // The user's key stopped working: no retry helps.
-    if (model.keySource === 'own' && invalidReason(error)) return fail('key_rejected');
-    if (!lastTry) {
-      logger.warn('Tailoring failed; the queue tries again', {
-        documentId,
-        error: (error as Error).name,
-      });
-      throw error;
-    }
-    return fail('model_unavailable');
-  }
+    })),
+    ...(coverage !== undefined ? { coverage } : {}),
+    promptVersion: promptVersion(tailorResumeTask),
+    scoreVersion: MATCH_SCORE_VERSION,
+  };
+  await deps.files.put(keys.json, JSON.stringify(best.resume), 'application/json');
+  await deps.runs.saveDraft(userId, documentId, draft);
+  return render(run, deps, best.resume, draft);
+}
+
+/** The files, then the version ready, then each job's link to it (only if this ended it). */
+async function render(
+  run: Run,
+  deps: TailoringWorkerDeps,
+  resume: StructuredResume,
+  draft: Parameters<TailoringWorkerDeps['runs']['saveDraft']>[2],
+): Promise<TailoringOutcome> {
+  const { doc } = run;
+  const { userId, documentId } = doc;
+  const company = doc.companyName ?? doc.companyKey;
+  const keys = tailoringKeys(userId, documentId);
+  const [pdf, docx] = await Promise.all([deps.render.pdf(resume), deps.render.docx(resume)]);
+  await Promise.all([deps.files.put(keys.pdf, pdf, PDF), deps.files.put(keys.docx, docx, DOCX)]);
+  const ended = await finish(
+    run,
+    deps,
+    {
+      status: 'ready',
+      s3Key: keys.pdf,
+      sizeBytes: pdf.length,
+      fileName: versionFileName(resume.contact.name, company),
+      tailoring: draft,
+    },
+    `Tailored résumé ready for ${company}`,
+  );
+  if (!ended) return 'skipped';
+  await deps.runs.saveMatches(userId, documentId, draft.scores ?? [], MATCH_SCORE_VERSION);
+  await prune(userId, doc.companyKey, deps);
+  return 'ready';
 }
 
 /** Stores the structured copy beside the uploaded file and records it on the document. */
@@ -381,8 +482,11 @@ async function cacheStructured(
     rejections: grounded.rejections,
     createdAt: deps.now().toISOString(),
   };
-  // False when the file was replaced meanwhile: the next run structures the new one.
-  await deps.documents.saveStructured(userId, base.documentId, cache);
+  // False when the file was replaced or deleted meanwhile: the copy goes too (the next run
+  // structures a new file; a deleted résumé leaves nothing behind).
+  if (!(await deps.documents.saveStructured(userId, base.documentId, cache))) {
+    await deps.files.remove([key]);
+  }
 }
 
 /** Keeps the newest TAILORING_VERSIONS_KEPT ended versions of a company; deletes the rest. */
@@ -403,6 +507,11 @@ async function prune(userId: string, companyKey: string, deps: TailoringWorkerDe
     old.map((v) => v.documentId),
   );
   logger.info('Old versions deleted', { companyKey, count: old.length });
+}
+
+function queueUrlFromArn(arn: string): string {
+  const [, , , region, account, name] = arn.split(':');
+  return `https://sqs.${region}.amazonaws.com/${account}/${name}`;
 }
 
 function safeJson(body: string): unknown {
@@ -448,6 +557,7 @@ function defaultDeps(): TailoringWorkerDeps {
     preferences: PREFERENCES_TABLE_NAME,
   });
   const s3 = new S3Client({});
+  const sqs = new SQSClient({});
   const Bucket = DOCUMENTS_BUCKET_NAME;
   const body = async (key: string) => {
     const res = await s3.send(new GetObjectCommand({ Bucket, Key: key }));
@@ -497,6 +607,15 @@ function defaultDeps(): TailoringWorkerDeps {
       },
     },
     render: { pdf: renderResumePdf, docx: renderResumeDocx },
+    delayRetry: async (record, seconds) => {
+      await sqs.send(
+        new ChangeMessageVisibilityCommand({
+          QueueUrl: queueUrlFromArn(record.eventSourceARN),
+          ReceiptHandle: record.receiptHandle,
+          VisibilityTimeout: seconds,
+        }),
+      );
+    },
     recordMetrics: recordTaskMetrics,
     auditTable: AUDIT_TABLE_NAME,
     newId: ulid,

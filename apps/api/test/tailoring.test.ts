@@ -100,6 +100,7 @@ function setup(over: Partial<TailoringDeps> = {}) {
         shown: { [job(2)]: { p: 50, s: 60 }, [job(1)]: { p: 50, s: 90 }, [job(3)]: { p: 50 } },
       })),
     },
+    companyJobsLimit: vi.fn(async () => 10),
     jobs: {
       getSummaries: vi.fn(async (_: string, ids: string[]) => ids.map((id) => summary(id))),
     },
@@ -171,6 +172,12 @@ describe('POST /me/tailorings', () => {
     });
     await route(post({ companyKey: 'greenhouse:acme' }), deps);
     expect(runs.request.mock.calls[0]?.[0].jobIds).toEqual([job(4), job(5), job(6)]);
+  });
+
+  it('never takes more jobs than the user sees per company', async () => {
+    const { deps, runs } = setup({ companyJobsLimit: async () => 1 });
+    await route(post({ companyKey: 'greenhouse:acme' }), deps);
+    expect(runs.request.mock.calls[0]?.[0].jobIds).toEqual([job(1)]);
   });
 
   it('uses the user’s default AI source, and refuses none or a key that does not work', async () => {

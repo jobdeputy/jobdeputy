@@ -3,6 +3,7 @@ import { Duration, type RemovalPolicy, Stack } from 'aws-cdk-lib';
 import type { Table } from 'aws-cdk-lib/aws-dynamodb';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import type { Bucket } from 'aws-cdk-lib/aws-s3';
+import type { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 import type { StageName } from '../../config/stages.js';
 import type { AiKeys } from './ai-keys.js';
@@ -25,6 +26,8 @@ export interface TailoringProps {
   };
   readonly documentsBucket: Bucket;
   readonly aiKeys: AiKeys;
+  /** The admin's crawl limits: the jobs shown per company (the API tailors for those). */
+  readonly limitsParameter: StringParameter;
   readonly removalPolicy: RemovalPolicy;
   readonly maxReceives: number;
   readonly health?: QueueHealth | undefined;
@@ -102,8 +105,12 @@ export class Tailoring extends Construct {
         resources: [derived('structured.json'), ...versionFiles],
       }),
     );
+    // A structured copy is deleted when its résumé was replaced or deleted while it was made.
     fn.addToRolePolicy(
-      new PolicyStatement({ actions: ['s3:DeleteObject'], resources: versionFiles }),
+      new PolicyStatement({
+        actions: ['s3:DeleteObject'],
+        resources: [derived('structured.json'), ...versionFiles],
+      }),
     );
     // The user's own key (GetItem), decrypted only with this user and provider as context.
     props.aiKeys.table.grant(fn, 'dynamodb:GetItem');
@@ -128,7 +135,8 @@ export class Tailoring extends Construct {
       maxReceives: props.maxReceives,
       maxConcurrency: 2,
       health: props.health,
-      // Normal worst case: about 40 minutes (3 attempts of up to 12 minutes).
+      // Normal worst case: about 40 minutes (3 attempts of up to 12 minutes, the worker's
+      // 1 and 2 minute waits between them).
       backlogAfter: Duration.minutes(45),
       queueName: `${props.namePrefix}-tailoring`,
     });
@@ -145,10 +153,18 @@ export class Tailoring extends Construct {
         USAGE_TABLE_NAME: tables.usage.tableName,
         JOBS_TABLE_NAME: tables.jobs.tableName,
         PREFERENCES_TABLE_NAME: tables.preferences.tableName,
+        CRAWL_LIMITS_PARAMETER: props.limitsParameter.parameterName,
         ...props.aiKeys.env,
       },
     });
     const api = this.api.fn;
+    // The admin's jobs-per-company limit (with the user's own, from preferences).
+    api.addToRolePolicy(
+      new PolicyStatement({
+        actions: ['ssm:GetParameter'],
+        resources: [props.limitsParameter.parameterArn],
+      }),
+    );
     // The default résumé and the versions (Query), one version (GetItem), a new one (PutItem,
     // in the request transaction).
     tables.documents.grant(api, 'dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:PutItem');
@@ -159,7 +175,8 @@ export class Tailoring extends Construct {
     tables.audit.grant(api, 'dynamodb:PutItem');
     // The deletion record (writes refused while it exists).
     tables.users.grant(api, 'dynamodb:GetItem');
-    // The user's AI setting, and whether their key works (never decrypted here).
+    // The user's AI setting and jobs per company, and whether their key works (never
+    // decrypted here).
     tables.preferences.grant(api, 'dynamodb:GetItem');
     props.aiKeys.table.grant(api, 'dynamodb:GetItem');
     // A ready version's résumé (to preview) and its two downloads (presigned GET).

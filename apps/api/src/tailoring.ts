@@ -4,10 +4,12 @@ import {
   AccountRepository,
   AiKeyRepository,
   CompanyLimitRepository,
+  CrawlSettingsRepository,
   DocumentRepository,
   documentClient,
   type GeneratedDocument,
   JobRepository,
+  ssmCrawlLimits,
   TailoringAllowanceError,
   TailoringBusyError,
   TailoringRepository,
@@ -16,16 +18,17 @@ import {
   type AiSource,
   aiProvider,
   callerFromEvent,
-  compareRank,
   createLogger,
   createTailoringInput,
   DOWNLOAD_URL_SECONDS,
   type HttpResponse,
+  isHiddenJob,
   json,
   nextUtcMonthStart,
   PLATFORM_TAILORINGS_PER_MONTH,
   parseJsonBody,
   problem,
+  rankShown,
   structuredResume,
   TAILORING_ERRORS,
   TAILORING_STALE_MS,
@@ -38,6 +41,7 @@ import type { APIGatewayProxyEventV2WithJWTAuthorizer, Context } from 'aws-lambd
 import { ulid } from 'ulid';
 import { refuseWritesWhileDeleting } from './account-guard.js';
 import { type UserAudit, userAudit } from './audited.js';
+import { companyJobsLimit } from './company-jobs-limit.js';
 import { attachment } from './documents.js';
 import { concurrentUpdateProblem } from './errors.js';
 
@@ -56,6 +60,8 @@ export interface TailoringDeps {
   runs: Pick<TailoringRepository, 'request' | 'list' | 'get' | 'platformRunsUsed'>;
   documents: Pick<DocumentRepository, 'list'>;
   shown: Pick<CompanyLimitRepository, 'get'>;
+  /** The jobs the user sees per company now (company-jobs-limit.ts). */
+  companyJobsLimit: (userId: string) => Promise<number>;
   jobs: Pick<JobRepository, 'getSummaries'>;
   keys: Pick<AiKeyRepository, 'get' | 'getSettings'>;
   /** A stored file's text (a version's résumé JSON). */
@@ -154,23 +160,21 @@ async function request(
       requestId,
     });
   }
-  // The company's shown jobs, best first, still open and shown.
-  const { shown } = await deps.shown.get(userId, companyKey);
-  const ranked = Object.entries(shown)
-    .map(([jobId, entry]) => ({ jobId, ...entry }))
-    .sort(compareRank)
-    .map((r) => r.jobId);
+  // The company's shown jobs, best first, still open and shown: those the user sees, at most
+  // TAILORING_JOBS (and never more than their own jobs per company).
+  const [{ shown }, perCompany] = await Promise.all([
+    deps.shown.get(userId, companyKey),
+    deps.companyJobsLimit(userId),
+  ]);
+  const ranked = rankShown(shown).map((r) => r.jobId);
   const found = new Map((await deps.jobs.getSummaries(userId, ranked)).map((j) => [j.jobId, j]));
   const jobs = ranked
     .map((id) => found.get(id))
     .filter(
       (j): j is NonNullable<typeof j> =>
-        j !== undefined &&
-        j.closedAt === undefined &&
-        j.filter?.state !== 'not_relevant' &&
-        j.limitState !== 'over_limit',
+        j !== undefined && j.closedAt === undefined && !isHiddenJob(j),
     )
-    .slice(0, TAILORING_JOBS);
+    .slice(0, Math.min(TAILORING_JOBS, perCompany));
   if (jobs.length === 0) {
     return problem(422, 'No jobs to tailor for', {
       detail: TAILORING_ERRORS.no_jobs,
@@ -291,6 +295,7 @@ function defaultDeps(): TailoringDeps {
     JOBS_TABLE_NAME,
     AI_KEYS_TABLE_NAME,
     PREFERENCES_TABLE_NAME,
+    CRAWL_LIMITS_PARAMETER,
     ALLOW_TEST_AI_PROVIDER,
   } = process.env;
   if (
@@ -301,7 +306,8 @@ function defaultDeps(): TailoringDeps {
     !USAGE_TABLE_NAME ||
     !JOBS_TABLE_NAME ||
     !AI_KEYS_TABLE_NAME ||
-    !PREFERENCES_TABLE_NAME
+    !PREFERENCES_TABLE_NAME ||
+    !CRAWL_LIMITS_PARAMETER
   ) {
     throw new Error('Table and bucket names must be set');
   }
@@ -317,6 +323,10 @@ function defaultDeps(): TailoringDeps {
     }),
     documents: new DocumentRepository(client, DOCUMENTS_TABLE_NAME),
     shown: new CompanyLimitRepository(client, USAGE_TABLE_NAME),
+    companyJobsLimit: companyJobsLimit({
+      limits: ssmCrawlLimits(CRAWL_LIMITS_PARAMETER),
+      settings: new CrawlSettingsRepository(client, PREFERENCES_TABLE_NAME),
+    }),
     jobs: new JobRepository(client, JOBS_TABLE_NAME),
     keys: new AiKeyRepository(client, {
       aiKeys: AI_KEYS_TABLE_NAME,

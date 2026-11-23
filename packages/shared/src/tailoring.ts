@@ -14,8 +14,12 @@ export const PLATFORM_TAILORINGS_PER_MONTH = 10;
  * part of the résumé could not be read (the model stopped early or skipped entries).
  */
 export const COVERAGE_WARNING = 0.85;
-/** How long a run may stay queued or running before another Tailor click may replace it. */
-export const TAILORING_STALE_MS = 20 * 60 * 1000;
+/**
+ * How long a run may stay queued or running before another Tailor click may take its company's
+ * lock, and the app shows it as stopped: longer than its slowest normal path (3 attempts of up
+ * to 12 minutes, with the worker's 1 and 2 minute waits between them).
+ */
+export const TAILORING_STALE_MS = 60 * 60 * 1000;
 
 /** The longest company key we accept (`workday:<host>/<site>` is the longest kind). */
 const MAX_COMPANY_KEY = 300;

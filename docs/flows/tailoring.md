@@ -1,6 +1,6 @@
 # Flow: a tailored résumé for a company (#51)
 
-One click on **Tailor** for a company makes one version of the user's résumé for that company's top jobs (at most 3), with an ATS match score per job. The model rewrites only the summary, the skills list, and the bullets; code keeps it honest and computes the score. Decision: [0015](../decisions/0015-ats-match-score-and-tailored-resumes.md). Before this: [relevance flow](relevance.md) (which jobs a company shows).
+One click on **Tailor** for a company makes one version of the user's résumé for that company's top shown jobs (at most 3, and never more than the user's jobs per company), with an ATS match score per job. The model rewrites only the summary, the skills list, and the bullets; code keeps it honest and computes the score. Decision: [0015](../decisions/0015-ats-match-score-and-tailored-resumes.md). Before this: [relevance flow](relevance.md) (which jobs a company shows).
 
 - **Task:** [#51](https://github.com/jobdeputy/jobdeputy/issues/51) (M3 of the apply flow). The web screens come in PR C, cover letters in PR D.
 - **Keep it true:** a PR that changes this flow updates this file, like [data-model.md](../data-model.md).
@@ -37,7 +37,7 @@ sequenceDiagram
   A->>DB: uploaded documents (Query)
   Note over A: no ready default with text → 422 no_resume
   A->>DB: usage COMPANY#companyKey (shown jobs), jobs (BatchGet)
-  Note over A: ranked, open and shown, top 3; none → 422 no_jobs
+  Note over A: ranked, open and shown, top 3 (or the user's jobs per company); none → 422 no_jobs
   A->>DB: TransactWrite: version queued + audit + MONTH# tailoringRunIds (platform, < 10) + TAILOR# lock
   alt month full
     A-->>U: 429 tailoring_allowance (retry-after: next month)
@@ -59,7 +59,7 @@ sequenceDiagram
   participant M as Model
   Q->>W: {userId, documentId}
   W->>DB: claim (queued/processing → processing, attempts + 1)
-  Note over W: ended → skip · queued > 20 min ago or 5 calls used → failed stopped
+  Note over W: ended → skip · a kept draft → render it (no model call) · 5 calls used → failed stopped
   W->>DB: base résumé, jobs, key (KMS for an own key), profile
   alt no cached structure for this file (ETag) and prompt
     W->>S3: text.txt
@@ -78,26 +78,31 @@ sequenceDiagram
     W->>DB: store the call
     Note over W: honesty checks and scores in code; stop when nothing is left to fix
   end
-  alt no honest draft
+  alt no draft came back
+    W->>DB: failed model_unavailable
+  else only dishonest drafts
     W->>DB: failed no_honest_draft
   else
-    W->>S3: resume.json, resume.pdf, resume.docx
+    W->>S3: resume.json
+    W->>DB: the kept draft's scores (tailoring.drafted)
+    W->>S3: resume.pdf, resume.docx
     W->>DB: ready (scores, ok or partial) + lock freed + audit
-    W->>DB: jobs.match, jobs.materials
+    W->>DB: jobs.match, jobs.materials (only if this delivery ended it)
     W->>DB: versions past 10 for the company deleted (and their files)
   end
 ```
 
 - **Calls:** at most 5 task calls a run (structure 1, keywords 1, tailoring 3), counted on the version (`tailoring.calls`) across retries. Each call is stored with its tokens before the next starts; a duplicate delivery cannot store one twice (the count's condition).
-- **Retries:** only a provider error before any finished work goes back to the queue. Finished calls are cached (structure, keywords) or counted, and tailoring ends with its best honest draft, so a retry never repeats a finished call. The last attempt fails the run (`model_unavailable`); a rejected own key fails it at once (`key_rejected`).
-- **The free allowance:** 10 platform runs a month, counted when asked; given back when no model call was made (no résumé, no jobs, no key).
+- **Retries:** an error goes back to the queue, which tries again 1, then 2 minutes later (not after its visibility timeout). Finished calls are cached (structure, keywords, the kept draft) or counted, and tailoring ends with its best honest draft rather than throwing after its first call, so a retry never repeats a finished call. The last attempt ends the run `failed` whatever went wrong, so it never stays in progress; a rejected own key fails it at once (`key_rejected`).
+- **The free allowance:** 10 platform runs a month, counted when asked; given back when no model call was made (no résumé, no jobs, no key). Own-key runs are not counted.
+- A structured copy made for a résumé replaced or deleted meanwhile is deleted, not kept.
 
 ## What a version's state can be
 
 | `status` | Meaning | Shown as |
 |---|---|---|
 | `queued` | Asked for; the worker has not started | in progress |
-| `processing` | The worker is running it | in progress (after 20 minutes: failed, `stopped`) |
+| `processing` | The worker is running it (or waiting to try again) | in progress (after 60 minutes: failed, `stopped`) |
 | `ready` | Files made; `result` `ok` (every job at 80%) or `partial` | the score per job, preview, downloads |
 | `failed` | `error`: `no_resume`, `resume_unreadable`, `no_jobs`, `key_missing`, `key_invalid`, `key_rejected`, `model_unavailable`, `no_honest_draft`, or `stopped` | the message (`TAILORING_ERRORS`) |
 
@@ -118,10 +123,10 @@ Account deletion erases all of it (the `documents`, `jobs`, and `usage` tables, 
 
 | | |
 |---|---|
-| Jobs per version | 3 (the company's top shown) |
+| Jobs per version | 3 (the company's top shown; fewer when the user shows fewer per company) |
 | Task calls per run | at most 5 |
 | Résumé text sent to structure | 10,000 characters |
 | Versions kept per company | 10 |
 | Free platform runs | 10 a month |
-| Worker timeout | 12 minutes; a run is stale after 20 |
+| Worker timeout | 12 minutes; retries after 1 and 2 minutes; a run is stale after 60 |
 | Match threshold | 80% (below: `partial`, still usable) |

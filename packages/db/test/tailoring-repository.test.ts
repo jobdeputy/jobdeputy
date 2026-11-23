@@ -198,6 +198,36 @@ describe('TailoringRepository runs', () => {
     const back = send.mock.calls[1]?.[0].input;
     expect(back.Key).toEqual({ userId: USER, sk: 'MONTH#2026-10' });
     expect(back.UpdateExpression).toContain('DELETE tailoringRunIds :id');
+    // Never creates (or touches) a month item the run was not counted in.
+    expect(back.ConditionExpression).toBe('contains(tailoringRunIds, :one)');
+    const notCounted = setup((cmd) => {
+      if (cmd.constructor.name === 'UpdateCommand') throw conditionFailed();
+      return {};
+    });
+    await expect(
+      notCounted.repo.finish({
+        userId: USER,
+        documentId: DOC,
+        companyKey: 'greenhouse:acme',
+        outcome: { status: 'failed', error: 'no_jobs', giveBack: true },
+        audit: AUDIT,
+      }),
+    ).resolves.toBe(true);
+  });
+
+  it('keeps a draft only while the run is processing', async () => {
+    const { repo, send } = setup();
+    await repo.saveDraft(USER, DOC, {
+      result: 'partial',
+      scores: [],
+      coverage: 0.9,
+      promptVersion: 'tailor-resume@v1',
+      scoreVersion: 1,
+    });
+    const input = send.mock.calls[0]?.[0].input;
+    expect(input.ConditionExpression).toBe('#status = :processing');
+    expect(input.UpdateExpression).toContain('tailoring.drafted = :true');
+    expect(input.UpdateExpression).toContain('tailoring.coverage = :coverage');
   });
 
   it('ends a run whose lock a newer run took over, leaving that lock alone; false once ended', async () => {

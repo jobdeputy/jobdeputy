@@ -77,8 +77,9 @@ describe('tailoring (#51)', () => {
     const [read, write, remove] = files.map((f) => f.resources);
     expect(read).toMatch(/text\.txt.*structured\.json/);
     expect(write).toMatch(/structured\.json.*resume\.json.*resume\.pdf.*resume\.docx/);
-    // Never deletes a structured copy, an upload, or its text.
-    expect(remove).not.toMatch(/structured|text\.txt|original/);
+    // Deletes structured copies and version files only: never an upload or its text.
+    expect(remove).toMatch(/structured\.json.*resume\.json/);
+    expect(remove).not.toMatch(/text\.txt|original/);
     for (const f of files) expect(f.resources).not.toMatch(/users\/\*\/documents\/\*\/original/);
   });
 

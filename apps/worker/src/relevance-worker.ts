@@ -30,17 +30,10 @@ import {
   RELEVANCE_RESUME_CHARS,
   recordTaskMetrics,
   relevanceTask,
-  resolveModel,
   scoreRelevance,
   stubRelevanceSource,
 } from '@jobdeputy/llm';
-import {
-  type AiSource,
-  aiProvider,
-  crawlMessage,
-  createLogger,
-  RELEVANCE_ERRORS,
-} from '@jobdeputy/shared';
+import { type AiSource, crawlMessage, createLogger, RELEVANCE_ERRORS } from '@jobdeputy/shared';
 import type { Context, SQSBatchResponse, SQSEvent, SQSRecord } from 'aws-lambda';
 import { ulid } from 'ulid';
 import { modelLoader } from './ai-source.js';

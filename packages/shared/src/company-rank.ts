@@ -54,3 +54,15 @@ export function compareRank(a: RankedJob, b: RankedJob): number {
   if ((a.t ?? '') !== (b.t ?? '')) return (b.t ?? '') < (a.t ?? '') ? -1 : 1;
   return a.jobId < b.jobId ? -1 : a.jobId > b.jobId ? 1 : 0;
 }
+
+/** A company's shown jobs (`usage` `COMPANY#` `shown`), best first. */
+export function rankShown(shown: Record<string, ShownEntry>): RankedJob[] {
+  return Object.entries(shown)
+    .map(([jobId, entry]) => ({ jobId, ...entry }))
+    .sort(compareRank);
+}
+
+/** A job kept out of the user's lists (T08c): by the filter, or past the company's limit. */
+export function isHiddenJob(job: { filter?: { state: string }; limitState?: string }): boolean {
+  return job.filter?.state === 'not_relevant' || job.limitState === 'over_limit';
+}

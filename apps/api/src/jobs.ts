@@ -13,18 +13,20 @@ import {
   companiesPageQuery,
   compareRank,
   createLogger,
-  effectiveCompanyJobsLimit,
   type HttpResponse,
+  isHiddenJob,
   jobId as jobIdSchema,
   jobsPageQuery,
   json,
   problem,
   type RankedJob,
   rankedJobSchema,
+  rankShown,
   toRankedJob,
   validationProblem,
 } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, Context } from 'aws-lambda';
+import { companyJobsLimit } from './company-jobs-limit.js';
 
 const logger = createLogger('api-jobs');
 
@@ -97,7 +99,7 @@ export function jobSummary(j: JobSummaryItem) {
           },
         }
       : {}),
-    hidden: j.filter?.state === 'not_relevant' || j.limitState === 'over_limit',
+    hidden: isHiddenJob(j),
     ...(j.ttl !== undefined ? { expiresAt: new Date(j.ttl * 1000).toISOString() } : {}),
   };
 }
@@ -158,9 +160,7 @@ async function companiesPage(
   ]);
   const ranked = shown
     .map((c) => {
-      const jobs = Object.entries(c.shown)
-        .map(([jobId, entry]) => ({ jobId, ...entry }))
-        .sort(compareRank);
+      const jobs = rankShown(c.shown);
       return { companyKey: c.companyKey, jobs, best: jobs[0] as RankedJob };
     })
     .sort((a, b) => compareRank(a.best, b.best));
@@ -203,23 +203,8 @@ type CompanyView = {
   jobs: ReturnType<typeof jobSummary>[];
 };
 
-/**
- * The jobs shown per company for this user now: their own choice within the admin's maximum. If
- * their setting can't be read, the admin's default applies (as the admin limits fall back to the
- * built-in ones), rather than failing the whole list.
- */
-async function companyJobsLimitFor(userId: string, deps: JobsDeps): Promise<number> {
-  const [config, settings] = await Promise.all([
-    deps.limits(),
-    deps.settings.get(userId).catch((error: unknown) => {
-      logger.warn('Could not read the crawl settings; using the default', {
-        error: error as Error,
-      });
-      return undefined;
-    }),
-  ]);
-  return effectiveCompanyJobsLimit(config, settings?.companyJobsLimit);
-}
+/** The jobs shown per company for this user now (company-jobs-limit.ts). */
+const companyJobsLimitFor = (userId: string, deps: JobsDeps) => companyJobsLimit(deps)(userId);
 
 type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
 
