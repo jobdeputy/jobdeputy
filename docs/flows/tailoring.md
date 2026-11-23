@@ -83,11 +83,10 @@ sequenceDiagram
   else only dishonest drafts
     W->>DB: failed no_honest_draft
   else
-    W->>S3: resume.json
-    W->>DB: the kept draft's scores (tailoring.drafted)
-    W->>S3: resume.pdf, resume.docx
+    W->>DB: the kept draft, its scores and company (tailoring.drafted; once per run)
+    W->>S3: resume.json, resume.pdf, resume.docx
+    W->>DB: jobs.match, jobs.materials (idempotent, before the end)
     W->>DB: ready (scores, ok or partial) + lock freed + audit
-    W->>DB: jobs.match, jobs.materials (only if this delivery ended it)
     W->>DB: versions past 10 for the company deleted (and their files)
   end
 ```
@@ -96,8 +95,9 @@ sequenceDiagram
 - **Retries:** an error goes back to the queue, which tries again 1, then 2 minutes later (not after its visibility timeout). Finished calls are cached (structure, keywords, the kept draft) or counted, and tailoring ends with its best honest draft rather than throwing after its first call, so a retry never repeats a finished call. The last attempt ends the run `failed` whatever went wrong, so it never stays in progress; a rejected own key fails it at once (`key_rejected`).
 - **The free allowance:** 10 platform runs a month, counted when asked; given back when no model call was made (no résumé, no jobs, no key). Own-key runs are not counted.
 - A structured copy made for a résumé replaced or deleted meanwhile is deleted (only that file version's copy).
-- Another delivery of the same message never ends a run: a lost conditional write (a call stored, a draft kept, the run ended) makes it stop quietly.
-- Once a version is ready, linking its jobs and pruning old versions are best effort (logged).
+- Another delivery of the same message never ends a run: when it loses the race to store a call, its message is kept for a retry (which then finds the run moved on or ended); a second draft is refused, and that delivery stops.
+- The jobs are linked before the version ends (a failure there is retried); once it is ready, pruning old versions is best effort (logged).
+- A new structured copy, once recorded, deletes the copy of the earlier upload.
 
 ## What a version's state can be
 

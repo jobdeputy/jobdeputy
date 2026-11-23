@@ -377,8 +377,9 @@ describe('tailoring worker', () => {
       },
     });
     await expect(processRecord(record(), first.deps)).rejects.toThrow('S3 blip');
-    // biome-ignore lint/suspicious/noExplicitAny: reading the mock's argument.
-    const draft = (first.runs.saveDraft.mock.calls[0] as any[])[2];
+    // biome-ignore lint/suspicious/noExplicitAny: reading the mock's arguments.
+    const [, , draft, draftResume, company] = first.runs.saveDraft.mock.calls[0] as any[];
+    expect(company).toBe('Example Test Co');
     expect(draft).toMatchObject({
       result: 'partial',
       scores: [expect.objectContaining({ jobId: 'job-1' })],
@@ -386,20 +387,20 @@ describe('tailoring worker', () => {
     const keys = tailoringKeys(USER, DOC);
     const retry = setup(
       { model: vi.fn(async () => stubTailoringSource('stub-model')) },
-      version({ tailoring: { calls: 3, attempts: 2, drafted: true, ...draft } }),
+      version({ tailoring: { calls: 3, attempts: 2, drafted: true, draftResume, ...draft } }),
     );
-    retry.files.set(keys.json, first.files.get(keys.json));
     expect(await processRecord(record(undefined, 2), retry.deps)).toBe('ready');
     expect(retry.deps.model).not.toHaveBeenCalled();
     expect(retry.runs.saveCall).not.toHaveBeenCalled();
     expect(finished(retry.runs).outcome.tailoring).toMatchObject(draft);
+    expect(JSON.parse(retry.files.get(keys.json) as string)).toEqual(draftResume);
   });
 
-  it('links the jobs only when this delivery ended the run', async () => {
+  it('prunes only when this delivery ended the run', async () => {
     const { deps, runs } = setup();
     runs.finish.mockResolvedValueOnce(false);
     expect(await processRecord(record(), deps)).toBe('skipped');
-    expect(runs.saveMatches).not.toHaveBeenCalled();
+    // Linked before the end (idempotent; read only once ready), but nothing pruned after it.
     expect(runs.list).not.toHaveBeenCalled();
   });
 
@@ -441,7 +442,10 @@ describe('tailoring worker', () => {
   it('never ends a run another delivery is working on, even on its last try', async () => {
     const conflict = setup();
     conflict.runs.saveCall.mockRejectedValueOnce(new TailoringConflictError());
-    expect(await processRecord(record(undefined, 3), conflict.deps)).toBe('skipped');
+    // The message is kept (thrown), so the other delivery never loses its retry.
+    await expect(processRecord(record(undefined, 3), conflict.deps)).rejects.toBeInstanceOf(
+      TailoringConflictError,
+    );
     expect(conflict.runs.finish).not.toHaveBeenCalled();
     const ended = setup();
     ended.runs.saveDraft.mockResolvedValueOnce(false);
@@ -462,11 +466,47 @@ describe('tailoring worker', () => {
     expect(finished(runs).outcome.error).toBe('stopped');
   });
 
-  it('stays ready when linking its jobs fails afterwards (logged, not retried)', async () => {
+  it('links the jobs before ending the run, so a failure there is retried', async () => {
     const { deps, runs } = setup();
     runs.saveMatches.mockRejectedValueOnce(new Error('Throttled'));
+    await expect(processRecord(record(), deps)).rejects.toThrow('Throttled');
+    expect(runs.finish).not.toHaveBeenCalled();
+    expect(deps.delayRetry).toHaveBeenCalled();
+  });
+
+  it('stays ready when pruning old versions fails afterwards (logged)', async () => {
+    const { deps, runs } = setup();
+    runs.list.mockRejectedValueOnce(new Error('Throttled'));
     expect(await processRecord(record(), deps)).toBe('ready');
-    expect(deps.delayRetry).not.toHaveBeenCalled();
+  });
+
+  it('says stopped when our storage fails on the last try, not that the model did', async () => {
+    const { deps, runs, files } = setup();
+    files.delete('text-key');
+    deps.files.readText = vi.fn(async () => {
+      throw new Error('NoSuchKey');
+    });
+    expect(await processRecord(record(undefined, 3), deps)).toBe('failed');
+    expect(finished(runs).outcome.error).toBe('stopped');
+  });
+
+  it('deletes the copy of an earlier upload once a new one is recorded', async () => {
+    const old = {
+      s3Key: structuredKey(USER, BASE, 'etag-0'),
+      eTag: 'etag-0',
+      promptVersion: 'p',
+      coverage: 1,
+      rejections: 0,
+      createdAt: NOW.toISOString(),
+    };
+    const { deps } = setup({
+      documents: {
+        get: async () => base({ structured: old }),
+        saveStructured: vi.fn(async () => true),
+      },
+    });
+    await processRecord(record(), deps);
+    expect(deps.files.remove).toHaveBeenCalledWith([old.s3Key]);
   });
 
   it('makes the structure again when its cached copy cannot be read', async () => {

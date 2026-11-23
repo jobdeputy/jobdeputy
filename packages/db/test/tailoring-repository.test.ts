@@ -217,27 +217,47 @@ describe('TailoringRepository runs', () => {
 
   it('keeps a draft only while the run is processing', async () => {
     const { repo, send } = setup();
-    await repo.saveDraft(USER, DOC, {
-      result: 'partial',
-      scores: [],
-      coverage: 0.9,
-      promptVersion: 'tailor-resume@v1',
-      scoreVersion: 1,
-    });
+    const resume = {
+      contact: { name: 'Sam', links: [] },
+      skills: [],
+      experience: [],
+      education: [],
+      certifications: [],
+      projects: [],
+    };
+    await repo.saveDraft(
+      USER,
+      DOC,
+      {
+        result: 'partial',
+        scores: [],
+        coverage: 0.9,
+        promptVersion: 'tailor-resume@v1',
+        scoreVersion: 1,
+      },
+      resume,
+      'Acme',
+    );
     const input = send.mock.calls[0]?.[0].input;
-    expect(input.ConditionExpression).toBe('#status = :processing');
+    // Once per run: a duplicate delivery's later draft is refused.
+    expect(input.ConditionExpression).toBe(
+      '#status = :processing AND attribute_not_exists(tailoring.drafted)',
+    );
+    expect(input.ExpressionAttributeValues[':resume']).toEqual(resume);
+    expect(input.UpdateExpression).toContain('companyName = if_not_exists(companyName, :company)');
     expect(input.UpdateExpression).toContain('tailoring.drafted = :true');
     expect(input.UpdateExpression).toContain('tailoring.coverage = :coverage');
     const ended = setup(() => {
       throw conditionFailed();
     });
     expect(
-      await ended.repo.saveDraft(USER, DOC, {
-        result: 'ok',
-        scores: [],
-        promptVersion: 'p',
-        scoreVersion: 1,
-      }),
+      await ended.repo.saveDraft(
+        USER,
+        DOC,
+        { result: 'ok', scores: [], promptVersion: 'p', scoreVersion: 1 },
+        resume,
+        'Acme',
+      ),
     ).toBe(false);
   });
 

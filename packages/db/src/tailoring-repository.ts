@@ -1,6 +1,12 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { BatchWriteCommand, GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { type AiSource, type JobKeyword, type TailoringError, utcMonth } from '@jobdeputy/shared';
+import {
+  type AiSource,
+  type JobKeyword,
+  type StructuredResume,
+  type TailoringError,
+  utcMonth,
+} from '@jobdeputy/shared';
 import { decodeTime } from 'ulid';
 import { type AiUsageRecord, aiUsageUpdate } from './ai-usage-repository.js';
 import { type AuditWrite, auditPut } from './audit-repository.js';
@@ -58,6 +64,8 @@ export interface TailoringRun {
    * rendered: a retry renders this draft instead of calling the model again.
    */
   drafted?: boolean;
+  /** The kept draft itself, with `drafted`: a retry renders exactly this résumé. */
+  draftResume?: StructuredResume;
   /** `tailor-resume@v1`, and the score's code version. */
   promptVersion?: string;
   scoreVersion?: number;
@@ -125,7 +133,10 @@ export class TailoringBusyError extends Error {
     super('A tailoring run for this company is already in progress');
   }
 }
-/** Another delivery of the same message stored a call meanwhile: the queue tries again. */
+/**
+ * Another delivery of the same message stored a call meanwhile: this delivery stops without
+ * ending the run, and its message is tried again (by then the run has moved on or ended).
+ */
 export class TailoringConflictError extends Error {
   override name = 'TailoringConflictError';
 }
@@ -505,30 +516,35 @@ export class TailoringRepository {
   }
 
   /**
-   * Keeps the chosen draft's scores on the version (its résumé is already in S3), only while
-   * the run is still processing: a retry renders it rather than tailoring again. False when the
-   * run had ended (another delivery ended it).
+   * Keeps the chosen draft on the version (the résumé, its scores, and the company's name),
+   * once per run and only while it is processing: a retry renders it rather than tailoring
+   * again. False when the run had ended or another delivery kept its own draft first.
    */
   async saveDraft(
     userId: string,
     documentId: string,
     draft: Pick<TailoringRun, 'result' | 'scores' | 'coverage' | 'promptVersion' | 'scoreVersion'>,
+    resume: StructuredResume,
+    companyName: string,
   ): Promise<boolean> {
     try {
       await this.client.send(
         new UpdateCommand({
           TableName: this.tables.documents,
           Key: { userId, documentId },
-          UpdateExpression: `SET tailoring.drafted = :true, tailoring.#result = :result, tailoring.scores = :scores, tailoring.promptVersion = :promptVersion, tailoring.scoreVersion = :scoreVersion${draft.coverage !== undefined ? ', tailoring.coverage = :coverage' : ''}, updatedAt = :now`,
-          ConditionExpression: '#status = :processing',
+          UpdateExpression: `SET tailoring.drafted = :true, tailoring.draftResume = :resume, tailoring.#result = :result, tailoring.scores = :scores, tailoring.promptVersion = :promptVersion, tailoring.scoreVersion = :scoreVersion${draft.coverage !== undefined ? ', tailoring.coverage = :coverage' : ''}, companyName = if_not_exists(companyName, :company), updatedAt = :now`,
+          // One draft per run: a duplicate delivery's later draft is refused.
+          ConditionExpression: '#status = :processing AND attribute_not_exists(tailoring.drafted)',
           ExpressionAttributeNames: { '#status': 'status', '#result': 'result' },
           ExpressionAttributeValues: {
             ':true': true,
+            ':resume': resume,
             ':result': draft.result,
             ':scores': draft.scores,
             ':promptVersion': draft.promptVersion,
             ':scoreVersion': draft.scoreVersion,
             ...(draft.coverage !== undefined ? { ':coverage': draft.coverage } : {}),
+            ':company': companyName,
             ':now': this.now().toISOString(),
             ':processing': 'processing',
           },

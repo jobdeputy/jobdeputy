@@ -15,8 +15,6 @@ import {
   documentClient,
   type GeneratedDocument,
   type Generation,
-  isConditionFailure,
-  type Job,
   JobRepository,
   ProfileRepository,
   type StructuredCache,
@@ -39,13 +37,13 @@ import {
 } from '@jobdeputy/llm';
 import {
   createLogger,
+  isTailoringStale,
   type JobKeyword,
   MATCH_SCORE_VERSION,
   type StructuredResume,
   structuredKey,
   structuredResume,
   TAILORING_ERRORS,
-  TAILORING_STALE_MS,
   TAILORING_VERSIONS_KEPT,
   type TailoringError,
   tailoringKeys,
@@ -162,17 +160,15 @@ export async function processRecord(
     return await tailor(run, deps);
   } catch (error) {
     const { calls } = run;
-    // Another delivery of this message is working on the run (it stored a call, kept a draft,
-    // or ended it first): this one stops, and never ends the run itself.
-    if (error instanceof TailoringConflictError || isConditionFailure(error)) {
-      logger.info('Another delivery has this run; skipping', { documentId });
-      return 'skipped';
-    }
+    // Another delivery of this message stored a call first: this one never ends the run. Its
+    // message is kept for a retry (deleting it could cost the other delivery its own retry);
+    // by then the run has moved on, or ended and the retry is skipped.
+    const conflict = error instanceof TailoringConflictError;
     // The user's key stopped working: no retry helps.
     if (!run.storing && doc.aiSource !== 'platform' && invalidReason(error)) {
       return fail(run, deps, 'key_rejected');
     }
-    if (receives >= MAX_RECEIVES) {
+    if (receives >= MAX_RECEIVES && !conflict) {
       // The last attempt ends the run, so it never stays processing (or holds its lock).
       logger.error('Tailoring failed on its last attempt', {
         documentId,
@@ -276,17 +272,14 @@ async function fail(
 async function tailor(run: Run, deps: TailoringWorkerDeps): Promise<TailoringOutcome> {
   const { doc } = run;
   const { userId, documentId } = doc;
-  const keys = tailoringKeys(userId, documentId);
 
   // A message back after the run went stale (the app shows it stopped, and a new Tailor click
   // may hold the company's lock): it ends here, without another model call.
-  if (deps.now().getTime() - Date.parse(doc.createdAt) > TAILORING_STALE_MS) {
-    return fail(run, deps, 'stopped');
-  }
+  if (isTailoringStale(doc.createdAt, deps.now())) return fail(run, deps, 'stopped');
 
   // A retry after the draft was kept: render it, with no model call.
   if (doc.tailoring.drafted && doc.tailoring.scores && doc.tailoring.result) {
-    const kept = structuredResume.safeParse(await deps.files.readJson(keys.json));
+    const kept = structuredResume.safeParse(doc.tailoring.draftResume);
     if (kept.success) {
       return render(run, deps, kept.data, doc.companyName ?? doc.companyKey, {
         result: doc.tailoring.result,
@@ -300,7 +293,7 @@ async function tailor(run: Run, deps: TailoringWorkerDeps): Promise<TailoringOut
   if (run.calls >= TAILORING_MAX_CALLS) return fail(run, deps, 'stopped');
 
   const base = await deps.documents.get(userId, doc.baseDocumentId);
-  if (!base || base.status !== 'ready' || !base.parsed || base.parsed.noText || !base.eTag) {
+  if (base?.status !== 'ready' || !base.parsed || base.parsed.noText || !base.eTag) {
     return fail(run, deps, 'no_resume');
   }
   const order = new Map(doc.jobIds.map((id, i) => [id, i]));
@@ -312,7 +305,14 @@ async function tailor(run: Run, deps: TailoringWorkerDeps): Promise<TailoringOut
   const model = await deps.model(userId, doc.aiSource);
   if (typeof model === 'string') return fail(run, deps, model);
   const profile = await deps.profile(userId);
-  run.stage = 'model';
+  /** A model call: an error inside it is the model's (storing a call sets `storing`). */
+  const asking = async <T>(work: () => Promise<T>): Promise<T> => {
+    run.stage = 'model';
+    // Left at `model` when it throws: the handler then knows whose failure it was.
+    const result = await work();
+    run.stage = 'setup';
+    return result;
+  };
 
   const canStart = (timeoutMs: number) =>
     run.calls < TAILORING_MAX_CALLS && deps.remainingMs() > timeoutMs + SAFETY_MARGIN_MS;
@@ -367,7 +367,7 @@ async function tailor(run: Run, deps: TailoringWorkerDeps): Promise<TailoringOut
   if (!structured) {
     if (!canStart(structureResumeTask.limits.timeoutMs)) return fail(run, deps, 'stopped');
     const text = await deps.files.readText(base.parsed.textS3Key);
-    const call = await structureResume(text, profile.name, model);
+    const call = await asking(() => structureResume(text, profile.name, model));
     await store(call.result, call.grounded?.rejections ?? 0);
     if (!call.grounded) return fail(run, deps, 'model_unavailable');
     if (call.grounded.empty) return fail(run, deps, 'resume_unreadable');
@@ -392,9 +392,11 @@ async function tailor(run: Run, deps: TailoringWorkerDeps): Promise<TailoringOut
   const missing = jobs.filter((j) => !keywords.has(j.jobId));
   if (missing.length > 0) {
     if (!canStart(jobKeywordsTask.limits.timeoutMs)) return fail(run, deps, 'stopped');
-    const call = await extractJobKeywords(
-      missing.map((j) => ({ title: j.title, description: j.description ?? '' })),
-      model,
+    const call = await asking(() =>
+      extractJobKeywords(
+        missing.map((j) => ({ title: j.title, description: j.description ?? '' })),
+        model,
+      ),
     );
     await store(call.result, call.groundingRejections);
     if (call.result.status !== 'ok') return fail(run, deps, 'model_unavailable');
@@ -414,22 +416,24 @@ async function tailor(run: Run, deps: TailoringWorkerDeps): Promise<TailoringOut
 
   // 3. Tailor: a draft and at most two repairs, the best honest draft kept.
   const short = jobs.map((job, i) => ({ id: `j${i + 1}`, job }));
-  const tailored = await tailorResume(
-    {
-      company,
-      base: structured,
-      evidence: profile.skills,
-      jobs: short.map(({ id, job }) => ({
-        id,
-        title: job.title,
-        keywords: keywords.get(job.jobId) ?? [],
-      })),
-    },
-    model,
-    {
-      canStart: () => canStart(tailorResumeTask.limits.timeoutMs),
-      onCall: (attempt) => store(attempt.result, attempt.issues.length),
-    },
+  const tailored = await asking(() =>
+    tailorResume(
+      {
+        company,
+        base: structured,
+        evidence: profile.skills,
+        jobs: short.map(({ id, job }) => ({
+          id,
+          title: job.title,
+          keywords: keywords.get(job.jobId) ?? [],
+        })),
+      },
+      model,
+      {
+        canStart: () => canStart(tailorResumeTask.limits.timeoutMs),
+        onCall: (attempt) => store(attempt.result, attempt.issues.length),
+      },
+    ),
   );
   const best = tailored.best;
   if (!best?.resume) {
@@ -460,12 +464,15 @@ async function tailor(run: Run, deps: TailoringWorkerDeps): Promise<TailoringOut
     scoreVersion: MATCH_SCORE_VERSION,
   };
   run.stage = 'files';
-  await deps.files.put(keys.json, JSON.stringify(best.resume), 'application/json');
-  if (!(await deps.runs.saveDraft(userId, documentId, draft))) return 'skipped';
+  // Kept once: a duplicate delivery whose draft comes second stops here (the run is the
+  // other's); a retry of this one renders exactly this draft.
+  if (!(await deps.runs.saveDraft(userId, documentId, draft, best.resume, company))) {
+    return 'skipped';
+  }
   return render(run, deps, best.resume, company, draft);
 }
 
-/** The files, then the version ready, then each job's link to it (only if this ended it). */
+/** The files and each job's link to the version, then the version ready (only if this ended it). */
 async function render(
   run: Run,
   deps: TailoringWorkerDeps,
@@ -478,7 +485,14 @@ async function render(
   const { userId, documentId } = doc;
   const keys = tailoringKeys(userId, documentId);
   const [pdf, docx] = await Promise.all([deps.render.pdf(resume), deps.render.docx(resume)]);
-  await Promise.all([deps.files.put(keys.pdf, pdf, PDF), deps.files.put(keys.docx, docx, DOCX)]);
+  await Promise.all([
+    deps.files.put(keys.json, JSON.stringify(resume), 'application/json'),
+    deps.files.put(keys.pdf, pdf, PDF),
+    deps.files.put(keys.docx, docx, DOCX),
+  ]);
+  // Before the end, so a failure is retried (the links are idempotent; the app reads a job's
+  // version only once it is ready).
+  await deps.runs.saveMatches(userId, documentId, draft.scores ?? [], MATCH_SCORE_VERSION);
   const ended = await finish(
     run,
     deps,
@@ -492,12 +506,11 @@ async function render(
     `Tailored résumé ready for ${company}`,
   );
   if (!ended) return 'skipped';
-  // The version is ready: what follows is best effort (a retry would find the run ended).
+  // The version is ready: pruning is best effort (a retry would find the run ended).
   try {
-    await deps.runs.saveMatches(userId, documentId, draft.scores ?? [], MATCH_SCORE_VERSION);
     await prune(userId, doc.companyKey, deps);
   } catch (error) {
-    logger.error('Version ready, but its jobs or old versions were not updated', {
+    logger.error('Version ready, but old versions were not pruned', {
       documentId,
       error: (error as Error).name,
     });
@@ -522,10 +535,13 @@ async function cacheStructured(
     rejections: grounded.rejections,
     createdAt: deps.now().toISOString(),
   };
-  // False when the file was replaced or deleted meanwhile: the copy goes too (the next run
-  // structures a new file; a deleted résumé leaves nothing behind).
+  // False when the file was replaced or deleted meanwhile: this copy (of this file version
+  // only) goes too, so a deleted résumé leaves nothing behind. Recorded, it replaces the copy
+  // of an earlier upload, which goes.
   if (!(await deps.documents.saveStructured(userId, base.documentId, cache))) {
     await deps.files.remove([key]);
+  } else if (base.structured && base.structured.s3Key !== key) {
+    await deps.files.remove([base.structured.s3Key]);
   }
 }
 

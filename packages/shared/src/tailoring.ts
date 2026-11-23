@@ -21,6 +21,11 @@ export const COVERAGE_WARNING = 0.85;
  */
 export const TAILORING_STALE_MS = 60 * 60 * 1000;
 
+/** A run asked for longer ago than TAILORING_STALE_MS: the app shows it stopped, and the worker ends it. */
+export function isTailoringStale(createdAt: string, now: Date): boolean {
+  return now.getTime() - Date.parse(createdAt) > TAILORING_STALE_MS;
+}
+
 /** The longest company key we accept (`workday:<host>/<site>` is the longest kind). */
 const MAX_COMPANY_KEY = 300;
 

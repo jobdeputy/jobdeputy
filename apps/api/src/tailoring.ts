@@ -23,6 +23,7 @@ import {
   createTailoringInput,
   DOWNLOAD_URL_SECONDS,
   type HttpResponse,
+  isTailoringStale,
   json,
   nextUtcMonthStart,
   PLATFORM_TAILORINGS_PER_MONTH,
@@ -79,8 +80,7 @@ type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
 /** A version as the app sees it: no storage keys. A run past its time shows as stopped. */
 export function tailoringView(v: GeneratedDocument, now: Date) {
   const stale =
-    (v.status === 'queued' || v.status === 'processing') &&
-    now.getTime() - Date.parse(v.createdAt) > TAILORING_STALE_MS;
+    (v.status === 'queued' || v.status === 'processing') && isTailoringStale(v.createdAt, now);
   const status = stale ? 'failed' : v.status;
   const error = stale ? 'stopped' : v.error;
   return {
