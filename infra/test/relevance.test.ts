@@ -1,8 +1,12 @@
 import { Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
-import { MAX_RECEIVES as WORKER_MAX_RECEIVES } from '../../apps/worker/src/relevance-worker.js';
+import {
+  LEASE_MS,
+  MAX_RECEIVES as WORKER_MAX_RECEIVES,
+} from '../../apps/worker/src/relevance-worker.js';
 import { buildApp } from '../lib/build-app.js';
 import { MAX_RECEIVES } from '../lib/cell-stack.js';
+import { RELEVANCE_WORKER_TIMEOUT } from '../lib/constructs/relevance.js';
 
 // T08d: the scoring worker starts only for succeeded AI crawls with candidates, never from
 // its own writes, and may do only what scoring needs.
@@ -49,6 +53,16 @@ describe('relevance (T08d)', () => {
       QueueName: 'jobdeputy-dev-iad-relevance',
       RedrivePolicy: { maxReceiveCount: MAX_RECEIVES },
     });
+  });
+
+  it('a delivery holds a run longer than the worker can run, and less than a retry waits', () => {
+    // Longer than the Lambda timeout: a delivery still at work never loses its run. Shorter than
+    // the queue's visibility timeout: a retry after a failed attempt always takes it over.
+    expect(LEASE_MS).toBeGreaterThan(RELEVANCE_WORKER_TIMEOUT.toMilliseconds());
+    const [queue] = Object.values(template.findResources('AWS::SQS::Queue')).filter(
+      (q) => q.Properties.QueueName === 'jobdeputy-dev-iad-relevance',
+    );
+    expect(LEASE_MS).toBeLessThan(Number(queue?.Properties.VisibilityTimeout) * 1000);
   });
 
   it('calls only the platform model, in this Region', () => {

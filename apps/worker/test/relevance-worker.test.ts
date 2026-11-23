@@ -333,14 +333,32 @@ describe('relevance worker: retries and the fixed worst case', () => {
     const held = setup({ crawl: { relevance: { ...RUNNING, calls: 1, sent: ['weak', 'good'] } } });
     held.deps.runs.claim.mockResolvedValueOnce(false);
     expect(await processRecord(record(), held.deps)).toBe('skipped');
+    expect(held.deps.runs.saveCall).not.toHaveBeenCalled();
     expect(held.deps.runs.finish).not.toHaveBeenCalled();
     expect(held.deps.runs.claim).toHaveBeenCalledWith(USER, CRAWL, LEASE_MS);
   });
 
-  it('holds the run longer than the worker runs, and well under the queue retry', () => {
-    // RELEVANCE_WORKER_TIMEOUT is 5 minutes; the queue shows a failed message again after 30.
-    expect(LEASE_MS).toBeGreaterThan(5 * 60_000);
-    expect(LEASE_MS).toBeLessThan(30 * 60_000);
+  it('a retry takes over a run whose lease passed, and counts what it scored before as scored', async () => {
+    // Attempt 1 sent and scored `weak` in this run, then failed; the retry scores `good`.
+    const version = promptVersion(relevanceTask);
+    const user = modelProfile(INPUTS.profile, 'Résumé text');
+    const weak = job('weak', { title: 'Data Engineer' });
+    const relevance: JobRelevance = {
+      score: 10,
+      reasons: ['earlier attempt'],
+      model: 'm',
+      promptVersion: version,
+      inputsHash: inputsHash(weak, user.hash, version),
+      scoredAt: NOW.toISOString(),
+    };
+    const { deps } = setup({
+      jobs: [{ ...weak, relevance }, job('good')],
+      crawl: { relevance: { ...RUNNING, calls: 1, sent: ['weak'] } },
+    });
+    expect(await processRecord(record(undefined, 2), deps)).toBe('done');
+    expect(deps.runs.claim).toHaveBeenCalledWith(USER, CRAWL, LEASE_MS);
+    expect(deps.runs.saveCall.mock.calls[0]?.[0].sent).toEqual(['good']);
+    expect(deps.runs.finish.mock.calls[0]?.[0].stats).toMatchObject({ scored: 2, reused: 0 });
   });
 
   it('makes no call once the crawl has used its 6 task calls', async () => {

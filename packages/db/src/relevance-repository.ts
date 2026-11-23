@@ -89,12 +89,15 @@ export class RelevanceRepository {
           TableName: this.tables.crawls,
           Key: { userId, crawlId },
           UpdateExpression: 'SET relevance.leaseUntil = :until, updatedAt = :now',
+          // A run started before leases existed has none: taken over only once it is older than
+          // a lease, so a delivery still at work on it is never joined.
           ConditionExpression:
-            'relevance.#status = :running AND (attribute_not_exists(relevance.leaseUntil) OR relevance.leaseUntil < :now)',
+            'relevance.#status = :running AND (relevance.leaseUntil < :now OR (attribute_not_exists(relevance.leaseUntil) AND relevance.startedAt < :startedBefore))',
           ExpressionAttributeNames: { '#status': 'status' },
           ExpressionAttributeValues: {
             ':until': new Date(at.getTime() + leaseMs).toISOString(),
             ':now': at.toISOString(),
+            ':startedBefore': new Date(at.getTime() - leaseMs).toISOString(),
             ':running': 'running',
           },
         }),

@@ -96,10 +96,11 @@ describe('RelevanceRepository.claim', () => {
     expect(await repo.claim(USER, CRAWL, 60_000)).toBe(true);
     const update = send.mock.calls[0]?.[0] as UpdateCommand;
     expect(update.input.ConditionExpression).toBe(
-      'relevance.#status = :running AND (attribute_not_exists(relevance.leaseUntil) OR relevance.leaseUntil < :now)',
+      'relevance.#status = :running AND (relevance.leaseUntil < :now OR (attribute_not_exists(relevance.leaseUntil) AND relevance.startedAt < :startedBefore))',
     );
     expect(update.input.ExpressionAttributeValues).toMatchObject({
       ':now': NOW.toISOString(),
+      ':startedBefore': new Date(NOW.getTime() - 60_000).toISOString(),
       ':until': new Date(NOW.getTime() + 60_000).toISOString(),
     });
   });

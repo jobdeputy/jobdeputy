@@ -57,7 +57,8 @@ export const STALE_AFTER_MS = 30 * 60 * 1000;
 /**
  * How long a delivery holds a run: longer than the worker's timeout (5 minutes,
  * RELEVANCE_WORKER_TIMEOUT), and far shorter than the queue's visibility timeout (6 × that),
- * so a retry after a failed attempt always finds the lease passed.
+ * so a retry after a failed attempt always finds the lease passed. infra/test/relevance.test.ts
+ * checks both against the deployed values.
  */
 export const LEASE_MS = 6 * 60 * 1000;
 /** Stop starting task calls this long before Lambda's own timeout. */
@@ -114,7 +115,9 @@ export async function processRecord(
       return 'skipped';
     }
     if (!(await deps.runs.begin(userId, crawlId, LEASE_MS))) {
-      logger.info('Another delivery started this run; skipping', { crawlId });
+      logger.info('Run not started: another delivery started it, or the crawl changed', {
+        crawlId,
+      });
       return 'skipped';
     }
   } else if (
@@ -148,8 +151,10 @@ export async function processRecord(
     if (j.relevance && j.relevance.inputsHash === hashes.get(j.jobId))
       scores.set(j.jobId, j.relevance);
   }
-  const reused = scores.size;
   const sentBefore = new Set(run.sent);
+  // Jobs this run scored in an earlier attempt (a retry) count as scored, not as reused.
+  const scoredBefore = [...scores.keys()].filter((id) => sentBefore.has(id)).length;
+  const reused = scores.size - scoredBefore;
   const toScore = jobs.filter((j) => !scores.has(j.jobId) && !sentBefore.has(j.jobId));
 
   const end = async (status: 'done' | 'failed', scored: number, reason?: RelevanceFailure) => {
@@ -185,7 +190,7 @@ export async function processRecord(
     return status;
   };
 
-  if (toScore.length === 0) return end('done', 0);
+  if (toScore.length === 0) return end('done', scoredBefore);
   const model = await deps.model(userId, aiSource);
   if (typeof model === 'string') return end('failed', 0, model);
 
@@ -199,7 +204,7 @@ export async function processRecord(
     inputTokens: 0,
     outputTokens: 0,
   };
-  let scored = 0;
+  let scored = scoredBefore;
   // Errors while storing a call are ours, not the model's: the queue retries them, and
   // the last one goes to the dead-letter queue.
   let storing = false;
