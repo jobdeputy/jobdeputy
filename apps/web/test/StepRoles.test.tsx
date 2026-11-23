@@ -235,7 +235,13 @@ describe('Set it up, step 2: target roles', () => {
     fireEvent.keyDown(screen.getByLabelText('Job title'), { key: 'Enter' });
     expect(screen.getByText('Backend engineer is already on your list.')).toBeTruthy();
     await continueOn();
-    expect(screen.queryByText('Backend engineer is already on your list.')).toBeNull();
+    // The reason beside the field is gone. The status line may still hold it: said one beat
+    // after Enter, it stays there 5 seconds by design (a slow run says it before Continue).
+    expect(
+      screen.queryByText('Backend engineer is already on your list.', {
+        ignore: '[role="status"]',
+      }),
+    ).toBeNull();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(await savedTitles(api)).toEqual(['Backend engineer']);
   });
