@@ -464,7 +464,7 @@ function useDownloads(version: Tailoring) {
       const files = await tailoringFiles(api, asked);
       const url = files.downloads?.[kind];
       if (!url) throw new Error('no download');
-      if (current.current !== asked) return;
+      // Saved even if a re-tailor ended meanwhile: it is the file that was asked for.
       const pdfName = version.fileName ?? text.fileNameFallback;
       saveFile(url, kind === 'pdf' ? pdfName : pdfName.replace(/\.pdf$/, '.docx'));
     } catch {

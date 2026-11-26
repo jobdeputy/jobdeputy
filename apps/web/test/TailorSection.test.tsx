@@ -552,7 +552,9 @@ describe('tailoring in the job pane (#51 PR C)', () => {
     expect(
       dialog
         .getAllByRole('status')
-        .some((s) => s.textContent === 'Your re-tailored résumé is ready. It’s shown below.'),
+        .some(
+          (s) => s.textContent === 'Your re-tailored résumé is ready. This preview switches to it.',
+        ),
     ).toBe(true);
     expect(screen.getByRole('dialog', { name: 'Your résumé for Acme' })).toBeTruthy();
   });
@@ -630,5 +632,41 @@ describe('tailoring in the job pane (#51 PR C)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     const notice = await screen.findByText(/is no longer in Matches/);
     await waitFor(() => expect(document.activeElement).toBe(notice));
+  });
+
+  it('saves a file asked for just as a re-tailor ends (C2 round 3)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let release: (() => void) | undefined;
+    const { clock, fake } = await setUp({
+      crawlMs: 1000,
+      wrap: (api) => ({
+        ...api,
+        async request<T>(m: ApiMethod, p: `/${string}`, body?: unknown): Promise<T> {
+          if (release === undefined && m === 'GET' && /^\/me\/tailorings\/\d+$/.test(p)) {
+            // The download's links come back only after the re-tailor has ended.
+            await new Promise<void>((resolve) => {
+              release = resolve;
+            });
+          }
+          return api.request<T>(m, p, body);
+        },
+      }),
+    });
+    void fake;
+    const section = await openSection(BACKEND);
+    fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
+    await section.findByText('Tailoring your résumé for Acme…');
+    clock.now += 2000;
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    await section.findByText('86%');
+    fireEvent.click(section.getByRole('button', { name: 'Re-tailor' }));
+    await section.findByText('Tailoring your résumé for Acme…');
+    fireEvent.click(section.getByRole('button', { name: 'Download PDF' }));
+    await waitFor(() => expect(release).toBeDefined());
+    clock.now += 2000;
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    await waitFor(() => expect(section.queryByText('Tailoring your résumé for Acme…')).toBeNull());
+    release?.();
+    await waitFor(() => expect(savedAs).toEqual(['Sam Example – Acme.pdf']));
   });
 });

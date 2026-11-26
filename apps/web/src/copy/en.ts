@@ -530,7 +530,7 @@ export const en = {
         retry: 'Try again',
         unavailable: 'This version’s résumé isn’t available. Re-tailor to make a new one.',
         /** A re-tailor ended while the preview was open: it shows the new version now. */
-        newer: 'Your re-tailored résumé is ready. It’s shown below.',
+        newer: 'Your re-tailored résumé is ready. This preview switches to it.',
       },
       downloadPdf: 'Download PDF',
       downloadDocx: 'Download DOCX',
