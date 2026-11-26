@@ -37,7 +37,7 @@ Do not design ahead of the task that needs it. For example, the crawler's archit
 - **Agents never merge PRs.** Open or update the PR, get CI green, report the link, and stop. The maintainer reviews and merges.
 - Long-running work (crawling, parsing, AI calls) is **asynchronous**: accept the request, return a job ID, and process it in a worker.
 - Never commit secrets, real résumés, or personal data. Use `.env` (git-ignored) and `.env.example`. The repo is intended to be public.
-- **User data never leaves its home Region** (US `us-east-1`, India `ap-south-1`, UK `eu-west-2`). Each Region is a self-contained cell. See [0004](docs/decisions/0004-regional-cells-and-data-residency.md).
+- **One prod Region, `us-east-1`, serves every country** (US, UK, India) for now; each user has a `country`, not a Region ([0017](docs/decisions/0017-one-prod-region-for-all-countries.md)). The cell code stays: user data never crosses between cells, and no global tables, replication, or cross-Region references are allowed.
 - **Strict cost control until launch** ([0005](docs/decisions/0005-pre-launch-cost-guardrails.md)): pay-per-use services only, nothing that costs money while idle. Set throttles, concurrency caps, and log retention. Spend is blocked automatically at $20.
 - User credentials (BYOT) are the user's: never log them, never share them across users.
 - **LLM and agent loops are capped at 3 iterations.** When the cap is hit, stop and return the best result so far, marked as partial. Every call has a maximum output token limit and a timeout, and job retries must not multiply LLM calls. See [0002](docs/decisions/0002-llm-loop-and-token-budget.md).

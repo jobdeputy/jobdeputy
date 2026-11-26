@@ -1,6 +1,6 @@
 # 0004: Regional cells and data residency
 
-- **Status:** Accepted
+- **Status:** Superseded by [0017](0017-one-prod-region-for-all-countries.md) (one prod Region serves every country)
 - **Date:** 2026-09-27
 - **Task:** t03
 

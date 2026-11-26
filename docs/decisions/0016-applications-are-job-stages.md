@@ -1,6 +1,6 @@
 # 0016: Applications are job stages: one jobs table, a sparse `applied` index
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by [0018](0018-shared-job-catalog-and-matching.md) (Matches' 30-day window counts from first seen, for jobs still open)
 - **Date:** 2026-11-25
 - **Task:** #52
 
