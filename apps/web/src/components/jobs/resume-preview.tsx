@@ -11,7 +11,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog.tsx';
-import { Skeleton } from '@/components/ui/skeleton.tsx';
+import { QueryRegion } from '@/components/ui/query-region.tsx';
 import { copy, fill } from '@/copy/index.ts';
 import { ApiError, useApi } from '@/lib/api/index.ts';
 import { type Tailoring, tailoringFiles } from '@/lib/api/tailorings.ts';
@@ -53,7 +53,8 @@ export function ResumePreviewButton({
               <Button variant="outline">{text.close}</Button>
             </DialogClose>
           </div>
-          {open && <ResumeSheet documentId={version.documentId} />}
+          {/* Radix keeps the content mounted while it fades out: the résumé stays with it. */}
+          <ResumeSheet documentId={version.documentId} />
           {footer}
         </div>
       </DialogContent>
@@ -73,31 +74,39 @@ function ResumeSheet({ documentId }: { documentId: string }) {
     retry: (failures, error) =>
       failures < 1 && error instanceof ApiError && error.kind === 'offline',
   });
-  if (files.isPending) {
-    return (
-      <div aria-busy="true" className="rounded-[14px] border border-line bg-white p-6">
-        <span className="sr-only">{text.loading}</span>
-        <Skeleton kind="lines" rows={12} />
-      </div>
-    );
-  }
-  if (files.isError || !files.data.resume) {
-    return (
-      <LoadFailed
-        error={files.error}
-        message={text.loadFailed}
-        retry={text.retry}
-        onRetry={() => void files.refetch()}
-        retrying={files.isFetching}
-      />
-    );
-  }
-  return <ResumePage resume={files.data.resume} />;
+  return (
+    <QueryRegion
+      query={files}
+      skeleton={{ kind: 'lines', rows: 12 }}
+      label={text.loading}
+      error={
+        <LoadFailed
+          error={files.error}
+          message={text.loadFailed}
+          retry={text.retry}
+          onRetry={() => void files.refetch()}
+          retrying={files.isFetching}
+        />
+      }
+    >
+      {(data) =>
+        data.resume ? (
+          <ResumePage resume={data.resume} />
+        ) : (
+          // Not expected (a ready version always has its résumé): said, without a retry that
+          // would read the same answer.
+          <p className="m-0 text-sm text-ink-soft">{text.unavailable}</p>
+        )
+      }
+    </QueryRegion>
+  );
 }
 
 /**
  * The template's blocks as a page: the name as its heading, then each section's heading and
- * entries. Text only (never markup), as in the files.
+ * entries. Text only (never markup), as in the files. Its words (the section headings, the
+ * fallback name, the separators) come from `resumeBlocks`, not `en.ts`: they are the résumé's
+ * own words, the same as in the PDF and DOCX it previews.
  */
 export function ResumePage({ resume }: { resume: StructuredResume }) {
   const sections = grouped(resumeBlocks(resume));

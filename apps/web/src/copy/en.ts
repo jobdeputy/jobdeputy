@@ -528,6 +528,7 @@ export const en = {
         loading: 'Loading your résumé',
         loadFailed: 'Your résumé didn’t load.',
         retry: 'Try again',
+        unavailable: 'This version’s résumé isn’t available. Re-tailor to make a new one.',
       },
       downloadPdf: 'Download PDF',
       downloadDocx: 'Download DOCX',

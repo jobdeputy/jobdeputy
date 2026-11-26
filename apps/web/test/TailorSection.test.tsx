@@ -528,4 +528,49 @@ describe('tailoring in the job pane (#51 PR C)', () => {
     fireEvent.click(dialog.getByRole('button', { name: 'Try again' }));
     expect(await dialog.findByRole('article', { name: 'Résumé preview' })).toBeTruthy();
   });
+
+  it('keeps an open preview open when a re-tailor ends, showing the new version (C2 round 1)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { fake, clock } = await setUp({ crawlMs: 1000 });
+    await fake.request('PUT', '/me/profile', { version: 0, firstName: 'Sam', lastName: 'Example' });
+    const section = await openSection(BACKEND);
+    fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
+    await section.findByText('Tailoring your résumé for Acme…');
+    clock.now += 2000;
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    await section.findByText('86%');
+    await fake.request('POST', '/me/profile/skills', { skill: 'Kafka' });
+    fireEvent.click(section.getByRole('button', { name: 'Re-tailor' }));
+    await section.findByText('Tailoring your résumé for Acme…');
+    fireEvent.click(section.getByRole('button', { name: 'Preview' }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Your résumé for Acme' }));
+    expect(await dialog.findByText(/AWS Lambda, DynamoDB, GraphQL$/)).toBeTruthy();
+    clock.now += 2000;
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    // Still open: the new version's résumé (with Kafka) replaces the one before.
+    expect(await dialog.findByText(/AWS Lambda, DynamoDB, GraphQL, Kafka/)).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: 'Your résumé for Acme' })).toBeTruthy();
+  });
+
+  it('says a ready version without its résumé is unavailable, with no retry (C2 round 1)', async () => {
+    await setUp({
+      wrap: (api) => ({
+        ...api,
+        async request<T>(m: ApiMethod, p: `/${string}`, body?: unknown): Promise<T> {
+          const answer = await api.request<T>(m, p, body);
+          if (m === 'GET' && /^\/me\/tailorings\/\d+$/.test(p)) {
+            const { resume: _gone, ...rest } = answer as { resume?: unknown };
+            return rest as T;
+          }
+          return answer;
+        },
+      }),
+    });
+    const section = await openSection(BACKEND);
+    fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
+    fireEvent.click(await section.findByRole('button', { name: 'Preview' }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Your résumé for Acme' }));
+    expect(await dialog.findByText(/isn’t available\. Re-tailor to make a new one\./)).toBeTruthy();
+    expect(dialog.queryByRole('button', { name: 'Try again' })).toBeNull();
+  });
 });

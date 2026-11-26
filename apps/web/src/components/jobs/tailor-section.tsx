@@ -162,16 +162,11 @@ export function TailorSection({
           </>
         )}
       </div>
-      {/* Keyed by version: a new one starts with nothing said about the one before. */}
-      {ready && (
-        <ReadyVersion
-          key={ready.documentId}
-          version={ready}
-          job={job}
-          company={company}
-          working={working}
-        />
-      )}
+      {/*
+       * Not keyed by version: an open Preview stays open (showing the new version) when a
+       * re-tailor ends. Its parts that say something about a version are keyed by it.
+       */}
+      {ready && <ReadyVersion version={ready} job={job} company={company} working={working} />}
       <div className="grid justify-items-start gap-2">
         <Button
           variant={ready ? 'outline' : 'default'}
@@ -303,7 +298,11 @@ function ReadyVersion({
         </div>
       )}
       {score && score.missingUnproven.length > 0 && (
-        <MissingSkills keywords={score.missingUnproven} working={working} />
+        <MissingSkills
+          key={version.documentId}
+          keywords={score.missingUnproven}
+          working={working}
+        />
       )}
       <Downloads
         version={version}
@@ -443,6 +442,11 @@ function Downloads({ version, preview }: { version: Tailoring; preview?: ReactNo
   const api = useApi();
   const [getting, setGetting] = useState<'pdf' | 'docx' | null>(null);
   const [said, setSaid] = useState<Said | null>(null);
+  // A new version: what was said about the one before no longer holds.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: cleared on each new version.
+  useEffect(() => {
+    setSaid(null);
+  }, [version.documentId]);
   async function download(kind: 'pdf' | 'docx') {
     if (getting !== null) return;
     setGetting(kind);
