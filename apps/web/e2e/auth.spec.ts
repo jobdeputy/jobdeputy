@@ -147,20 +147,38 @@ test('creates an account, confirms it with the code, lands signed in, and signs 
   // Its jobs are in Matches.
   await tabs.getByRole('link', { name: 'Matches' }).click();
   await expect(page).toHaveURL(/\/matches$/);
-  // The company it found, its best jobs ranked, each with its fit (#49 PR C).
-  const acme = page.getByRole('article', { name: 'Acme' });
-  await expect(acme.getByRole('listitem')).toHaveCount(3);
-  await expect(acme.getByText('Strong fit')).toBeVisible();
+  // Its jobs in the table, best fit first, each with its fit (#52 PR C).
+  const table = page.getByRole('table', { name: 'Your matches' });
+  await expect(table.getByRole('row')).toHaveCount(4);
+  await expect(table.getByText('Strong fit')).toBeVisible();
   await expectNoAccessibilityViolations(page);
-  // A job opens in its preview (#49 PR D): its title takes the focus, the posting is read, axe.
-  await acme.getByRole('button', { name: 'Senior Backend Engineer' }).click();
+  // A row opens its job in the pane (#49 PR D): its title takes the focus, the posting is read, axe.
+  const row = table.getByRole('button', { name: 'Senior Backend Engineer' });
+  await row.click();
   const job = page.getByRole('region', { name: 'Senior Backend Engineer' });
   await expect(job.getByRole('heading', { level: 2 })).toBeFocused();
   await expect(job.getByText(/Design and run TypeScript services on AWS/)).toBeVisible();
   await expectNoAccessibilityViolations(page);
   await expectNoHorizontalScroll(page);
-  await job.getByRole('button', { name: /Close|Back to your companies/ }).click();
-  await expect(acme.getByRole('button', { name: 'Senior Backend Engineer' })).toBeFocused();
+  // Manual apply opens the employer's page in a new tab, and asks; I applied moves it out.
+  const employer = page.waitForEvent('popup');
+  await job.getByRole('link', { name: /^Manual apply/ }).click();
+  await (await employer).close();
+  await expect(
+    job.getByRole('group', { name: 'Did you apply on the employer site?' }),
+  ).toBeFocused();
+  await expectNoAccessibilityViolations(page);
+  await job.getByRole('button', { name: 'I applied' }).click();
+  await expect(page.getByText(/^Marked as applied: Senior Backend Engineer/)).toBeFocused();
+  await expect(table.getByRole('row')).toHaveCount(3);
+  await expectNoAccessibilityViolations(page);
+  await expectNoHorizontalScroll(page);
+  // Undo brings it back; then open it again and close: the focus goes back to its row.
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByText(/is back in Matches\.$/)).toBeFocused();
+  await row.click();
+  await job.getByRole('button', { name: /Close|Back to Matches/ }).click();
+  await expect(row).toBeFocused();
   await expectNoHorizontalScroll(page);
   await page
     .getByRole('navigation', { name: 'Primary' })

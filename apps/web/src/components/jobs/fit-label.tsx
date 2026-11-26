@@ -1,5 +1,5 @@
 import { copy } from '@/copy/index.ts';
-import type { Fit } from '@/lib/api/companies.ts';
+import type { Fit } from '@/lib/api/jobs.ts';
 import { cn } from '@/lib/utils.ts';
 
 /** Each fit's square, in the tokens' tones (the prototype's tone label). */
@@ -23,7 +23,7 @@ export function FitLabel({ fit, className }: { fit: Fit; className?: string }) {
         className,
       )}
     >
-      {copy.jobsPage.companies.fit[fit]}
+      {copy.jobsPage.job.fit[fit]}
     </span>
   );
 }

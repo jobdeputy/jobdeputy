@@ -112,3 +112,23 @@ describe('sortRows', () => {
     expect(ids('descending')).toEqual(['x', 'z', 'y', 'u']);
   });
 });
+
+describe('the open row (#52 PR C)', () => {
+  it('marks only the row whose job is open', () => {
+    render(
+      <JobsTable
+        label="Jobs"
+        columns={COLUMNS}
+        rows={ROWS}
+        rowKey={(row) => row.id}
+        openKey="c"
+        empty="none"
+      />,
+    );
+    const open = screen
+      .getAllByRole('row')
+      .filter((row) => row.hasAttribute('data-open'))
+      .map((row) => within(row).getAllByRole('cell')[0]?.textContent);
+    expect(open).toEqual(['gamma']);
+  });
+});

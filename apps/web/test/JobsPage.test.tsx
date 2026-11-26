@@ -7,7 +7,6 @@ import { MatchesPage } from '../src/components/jobs/matches-page.tsx';
 import { SearchPage, withScheme } from '../src/components/jobs/search-page.tsx';
 import { copy } from '../src/copy/index.ts';
 import { ApiError } from '../src/lib/api/client.ts';
-import { companiesKey } from '../src/lib/api/companies.ts';
 import {
   type Crawl,
   crawlName,
@@ -23,6 +22,7 @@ import {
 } from '../src/lib/api/crawls.ts';
 import { createFakeApi } from '../src/lib/api/fake.ts';
 import { ApiContext } from '../src/lib/api/index.ts';
+import { matchesKey } from '../src/lib/api/jobs.ts';
 
 afterEach(cleanup);
 
@@ -76,6 +76,10 @@ function fieldError(): string | null {
       .map((id) => document.getElementById(id))
       .find((el) => el?.className.includes('danger'))?.textContent ?? null
   );
+}
+/** A company's first row in Matches' table, once it shows. */
+async function findCompany(name: string, options?: { timeout: number }) {
+  return (await screen.findAllByRole('cell', { name }, options))[0];
 }
 /** What the form says under its buttons (an alert), or ''. */
 const notice = () => screen.getAllByRole('alert')[0]?.textContent ?? '';
@@ -308,14 +312,14 @@ describe('Job matches: following the newest link (#49)', () => {
   });
 });
 
-describe('Job matches: your companies under the link (#49 PR C)', () => {
-  /** Counts the companies list's reads from now on. */
+describe('Matches follows the links given (#49, #52 PR C)', () => {
+  /** Counts Matches' reads from now on. */
   function companyReads(api: FakeApi) {
     const request = vi.spyOn(api, 'request');
-    return () => request.mock.calls.filter(([, path]) => String(path).startsWith('/me/companies'));
+    return () => request.mock.calls.filter(([, path]) => path === '/me/matches');
   }
 
-  it('reads the companies once the newest crawl is known, and again only when its work ends', async () => {
+  it('reads Matches once the newest crawl is known, and again only when its work ends', async () => {
     const api = heldApi();
     const reads = companyReads(api);
     await renderPage(api);
@@ -333,7 +337,7 @@ describe('Job matches: your companies under the link (#49 PR C)', () => {
     );
     expect(reads()).toHaveLength(1);
     api.next();
-    expect(await screen.findByRole('article', { name: 'Acme' }, { timeout: 3000 })).toBeTruthy();
+    expect(await findCompany('Acme', { timeout: 3000 })).toBeTruthy();
     expect(reads()).toHaveLength(2);
   });
 
@@ -343,17 +347,17 @@ describe('Job matches: your companies under the link (#49 PR C)', () => {
     api.next(4);
     const reads = companyReads(api);
     await renderPage(api);
-    expect(await screen.findByRole('article', { name: 'Acme' })).toBeTruthy();
+    expect(await findCompany('Acme')).toBeTruthy();
     expect(reads()).toHaveLength(1);
     // Another tab sends a link and it ends; back here, the newest crawl is read on focus.
     await api.request('POST', '/me/crawls', { url: 'https://jobs.lever.co/globex' });
     api.next(4);
     fireEvent.focus(window);
     window.dispatchEvent(new Event('visibilitychange'));
-    expect(await screen.findByRole('article', { name: 'Globex' }, { timeout: 3000 })).toBeTruthy();
+    expect(await findCompany('Globex', { timeout: 3000 })).toBeTruthy();
     expect(reads()).toHaveLength(2);
     // The list stayed on screen while it was read again (no skeleton in between).
-    expect(screen.getByRole('article', { name: 'Acme' })).toBeTruthy();
+    expect(screen.getAllByRole('cell', { name: 'Acme' })[0]).toBeTruthy();
   });
 
   it('does not read them again for a link that failed (it changed nothing)', async () => {
@@ -402,7 +406,7 @@ describe('Job matches: a GitHub list (#50)', () => {
     const bar = await screen.findByRole('progressbar', { name: '1 of 5 companies read' });
     expect(bar.getAttribute('aria-valuenow')).toBe('20');
     // The companies come in as they are read.
-    expect(await screen.findByRole('article', { name: 'Acme' }, { timeout: 3000 })).toBeTruthy();
+    expect(await findCompany('Acme', { timeout: 3000 })).toBeTruthy();
     api.next(4);
     // Read: its one AI run scores them all, then it is done.
     expect(
@@ -420,7 +424,7 @@ describe('Job matches: a GitHub list (#50)', () => {
     expect(done.closest('[role="status"]')).toBeTruthy();
     expect(screen.getByText('3 companies skipped: their sites can’t be read yet.')).toBeTruthy();
     expect(screen.getByText('1 company couldn’t be read.')).toBeTruthy();
-    expect(await screen.findByRole('article', { name: 'Umbrella' })).toBeTruthy();
+    expect(await findCompany('Umbrella')).toBeTruthy();
   });
 
   it('says when a list fits none of the roles, or none of its sites can be read', async () => {
@@ -473,28 +477,28 @@ describe('Job matches: a GitHub list (#50)', () => {
     }
   });
 
-  it("keeps the companies already loaded as each of a list's companies is read", async () => {
+  it("reads Matches again in place as each of a list's companies is read", async () => {
     const api = heldApi();
     const request = vi.spyOn(api, 'request');
     const companyReads = () =>
-      request.mock.calls.filter(([, path]) => String(path).startsWith('/me/companies')).length;
+      request.mock.calls.filter(([, path]) => path === '/me/matches').length;
     const { queries } = await renderPage(api);
     // The companies' queries: a new one would start again from the first page.
     const lists = () =>
       queries
         .getQueryCache()
-        .findAll({ queryKey: companiesKey })
+        .findAll({ queryKey: matchesKey })
         .map((query) => JSON.stringify(query.queryKey))
         .sort();
     type('github.com/acme/list');
     findJobs();
     await waitFor(() => expect(input().value).toBe(''));
     api.next(3);
-    expect(await screen.findByRole('article', { name: 'Acme' }, { timeout: 3000 })).toBeTruthy();
+    expect(await findCompany('Acme', { timeout: 3000 })).toBeTruthy();
     const during = lists();
     const reads = companyReads();
     api.next();
-    expect(await screen.findByRole('article', { name: 'Globex' }, { timeout: 3000 })).toBeTruthy();
+    expect(await findCompany('Globex', { timeout: 3000 })).toBeTruthy();
     // Read again in place: the same query (its pages kept), not a new list.
     expect(lists()).toEqual(during);
     expect(companyReads()).toBeGreaterThan(reads);
@@ -505,11 +509,9 @@ describe('Job matches: a GitHub list (#50)', () => {
       {},
       { timeout: 3000 },
     );
-    expect(
-      await screen.findByRole('article', { name: 'Umbrella' }, { timeout: 3000 }),
-    ).toBeTruthy();
+    expect(await findCompany('Umbrella', { timeout: 3000 })).toBeTruthy();
     expect(screen.queryByText(/^Done with/)).toBeNull();
-    expect(screen.getByRole('article', { name: 'Acme' })).toBeTruthy();
+    expect(screen.getAllByRole('cell', { name: 'Acme' })[0]).toBeTruthy();
   });
 
   it('says why a repository could not be read as a list', async () => {

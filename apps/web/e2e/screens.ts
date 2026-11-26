@@ -67,12 +67,27 @@ export const SCREENS: Screen[] = [
   { name: 'jobs', path: '/', open: 'Get started free', still: true, steps: toJobs },
   { name: 'search', path: '/', open: 'Get started free', still: true, steps: toSearch },
   // Search (#49 Find jobs): the deputy at work, done (its run in the history), a failed link.
-  // Matches with the companies a link found, and a job open in its preview.
+  // Matches with the jobs a link found, and a job open in its pane.
   { name: 'jobs-working', path: '/', open: 'Get started free', still: true, steps: toJobsWorking },
   { name: 'jobs-done', path: '/', open: 'Get started free', still: true, steps: toJobsDone },
   { name: 'jobs-failed', path: '/', open: 'Get started free', still: true, steps: toJobsFailed },
   { name: 'matches', path: '/', open: 'Get started free', still: true, steps: toMatches },
   { name: 'jobs-preview', path: '/', open: 'Get started free', still: true, steps: toJobsPreview },
+  // #52 PR C: applying from the pane: "Did you apply?", then the job out of Matches with Undo.
+  {
+    name: 'jobs-apply-ask',
+    path: '/',
+    open: 'Get started free',
+    still: true,
+    steps: toJobsApplyAsk,
+  },
+  {
+    name: 'matches-applied',
+    path: '/',
+    open: 'Get started free',
+    still: true,
+    steps: toMatchesApplied,
+  },
   {
     name: 'jobs-ai-used-up',
     path: '/',
@@ -394,11 +409,11 @@ async function toJobsDone(page: Page) {
   await page.getByRole('cell', { name: 'Done', exact: true }).waitFor();
 }
 
-/** Matches after a link was read: its company, best jobs ranked. */
+/** Matches after a link was read: its jobs in the table, best fit first. */
 async function toMatches(page: Page) {
   await toJobsDone(page);
   await openTab(page, 'Matches');
-  await page.getByRole('article', { name: 'Acme' }).getByText('Strong fit').waitFor();
+  await page.getByRole('table', { name: 'Your matches' }).getByText('Strong fit').waitFor();
 }
 
 /** #50: a GitHub list whose companies are being read (held at its second company). */
@@ -418,14 +433,30 @@ async function toJobsListDone(page: Page) {
   await page.getByRole('cell', { name: 'Done', exact: true }).waitFor();
 }
 
-/** A job open in its preview: beside the list on a wide screen, a view of its own on a phone. */
+/** A job open in its pane: beside the table on a wide screen, a view of its own on a phone. */
 async function toJobsPreview(page: Page) {
   await toMatches(page);
-  await page
-    .getByRole('article', { name: 'Acme' })
-    .getByRole('button', { name: 'Senior Backend Engineer' })
-    .click();
+  await page.getByRole('button', { name: 'Senior Backend Engineer' }).click();
   await page.getByText(/Design and run TypeScript services on AWS/).waitFor();
+}
+
+/**
+ * #52 PR C: Manual apply pressed, and "Did you apply?" asked in the job's pane. The employer's
+ * tab it opens is closed at once (the fake's boards are not real sites).
+ */
+async function toJobsApplyAsk(page: Page) {
+  await toJobsPreview(page);
+  const employer = page.waitForEvent('popup');
+  await page.getByRole('link', { name: /^Manual apply/ }).click();
+  await (await employer).close();
+  await page.getByRole('group', { name: 'Did you apply on the employer site?' }).waitFor();
+}
+
+/** #52 PR C: a job marked applied: out of Matches, the line saying so with Undo. */
+async function toMatchesApplied(page: Page) {
+  await toJobsApplyAsk(page);
+  await page.getByRole('button', { name: 'I applied' }).click();
+  await page.getByRole('button', { name: 'Undo' }).waitFor();
 }
 
 /** A link that could not be read, its reason beside it. */

@@ -434,6 +434,57 @@ export const en = {
     eyebrow: 'Matches',
     title: 'The best jobs at each company.',
     intro: 'The 3 roles that fit you best at each company your deputy has read.',
+    /** The jobs not applied to yet, in the jobs table (#52 PR C). */
+    list: {
+      title: 'Your matches',
+      loading: 'Loading your matches',
+      loadFailed: 'Your matches didn’t load.',
+      retry: 'Try again',
+      emptyTitle: 'No matches yet',
+      emptyLine:
+        'Give your deputy a careers page in Search. The best roles at each company land here.',
+      /** The empty Matches tab points to Search. */
+      toSearch: 'Go to Search',
+      /** Past the API's most (500): the rest are not shown. */
+      truncated: 'Showing your best {count} matches.',
+      columns: {
+        job: 'Job',
+        company: 'Company',
+        where: 'Where',
+        fit: 'Fit',
+        posted: 'Posted',
+      },
+      /** The board gave no date. */
+      postedNone: 'Not given',
+      /** The board gave no place. */
+      whereNone: 'Not given',
+      /** A job opened here left Matches without this page's doing (another tab, or a crawl). */
+      left: '{title} at {company} is no longer in Matches: it was marked as applied elsewhere, or its posting closed.',
+    },
+    /** In the job pane: applying (#52 PR C; the prototype's "Did you apply?" check). */
+    apply: {
+      manual: 'Manual apply',
+      manualHint: 'Opens the employer’s application in a new tab. You apply there yourself.',
+      auto: 'Auto apply',
+      soon: 'Soon',
+      autoHint: 'Soon your deputy fills in applications for you, through its browser extension.',
+      /** Asked once Manual apply has opened the employer's page. */
+      ask: 'Did you apply on the employer site?',
+      askLine: 'Confirm only if you sent the application yourself.',
+      yes: 'I applied',
+      no: 'Not yet',
+      saving: 'Saving…',
+      failed: 'That didn’t save. Try again.',
+      offline: 'You’re offline, so that didn’t save. Try again once you’re back online.',
+      /** Said once it is saved: the job leaves Matches. */
+      applied: 'Marked as applied: {title} at {company}. It left Matches.',
+      undo: 'Undo',
+      undoing: 'Undoing…',
+      undone: '{title} at {company} is back in Matches.',
+      undoFailed: 'Couldn’t undo that. Try again.',
+      /** The job moved on elsewhere (another tab): Undo goes. */
+      undoChanged: 'Couldn’t undo: this job was changed elsewhere.',
+    },
   },
   /** Find jobs, its progress and outcome, and the companies (#49), shared by the jobs tabs. */
   jobsPage: {
@@ -518,22 +569,8 @@ export const en = {
         other: '{done} of {count} companies read',
       },
     },
-    /** The companies and their best jobs (#49 PR C). */
-    companies: {
-      title: 'Your companies',
-      loading: 'Loading your matches',
-      loadFailed: 'Your matches didn’t load.',
-      retry: 'Try again',
-      emptyTitle: 'No matches yet',
-      emptyLine:
-        'Give your deputy a careers page in Search. The best roles at each company land here.',
-      /** #52: the empty Matches tab points to Search. */
-      toSearch: 'Go to Search',
-      /** Beside a company: how many of its best roles show (not how many it has). */
-      roles: { one: 'Its best role', other: 'Its best {count} roles' },
-      more: 'More companies',
-      moreFailed: 'More companies didn’t load. Press More companies to try again.',
-      loadingMore: 'Loading more…',
+    /** A job's facts, wherever it shows (#49). */
+    job: {
       /** Where a job is worked (the API's `onsite`, `hybrid`, `remote`). */
       workplace: { onsite: 'On-site', hybrid: 'Hybrid', remote: 'Remote' },
       /** How well a job fits, from the AI's score (#49). */
@@ -547,7 +584,7 @@ export const en = {
     /** The job open beside the list (#49 PR D): what it is, why it fits, the posting. */
     preview: {
       label: 'The job you opened',
-      back: 'Back to your companies',
+      back: 'Back to Matches',
       close: 'Close',
       posted: 'Posted {date}',
       score: 'Scored {score} of 100 against your roles.',
