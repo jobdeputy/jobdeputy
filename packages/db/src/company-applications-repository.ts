@@ -1,13 +1,14 @@
 import type { DynamoDBDocumentClient, TransactWriteCommandInput } from '@aws-sdk/lib-dynamodb';
 import { GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import type { JobStage } from '@jobdeputy/shared/applications';
-import { cooldownUntil } from '@jobdeputy/shared/applications';
+import { cooldownUntil, MAX_APPLY_COOLDOWN_DAYS } from '@jobdeputy/shared/applications';
 
 type TransactItem = NonNullable<TransactWriteCommandInput['TransactItems']>[number];
 
 /**
  * `usage` → `APPLIED#<companyKey>` (#52 PR E, 0013): when the user applied to each of one
- * company's jobs, `jobId → appliedAt`, kept while it counts toward the cooldown. Written
+ * company's jobs, `jobId → appliedAt`, kept 365 days (the longest window an admin can set);
+ * an apply undone before any later stage is taken out, one undone after it stays. Written
  * only in the same transaction as the job's stage, whole, if still at `version`: two
  * applies at once can never both take the last place. Its own item, not the `COMPANY#`
  * one, which each crawl replaces whole.
@@ -29,7 +30,7 @@ export interface CooldownRule {
  * Applications are kept this long (the admin's longest window), whatever the window now: a
  * window raised later still counts the ones already made. Counting uses the current window.
  */
-export const APPLIED_KEEP_DAYS = 365;
+export const APPLIED_KEEP_DAYS = MAX_APPLY_COOLDOWN_DAYS;
 
 /** What a stage change must also write, or why it is refused (JobRepository.setStage). */
 export type StageGuardCheck =
@@ -72,12 +73,12 @@ export class CompanyApplicationsRepository {
   }
 
   /**
-   * Every company's applications, by company key, for Matches. One small item per company
-   * applied to in the cooldown window (older ones expire), so this stays small; eventually
+   * Every company's applications (`jobId → appliedAt`), by company key, for Matches. One
+   * small item per company applied to in the last 365 days, so this stays small; eventually
    * consistent is enough for a list (the stage change re-checks).
    */
-  async list(userId: string): Promise<Map<string, string[]>> {
-    const byCompany = new Map<string, string[]>();
+  async list(userId: string): Promise<Map<string, CompanyApplied['applied']>> {
+    const byCompany = new Map<string, CompanyApplied['applied']>();
     let start: Record<string, unknown> | undefined;
     do {
       const res = await this.client.send(
@@ -90,8 +91,9 @@ export class CompanyApplicationsRepository {
         }),
       );
       for (const item of res.Items ?? []) {
-        const applied = Object.values((item.applied as CompanyApplied['applied']) ?? {});
-        if (applied.length > 0) byCompany.set(String(item.sk).slice('APPLIED#'.length), applied);
+        const applied = (item.applied as CompanyApplied['applied'] | undefined) ?? {};
+        if (Object.keys(applied).length > 0)
+          byCompany.set(String(item.sk).slice('APPLIED#'.length), applied);
       }
       start = res.LastEvaluatedKey;
     } while (start);
@@ -102,8 +104,9 @@ export class CompanyApplicationsRepository {
    * The cooldown, for JobRepository.setStage: applying (new → applied) is refused while the
    * company cools down, else adds the job; undoing it (applied → new) takes it out again.
    * Later stages leave the count as it is, and so does undoing an application that went past
-   * applied (it was at interviewing or later, then set back): the company saw it. The rule is
-   * read only when applying or undoing.
+   * applied (it was at interviewing or later, then set back): the company saw it. The admin's
+   * rule is read only when applying. A job's own entry never counts against applying to it
+   * again (Matches counts the same way).
    */
   guard(userId: string, rule: () => Promise<CooldownRule>): StageGuard {
     return {
@@ -113,9 +116,9 @@ export class CompanyApplicationsRepository {
         if (!applying && !undoing) return {};
         // Its stage moved after the apply: no longer a "Yes" given by mistake.
         if (undoing && job.stageAt !== job.appliedAt) return {};
-        const [current, { limit, days }] = await Promise.all([
+        const [current, counting] = await Promise.all([
           this.get(userId, job.companyKey),
-          rule(),
+          applying ? rule() : undefined,
         ]);
         const keep = APPLIED_KEEP_DAYS * 86_400_000;
         const applied = Object.fromEntries(
@@ -123,7 +126,8 @@ export class CompanyApplicationsRepository {
             ([id, at]) => id !== job.jobId && Date.parse(at) + keep > now.getTime(),
           ),
         );
-        if (applying) {
+        if (counting) {
+          const { limit, days } = counting;
           // Its own earlier entry (applied, undone after later stages, applied again) is replaced.
           const until = cooldownUntil(Object.values(applied), now, limit, days);
           if (until !== undefined) return { refuse: { until, limit, days } };

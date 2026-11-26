@@ -55,7 +55,7 @@ describe('CompanyApplicationsRepository (#52 PR E)', () => {
     // Another company is not affected.
     expect(await guard.check(job('k1', 'lever:globex'), apply, NOW)).toHaveProperty('item');
     expect(await repo.list(USER)).toEqual(
-      new Map([[ACME, [daysAgo(20), daysAgo(10), daysAgo(1)]]]),
+      new Map([[ACME, { j0: daysAgo(20), j1: daysAgo(10), j2: daysAgo(1) }]]),
     );
   });
 
@@ -101,6 +101,16 @@ describe('CompanyApplicationsRepository (#52 PR E)', () => {
     const straight = { ...job('j1'), appliedAt: daysAgo(1), stageAt: daysAgo(1) };
     await write(await guard.check(straight, undo, NOW));
     expect(Object.keys(stored()?.applied as object)).toHaveLength(2);
+  });
+
+  it('reads the admin rule only when applying, never for an undo', async () => {
+    const { t, guard, write, stored } = setup();
+    const repo = new CompanyApplicationsRepository(t.client, 'Usage');
+    const failing = repo.guard(USER, async () => Promise.reject(new Error('SSM down')));
+    await expect(failing.check(job('j0'), apply, NOW)).rejects.toThrow('SSM down');
+    await write(await guard.check(job('j0'), apply, NOW));
+    await write(await failing.check(job('j0'), undo, NOW));
+    expect(stored()?.applied).toEqual({});
   });
 
   it('an item left empty expires at once (not at a 1970 time, which TTL never deletes)', async () => {

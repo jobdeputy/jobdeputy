@@ -79,7 +79,7 @@ function deps(
   };
   const companies = { listShown: vi.fn(async () => shown) };
   const applications = {
-    list: vi.fn(async () => new Map<string, string[]>()),
+    list: vi.fn(async () => new Map<string, Record<string, string>>()),
     guard: vi.fn(
       (_userId: string, _rule: () => Promise<unknown>): StageGuard => ({ check: async () => ({}) }),
     ),
@@ -492,15 +492,23 @@ describe('GET /me/matches (#52)', () => {
         // Acme: 3 within 30 days (the oldest ends the cooldown); one older does not count.
         [
           'greenhouse:acme',
-          [
-            '2026-09-01T00:00:00.000Z',
-            '2026-09-20T08:00:00.000Z',
-            '2026-10-01T00:00:00.000Z',
-            '2026-10-09T00:00:00.000Z',
-          ],
+          {
+            x1: '2026-09-01T00:00:00.000Z',
+            x2: '2026-09-20T08:00:00.000Z',
+            x3: '2026-10-01T00:00:00.000Z',
+            x4: '2026-10-09T00:00:00.000Z',
+          },
         ],
-        // Globex: 2, under the limit.
-        ['lever:globex', ['2026-10-01T00:00:00.000Z', '2026-10-02T00:00:00.000Z']],
+        // Globex: 3, but one is job C's own (undone after a later stage): it never counts
+        // against applying to C again, as the stage change counts.
+        [
+          'lever:globex',
+          {
+            [id('c')]: '2026-10-03T00:00:00.000Z',
+            x5: '2026-10-01T00:00:00.000Z',
+            x6: '2026-10-02T00:00:00.000Z',
+          },
+        ],
       ]),
     );
     const res = await route(event('GET /me/matches'), d);
@@ -692,6 +700,21 @@ describe('PUT /me/jobs/{jobId}/stage (#52)', () => {
     const body = JSON.parse(res.body as string);
     expect(body).toMatchObject({ code: 'cooling-down', until, job: { jobId: J1, status: 'new' } });
     expect(body.detail).toBe('You reached the limit of 2 applications to this company in 14 days.');
+    const one = await put(
+      { stage: 'applied', from: 'new' },
+      deps({
+        setStage: vi.fn(async () => ({
+          kind: 'cooling-down' as const,
+          job: job(),
+          until,
+          limit: 1,
+          days: 1,
+        })),
+      }),
+    );
+    expect(JSON.parse(one.body as string).detail).toBe(
+      'You reached the limit of 1 application to this company in 1 day.',
+    );
   });
 
   it('409 try-again when the write kept colliding', async () => {

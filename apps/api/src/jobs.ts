@@ -48,7 +48,7 @@ export interface JobsDeps {
   repo: Pick<JobRepository, 'list' | 'get' | 'getSummaries' | 'setStage' | 'listApplied'>;
   /** #49: each company's shown jobs (`usage` `COMPANY#` items), read-only. */
   companies: Pick<CompanyLimitRepository, 'listShown'>;
-  /** #52 PR E: each company's applications in the cooldown window (`usage` `APPLIED#`). */
+  /** #52 PR E: each company's applications in the last 365 days (`usage` `APPLIED#`). */
   applications: Pick<CompanyApplicationsRepository, 'list' | 'guard'>;
   /** #49: the admin's limits (jobs shown per company), and the user's own choice. */
   limits: () => Promise<CrawlLimitsConfig>;
@@ -267,9 +267,13 @@ async function matches(userId: string, deps: JobsDeps) {
     deps.limits(),
   ]);
   const now = deps.now();
-  const cooling = (companyKey: string) => {
-    const at = applied.get(companyKey);
-    return at && cooldownUntil(at, now, limits.applyCompanyLimit, limits.applyCooldownDays);
+  // As the stage change counts: a job's own entry (undone after a later stage) never counts
+  // against applying to it again.
+  const cooling = (job: JobSummaryItem) => {
+    const byJob = applied.get(job.companyKey);
+    if (!byJob) return undefined;
+    const others = Object.entries(byJob).flatMap(([id, at]) => (id === job.jobId ? [] : [at]));
+    return cooldownUntil(others, now, limits.applyCompanyLimit, limits.applyCooldownDays);
   };
   const companies = shown.map((c) => rankShown(c.shown));
   const ids = companies.flat().map((r) => r.jobId);
@@ -301,7 +305,7 @@ async function matches(userId: string, deps: JobsDeps) {
       .slice(0, perCompany);
     for (const { rank, job } of places) {
       if (job.status === 'new' && Date.parse(job.lastSeenAt) >= since) {
-        const until = cooling(job.companyKey);
+        const until = cooling(job);
         rows.push({
           rank,
           view: { ...jobSummary(job), ...(until ? { coolingDownUntil: until } : {}) },
@@ -428,7 +432,7 @@ export async function route(event: Event, deps: JobsDeps): Promise<HttpResponse>
         );
         if (result.kind === 'cooling-down') {
           return problem(409, 'Cooling down', {
-            detail: `You reached the limit of ${result.limit} applications to this company in ${result.days} days.`,
+            detail: `You reached the limit of ${plural(result.limit, 'application')} to this company in ${plural(result.days, 'day')}.`,
             code: 'cooling-down',
             until: result.until,
             requestId,
@@ -456,6 +460,9 @@ export async function route(event: Event, deps: JobsDeps): Promise<HttpResponse>
       return problem(404, 'Not found', { requestId });
   }
 }
+
+/** "1 day", "30 days". */
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 let deps: JobsDeps | undefined;
 

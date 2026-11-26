@@ -40,7 +40,7 @@ sequenceDiagram
   User->>Web: I applied
   Web->>API: PUT /me/jobs/{jobId}/stage {stage: applied, from: new}
   API->>J: GetItem (consistent)
-  API->>U: GetItem APPLIED#<companyKey> (consistent)
+  API->>U: GetItem APPLIED#<companyKey> (consistent; applying, or undoing an apply not yet moved on)
   alt gone / not at "from"
     API-->>Web: 404 / 409 stage-changed (with the job as it is now)
   else 3 applications to the company in the last 30 days (PR E)
@@ -59,7 +59,7 @@ From `new` the only move is to `applied` (nothing else has an applied date). Lat
 
 ## The company cooldown (PR E)
 
-Applying (`new` → `applied`) to a company the user applied to 3 times in the last 30 days is refused (409 `cooling-down`, with `until`); Matches marks that company's jobs `coolingDownUntil`. Every application counts for 30 days from `appliedAt`, whatever its later stage (withdrawn and rejected too: the company saw it); an apply undone straight away (a "Yes" by mistake) does not count, but one undone after a later stage (set back to applied, then undone) still does. The count lives in one `usage` item per company, `APPLIED#<companyKey>`, replaced whole in the stage change's own transaction only at the version read, so two applies at once (two tabs) can never both take the last place: the second reads again and is refused. Applications are kept for 365 days (the longest window an admin can set, so raising the window counts the ones already made), and the item expires (`ttl`) a year after its newest one; one left empty expires at once. The limit and the window are the admin's `applyCompanyLimit` and `applyCooldownDays` ([runbook](../runbooks/crawl-limits.md)). Applications made before PR E have no entry, so they do not count (there were none in prod).
+Applying (`new` → `applied`) to a company the user applied to 3 times in the last 30 days is refused (409 `cooling-down`, with `until`); Matches marks that company's jobs `coolingDownUntil` (a job's own entry never counts against applying to it again, in Matches as in the stage change). Every application counts for 30 days from `appliedAt`, whatever its later stage (withdrawn and rejected too: the company saw it); an apply undone straight away (a "Yes" by mistake) does not count, but one undone after a later stage (set back to applied, then undone) still does. The count lives in one `usage` item per company, `APPLIED#<companyKey>`, replaced whole in the stage change's own transaction only at the version read, so two applies at once (two tabs) can never both take the last place: the second reads again and is refused. Applications are kept for 365 days (the longest window an admin can set, so raising the window counts the ones already made), and the item expires (`ttl`) a year after its newest one; one left empty expires at once. The limit and the window are the admin's `applyCompanyLimit` and `applyCooldownDays` ([runbook](../runbooks/crawl-limits.md)). Applications made before PR E have no entry, so they do not count (there were none in prod).
 
 ## Applications
 
@@ -93,4 +93,4 @@ In Applications a stage moves between `applied`, `interviewing`, `offer`, `rejec
 | The stage, when applied, the résumé used | `jobs` item: `status`, `appliedAt`, `stageAt`, `appliedResumeId` |
 | Applied jobs, newest first | `jobs` GSI `applied` (`userId`, `appliedAt`), keys only |
 | Who changed what | `audit` `job.stage_changed` (`from`, `stage`) |
-| Applications per company in the cooldown window (PR E) | `usage` `APPLIED#<companyKey>`: `applied` (`jobId` → `appliedAt`), `version`, `ttl` |
+| Applications per company in the last 365 days (PR E) | `usage` `APPLIED#<companyKey>`: `applied` (`jobId` → `appliedAt`), `version`, `ttl` |

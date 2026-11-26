@@ -43,6 +43,8 @@ export const jobStageBody = z
  */
 export const DEFAULT_APPLY_COMPANY_LIMIT = 3;
 export const DEFAULT_APPLY_COOLDOWN_DAYS = 30;
+/** The longest window an admin can set; applications are kept this long (packages/db). */
+export const MAX_APPLY_COOLDOWN_DAYS = 365;
 
 /**
  * When a company's cooldown ends, or undefined if the user may apply there now. Every
