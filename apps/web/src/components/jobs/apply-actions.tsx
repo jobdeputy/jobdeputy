@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Button, buttonVariants } from '@/components/ui/button.tsx';
 import { copy } from '@/copy/index.ts';
 import { ApiError, useApi } from '@/lib/api/index.ts';
-import { type JobSummary, setStage } from '@/lib/api/jobs.ts';
+import { type JobSummary, setStage, stageGone } from '@/lib/api/jobs.ts';
 import { cn } from '@/lib/utils.ts';
 
 const text = copy.matchesPage.apply;
@@ -15,8 +15,8 @@ const text = copy.matchesPage.apply;
  * until the browser extension (#54).
  *
  * The question takes the focus when it shows, so it is the first thing met on coming back from
- * the employer's tab. A job found changed elsewhere (409: applied in another tab; it can only
- * have moved on) or gone (404) leaves Matches (`onGone`). Any other failure is said in the
+ * the employer's tab. A job found changed elsewhere (409 `stage-changed`: applied in another
+ * tab; it can only have moved on) or gone (404) leaves Matches (`onGone`). Any other failure is said in the
  * question, and the list is read again (`onFailed`).
  */
 export function ApplyActions({
@@ -48,7 +48,7 @@ export function ApplyActions({
     try {
       onApplied(await setStage(api, job.jobId, 'applied', 'new'));
     } catch (error) {
-      if (error instanceof ApiError && (error.kind === 'conflict' || error.kind === 'not-found')) {
+      if (stageGone(error)) {
         onGone();
         return;
       }

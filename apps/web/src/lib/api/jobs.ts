@@ -107,3 +107,15 @@ export function useMatches(version: string | undefined) {
 export function setStage(api: ApiClient, jobId: string, stage: JobStage, from: JobStage) {
   return api.request<JobSummary>('PUT', `/me/jobs/${jobId}/stage`, { stage, from });
 }
+
+/**
+ * Whether a stage change was refused because the job is not at the stage seen any more (409
+ * `stage-changed`: moved on in another tab or device) or is gone (404). Another 409 (a write
+ * that collided, `try-again`) changed nothing: it can be tried again.
+ */
+export function stageGone(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    (error.kind === 'not-found' || (error.kind === 'conflict' && error.code === 'stage-changed'))
+  );
+}

@@ -17,7 +17,7 @@ import { LoadFailed } from '@/components/setup/parts.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { QueryRegion } from '@/components/ui/query-region.tsx';
 import { copy, fill } from '@/copy/index.ts';
-import { ApiError, useApi } from '@/lib/api/index.ts';
+import { useApi } from '@/lib/api/index.ts';
 import {
   companyName,
   fitOf,
@@ -25,6 +25,7 @@ import {
   type Matches,
   matchesKey,
   setStage,
+  stageGone,
   useMatches,
 } from '@/lib/api/jobs.ts';
 import { followLink } from '@/lib/router.ts';
@@ -48,7 +49,7 @@ type Notice =
       tries: number;
     }
   | { kind: 'undone'; job: JobSummary }
-  | { kind: 'left' };
+  | { kind: 'left'; job: JobSummary };
 
 /**
  * Matches (#52 PR C): every job not applied to yet, in the jobs area's table, best fit first
@@ -91,29 +92,35 @@ export function MatchesList({
     void refetch();
   }, [progress, isFetching, refetch]);
   const wide = useWide();
-  const [openId, setOpenId] = useState<string | null>(null);
+  // The job open: as it was when opened (named by the line if it leaves); its row is read again.
+  const [opened, setOpened] = useState<JobSummary | null>(null);
+  const openId = opened?.jobId ?? null;
   const [notice, setNotice] = useState<Notice | null>(null);
   // As they are now, for a save that ends after the person moved on.
   const openNow = useRef(openId);
-  openNow.current = openId;
   const noticeNow = useRef(notice);
-  noticeNow.current = notice;
+  useEffect(() => {
+    openNow.current = openId;
+    noticeNow.current = notice;
+  });
   const rows = matches.data?.jobs;
   const open = (openId !== null && rows?.find((job) => job.jobId === openId)) || null;
   // The job open left the list without this page's doing (another tab, a crawl): the pane
   // closes and says why.
-  const left = openId !== null && rows !== undefined && !open;
+  const left = opened !== null && rows !== undefined && !open;
   const section = useRef<HTMLElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
+  const noticeBox = useRef<HTMLDivElement>(null);
   const noticeLine = useRef<HTMLParagraphElement>(null);
-  // Whether the next notice takes the focus: not from another job opened meanwhile.
+  // Whether the next notice takes the focus (see `focusFreed`).
   const noticeTakesFocus = useRef(false);
   useEffect(() => {
     if (!left) return;
-    noticeTakesFocus.current = true;
-    setOpenId(null);
-    setNotice({ kind: 'left' });
-  }, [left]);
+    // Its pane is already gone: the focus it had is lost.
+    noticeTakesFocus.current = focusFreed(null);
+    setNotice({ kind: 'left', job: opened });
+    setOpened(null);
+  }, [left, opened]);
   useEffect(() => {
     if (!notice || !noticeTakesFocus.current) return;
     noticeTakesFocus.current = false;
@@ -139,10 +146,11 @@ export function MatchesList({
   }, [wide, open]);
   function close() {
     const jobId = openId;
-    setOpenId(null);
+    setOpened(null);
     // Back to the row that opened it, once the table shows again; to the heading if a list read
-    // again left it out.
+    // again left it out. Not if the focus went somewhere meanwhile.
     requestAnimationFrame(() => {
+      if (!focusFreed(null)) return;
       const row = section.current?.querySelector<HTMLElement>(`[data-job-id="${jobId}"]`);
       (row ?? heading.current)?.focus();
     });
@@ -152,22 +160,24 @@ export function MatchesList({
     if (openId === job.jobId) close();
     else {
       setNotice(null);
-      setOpenId(job.jobId);
+      setOpened(job);
     }
   }
   /**
    * A job out of Matches: marked applied here, or found applied elsewhere (or gone) when this
    * page tried. Out of the table at once, then read again (a read on its way could bring it
-   * back). Its pane closes, and the line saying so takes the focus, unless another job was
-   * opened meanwhile (that one stays, and keeps it).
+   * back). Its pane closes if it is still open; the line saying so takes the focus only if the
+   * focus was in that pane, or lost.
    */
   function leave(job: JobSummary, said: Notice) {
     queries.setQueriesData<Matches>({ queryKey: matchesKey }, (was) =>
       was ? { ...was, jobs: was.jobs.filter((each) => each.jobId !== job.jobId) } : was,
     );
-    const elsewhere = openNow.current !== null && openNow.current !== job.jobId;
-    if (!elsewhere) setOpenId(null);
-    noticeTakesFocus.current = !elsewhere;
+    const stillOpen = openNow.current === job.jobId;
+    noticeTakesFocus.current = focusFreed(
+      stillOpen ? document.getElementById('job-preview') : null,
+    );
+    if (stillOpen) setOpened(null);
     setNotice(said);
     void queries.invalidateQueries({ queryKey: matchesKey });
   }
@@ -180,20 +190,20 @@ export function MatchesList({
     setNotice((was) => (was?.kind === 'applied' ? { ...was, undo: 'undoing' } : was));
     try {
       await setStage(api, job.jobId, 'new', 'applied');
-      // Back in its place once the list is read again.
-      await queries.invalidateQueries({ queryKey: matchesKey });
+      // Saved: said now; the job is back in its place once the list is read again.
+      void queries.invalidateQueries({ queryKey: matchesKey });
       if (!offersUndo(job)) return;
-      // Undo went with its line's change: the line takes the focus.
-      noticeTakesFocus.current = true;
+      // Undo goes with the line's change: the line takes the focus if Undo had it.
+      noticeTakesFocus.current = focusFreed(noticeBox.current);
       setNotice({ kind: 'undone', job });
     } catch (error) {
       // Whatever happened, Matches as it is now (an undo done elsewhere brings the job back).
       void queries.invalidateQueries({ queryKey: matchesKey });
       if (!offersUndo(job)) return;
-      const changed =
-        error instanceof ApiError && (error.kind === 'conflict' || error.kind === 'not-found');
-      // Refused for good: Undo goes, and its line takes the focus.
-      noticeTakesFocus.current = changed;
+      // Changed elsewhere for good: Undo goes (the line takes the focus if it had it); any
+      // other failure keeps it, to try again.
+      const changed = stageGone(error);
+      noticeTakesFocus.current = changed && focusFreed(noticeBox.current);
       setNotice((was) =>
         was?.kind === 'applied'
           ? { ...was, undo: changed ? 'changed' : 'failed', tries: was.tries + 1 }
@@ -219,7 +229,7 @@ export function MatchesList({
       >
         {text.title}
       </h2>
-      {notice && <NoticeLine notice={notice} line={noticeLine} onUndo={undo} />}
+      {notice && <NoticeLine notice={notice} box={noticeBox} line={noticeLine} onUndo={undo} />}
       {/* Beside a job's pane the table takes the larger part (its rows stack when narrow). */}
       <div
         className={cn(
@@ -301,7 +311,7 @@ export function MatchesList({
                 onApplied={() =>
                   leave(open, { kind: 'applied', job: open, undo: 'ready', tries: 0 })
                 }
-                onGone={() => leave(open, { kind: 'left' })}
+                onGone={() => leave(open, { kind: 'left', job: open })}
                 onFailed={() => void refetch()}
               />
             }
@@ -369,22 +379,26 @@ function columnsFor(openId: string | null, onOpen: (job: JobSummary) => void) {
 /** The line above the table after the open job left it (see Notice). */
 function NoticeLine({
   notice,
+  box,
   line,
   onUndo,
 }: {
   notice: Notice;
+  box: RefObject<HTMLDivElement | null>;
   line: RefObject<HTMLParagraphElement | null>;
   onUndo: (job: JobSummary) => void;
 }) {
-  const words =
+  const words = fill(
     notice.kind === 'left'
       ? text.left
-      : fill(notice.kind === 'applied' ? applyText.applied : applyText.undone, {
-          title: notice.job.title,
-          company: companyName(notice.job),
-        });
+      : notice.kind === 'applied'
+        ? applyText.applied
+        : applyText.undone,
+    { title: notice.job.title, company: companyName(notice.job) },
+  );
   return (
     <div
+      ref={box}
       className={cn(
         'flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[18px] border px-4 py-3',
         notice.kind === 'left' ? 'border-line bg-paper' : 'border-green-line bg-green-wash',
@@ -424,4 +438,13 @@ function NoticeLine({
       )}
     </div>
   );
+}
+
+/**
+ * Whether a line replacing what just went (`gone`: a job's pane, Undo's line) may take the
+ * focus: only if the focus was in it, or is lost. Never from where the person has moved on to.
+ */
+function focusFreed(gone: Element | null): boolean {
+  const at = document.activeElement;
+  return at === null || at === document.body || (gone?.contains(at) ?? false);
 }

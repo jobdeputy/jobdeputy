@@ -458,8 +458,8 @@ export const en = {
       postedNone: 'Not given',
       /** The board gave no place. */
       whereNone: 'Not given',
-      /** The job open left Matches without this page's doing (another tab, or a crawl). */
-      left: 'The job you had open is no longer in Matches: it was marked as applied elsewhere, or its posting closed.',
+      /** A job opened here left Matches without this page's doing (another tab, or a crawl). */
+      left: '{title} at {company} is no longer in Matches: it was marked as applied elsewhere, or its posting closed.',
     },
     /** In the job pane: applying (#52 PR C; the prototype's "Did you apply?" check). */
     apply: {

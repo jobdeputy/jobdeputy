@@ -528,7 +528,7 @@ describe('applying from the job’s pane (#52 PR C)', () => {
     });
     fireEvent.click(preview().getByRole('button', { name: 'I applied' }));
     const said = await screen.findByText(
-      'The job you had open is no longer in Matches: it was marked as applied elsewhere, or its posting closed.',
+      'Senior Backend Engineer at Acme is no longer in Matches: it was marked as applied elsewhere, or its posting closed.',
     );
     expect(screen.queryByRole('region', { name: 'Senior Backend Engineer' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
@@ -619,5 +619,42 @@ describe('applying from the job’s pane (#52 PR C)', () => {
     screenWide(true);
     await renderList();
     expect(screen.getByRole('region', { name: 'Your matches' })).toBeTruthy();
+  });
+
+  it('keeps the job and the question after a write that collided (409 try-again)', async () => {
+    screenWide(true);
+    const api = await renderList();
+    const request = api.request.bind(api);
+    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      if (method === 'PUT') throw new ApiError('conflict', { status: 409, code: 'try-again' });
+      return request(method, path, body);
+    });
+    openJob('Senior Backend Engineer');
+    fireEvent.click(preview().getByRole('link', { name: /^Manual apply/ }));
+    fireEvent.click(preview().getByRole('button', { name: 'I applied' }));
+    await waitFor(() =>
+      expect(preview().getByRole('alert').textContent).toBe('That didn’t save. Try again.'),
+    );
+    expect(screen.queryByText(/is no longer in Matches/)).toBeNull();
+  });
+
+  it('leaves the focus where it went when the pane was closed before the save ended', async () => {
+    screenWide(true);
+    const api = await renderList();
+    const request = api.request.bind(api);
+    let release = () => {};
+    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      if (method === 'PUT') await new Promise<void>((resolve) => (release = resolve));
+      return request(method, path, body);
+    });
+    openJob('Senior Backend Engineer');
+    fireEvent.click(preview().getByRole('link', { name: /^Manual apply/ }));
+    fireEvent.click(preview().getByRole('button', { name: 'I applied' }));
+    fireEvent.click(preview().getByRole('button', { name: 'Close' }));
+    const elsewhere = screen.getByRole('button', { name: /^Posted/ });
+    elsewhere.focus();
+    release();
+    expect(await screen.findByText(/^Marked as applied: Senior Backend Engineer/)).toBeTruthy();
+    expect(document.activeElement).toBe(elsewhere);
   });
 });
