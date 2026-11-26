@@ -19,7 +19,7 @@ export const jobStage = z.enum(JOB_STAGES);
  * `PUT /me/jobs/{jobId}/stage`. `from` is the stage the user saw: a job changed meanwhile
  * (another tab, another device) is refused with 409 instead of being overwritten. Back to
  * `new` undoes an apply (a "Yes" given by mistake): the job returns to Matches. From `new`,
- * only `applied`: nothing else has an applied date.
+ * only `applied`: nothing else has an applied date. Back to `new` only from `applied`.
  */
 export const jobStageBody = z
   .strictObject({
@@ -29,6 +29,11 @@ export const jobStageBody = z
   .refine((b) => b.from !== 'new' || b.stage === 'new' || b.stage === 'applied', {
     // A job is applied to before it can be interviewing, rejected, or withdrawn.
     message: 'A new job can only move to applied',
+    path: ['stage'],
+  })
+  .refine((b) => b.stage !== 'new' || b.from === 'new' || b.from === 'applied', {
+    // Undo is for a "Yes" given by mistake; a later stage is history, never erased.
+    message: 'Only an applied job can go back to new',
     path: ['stage'],
   });
 

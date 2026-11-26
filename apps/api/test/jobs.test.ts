@@ -635,6 +635,9 @@ describe('PUT /me/jobs/{jobId}/stage (#52)', () => {
       // Nothing but applied has an applied date: a new job cannot skip to a later stage.
       { stage: 'withdrawn', from: 'new' },
       { stage: 'interviewing', from: 'new' },
+      // Undo only from applied: a later stage is history.
+      { stage: 'new', from: 'offer' },
+      { stage: 'new', from: 'withdrawn' },
       { stage: 'applied', from: 'new', extra: 1 },
     ]) {
       expect((await put(body, d)).statusCode, JSON.stringify(body)).toBe(400);

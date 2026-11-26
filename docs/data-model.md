@@ -301,7 +301,7 @@ A re-crawl updates only the posting and discovery groups; it never overwrites th
 
 | Attribute | Type | Required | Notes |
 |---|---|---|---|
-| `status` | S | yes | The job's stage (#52, [0016](decisions/0016-applications-are-job-stages.md)): `new` (on first save; shown in Matches), then, set by the user: `applied`, `interviewing`, `offer`, `rejected`, or `withdrawn` (shown in Applications). Back to `new` undoes an apply. |
+| `status` | S | yes | The job's stage (#52, [0016](decisions/0016-applications-are-job-stages.md)): `new` (on first save; shown in Matches), then, set by the user: `applied`, `interviewing`, `offer`, `rejected`, or `withdrawn` (shown in Applications). Back to `new` undoes an apply (only from `applied`). |
 | `appliedAt` | S | no | #52: when the user said they applied; kept through later stages, removed when the apply is undone. The `applied` index's sort key, so only applied jobs are in it. |
 | `stageAt` | S | no | #52: when the stage last changed |
 | `appliedResumeId` | S | no | #52: the tailored résumé (`materials.resumeDocumentId`) the job had when the user applied |

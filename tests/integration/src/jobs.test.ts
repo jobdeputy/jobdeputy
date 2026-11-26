@@ -331,8 +331,11 @@ describe('jobs (deployed)', () => {
       { timeoutMs: 30_000, intervalMs: 1_000 },
     );
 
-    // Undo ("Yes" by mistake): back to Matches, out of Applications.
-    const undone = await stage('new', 'interviewing');
+    // A later stage is history: it cannot be undone. Back to applied first, then undo ("Yes"
+    // by mistake): back to Matches, out of Applications.
+    expect((await stage('new', 'interviewing')).status).toBe(400);
+    expect((await stage('applied', 'interviewing')).status).toBe(200);
+    const undone = await stage('new', 'applied');
     expect(undone.body.status).toBe('new');
     expect(undone.body).not.toHaveProperty('appliedAt');
     expect(titlesOf((await callApi(api, 'GET', 'me/matches', token)).body)).toEqual([
@@ -345,6 +348,6 @@ describe('jobs (deployed)', () => {
     expect(
       // biome-ignore lint/suspicious/noExplicitAny: tests read arbitrary JSON responses.
       audit.body.entries.filter((e: any) => e.name === 'job.stage_changed').length,
-    ).toBe(3);
+    ).toBe(4);
   });
 });

@@ -16,7 +16,7 @@ sequenceDiagram
   Web->>API: GET /me/matches
   API->>U: Query every COMPANY# item (shown jobs and their rank)
   API->>J: BatchGetItem the shown jobs (summary fields), 100 a batch, 4 at a time
-  Note over API: per company: open, not hidden, at most the user's jobs per company<br/>(an applied job keeps its place: no refill)<br/>then only stage new, seen in the last 30 days
+  Note over API: per company: open, not hidden, at most the user's jobs per company<br/>(an applied job keeps its place while open: no refill)<br/>then only stage new, seen in the last 30 days
   API-->>Web: jobs best first (at most 500), truncated
   Note over Web: sorts any column in the browser: every row is there
 ```
@@ -41,7 +41,7 @@ sequenceDiagram
   Note over J: appliedAt puts the job in the sparse "applied" index
 ```
 
-From `new` the only move is to `applied` (nothing else has an applied date). Later stages change `status` and `stageAt` only; `appliedAt` stays. Back to `new` (an apply undone) removes `appliedAt` and `appliedResumeId`, which takes the job out of the index; a closed or hidden job then expires again (`ttl`), as one never acted on. The undo is conditioned on the closed and hidden state it read, so a crawl changing either meanwhile makes it a 409 rather than a wrong expiry. A crawl closing a job sets its expiry only if it is still `new` at that moment (the user may apply between the crawl's two writes).
+From `new` the only move is to `applied` (nothing else has an applied date). Later stages change `status` and `stageAt` only; `appliedAt` stays. Back to `new` (an apply undone, only from `applied`) removes `appliedAt` and `appliedResumeId`, which takes the job out of the index; a closed or hidden job then expires again (`ttl`), as one never acted on. The undo is conditioned on the closed and hidden state it read, so a crawl changing either meanwhile makes it a 409 rather than a wrong expiry. A crawl closing a job sets its expiry only if it is still `new` at that moment (the user may apply between the crawl's two writes).
 
 ## Applications
 

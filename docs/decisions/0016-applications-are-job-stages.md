@@ -17,7 +17,7 @@ For listing: a `Query` with a filter on `status` reads every job, hidden ones in
 
 ## Decision
 
-- `jobs.status` is the job's **stage**: `new` → `applied` → `interviewing` → `offer` or `rejected`; `withdrawn`. Back to `new` undoes an apply. The unused values are dropped.
+- `jobs.status` is the job's **stage**: `new` → `applied` → `interviewing` → `offer` or `rejected`; `withdrawn`. Back to `new` undoes an apply (only from `applied`: a later stage is history). The unused values are dropped.
 - `appliedAt` (kept through later stages), `stageAt`, and `appliedResumeId` (the tailored résumé the job had then).
 - A **sparse GSI `applied`** (`userId`, `appliedAt`), projecting only the list fields (`JOB_SUMMARY_FIELDS`, shared by the table and the repository). `GET /me/applications` pages it newest first, 50 at a time.
 - `GET /me/matches` returns every shown `new` job seen in the last 30 days, best first, at most 500, so the browser can sort any column over all of them. A job applied to leaves a gap: its company's next job does not take its place.

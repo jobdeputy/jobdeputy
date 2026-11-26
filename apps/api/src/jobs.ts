@@ -250,7 +250,7 @@ const MATCHES_PARALLEL = 4;
  * newest), at most `MATCHES_MAX`. All rows come at once, so the browser can sort any column
  * over all of them. Each company's places are counted as `GET /me/companies` counts them
  * (open, shown jobs, at most the user's jobs per company), and a job applied to keeps its
- * place: it leaves a gap rather than letting the next job in (no refill). `truncated` says
+ * place while its posting is open: it leaves a gap rather than letting the next job in. `truncated` says
  * more than `MATCHES_MAX` jobs qualified.
  */
 async function matches(userId: string, deps: JobsDeps) {
@@ -274,7 +274,8 @@ async function matches(userId: string, deps: JobsDeps) {
   for (const ranked of companies) {
     const places = ranked
       .map((rank) => ({ rank, job: found.get(rank.jobId) }))
-      // A job applied to keeps its place even if a later crawl hid it (no refill).
+      // A job applied to keeps its place while its posting is open, even if a later crawl hid
+      // it (no refill). Once closed, the crawl frees its place (T08c), as for any job.
       .filter(
         (p): p is { rank: RankedJob; job: JobSummaryItem } =>
           p.job !== undefined &&
@@ -402,18 +403,12 @@ export async function route(event: Event, deps: JobsDeps): Promise<HttpResponse>
         if (result.kind === 'not-found') return problem(404, 'Not found', { requestId });
         if (result.kind === 'conflict') {
           // With the job as it is now, so the app can show its real stage without asking again.
-          const refused = problem(409, 'Conflict', {
+          return problem(409, 'Conflict', {
             detail: 'This job was changed elsewhere. Reload, then try again.',
             code: 'stage-changed',
             requestId,
+            job: jobView(result.job),
           });
-          return {
-            ...refused,
-            body: JSON.stringify({
-              ...JSON.parse(refused.body as string),
-              job: jobView(result.job),
-            }),
-          };
         }
         return json(200, jobView(result.job));
       } catch (error) {

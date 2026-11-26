@@ -398,6 +398,7 @@ export class JobRepository {
             Key: { userId, jobId },
             UpdateExpression: `SET #closedAt = :now, updatedAt = :now${expires ? ', #ttl = if_not_exists(#ttl, :ttl)' : ''}`,
             ConditionExpression: `attribute_not_exists(#sourceIds) AND attribute_not_exists(#closedAt)${expires ? ' AND #status = :new' : ''}`,
+            ...(expires ? { ReturnValuesOnConditionCheckFailure: 'ALL_OLD' as const } : {}),
             ExpressionAttributeNames: {
               '#sourceIds': 'sourceIds',
               '#closedAt': 'closedAt',
@@ -414,6 +415,10 @@ export class JobRepository {
         await close(expires);
       } catch (error) {
         if (!expires || !isConditionFailure(error)) throw error;
+        // Close it without an expiry only if the stage is what failed: a job listed again or
+        // closed meanwhile would fail again (its item comes back raw, not unmarshalled).
+        const old = (error as { Item?: Record<string, unknown> }).Item;
+        if (!old || 'sourceIds' in old || 'closedAt' in old) return undefined;
         await close(false);
       }
       return { jobId, companyKey: String(job?.companyKey ?? '') };

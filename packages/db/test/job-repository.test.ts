@@ -303,6 +303,23 @@ describe('JobRepository.closeMissing (T07c)', () => {
     expect(byJob.acted?.UpdateExpression).toBe('SET #closedAt = :now, updatedAt = :now');
     expect(byJob.acted?.ExpressionAttributeNames).not.toHaveProperty('#ttl');
   });
+  it('#52: listed again or closed meanwhile: no second try', async () => {
+    for (const old of [{ sourceIds: { SS: ['S2'] } }, { closedAt: { S: 'x' } }, undefined]) {
+      const { c, send } = client((cmd) => {
+        const input = (cmd as UpdateCommand).input;
+        if (input.UpdateExpression?.startsWith('DELETE')) {
+          return { Attributes: { companyKey: 'greenhouse:acme', status: 'new' } };
+        }
+        throw Object.assign(new Error('c'), {
+          name: 'ConditionalCheckFailedException',
+          ...(old ? { Item: old } : {}),
+        });
+      });
+      expect(await repo(c).closeMissing(USER, 'S1', ['j1'], 1_800_000_000)).toEqual([]);
+      expect(send).toHaveBeenCalledTimes(2);
+    }
+  });
+
   it('#52: applied between the two writes, it is closed without an expiry', async () => {
     const { c, send } = client((cmd) => {
       const input = (cmd as UpdateCommand).input;
@@ -311,7 +328,11 @@ describe('JobRepository.closeMissing (T07c)', () => {
       }
       // The user applied meanwhile: the close with an expiry fails on `#status = :new`.
       if (input.ExpressionAttributeValues?.[':new'] === 'new') {
-        throw Object.assign(new Error('c'), { name: 'ConditionalCheckFailedException' });
+        expect(input.ReturnValuesOnConditionCheckFailure).toBe('ALL_OLD');
+        throw Object.assign(new Error('c'), {
+          name: 'ConditionalCheckFailedException',
+          Item: { status: { S: 'applied' } },
+        });
       }
       return {};
     });
