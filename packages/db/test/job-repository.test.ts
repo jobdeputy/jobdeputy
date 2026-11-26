@@ -593,10 +593,23 @@ describe('JobRepository.setStage (#52)', () => {
   it('applying records when, the tailored résumé it had, and never expires the job', async () => {
     const { c, send } = store([
       { jobId: J, status: 'new', ttl: 5, materials: { resumeDocumentId: 'R1' } },
-      { jobId: J, status: 'applied' },
     ]);
-    const r = await repo(c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit);
-    expect(r).toEqual({ kind: 'ok', job: { jobId: J, status: 'applied' } });
+    const r = await repo(c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit, 999);
+    // The saved job is the one read plus this change: no read back.
+    const at = NOW.toISOString();
+    expect(r).toEqual({
+      kind: 'ok',
+      job: {
+        jobId: J,
+        status: 'applied',
+        materials: { resumeDocumentId: 'R1' },
+        stageAt: at,
+        updatedAt: at,
+        appliedAt: at,
+        appliedResumeId: 'R1',
+      },
+    });
+    expect(send.mock.calls.filter((c) => c[0] instanceof GetCommand)).toHaveLength(1);
     const u = update(send);
     expect(u?.UpdateExpression).toBe(
       'SET #status = :stage, stageAt = :now, updatedAt = :now, appliedAt = :now, appliedResumeId = :resume REMOVE #ttl',
@@ -622,7 +635,7 @@ describe('JobRepository.setStage (#52)', () => {
       { jobId: J, status: 'applied' },
       { jobId: J, status: 'offer' },
     ]);
-    await repo(later.c).setStage(USER, J, { stage: 'offer', from: 'applied' }, audit);
+    await repo(later.c).setStage(USER, J, { stage: 'offer', from: 'applied' }, audit, 999);
     expect(update(later.send)?.UpdateExpression).toBe(
       'SET #status = :stage, stageAt = :now, updatedAt = :now REMOVE #ttl',
     );
@@ -630,7 +643,7 @@ describe('JobRepository.setStage (#52)', () => {
       { jobId: J, status: 'applied' },
       { jobId: J, status: 'new' },
     ]);
-    await repo(undo.c).setStage(USER, J, { stage: 'new', from: 'applied' }, audit);
+    await repo(undo.c).setStage(USER, J, { stage: 'new', from: 'applied' }, audit, 999);
     const u = update(undo.send);
     expect(u?.UpdateExpression).toBe(
       'SET #status = :stage, stageAt = :now, updatedAt = :now REMOVE appliedAt, appliedResumeId',
@@ -638,21 +651,41 @@ describe('JobRepository.setStage (#52)', () => {
     expect(u?.ExpressionAttributeNames).toEqual({ '#status': 'status' });
   });
 
+  it('an undone apply on a closed or hidden job expires again, as one never acted on', async () => {
+    for (const job of [
+      { jobId: J, status: 'applied', closedAt: '2026-09-01T00:00:00.000Z' },
+      { jobId: J, status: 'applied', limitState: 'over_limit' },
+      { jobId: J, status: 'applied', filter: { state: 'not_relevant' } },
+    ]) {
+      const undo = store([job]);
+      const r = await repo(undo.c).setStage(USER, J, { stage: 'new', from: 'applied' }, audit, 999);
+      const u = update(undo.send);
+      expect(u?.UpdateExpression).toBe(
+        'SET #status = :stage, stageAt = :now, updatedAt = :now, #ttl = if_not_exists(#ttl, :expires) REMOVE appliedAt, appliedResumeId',
+      );
+      expect(u?.ExpressionAttributeNames).toEqual({ '#status': 'status', '#ttl': 'ttl' });
+      expect(u?.ExpressionAttributeValues?.[':expires']).toBe(999);
+      expect(r.kind === 'ok' && r.job.ttl).toBe(999);
+    }
+  });
+
   it('not found, a stale `from`, or the same stage: no write', async () => {
     const gone = store([undefined]);
-    expect(await repo(gone.c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit)).toEqual({
+    expect(
+      await repo(gone.c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit, 999),
+    ).toEqual({
       kind: 'not-found',
     });
     const stale = store([{ jobId: J, status: 'applied' }]);
-    expect(await repo(stale.c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit)).toEqual(
-      {
-        kind: 'conflict',
-        job: { jobId: J, status: 'applied' },
-      },
-    );
+    expect(
+      await repo(stale.c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit, 999),
+    ).toEqual({
+      kind: 'conflict',
+      job: { jobId: J, status: 'applied' },
+    });
     const same = store([{ jobId: J, status: 'offer' }]);
     expect(
-      (await repo(same.c).setStage(USER, J, { stage: 'offer', from: 'offer' }, audit)).kind,
+      (await repo(same.c).setStage(USER, J, { stage: 'offer', from: 'offer' }, audit, 999)).kind,
     ).toBe('ok');
     for (const s of [gone, stale, same]) expect(update(s.send)).toBeUndefined();
   });
@@ -667,17 +700,17 @@ describe('JobRepository.setStage (#52)', () => {
         throw cancelled('ConditionalCheckFailed');
       },
     );
-    expect(await repo(moved.c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit)).toEqual(
-      {
-        kind: 'conflict',
-        job: { jobId: J, status: 'withdrawn' },
-      },
-    );
+    expect(
+      await repo(moved.c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit, 999),
+    ).toEqual({
+      kind: 'conflict',
+      job: { jobId: J, status: 'withdrawn' },
+    });
     const expired = store([{ jobId: J, status: 'new' }, undefined], () => {
       throw cancelled('ConditionalCheckFailed');
     });
     expect(
-      (await repo(expired.c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit)).kind,
+      (await repo(expired.c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit, 999)).kind,
     ).toBe('not-found');
   });
 
@@ -686,7 +719,7 @@ describe('JobRepository.setStage (#52)', () => {
       throw new Error('boom');
     });
     await expect(
-      repo(broken.c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit),
+      repo(broken.c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit, 999),
     ).rejects.toThrow('boom');
   });
 });

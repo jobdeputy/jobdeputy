@@ -187,7 +187,6 @@ export interface SaveStats {
   updated: number;
 }
 
-/** Writes at the same time while saving one crawl's jobs: fast, and gentle on the table. */
 /** #52: the result of a stage change; `conflict` carries the job as it is now. */
 export type StageResult =
   | { kind: 'ok'; job: Job }
@@ -200,8 +199,9 @@ export interface AppliedCursor {
   appliedAt: string;
 }
 
+/** Writes at the same time while saving one crawl's jobs: fast, and gentle on the table. */
 export const SAVE_CONCURRENCY = 10;
-/** #49: the fields a list of jobs shows (`descriptionHash` stands for "has a description"). */
+/** #49: the fields a list of jobs shows (`JOB_SUMMARY_FIELDS` in packages/shared). */
 export const SUMMARY_FIELDS = JOB_SUMMARY_FIELDS satisfies readonly (keyof Job)[];
 
 export type JobSummaryItem = Pick<Job, (typeof SUMMARY_FIELDS)[number]> &
@@ -677,13 +677,15 @@ export class JobRepository {
    * #52: moves a job to `stage`, if it is still at `from` (the stage the user saw), with its
    * audit entry in the same transaction. Leaving `new` records `appliedAt` and the tailored
    * résumé the job has now; back to `new` (an undone apply) removes them. A job the user
-   * applied to never expires (`ttl` removed), whatever the filter said.
+   * applied to never expires (`ttl` removed), whatever the filter said; undone, a closed or
+   * hidden job expires at `expiresAt` again, as one never acted on (T08c).
    */
   async setStage(
     userId: string,
     jobId: string,
     change: { stage: JobStage; from: JobStage },
     audit: AuditWrite,
+    expiresAt: number,
   ): Promise<StageResult> {
     const job = await this.getConsistent(userId, jobId);
     if (!job) return { kind: 'not-found' };
@@ -697,19 +699,31 @@ export class JobRepository {
       ':from': change.from,
       ':now': now,
     };
+    const saved: Job = { ...job, status: change.stage, stageAt: now, updatedAt: now };
     if (change.stage === 'new') {
       remove.push('appliedAt', 'appliedResumeId');
+      delete saved.appliedAt;
+      delete saved.appliedResumeId;
+      if (job.closedAt !== undefined || isHidden(job)) {
+        set.push('#ttl = if_not_exists(#ttl, :expires)');
+        values[':expires'] = expiresAt;
+        saved.ttl = job.ttl ?? expiresAt;
+      }
     } else {
       remove.push('#ttl');
+      delete saved.ttl;
       if (change.from === 'new') {
         set.push('appliedAt = :now');
+        saved.appliedAt = now;
         const resume = job.materials?.resumeDocumentId;
         if (resume !== undefined) {
           set.push('appliedResumeId = :resume');
           values[':resume'] = resume;
+          saved.appliedResumeId = resume;
         }
       }
     }
+    const usesTtl = set.some((e) => e.includes('#ttl')) || remove.includes('#ttl');
     try {
       await transactWrite(this.client, {
         TransactItems: [
@@ -717,11 +731,11 @@ export class JobRepository {
             Update: {
               TableName: this.table,
               Key: { userId, jobId },
-              UpdateExpression: `SET ${set.join(', ')} REMOVE ${remove.join(', ')}`,
+              UpdateExpression: `SET ${set.join(', ')}${remove.length ? ` REMOVE ${remove.join(', ')}` : ''}`,
               ConditionExpression: 'attribute_exists(userId) AND #status = :from',
               ExpressionAttributeNames: {
                 '#status': 'status',
-                ...(remove.includes('#ttl') ? { '#ttl': 'ttl' } : {}),
+                ...(usesTtl ? { '#ttl': 'ttl' } : {}),
               },
               ExpressionAttributeValues: values,
             },
@@ -735,8 +749,8 @@ export class JobRepository {
       const current = await this.getConsistent(userId, jobId);
       return current ? { kind: 'conflict', job: current } : { kind: 'not-found' };
     }
-    const saved = await this.getConsistent(userId, jobId);
-    return saved ? { kind: 'ok', job: saved } : { kind: 'not-found' };
+    // Written exactly as read plus this change (the condition held): no read back needed.
+    return { kind: 'ok', job: saved };
   }
 
   private async getConsistent(userId: string, jobId: string): Promise<Job | undefined> {

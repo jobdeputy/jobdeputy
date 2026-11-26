@@ -15,10 +15,6 @@ export const JOB_STAGES = [
 export type JobStage = (typeof JOB_STAGES)[number];
 export const jobStage = z.enum(JOB_STAGES);
 
-/** The stages of a job the user applied to (all but `new`). */
-export const APPLIED_STAGES = JOB_STAGES.filter((s) => s !== 'new') as Exclude<JobStage, 'new'>[];
-export const isApplied = (stage: JobStage): boolean => stage !== 'new';
-
 /**
  * `PUT /me/jobs/{jobId}/stage`. `from` is the stage the user saw: a job changed meanwhile
  * (another tab, another device) is refused with 409 instead of being overwritten. Back to
@@ -28,7 +24,6 @@ export const jobStageBody = z.strictObject({
   stage: jobStage,
   from: jobStage,
 });
-export type JobStageBody = z.infer<typeof jobStageBody>;
 
 /** Matches lists the shown, not-applied jobs seen in this many days. */
 export const MATCHES_WINDOW_DAYS = 30;

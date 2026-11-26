@@ -471,7 +471,7 @@ describe('GET /me/matches (#52)', () => {
     expect(r.titles).toContain('D');
   });
 
-  it('stops at 500 jobs and says the rest were not read', async () => {
+  it('returns the best 500 and says more qualified', async () => {
     const many: CompanyShown[] = Array.from({ length: 260 }, (_, i) => ({
       companyKey: `greenhouse:c${i}`,
       shown: {
@@ -486,8 +486,17 @@ describe('GET /me/matches (#52)', () => {
     const body = JSON.parse(res.body as string);
     expect(body.jobs).toHaveLength(500);
     expect(body.truncated).toBe(true);
-    // Read in batches of at most 100, and no further than needed.
-    expect(getSummaries.mock.calls.map((c) => c[1].length)).toEqual([100, 100, 100, 100, 100]);
+    // Read in batches of at most 100 (DynamoDB's limit for one BatchGetItem).
+    expect(getSummaries.mock.calls.map((c) => c[1].length)).toEqual([100, 100, 100, 100, 100, 20]);
+  });
+
+  it('a closed or hidden job takes no place in its company; an applied one does', async () => {
+    // Acme's places with 2 per company: a is closed, so b and e; b was applied to: only E.
+    const r = await call(
+      stored({ a: { closedAt: recent }, b: { status: 'offer', appliedAt: recent } }),
+      2,
+    );
+    expect(r.titles).toEqual(['C', 'E', 'D']);
   });
 
   it('400 for any query parameter', async () => {
@@ -572,6 +581,8 @@ describe('PUT /me/jobs/{jobId}/stage (#52)', () => {
           detail: { from: 'new', stage: 'applied' },
         }),
       },
+      // The admin's expiry (7 days) from now, for an undone apply on a closed or hidden job.
+      NOW.getTime() / 1000 + 7 * 86_400,
     );
   });
 
@@ -581,7 +592,10 @@ describe('PUT /me/jobs/{jobId}/stage (#52)', () => {
       deps({ setStage: vi.fn(async () => ({ kind: 'conflict' as const, job: job() })) }),
     );
     expect(conflict.statusCode).toBe(409);
-    expect(JSON.parse(conflict.body as string).code).toBe('stage-changed');
+    expect(JSON.parse(conflict.body as string)).toMatchObject({
+      code: 'stage-changed',
+      job: { jobId: J1, status: 'new' },
+    });
     const gone = await put(
       { stage: 'offer', from: 'applied' },
       deps({ setStage: vi.fn(async () => ({ kind: 'not-found' as const })) }),

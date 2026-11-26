@@ -233,46 +233,63 @@ async function companiesPage(
   };
 }
 
-/** Job summaries read per batch while filling Matches (DynamoDB's BatchGetItem limit). */
+/** #52: when a job the user stops acting on (an undone apply) expires, if closed or hidden. */
+async function expiresAt(deps: JobsDeps): Promise<number> {
+  const { jobExpiryDays } = await deps.limits();
+  return Math.floor(deps.now().getTime() / 1000) + jobExpiryDays * 86_400;
+}
+
+/** Job summaries read per batch while filling Matches (DynamoDB's BatchGetItem limit)… */
 const MATCHES_READ = 100;
+/** …and batches read at once. */
+const MATCHES_PARALLEL = 4;
 
 /**
  * #52: Matches, every job not applied to yet that is shown now and was seen in the last
  * `MATCHES_WINDOW_DAYS` days, best first (the crawl's rank: score, then role priority, then
  * newest), at most `MATCHES_MAX`. All rows come at once, so the browser can sort any column
- * over all of them. Each company keeps its places as ranked: a job applied to leaves a gap
- * (no refill). Read in rank order in batches, stopping once `MATCHES_MAX` are kept;
- * `truncated` says jobs were left unread.
+ * over all of them. Each company's places are counted as `GET /me/companies` counts them
+ * (open, shown jobs, at most the user's jobs per company), and a job applied to keeps its
+ * place: it leaves a gap rather than letting the next job in (no refill). `truncated` says
+ * more than `MATCHES_MAX` jobs qualified.
  */
 async function matches(userId: string, deps: JobsDeps) {
   const [shown, perCompany] = await Promise.all([
     deps.companies.listShown(userId),
     companyJobsLimitFor(userId, deps),
   ]);
-  const ranked = shown.flatMap((c) => rankShown(c.shown).slice(0, perCompany)).sort(compareRank);
-  const since = new Date(deps.now().getTime() - MATCHES_WINDOW_DAYS * 86_400_000).toISOString();
-  const jobs: ReturnType<typeof jobSummary>[] = [];
-  let next = 0; // the first ranked job not looked at yet
-  while (next < ranked.length && jobs.length < MATCHES_MAX) {
-    const batch = ranked.slice(next, next + MATCHES_READ);
-    const found = new Map(
-      (
-        await deps.repo.getSummaries(
-          userId,
-          batch.map((r) => r.jobId),
-        )
-      ).map((j) => [j.jobId, j]),
+  const companies = shown.map((c) => rankShown(c.shown));
+  const ids = companies.flat().map((r) => r.jobId);
+  const batches: string[][] = [];
+  for (let i = 0; i < ids.length; i += MATCHES_READ) batches.push(ids.slice(i, i + MATCHES_READ));
+  const found = new Map<string, JobSummaryItem>();
+  for (let i = 0; i < batches.length; i += MATCHES_PARALLEL) {
+    const read = await Promise.all(
+      batches.slice(i, i + MATCHES_PARALLEL).map((b) => deps.repo.getSummaries(userId, b)),
     );
-    for (const r of batch) {
-      if (jobs.length === MATCHES_MAX) break;
-      next += 1;
-      const j = found.get(r.jobId);
-      if (!j || j.closedAt !== undefined || j.status !== 'new' || j.lastSeenAt < since) continue;
-      const view = jobSummary(j);
-      if (!view.hidden) jobs.push(view);
+    for (const j of read.flat()) found.set(j.jobId, j);
+  }
+  const since = deps.now().getTime() - MATCHES_WINDOW_DAYS * 86_400_000;
+  const rows: { rank: RankedJob; view: ReturnType<typeof jobSummary> }[] = [];
+  for (const ranked of companies) {
+    const places = ranked
+      .map((rank) => ({ rank, job: found.get(rank.jobId) }))
+      .filter(
+        (p): p is { rank: RankedJob; job: JobSummaryItem } =>
+          p.job !== undefined && p.job.closedAt === undefined && !isHidden(p.job),
+      )
+      .slice(0, perCompany);
+    for (const { rank, job } of places) {
+      if (job.status === 'new' && Date.parse(job.lastSeenAt) >= since) {
+        rows.push({ rank, view: jobSummary(job) });
+      }
     }
   }
-  return { jobs, truncated: next < ranked.length };
+  rows.sort((a, b) => compareRank(a.rank, b.rank));
+  return {
+    jobs: rows.slice(0, MATCHES_MAX).map((r) => r.view),
+    truncated: rows.length > MATCHES_MAX,
+  };
 }
 
 type CompanyView = {
@@ -377,14 +394,23 @@ export async function route(event: Event, deps: JobsDeps): Promise<HttpResponse>
               stage,
             },
           ),
+          await expiresAt(deps),
         );
         if (result.kind === 'not-found') return problem(404, 'Not found', { requestId });
         if (result.kind === 'conflict') {
-          return problem(409, 'Conflict', {
+          // With the job as it is now, so the app can show its real stage without asking again.
+          const refused = problem(409, 'Conflict', {
             detail: 'This job was changed elsewhere. Reload, then try again.',
             code: 'stage-changed',
             requestId,
           });
+          return {
+            ...refused,
+            body: JSON.stringify({
+              ...JSON.parse(refused.body as string),
+              job: jobView(result.job),
+            }),
+          };
         }
         return json(200, jobView(result.job));
       } catch (error) {
