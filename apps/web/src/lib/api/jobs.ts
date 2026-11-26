@@ -1,8 +1,14 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { JOB_STAGES, type JobStage } from '@jobdeputy/shared/applications';
+import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { type ApiClient, ApiError, useApi } from './index.ts';
 
-/** #52: a job's stage (packages/shared `JOB_STAGES`). */
-export type JobStage = 'new' | 'applied' | 'interviewing' | 'offer' | 'rejected' | 'withdrawn';
+/** #52: a job's stage, as the API has them (packages/shared `JOB_STAGES`). */
+export type { JobStage };
+
+export type AppliedStage = Exclude<JobStage, 'new'>;
+
+/** The stages Applications shows and sets (#52, locked): every one but `new`, in the API's order. */
+export const APPLIED_STAGES = JOB_STAGES.filter((stage): stage is AppliedStage => stage !== 'new');
 
 /**
  * A job as a list gives it (`GET /me/matches`; apps/api/src/jobs.ts `jobSummary`, the parts the
@@ -22,6 +28,9 @@ export interface JobSummary {
   postedAt?: string;
   firstSeenAt: string;
   status?: JobStage;
+  /** When it was marked applied, and when its stage last changed (#52: applied jobs only). */
+  appliedAt?: string;
+  stageAt?: string;
   /** Whether the board shared the posting's text (read with the job itself). */
   hasDescription?: boolean;
   relevance?: { score: number; reasons: string[] };
@@ -118,4 +127,39 @@ export function stageGone(error: unknown): boolean {
     error instanceof ApiError &&
     (error.kind === 'not-found' || (error.kind === 'conflict' && error.code === 'stage-changed'))
   );
+}
+
+/** `GET /me/applications` (#52): a page of applied jobs, newest applied first. */
+interface ApplicationsPage {
+  jobs: JobSummary[];
+  nextCursor?: string;
+}
+
+export const applicationsKey = ['applications'] as const;
+
+/** Applied jobs read at a time: the API's most. */
+export const APPLICATIONS_PAGE = 50;
+
+/**
+ * The jobs in Applications (#52): every job applied to, newest applied first, a page (50, the
+ * API's most) at a time. Read again each time the tab opens (a job applied to in Matches joins).
+ */
+export function useApplications(pageSize: number = APPLICATIONS_PAGE) {
+  const api = useApi();
+  return useInfiniteQuery({
+    // Its page size in the key (a test's small pages never mix with the real ones).
+    queryKey: [...applicationsKey, pageSize],
+    queryFn: ({ pageParam }) =>
+      api.request<ApplicationsPage>(
+        'GET',
+        `/me/applications?limit=${pageSize}${pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ''}`,
+      ),
+    initialPageParam: '',
+    // An empty cursor is the end too (else page 1 would be read again and again).
+    getNextPageParam: (last) => last.nextCursor || undefined,
+    refetchOnWindowFocus: false,
+    retry: (failures, error) =>
+      failures < 1 && error instanceof ApiError && error.kind === 'offline',
+    select: (data) => data.pages.flatMap((page) => page.jobs),
+  });
 }

@@ -39,3 +39,9 @@ export function postedTime(job: Pick<JobSummary, 'postedAt'>): number | undefine
   const at = job.postedAt ? Date.parse(job.postedAt) : Number.NaN;
   return Number.isNaN(at) ? undefined : at;
 }
+
+/** A moment's day here ("Nov 3, 2026"), such as when a job was applied to; null if unreadable. */
+export function dayHere(iso: string | undefined): string | null {
+  const at = iso ? Date.parse(iso) : Number.NaN;
+  return Number.isNaN(at) ? null : DAY_HERE.format(at);
+}

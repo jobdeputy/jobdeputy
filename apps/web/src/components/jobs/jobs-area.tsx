@@ -1,16 +1,25 @@
+import type { ReactNode } from 'react';
+import { ApplicationsPage } from '@/components/jobs/applications-page.tsx';
 import { MatchesPage } from '@/components/jobs/matches-page.tsx';
 import { SearchPage } from '@/components/jobs/search-page.tsx';
-import { JOBS_TABS, type JobsTabPath, SEARCH_TAB } from '@/components/jobs/tabs.ts';
+import { JOBS_TABS, type JobsTabPath } from '@/components/jobs/tabs.ts';
 import { copy } from '@/copy/index.ts';
 import { followLink } from '@/lib/router.ts';
 import { cn } from '@/lib/utils.ts';
+
+/** Each tab's page, by its path: a tab added without one is a type error. */
+const TAB_PAGES: Record<JobsTabPath, () => ReactNode> = {
+  '/search': () => <SearchPage />,
+  '/matches': () => <MatchesPage />,
+  '/applications': () => <ApplicationsPage />,
+};
 
 /** The jobs area: its tab row, then the tab at `path`. */
 export function JobsArea({ path }: { path: JobsTabPath }) {
   return (
     <div className="grid w-full max-w-[1120px] content-start gap-8">
       <JobsTabs path={path} />
-      {path === SEARCH_TAB.path ? <SearchPage /> : <MatchesPage />}
+      {TAB_PAGES[path]()}
     </div>
   );
 }

@@ -383,6 +383,7 @@ export const en = {
     label: 'Jobs',
     search: 'Search',
     matches: 'Matches',
+    applications: 'Applications',
   },
   /** The jobs area's one table (#52), on every tab. */
   jobsTable: {
@@ -484,6 +485,51 @@ export const en = {
       undoFailed: 'Couldn’t undo that. Try again.',
       /** The job moved on elsewhere (another tab): Undo goes. */
       undoChanged: 'Couldn’t undo: this job was changed elsewhere.',
+    },
+  },
+  /** The Applications tab (#52 PR D): the jobs applied to, each with its stage. */
+  applicationsPage: {
+    eyebrow: 'Applications',
+    title: 'Every job you’ve applied to.',
+    intro: 'Keep each one’s stage up to date as you hear back.',
+    list: {
+      title: 'Your applications',
+      loading: 'Loading your applications',
+      loadFailed: 'Your applications didn’t load.',
+      retry: 'Try again',
+      emptyTitle: 'No applications yet',
+      emptyLine: 'When you mark a job as applied in Matches, it moves here.',
+      /** The empty Applications tab points to Matches. */
+      toMatches: 'Go to Matches',
+      more: 'More applications',
+      loadingMore: 'Loading more…',
+      moreFailed: 'More applications didn’t load. Press More applications to try again.',
+      columns: {
+        job: 'Job',
+        company: 'Company',
+        applied: 'Applied',
+        stage: 'Stage',
+      },
+    },
+    /** A job's stage, set in its row. */
+    stage: {
+      /** The stage picker's name, read out. */
+      label: 'Stage for {title} at {company}',
+      names: {
+        applied: 'Applied',
+        interviewing: 'Interviewing',
+        offer: 'Offer',
+        rejected: 'Rejected',
+        withdrawn: 'Withdrawn',
+      },
+      saving: 'Saving…',
+      /** Read out once saved. */
+      saved: '{title} at {company}: {stage}.',
+      failed: 'The stage for {title} at {company} didn’t save. Try again.',
+      offline:
+        'You’re offline, so the stage for {title} at {company} didn’t save. Try again once you’re back online.',
+      /** Changed in another tab or device meanwhile: the list is read again. */
+      changed: '{title} at {company} was changed elsewhere. It shows as it is now.',
     },
   },
   /** Find jobs, its progress and outcome, and the companies (#49), shared by the jobs tabs. */

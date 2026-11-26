@@ -82,6 +82,15 @@ export function BriefcaseIcon({ className = 'size-5' }: { className?: string }) 
   );
 }
 
+/** A chevron pointing down: a select's own arrow (the jobs table's stage). */
+export function ChevronDownIcon({ className = 'size-4' }: { className?: string }) {
+  return (
+    <LineIcon className={className}>
+      <path d="m6.5 9.5 5.5 5.5 5.5-5.5" />
+    </LineIcon>
+  );
+}
+
 /** Two links of a chain: a link to read (the Find jobs section). */
 export function LinkIcon({ className = 'size-5' }: { className?: string }) {
   return (

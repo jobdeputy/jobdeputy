@@ -513,7 +513,7 @@ describe('Target roles on the Profile page', () => {
 });
 
 describe('the jobs tabs (#52)', () => {
-  it('shows each tab at its own address, with Jobs marked in the sidebar on both', async () => {
+  it('shows each tab at its own address, with Jobs marked in the sidebar on each', async () => {
     const auth = createFakeAuth({ delay: 0 });
     await auth.signUp('new@example.com', 'a long enough password');
     await auth.confirmSignUp('new@example.com', 'a long enough password', '123456');
@@ -528,6 +528,7 @@ describe('the jobs tabs (#52)', () => {
     expect(tabs.getAllByRole('link').map((link) => link.textContent)).toEqual([
       'Search',
       'Matches',
+      'Applications',
     ]);
     expect(tabs.getByRole('link', { name: 'Matches' }).getAttribute('aria-current')).toBe('page');
     fireEvent.click(tabs.getByRole('link', { name: 'Search' }));
@@ -546,7 +547,24 @@ describe('the jobs tabs (#52)', () => {
     });
     expect(jobs.getAttribute('aria-current')).toBe('page');
     expect(jobs.getAttribute('href')).toBe('/matches');
-    // Back returns to Matches.
+    // #52 PR D: Applications, at its own address.
+    fireEvent.click(tabs.getByRole('link', { name: 'Applications' }));
+    const applications = await screen.findByRole('heading', {
+      level: 1,
+      name: 'Every job you’ve applied to.',
+    });
+    await waitFor(() => expect(document.activeElement).toBe(applications));
+    expect(window.location.pathname).toBe('/applications');
+    expect(document.title).toBe('Applications · JobDeputy');
+    expect(tabs.getByRole('link', { name: 'Applications' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
+    expect(jobs.getAttribute('aria-current')).toBe('page');
+    // Back returns to Search, then Matches.
+    act(() => window.history.back());
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Point your deputy at a company.' }),
+    ).toBeTruthy();
     act(() => window.history.back());
     expect(
       await screen.findByRole('heading', { level: 1, name: 'The best jobs at each company.' }),

@@ -5,6 +5,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./ai": "./src/ai.ts",
+    "./applications": "./src/applications.ts",
     "./crawl": "./src/crawl.ts",
     "./documents": "./src/documents.ts",
     "./lists": "./src/lists.ts",
