@@ -12,6 +12,7 @@ import {
   updateDocumentInput,
 } from '@jobdeputy/shared/documents';
 import { githubListFromUrl } from '@jobdeputy/shared/lists';
+import { MATCH_THRESHOLD } from '@jobdeputy/shared/match-score';
 import {
   addSkillInput,
   createRoleInput,
@@ -255,7 +256,7 @@ export function createFakeApi({
     return {
       ...base,
       status: 'ready',
-      result: t.scores.every((s) => (s.tailored ?? 0) >= 80) ? 'ok' : 'partial',
+      result: t.scores.every((s) => (s.tailored ?? 0) >= MATCH_THRESHOLD) ? 'ok' : 'partial',
       scores: t.scores,
       coverage: 1,
       fileName: `Sam Example – ${t.companyName}.pdf`,
@@ -536,15 +537,16 @@ export function createFakeApi({
         if (jobs.length === 0) {
           throw new ApiError('invalid', { status: 422, code: 'no_jobs' });
         }
+        // As the API: the allowance is checked first.
+        if (platformRunsThisMonth(myTailorings) >= FAKE_TAILORINGS_PER_MONTH) {
+          throw new ApiError('too-many', { status: 429, code: 'tailoring_allowance' });
+        }
         if (
           myTailorings.some(
             (t) => t.companyKey === companyKey && tailoringView(t).status !== 'ready',
           )
         ) {
           throw new ApiError('conflict', { status: 409, code: 'tailoring_busy' });
-        }
-        if (platformRunsThisMonth(myTailorings) >= FAKE_TAILORINGS_PER_MONTH) {
-          throw new ApiError('too-many', { status: 429, code: 'tailoring_allowance' });
         }
         lastDocument += 1;
         const skills = ((saved?.skills as string[] | undefined) ?? []).map((s) => s.toLowerCase());

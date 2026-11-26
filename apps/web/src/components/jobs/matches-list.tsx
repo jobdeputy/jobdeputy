@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ApplyActions } from '@/components/jobs/apply-actions.tsx';
 import {
   coolingUntil,
@@ -18,7 +18,7 @@ import {
   TableEmpty,
 } from '@/components/jobs/jobs-table.tsx';
 import { SEARCH_TAB } from '@/components/jobs/tabs.ts';
-import { TailorSection } from '@/components/jobs/tailor-section.tsx';
+import { RunWatcher, TailorSection } from '@/components/jobs/tailor-section.tsx';
 import { SECTION_TITLE_CLASS } from '@/components/section.tsx';
 import { LoadFailed } from '@/components/setup/parts.tsx';
 import { Button } from '@/components/ui/button.tsx';
@@ -87,6 +87,24 @@ export function MatchesList({
   const queries = useQueryClient();
   const matches = useMatches(version);
   const { refetch, isFetching } = matches;
+  // #51 PR C: companies whose tailoring run is at work, followed here to their end (RunWatcher),
+  // so the Score column updates even once the pane that started one closes.
+  const [watching, setWatching] = useState<ReadonlySet<string>>(new Set());
+  const watch = useCallback(
+    (companyKey: string) =>
+      setWatching((was) => (was.has(companyKey) ? was : new Set(was).add(companyKey))),
+    [],
+  );
+  const unwatch = useCallback(
+    (companyKey: string) =>
+      setWatching((was) => {
+        if (!was.has(companyKey)) return was;
+        const next = new Set(was);
+        next.delete(companyKey);
+        return next;
+      }),
+    [],
+  );
   // A company ended: read the list again, once no read is on its way (a read sent before it
   // ended may miss it).
   const lastProgress = useRef(progress);
@@ -240,6 +258,9 @@ export function MatchesList({
         lastFocused.current = event.target;
       }}
     >
+      {[...watching].map((companyKey) => (
+        <RunWatcher key={companyKey} companyKey={companyKey} onDone={unwatch} />
+      ))}
       <h2
         id="matches-list-title"
         ref={heading}
@@ -326,7 +347,7 @@ export function MatchesList({
             onClose={close}
             actions={
               <>
-                <TailorSection job={open} />
+                <TailorSection job={open} onWorking={watch} />
                 <ApplyActions
                   job={open}
                   {...(matches.data?.cooldown ? { cooldown: matches.data.cooldown } : {})}
@@ -406,12 +427,14 @@ function columnsFor(openId: string | null, onOpen: (job: JobSummary) => void) {
       sortValue: (job) => job.match?.score ?? undefined,
       sortFirst: 'descending',
       numeric: true,
-      cell: (job) =>
-        typeof job.match?.score === 'number' ? (
-          `${job.match.score}%`
-        ) : (
-          <span className="text-muted-foreground">{text.scoreNone}</span>
-        ),
+      cell: (job) => {
+        if (!job.match) return <span className="text-muted-foreground">{text.scoreNone}</span>;
+        // Tailored, with no keyword that counts for this job.
+        if (job.match.score === null) {
+          return <span className="text-muted-foreground">{copy.matchesPage.tailor.scoreNone}</span>;
+        }
+        return `${job.match.score}%`;
+      },
     },
     {
       key: 'posted',

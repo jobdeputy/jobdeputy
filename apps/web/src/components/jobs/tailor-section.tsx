@@ -1,6 +1,6 @@
 import { COVERAGE_WARNING } from '@jobdeputy/shared/tailoring';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { momentHere } from '@/components/jobs/cooldown.ts';
 import { LoadFailed } from '@/components/setup/parts.tsx';
 import { Button } from '@/components/ui/button.tsx';
@@ -9,6 +9,7 @@ import { Spinner } from '@/components/ui/spinner.tsx';
 import { copy, fill } from '@/copy/index.ts';
 import { ApiError, useApi } from '@/lib/api/index.ts';
 import { companyName, type JobSummary, matchesKey } from '@/lib/api/jobs.ts';
+import { useProfile } from '@/lib/api/profile.ts';
 import {
   addSkill,
   isTailoring,
@@ -21,6 +22,7 @@ import {
   useTailorings,
 } from '@/lib/api/tailorings.ts';
 import { followLink } from '@/lib/router.ts';
+import { saveFile } from '@/lib/save-file.ts';
 import { cn } from '@/lib/utils.ts';
 
 const text = copy.matchesPage.tailor;
@@ -40,9 +42,17 @@ interface Said {
  * keywords still missing (those the résumé backs; those it doesn't, each with **I have this**,
  * which saves the skill to the profile and offers Re-tailor), and the PDF and DOCX downloads
  * (their 5-minute links read on the click). A run at work is followed every 5 s; the score
- * already there stays meanwhile. Once a run ends ready, Matches is read again (its Score column).
+ * already there stays meanwhile. A run seen at work is handed to `onWorking`, so Matches follows
+ * it to its end even once the pane closes (`RunWatcher`), and then reads its scores again.
  */
-export function TailorSection({ job }: { job: JobSummary }) {
+export function TailorSection({
+  job,
+  onWorking,
+}: {
+  job: JobSummary;
+  /** A run for the company is at work: Matches follows it (`RunWatcher`). */
+  onWorking?: (companyKey: string) => void;
+}) {
   const api = useApi();
   const queries = useQueryClient();
   const list = useTailorings(job.companyKey);
@@ -56,12 +66,9 @@ export function TailorSection({ job }: { job: JobSummary }) {
   const ready = versions.find((v) => v.status === 'ready');
   const failed = newest?.status === 'failed' ? newest : undefined;
 
-  // A run that ends ready changes the jobs' scores: Matches reads them again.
-  const wasWorking = useRef(working);
   useEffect(() => {
-    if (wasWorking.current && !working) void queries.invalidateQueries({ queryKey: matchesKey });
-    wasWorking.current = working;
-  }, [working, queries]);
+    if (working) onWorking?.(job.companyKey);
+  }, [working, onWorking, job.companyKey]);
 
   async function start() {
     setStarting(true);
@@ -115,7 +122,7 @@ export function TailorSection({ job }: { job: JobSummary }) {
         {!ready && <p className="m-0 text-sm text-muted-foreground">{text.intro}</p>}
       </div>
       {/* Always there, so the run's progress and its end are read out as they come. */}
-      <div id={ids.status} role="status" className="grid gap-1 empty:hidden">
+      <div id={ids.status} role="status" className={working || failed ? 'grid gap-1' : 'sr-only'}>
         {working && (
           <>
             <p className="m-0 flex items-center gap-2 font-[650] text-ink">
@@ -270,7 +277,11 @@ function ScoreBox({ base, tailored }: { base: number | null; tailored: number | 
     <div
       className={cn(
         'grid gap-1 rounded-[14px] border p-3',
-        isReady ? 'border-green-line bg-green-wash' : 'border-orange-soft bg-paper',
+        tailored === null
+          ? 'border-line bg-paper'
+          : isReady
+            ? 'border-green-line bg-green-wash'
+            : 'border-orange-soft bg-paper',
       )}
     >
       <p className="m-0 text-xs font-[750] tracking-[0.12em] text-muted-foreground uppercase">
@@ -282,9 +293,12 @@ function ScoreBox({ base, tailored }: { base: number | null; tailored: number | 
       <p className="m-0 text-sm text-muted-foreground">
         {base === null ? text.baseNone : fill(text.base, { score: String(base) })}
       </p>
-      <p className={cn('m-0 text-sm font-[650]', isReady ? 'text-green-ink' : 'text-ink-soft')}>
-        {isReady ? text.ready : text.below}
-      </p>
+      {/* Nothing to measure: neither ready nor short of it. */}
+      {tailored !== null && (
+        <p className={cn('m-0 text-sm font-[650]', isReady ? 'text-green-ink' : 'text-ink-soft')}>
+          {isReady ? text.ready : text.below}
+        </p>
+      )}
     </div>
   );
 }
@@ -296,10 +310,17 @@ function ScoreBox({ base, tailored }: { base: number | null; tailored: number | 
 function MissingSkills({ keywords }: { keywords: string[] }) {
   const api = useApi();
   const queries = useQueryClient();
-  const [added, setAdded] = useState<ReadonlySet<string>>(new Set());
+  const profile = useProfile();
+  const [addedHere, setAdded] = useState<ReadonlySet<string>>(new Set());
+  // Added here, or already on the profile (added before, in another pane or tab).
+  const onProfile = new Set(
+    ((profile.data?.skills as string[] | undefined) ?? []).map((s) => s.toLocaleLowerCase('en')),
+  );
+  const added = (skill: string) =>
+    addedHere.has(skill) || onProfile.has(skill.toLocaleLowerCase('en'));
   const [adding, setAdding] = useState<string | null>(null);
   const [said, setSaid] = useState<Said | null>(null);
-  const [done, setDone] = useState<{ words: string; count: number } | null>(null);
+  const [done, setDone] = useState<string | null>(null);
   const lineId = useId();
   async function have(skill: string) {
     if (adding !== null) return;
@@ -308,7 +329,7 @@ function MissingSkills({ keywords }: { keywords: string[] }) {
     try {
       await addSkill(api, skill);
       setAdded((was) => new Set(was).add(skill));
-      setDone((was) => ({ words: fill(text.added, { skill }), count: (was?.count ?? 0) + 1 }));
+      setDone(fill(text.added, { skill }));
       void queries.invalidateQueries({ queryKey: ['profile'] });
     } catch (error) {
       setDone(null);
@@ -327,7 +348,7 @@ function MissingSkills({ keywords }: { keywords: string[] }) {
         {keywords.map((skill) => (
           <li key={skill} className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-sm font-[650] [overflow-wrap:anywhere]">{skill}</span>
-            {added.has(skill) ? (
+            {added(skill) ? (
               <span className="text-[0.8125rem] font-[650] text-green-ink">{text.addedShort}</span>
             ) : (
               <Button
@@ -345,12 +366,9 @@ function MissingSkills({ keywords }: { keywords: string[] }) {
           </li>
         ))}
       </ul>
-      <p
-        key={done?.count ?? 0}
-        role="status"
-        className={done ? 'm-0 text-sm text-green-ink' : 'sr-only'}
-      >
-        {done?.words ?? ''}
+      {/* One element, its words changed: a status region mounted with its words is often not read. */}
+      <p role="status" className={done ? 'm-0 text-sm text-green-ink' : 'sr-only'}>
+        {done ?? ''}
       </p>
       <Alert said={said} />
     </div>
@@ -380,7 +398,8 @@ function Downloads({ version }: { version: Tailoring }) {
       const files = await tailoringFiles(api, version.documentId);
       const url = files.downloads?.[kind];
       if (!url) throw new Error('no download');
-      startDownload(url);
+      const pdfName = version.fileName ?? 'Résumé.pdf';
+      saveFile(url, kind === 'pdf' ? pdfName : pdfName.replace(/\.pdf$/, '.docx'));
     } catch {
       setSaid((was) => ({ words: text.downloadFailed, count: (was?.count ?? 0) + 1 }));
     } finally {
@@ -418,15 +437,24 @@ function Downloads({ version }: { version: Tailoring }) {
 }
 
 /**
- * Starts a download from a link that answers as an attachment (S3's presigned `GET` with its
- * content disposition), so the page stays where it is.
+ * Follows a company's run from Matches itself, so its end is seen even once the pane that
+ * started it closes (or shows another job): Matches then reads its scores again (the Score
+ * column), and `onDone` stops following.
  */
-export function startDownload(url: string) {
-  const link = document.createElement('a');
-  link.href = url;
-  link.rel = 'noopener';
-  link.download = '';
-  document.body.append(link);
-  link.click();
-  link.remove();
+export function RunWatcher({
+  companyKey,
+  onDone,
+}: {
+  companyKey: string;
+  onDone: (companyKey: string) => void;
+}) {
+  const queries = useQueryClient();
+  const list = useTailorings(companyKey);
+  const working = isTailoring(list.data?.tailorings[0]);
+  useEffect(() => {
+    if (!list.data || working) return;
+    void queries.invalidateQueries({ queryKey: matchesKey });
+    onDone(companyKey);
+  }, [list.data, working, queries, onDone, companyKey]);
+  return null;
 }

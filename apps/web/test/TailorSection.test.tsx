@@ -8,15 +8,19 @@ import { type ApiClient, ApiContext, type ApiMethod } from '../src/lib/api/index
 
 /** Links pressed here never navigate (happy-dom would follow them); their addresses are kept. */
 let pressed: string[] = [];
+/** The names pressed links save their file as (`download`). */
+let savedAs: string[] = [];
 function stayHere(event: MouseEvent) {
   const link = (event.target as Element | null)?.closest?.('a');
   if (!link) return;
   pressed.push(link.getAttribute('href') ?? '');
+  if (link.hasAttribute('download')) savedAs.push(link.getAttribute('download') ?? '');
   event.preventDefault();
 }
 
 beforeEach(() => {
   pressed = [];
+  savedAs = [];
   document.addEventListener('click', stayHere, true);
   // Wide: the pane beside the table (Tailwind's xl).
   vi.stubGlobal(
@@ -286,5 +290,72 @@ describe('tailoring in the job pane (#51 PR C)', () => {
     fail = false;
     fireEvent.click(section.getByRole('button', { name: 'Try again' }));
     expect(await section.findByRole('button', { name: 'Tailor résumé' })).toBeTruthy();
+  });
+
+  it('updates the Score column when a run ends after its pane was closed (review round 1)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { clock } = await setUp({ crawlMs: 1000 });
+    const scoreColumn = screen
+      .getAllByRole('columnheader')
+      .findIndex((h) => /Résumé score/.test(h.textContent ?? ''));
+    const section = await openSection(BACKEND);
+    fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
+    expect(await section.findByText('Tailoring your résumé for Acme…')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('region', { name: 'Your résumé for Acme' })).toBeNull();
+    clock.now += 2000;
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    await waitFor(() => expect(cell(BACKEND, scoreColumn)).toBe('86%'));
+  });
+
+  it('keeps a skill already on the profile marked added when the pane opens again', async () => {
+    const { fake } = await setUp();
+    await fake.request('PUT', '/me/profile', { version: 0, firstName: 'Sam', lastName: 'Example' });
+    let section = await openSection(PLATFORM);
+    fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
+    fireEvent.click(await section.findByRole('button', { name: 'I have Kafka' }));
+    expect(
+      await section.findByText('Kafka was added to your profile. Re-tailor to use it.'),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    section = await openSection(PLATFORM);
+    await waitFor(() => expect(section.queryByRole('button', { name: 'I have Kafka' })).toBeNull());
+    expect(section.getByText('Added to your profile')).toBeTruthy();
+    expect(section.getByRole('button', { name: 'I have Terraform' })).toBeTruthy();
+  });
+
+  it('says a job tailored with no keyword to count has nothing to score, in the table and the pane', async () => {
+    await setUp({
+      wrap: (api) => ({
+        ...api,
+        async request<T>(m: ApiMethod, p: `/${string}`, body?: unknown): Promise<T> {
+          const answer = await api.request<T>(m, p, body);
+          if (m === 'GET' && p === '/me/matches') {
+            const matches = answer as { jobs: { title: string; match?: unknown }[] };
+            for (const job of matches.jobs) {
+              if (job.title === BACKEND)
+                job.match = { score: null, base: null, resumeDocumentId: 'x' };
+            }
+          }
+          if (m === 'GET' && p.startsWith('/me/tailorings?')) {
+            const list = answer as { tailorings: { scores?: { tailored: number | null }[] }[] };
+            for (const t of list.tailorings)
+              for (const score of t.scores ?? []) score.tailored = null;
+          }
+          return answer;
+        },
+      }),
+    });
+    const scoreColumn = screen
+      .getAllByRole('columnheader')
+      .findIndex((h) => /Résumé score/.test(h.textContent ?? ''));
+    expect(cell(BACKEND, scoreColumn)).toBe('No keywords to score');
+    const section = await openSection(BACKEND);
+    fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
+    await waitFor(() =>
+      expect(section.getAllByText('No keywords to score').length).toBeGreaterThan(0),
+    );
+    expect(section.queryByText(/Below 80%/)).toBeNull();
+    expect(section.queryByText(/Ready to apply/)).toBeNull();
   });
 });
