@@ -490,6 +490,15 @@ describe('GET /me/matches (#52)', () => {
     expect(getSummaries.mock.calls.map((c) => c[1].length)).toEqual([100, 100, 100, 100, 100, 20]);
   });
 
+  it('an applied job keeps its place even when a later crawl hid it', async () => {
+    const r = await call(
+      stored({ a: { status: 'applied', appliedAt: recent, limitState: 'over_limit' } }),
+      2,
+    );
+    // Acme's places: a (applied, hidden since) and b; e stays out.
+    expect(r.titles).toEqual(['C', 'B', 'D']);
+  });
+
   it('a closed or hidden job takes no place in its company; an applied one does', async () => {
     // Acme's places with 2 per company: a is closed, so b and e; b was applied to: only E.
     const r = await call(
@@ -581,9 +590,12 @@ describe('PUT /me/jobs/{jobId}/stage (#52)', () => {
           detail: { from: 'new', stage: 'applied' },
         }),
       },
-      // The admin's expiry (7 days) from now, for an undone apply on a closed or hidden job.
-      NOW.getTime() / 1000 + 7 * 86_400,
+      expect.any(Function),
     );
+    // The admin's expiry (7 days) from now, read only when called (an undo on a hidden job).
+    const expiry = vi.mocked(d.repo.setStage).mock.calls[0]?.[4] as () => Promise<number>;
+    expect(d.limits).not.toHaveBeenCalled();
+    expect(await expiry()).toBe(NOW.getTime() / 1000 + 7 * 86_400);
   });
 
   it('409 stage-changed when the job moved meanwhile; 404 when it is gone', async () => {
@@ -620,6 +632,9 @@ describe('PUT /me/jobs/{jobId}/stage (#52)', () => {
       {},
       { stage: 'applied' },
       { stage: 'shortlisted', from: 'new' },
+      // Nothing but applied has an applied date: a new job cannot skip to a later stage.
+      { stage: 'withdrawn', from: 'new' },
+      { stage: 'interviewing', from: 'new' },
       { stage: 'applied', from: 'new', extra: 1 },
     ]) {
       expect((await put(body, d)).statusCode, JSON.stringify(body)).toBe(400);

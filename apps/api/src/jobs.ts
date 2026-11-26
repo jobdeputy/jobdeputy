@@ -274,9 +274,12 @@ async function matches(userId: string, deps: JobsDeps) {
   for (const ranked of companies) {
     const places = ranked
       .map((rank) => ({ rank, job: found.get(rank.jobId) }))
+      // A job applied to keeps its place even if a later crawl hid it (no refill).
       .filter(
         (p): p is { rank: RankedJob; job: JobSummaryItem } =>
-          p.job !== undefined && p.job.closedAt === undefined && !isHidden(p.job),
+          p.job !== undefined &&
+          p.job.closedAt === undefined &&
+          (p.job.status !== 'new' || !isHidden(p.job)),
       )
       .slice(0, perCompany);
     for (const { rank, job } of places) {
@@ -394,7 +397,7 @@ export async function route(event: Event, deps: JobsDeps): Promise<HttpResponse>
               stage,
             },
           ),
-          await expiresAt(deps),
+          () => expiresAt(deps),
         );
         if (result.kind === 'not-found') return problem(404, 'Not found', { requestId });
         if (result.kind === 'conflict') {

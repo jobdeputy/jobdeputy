@@ -309,10 +309,12 @@ describe('jobs (deployed)', () => {
       appliedAt: applied.body.appliedAt,
     });
 
-    // A change from a stage the job has left (another tab) is refused, not overwritten.
-    const stale = await stage('withdrawn', 'new');
+    // A change from a stage the job has left (another tab) is refused, not overwritten, and
+    // the answer says where the job is now.
+    const stale = await stage('applied', 'new');
     expect(stale.status).toBe(409);
     expect(stale.body.code).toBe('stage-changed');
+    expect(stale.body.job).toMatchObject({ jobId: backend.jobId, status: 'applied' });
     // Someone else's job does not exist for them.
     expect((await stage('offer', 'applied', other.accessToken)).status).toBe(404);
 

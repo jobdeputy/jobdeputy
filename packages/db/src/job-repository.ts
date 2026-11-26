@@ -389,22 +389,33 @@ export class JobRepository {
       const job = res.Attributes;
       if (job?.sourceIds !== undefined || job?.closedAt !== undefined) return undefined;
       // Untouched by the user: expires (kept sooner if it was already hidden). Else kept.
+      // #52: the user can apply between the two writes, so the expiry also needs `new` now;
+      // if that is what failed, it is closed without one.
+      const close = (expires: boolean) =>
+        this.client.send(
+          new UpdateCommand({
+            TableName: this.table,
+            Key: { userId, jobId },
+            UpdateExpression: `SET #closedAt = :now, updatedAt = :now${expires ? ', #ttl = if_not_exists(#ttl, :ttl)' : ''}`,
+            ConditionExpression: `attribute_not_exists(#sourceIds) AND attribute_not_exists(#closedAt)${expires ? ' AND #status = :new' : ''}`,
+            ExpressionAttributeNames: {
+              '#sourceIds': 'sourceIds',
+              '#closedAt': 'closedAt',
+              ...(expires ? { '#ttl': 'ttl', '#status': 'status' } : {}),
+            },
+            ExpressionAttributeValues: {
+              ':now': now,
+              ...(expires ? { ':ttl': expiresAt, ':new': 'new' } : {}),
+            },
+          }),
+        );
       const expires = expiresAt !== undefined && job?.status === 'new';
-      await this.client.send(
-        new UpdateCommand({
-          TableName: this.table,
-          Key: { userId, jobId },
-          UpdateExpression: `SET #closedAt = :now, updatedAt = :now${expires ? ', #ttl = if_not_exists(#ttl, :ttl)' : ''}`,
-          ConditionExpression:
-            'attribute_not_exists(#sourceIds) AND attribute_not_exists(#closedAt)',
-          ExpressionAttributeNames: {
-            '#sourceIds': 'sourceIds',
-            '#closedAt': 'closedAt',
-            ...(expires ? { '#ttl': 'ttl' } : {}),
-          },
-          ExpressionAttributeValues: { ':now': now, ...(expires ? { ':ttl': expiresAt } : {}) },
-        }),
-      );
+      try {
+        await close(expires);
+      } catch (error) {
+        if (!expires || !isConditionFailure(error)) throw error;
+        await close(false);
+      }
       return { jobId, companyKey: String(job?.companyKey ?? '') };
     } catch (error) {
       // The job is gone, was listed again meanwhile, or is already closed.
@@ -685,7 +696,8 @@ export class JobRepository {
     jobId: string,
     change: { stage: JobStage; from: JobStage },
     audit: AuditWrite,
-    expiresAt: number,
+    /** Read only when needed: an undone apply on a closed or hidden job. */
+    expiresAt: () => Promise<number>,
   ): Promise<StageResult> {
     const job = await this.getConsistent(userId, jobId);
     if (!job) return { kind: 'not-found' };
@@ -700,14 +712,38 @@ export class JobRepository {
       ':now': now,
     };
     const saved: Job = { ...job, status: change.stage, stageAt: now, updatedAt: now };
+    const names: Record<string, string> = { '#status': 'status' };
+    const conditions = ['attribute_exists(userId)', '#status = :from'];
     if (change.stage === 'new') {
       remove.push('appliedAt', 'appliedResumeId');
       delete saved.appliedAt;
       delete saved.appliedResumeId;
+      // Whether it expires follows from whether it is closed or hidden, as read: a crawl that
+      // changes either meanwhile fails the write (409), never leaving the wrong expiry.
+      Object.assign(names, {
+        '#closedAt': 'closedAt',
+        '#filter': 'filter',
+        '#state': 'state',
+        '#limitState': 'limitState',
+      });
+      conditions.push(
+        job.closedAt !== undefined
+          ? 'attribute_exists(#closedAt)'
+          : 'attribute_not_exists(#closedAt)',
+      );
+      if (job.filter?.state !== undefined) {
+        conditions.push('#filter.#state = :filterState');
+        values[':filterState'] = job.filter.state;
+      } else conditions.push('attribute_not_exists(#filter.#state)');
+      if (job.limitState !== undefined) {
+        conditions.push('#limitState = :limitState');
+        values[':limitState'] = job.limitState;
+      } else conditions.push('attribute_not_exists(#limitState)');
       if (job.closedAt !== undefined || isHidden(job)) {
+        const expires = await expiresAt();
         set.push('#ttl = if_not_exists(#ttl, :expires)');
-        values[':expires'] = expiresAt;
-        saved.ttl = job.ttl ?? expiresAt;
+        values[':expires'] = expires;
+        saved.ttl = job.ttl ?? expires;
       }
     } else {
       remove.push('#ttl');
@@ -723,7 +759,7 @@ export class JobRepository {
         }
       }
     }
-    const usesTtl = set.some((e) => e.includes('#ttl')) || remove.includes('#ttl');
+    if (set.some((e) => e.includes('#ttl')) || remove.includes('#ttl')) names['#ttl'] = 'ttl';
     try {
       await transactWrite(this.client, {
         TransactItems: [
@@ -732,11 +768,8 @@ export class JobRepository {
               TableName: this.table,
               Key: { userId, jobId },
               UpdateExpression: `SET ${set.join(', ')}${remove.length ? ` REMOVE ${remove.join(', ')}` : ''}`,
-              ConditionExpression: 'attribute_exists(userId) AND #status = :from',
-              ExpressionAttributeNames: {
-                '#status': 'status',
-                ...(usesTtl ? { '#ttl': 'ttl' } : {}),
-              },
+              ConditionExpression: conditions.join(' AND '),
+              ExpressionAttributeNames: names,
               ExpressionAttributeValues: values,
             },
           },
@@ -744,7 +777,8 @@ export class JobRepository {
         ],
       });
     } catch (error) {
-      if (!cancellationCodes(error)?.includes('ConditionalCheckFailed')) throw error;
+      // Only the job's own condition is a conflict; anything else (the audit entry's) is thrown.
+      if (cancellationCodes(error)?.[0] !== 'ConditionalCheckFailed') throw error;
       // Changed or deleted (expired) between the read and the write: say what it is now.
       const current = await this.getConsistent(userId, jobId);
       return current ? { kind: 'conflict', job: current } : { kind: 'not-found' };

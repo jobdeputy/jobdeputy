@@ -281,7 +281,7 @@ describe('JobRepository.closeMissing (T07c)', () => {
     const { c, send } = client((cmd) => {
       const input = (cmd as UpdateCommand).input;
       if (input.UpdateExpression?.startsWith('DELETE')) {
-        const status = input.Key?.jobId === 'untouched' ? 'new' : 'shortlisted';
+        const status = input.Key?.jobId === 'untouched' ? 'new' : 'applied';
         return { Attributes: { companyKey: 'greenhouse:acme', status } };
       }
       return {};
@@ -297,8 +297,34 @@ describe('JobRepository.closeMissing (T07c)', () => {
       ExpressionAttributeNames: { '#ttl': 'ttl' },
       ExpressionAttributeValues: { ':ttl': 1_800_000_000 },
     });
+    expect(byJob.untouched?.ConditionExpression).toBe(
+      'attribute_not_exists(#sourceIds) AND attribute_not_exists(#closedAt) AND #status = :new',
+    );
     expect(byJob.acted?.UpdateExpression).toBe('SET #closedAt = :now, updatedAt = :now');
     expect(byJob.acted?.ExpressionAttributeNames).not.toHaveProperty('#ttl');
+  });
+  it('#52: applied between the two writes, it is closed without an expiry', async () => {
+    const { c, send } = client((cmd) => {
+      const input = (cmd as UpdateCommand).input;
+      if (input.UpdateExpression?.startsWith('DELETE')) {
+        return { Attributes: { companyKey: 'greenhouse:acme', status: 'new' } };
+      }
+      // The user applied meanwhile: the close with an expiry fails on `#status = :new`.
+      if (input.ExpressionAttributeValues?.[':new'] === 'new') {
+        throw Object.assign(new Error('c'), { name: 'ConditionalCheckFailedException' });
+      }
+      return {};
+    });
+    expect(await repo(c).closeMissing(USER, 'S1', ['j1'], 1_800_000_000)).toEqual([
+      { jobId: 'j1', companyKey: 'greenhouse:acme' },
+    ]);
+    const closes = send.mock.calls
+      .map(([cmd]) => (cmd as UpdateCommand).input)
+      .filter((i) => i.UpdateExpression?.startsWith('SET #closedAt'));
+    expect(closes.map((i) => i.UpdateExpression)).toEqual([
+      'SET #closedAt = :now, updatedAt = :now, #ttl = if_not_exists(#ttl, :ttl)',
+      'SET #closedAt = :now, updatedAt = :now',
+    ]);
   });
 });
 
@@ -594,7 +620,13 @@ describe('JobRepository.setStage (#52)', () => {
     const { c, send } = store([
       { jobId: J, status: 'new', ttl: 5, materials: { resumeDocumentId: 'R1' } },
     ]);
-    const r = await repo(c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit, 999);
+    const r = await repo(c).setStage(
+      USER,
+      J,
+      { stage: 'applied', from: 'new' },
+      audit,
+      async () => 999,
+    );
     // The saved job is the one read plus this change: no read back.
     const at = NOW.toISOString();
     expect(r).toEqual({
@@ -635,7 +667,13 @@ describe('JobRepository.setStage (#52)', () => {
       { jobId: J, status: 'applied' },
       { jobId: J, status: 'offer' },
     ]);
-    await repo(later.c).setStage(USER, J, { stage: 'offer', from: 'applied' }, audit, 999);
+    await repo(later.c).setStage(
+      USER,
+      J,
+      { stage: 'offer', from: 'applied' },
+      audit,
+      async () => 999,
+    );
     expect(update(later.send)?.UpdateExpression).toBe(
       'SET #status = :stage, stageAt = :now, updatedAt = :now REMOVE #ttl',
     );
@@ -643,12 +681,16 @@ describe('JobRepository.setStage (#52)', () => {
       { jobId: J, status: 'applied' },
       { jobId: J, status: 'new' },
     ]);
-    await repo(undo.c).setStage(USER, J, { stage: 'new', from: 'applied' }, audit, 999);
+    await repo(undo.c).setStage(USER, J, { stage: 'new', from: 'applied' }, audit, async () => 999);
     const u = update(undo.send);
     expect(u?.UpdateExpression).toBe(
       'SET #status = :stage, stageAt = :now, updatedAt = :now REMOVE appliedAt, appliedResumeId',
     );
-    expect(u?.ExpressionAttributeNames).toEqual({ '#status': 'status' });
+    // An undo is refused if a crawl closed, opened, hid, or showed the job since the read.
+    expect(u?.ConditionExpression).toBe(
+      'attribute_exists(userId) AND #status = :from AND attribute_not_exists(#closedAt) AND attribute_not_exists(#filter.#state) AND attribute_not_exists(#limitState)',
+    );
+    expect(u?.ExpressionAttributeNames).not.toHaveProperty('#ttl');
   });
 
   it('an undone apply on a closed or hidden job expires again, as one never acted on', async () => {
@@ -658,12 +700,21 @@ describe('JobRepository.setStage (#52)', () => {
       { jobId: J, status: 'applied', filter: { state: 'not_relevant' } },
     ]) {
       const undo = store([job]);
-      const r = await repo(undo.c).setStage(USER, J, { stage: 'new', from: 'applied' }, audit, 999);
+      const r = await repo(undo.c).setStage(
+        USER,
+        J,
+        { stage: 'new', from: 'applied' },
+        audit,
+        async () => 999,
+      );
       const u = update(undo.send);
       expect(u?.UpdateExpression).toBe(
         'SET #status = :stage, stageAt = :now, updatedAt = :now, #ttl = if_not_exists(#ttl, :expires) REMOVE appliedAt, appliedResumeId',
       );
-      expect(u?.ExpressionAttributeNames).toEqual({ '#status': 'status', '#ttl': 'ttl' });
+      expect(u?.ExpressionAttributeNames).toMatchObject({ '#status': 'status', '#ttl': 'ttl' });
+      expect(u?.ConditionExpression).toMatch(
+        /attribute_exists\(#closedAt\)|#filter\.#state = :filterState|#limitState = :limitState/,
+      );
       expect(u?.ExpressionAttributeValues?.[':expires']).toBe(999);
       expect(r.kind === 'ok' && r.job.ttl).toBe(999);
     }
@@ -672,20 +723,40 @@ describe('JobRepository.setStage (#52)', () => {
   it('not found, a stale `from`, or the same stage: no write', async () => {
     const gone = store([undefined]);
     expect(
-      await repo(gone.c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit, 999),
+      await repo(gone.c).setStage(
+        USER,
+        J,
+        { stage: 'applied', from: 'new' },
+        audit,
+        async () => 999,
+      ),
     ).toEqual({
       kind: 'not-found',
     });
     const stale = store([{ jobId: J, status: 'applied' }]);
     expect(
-      await repo(stale.c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit, 999),
+      await repo(stale.c).setStage(
+        USER,
+        J,
+        { stage: 'applied', from: 'new' },
+        audit,
+        async () => 999,
+      ),
     ).toEqual({
       kind: 'conflict',
       job: { jobId: J, status: 'applied' },
     });
     const same = store([{ jobId: J, status: 'offer' }]);
     expect(
-      (await repo(same.c).setStage(USER, J, { stage: 'offer', from: 'offer' }, audit, 999)).kind,
+      (
+        await repo(same.c).setStage(
+          USER,
+          J,
+          { stage: 'offer', from: 'offer' },
+          audit,
+          async () => 999,
+        )
+      ).kind,
     ).toBe('ok');
     for (const s of [gone, stale, same]) expect(update(s.send)).toBeUndefined();
   });
@@ -701,7 +772,13 @@ describe('JobRepository.setStage (#52)', () => {
       },
     );
     expect(
-      await repo(moved.c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit, 999),
+      await repo(moved.c).setStage(
+        USER,
+        J,
+        { stage: 'applied', from: 'new' },
+        audit,
+        async () => 999,
+      ),
     ).toEqual({
       kind: 'conflict',
       job: { jobId: J, status: 'withdrawn' },
@@ -710,8 +787,53 @@ describe('JobRepository.setStage (#52)', () => {
       throw cancelled('ConditionalCheckFailed');
     });
     expect(
-      (await repo(expired.c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit, 999)).kind,
+      (
+        await repo(expired.c).setStage(
+          USER,
+          J,
+          { stage: 'applied', from: 'new' },
+          audit,
+          async () => 999,
+        )
+      ).kind,
     ).toBe('not-found');
+  });
+
+  it("the audit entry's own failed condition is thrown, not called a conflict", async () => {
+    const auditFailed = store([{ jobId: J, status: 'new' }], () => {
+      throw Object.assign(new Error('cancelled'), {
+        name: 'TransactionCanceledException',
+        CancellationReasons: [{ Code: 'None' }, { Code: 'ConditionalCheckFailed' }],
+      });
+    });
+    await expect(
+      repo(auditFailed.c).setStage(
+        USER,
+        J,
+        { stage: 'applied', from: 'new' },
+        audit,
+        async () => 999,
+      ),
+    ).rejects.toThrow('cancelled');
+  });
+
+  it('reads the expiry only for an undone apply on a closed or hidden job', async () => {
+    const expiry = vi.fn(async () => 999);
+    await repo(store([{ jobId: J, status: 'new' }]).c).setStage(
+      USER,
+      J,
+      { stage: 'applied', from: 'new' },
+      audit,
+      expiry,
+    );
+    await repo(store([{ jobId: J, status: 'applied' }]).c).setStage(
+      USER,
+      J,
+      { stage: 'new', from: 'applied' },
+      audit,
+      expiry,
+    );
+    expect(expiry).not.toHaveBeenCalled();
   });
 
   it('other errors are thrown', async () => {
@@ -719,7 +841,7 @@ describe('JobRepository.setStage (#52)', () => {
       throw new Error('boom');
     });
     await expect(
-      repo(broken.c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit, 999),
+      repo(broken.c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit, async () => 999),
     ).rejects.toThrow('boom');
   });
 });
