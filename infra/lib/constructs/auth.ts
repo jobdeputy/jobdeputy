@@ -1,4 +1,4 @@
-import { TEST_USERS_GROUP } from '@jobdeputy/shared';
+import { PREMIUM_GROUP, TEST_USERS_GROUP } from '@jobdeputy/shared';
 import { Duration, type RemovalPolicy } from 'aws-cdk-lib';
 import {
   AccountRecovery,
@@ -75,6 +75,13 @@ export class Auth extends Construct {
       enableTokenRevocation: true,
       disableOAuth: true,
       ...tokenValidity,
+    });
+
+    // #74: higher limits for members; an admin adds a user by hand (runbook crawl-limits.md).
+    new CfnUserPoolGroup(this, 'PremiumGroup', {
+      userPoolId: this.userPool.userPoolId,
+      groupName: PREMIUM_GROUP,
+      description: 'Premium tier: higher usage limits. Added by an admin only.',
     });
 
     if (props.testsClient) {

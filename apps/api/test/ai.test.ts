@@ -6,6 +6,7 @@ import {
   KeyCheckLimitError,
   VersionConflictError,
 } from '@jobdeputy/db';
+import { DEFAULT_CRAWL_LIMITS, DEFAULT_PREMIUM_LIMITS } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
 import { type AiDeps, route } from '../src/ai.js';
@@ -66,6 +67,7 @@ function deps(allowTestProvider = false) {
     usage: vi.fn<AiDeps['usage']>(async () => []),
     platformRunsUsed: vi.fn<AiDeps['platformRunsUsed']>(async () => ({ week: 0, month: 0 })),
     limits: vi.fn<AiDeps['limits']>(async () => ({
+      ...DEFAULT_CRAWL_LIMITS,
       dailyDefault: 20,
       dailyMax: 50,
       maxActive: 1,
@@ -261,6 +263,21 @@ describe('GET /me/ai-usage (T08b3)', () => {
       month: '2026-09',
       models: [ENTRY],
       platformRuns: { perWeek: 1, perMonth: 4, usedThisWeek: 0, usedThisMonth: 0, available: true },
+    });
+  });
+
+  it("shows a premium user's runs, still available past the free ones (#74)", async () => {
+    const { d } = deps();
+    vi.mocked(d.platformRunsUsed).mockResolvedValue({ week: 1, month: 2 });
+    const e = get();
+    (e.requestContext.authorizer.jwt.claims as Record<string, unknown>)['cognito:groups'] =
+      '[premium]';
+    expect(body(await route(e, d)).platformRuns).toEqual({
+      perWeek: DEFAULT_PREMIUM_LIMITS.platformRunsPerWeek,
+      perMonth: DEFAULT_PREMIUM_LIMITS.platformRunsPerMonth,
+      usedThisWeek: 1,
+      usedThisMonth: 2,
+      available: true,
     });
   });
 

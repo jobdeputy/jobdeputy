@@ -9,6 +9,7 @@ import {
   CognitoIdentityProviderClient,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { GetMalwareProtectionPlanCommand, GuardDutyClient } from '@aws-sdk/client-guardduty';
+import { PREMIUM_GROUP, TEST_USERS_GROUP } from '@jobdeputy/shared';
 import { cleanUpTestUser } from './cleanup.js';
 
 /**
@@ -47,7 +48,10 @@ export interface TestUser {
  * A throwaway, already-confirmed user (no email is sent), signed in through the
  * IAM-only admin flow of the dev `integration-tests` client. Always call delete().
  */
-export async function createTestUser(outputs: Record<string, string>): Promise<TestUser> {
+export async function createTestUser(
+  outputs: Record<string, string>,
+  options: { premium?: boolean } = {},
+): Promise<TestUser> {
   const cognito = new CognitoIdentityProviderClient({ region });
   const UserPoolId = outputs.UserPoolId;
   const ClientId = outputs.TestsClientId;
@@ -105,9 +109,15 @@ export async function createTestUser(outputs: Record<string, string>): Promise<T
       new AdminAddUserToGroupCommand({
         UserPoolId,
         Username: email,
-        GroupName: 'integration-tests',
+        GroupName: TEST_USERS_GROUP,
       }),
     );
+    if (options.premium) {
+      // #74: before the first sign-in, so the token already carries the group.
+      await cognito.send(
+        new AdminAddUserToGroupCommand({ UserPoolId, Username: email, GroupName: PREMIUM_GROUP }),
+      );
+    }
     await cognito.send(
       new AdminSetUserPasswordCommand({
         UserPoolId,

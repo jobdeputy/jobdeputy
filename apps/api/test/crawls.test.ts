@@ -14,6 +14,7 @@ import {
   type AiKeyStatus,
   type AiSource,
   DEFAULT_CRAWL_LIMITS,
+  DEFAULT_PREMIUM_LIMITS,
   STALE_LIST_MS,
 } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2, APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
@@ -89,6 +90,7 @@ function deps(over: Partial<CrawlsDeps['repo']> = {}) {
     repo,
     settings,
     limits: vi.fn(async () => ({
+      ...DEFAULT_CRAWL_LIMITS,
       dailyDefault: 20,
       dailyMax: 50,
       maxActive: 3,
@@ -415,6 +417,7 @@ describe('daily crawl limit (T06c)', () => {
     // The admin lowered the maximum after the user chose 40.
     settings.get.mockResolvedValueOnce({ dailyLimit: 40 } as CrawlSettings);
     vi.mocked(d.limits).mockResolvedValueOnce({
+      ...DEFAULT_CRAWL_LIMITS,
       dailyDefault: 10,
       dailyMax: 30,
       maxActive: 3,
@@ -1091,5 +1094,79 @@ describe('crawlView: AI scoring (T08d)', () => {
     });
     expect(view.llm).toMatchObject({ calls: 1, inputTokens: 1200, outputTokens: 300 });
     expect(view).not.toHaveProperty('candidates');
+  });
+});
+
+describe('premium tier (#74)', () => {
+  /** HTTP API passes `cognito:groups` as one string, `[a b]`. */
+  function withGroups(e: APIGatewayProxyEventV2WithJWTAuthorizer, groups: string) {
+    const claims = e.requestContext.authorizer.jwt.claims as Record<string, unknown>;
+    claims['cognito:groups'] = groups;
+    return e;
+  }
+  const premium = (e: APIGatewayProxyEventV2WithJWTAuthorizer) =>
+    withGroups(e, '[integration-tests premium]');
+  const submit = (url: string, aiSource?: string) =>
+    event('POST /me/crawls', { body: JSON.stringify({ url, ...(aiSource ? { aiSource } : {}) }) });
+  const LIST = 'https://github.com/SimplifyJobs/New-Grad-Positions';
+
+  it('checks a premium crawl, list run, and AI run against the premium limits', async () => {
+    const { d, repo } = deps();
+    await route(premium(submit(LIST, 'platform')), d);
+    expect(vi.mocked(repo.request).mock.calls[0]?.[0]).toMatchObject({
+      dailyLimit: DEFAULT_PREMIUM_LIMITS.dailyDefault,
+      list: { perDay: DEFAULT_PREMIUM_LIMITS.listsPerDay },
+      platformRuns: {
+        perWeek: DEFAULT_PREMIUM_LIMITS.platformRunsPerWeek,
+        perMonth: DEFAULT_PREMIUM_LIMITS.platformRunsPerMonth,
+      },
+    });
+  });
+
+  it('gives the free limits to a token without the group, or with other groups only', async () => {
+    for (const e of [
+      submit(LIST, 'platform'),
+      withGroups(submit(LIST, 'platform'), '[integration-tests]'),
+    ]) {
+      const { d, repo } = deps();
+      await route(e, d);
+      expect(vi.mocked(repo.request).mock.calls[0]?.[0]).toMatchObject({
+        dailyLimit: 20,
+        list: { perDay: 2 },
+        platformRuns: { perWeek: 1, perMonth: 4 },
+      });
+    }
+  });
+
+  it("shows a premium user's limits, and lets them choose up to the premium maximum", async () => {
+    const { d, settings } = deps();
+    // The admin's own premium values win over the built-in ones.
+    vi.mocked(d.limits).mockResolvedValue({
+      ...DEFAULT_CRAWL_LIMITS,
+      premium: { ...DEFAULT_PREMIUM_LIMITS, dailyDefault: 60, dailyMax: 80 },
+    });
+    const view = body(await route(premium(event('GET /me/crawl-settings')), d));
+    expect(view).toMatchObject({ dailyLimit: 60, defaultLimit: 60, maxAllowed: 80 });
+
+    const put = (dailyLimit: number) =>
+      event('PUT /me/crawl-settings', { body: JSON.stringify({ version: 0, dailyLimit }) });
+    expect((await route(premium(put(70)), d)).statusCode).toBe(200);
+    expect(settings.save).toHaveBeenCalledTimes(1);
+    // The same choice is above a free user's maximum.
+    const free = await route(put(70), d);
+    expect(free.statusCode).toBe(422);
+    expect(body(free).detail).toBe(
+      `The most you can choose is ${DEFAULT_CRAWL_LIMITS.dailyMax} crawls a day.`,
+    );
+  });
+
+  it("says the premium numbers when a premium user's AI runs are used up", async () => {
+    const { d, repo } = deps();
+    vi.mocked(repo.request).mockRejectedValue(new PlatformAllowanceError());
+    const res = await route(premium(submit('https://jobs.example.com/', 'platform')), d);
+    expect(res.statusCode).toBe(429);
+    expect(body(res).detail).toContain(
+      `(${DEFAULT_PREMIUM_LIMITS.platformRunsPerWeek} a week, ${DEFAULT_PREMIUM_LIMITS.platformRunsPerMonth} a month)`,
+    );
   });
 });

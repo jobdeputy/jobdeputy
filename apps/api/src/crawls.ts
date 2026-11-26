@@ -12,6 +12,7 @@ import {
   sourceIdFor,
   ssmCrawlLimits,
   TooManyActiveCrawlsError,
+  tieredLimits,
   usageToday,
   VersionConflictError,
 } from '@jobdeputy/db';
@@ -382,8 +383,8 @@ async function platformAllowanceProblem(
     used.week >= config.platformRunsPerWeek,
     used.month >= config.platformRunsPerMonth,
   );
-  const res = problem(429, 'Free AI runs used up', {
-    detail: `You've used your free AI runs (${config.platformRunsPerWeek} a week, ${config.platformRunsPerMonth} a month). The next one is available at ${nextAt.toISOString()}. Until then, crawl with your own key, or with aiSource "none" (keyword filter only).`,
+  const res = problem(429, 'AI runs used up', {
+    detail: `You've used your AI runs (${config.platformRunsPerWeek} a week, ${config.platformRunsPerMonth} a month). The next one is available at ${nextAt.toISOString()}. Until then, crawl with your own key, or with aiSource "none" (keyword filter only).`,
     code: 'platform-ai-limit-reached',
     requestId,
   });
@@ -531,11 +532,13 @@ async function submit(
 }
 
 /** The caller's crawls (T06b). The user is always the token's `sub`. */
-export async function route(event: Event, deps: CrawlsDeps): Promise<HttpResponse> {
+export async function route(event: Event, base: CrawlsDeps): Promise<HttpResponse> {
   const requestId = event.requestContext.requestId;
   const caller = callerFromEvent(event);
   if (!caller) return problem(401, 'Unauthorized', { requestId });
   const { userId } = caller;
+  // #74: every limit this request checks or shows is the caller's tier's.
+  const deps: CrawlsDeps = { ...base, limits: tieredLimits(base.limits, caller.tier) };
   const blocked = await refuseWritesWhileDeleting(
     event.routeKey,
     userId,

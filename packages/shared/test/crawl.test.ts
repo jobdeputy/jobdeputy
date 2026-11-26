@@ -4,10 +4,12 @@ import {
   type CrawlErrorCode,
   crawlLimitsConfig,
   DEFAULT_CRAWL_LIMITS,
+  DEFAULT_PREMIUM_LIMITS,
   dailyLimitMessage,
   effectiveCompanyJobsLimit,
   effectiveDailyLimit,
   jobsPageQuery,
+  limitsForTier,
   MAX_URL_LENGTH,
   nextUtcMidnight,
   parseCrawlUrl,
@@ -214,5 +216,93 @@ describe('jobs per company and expiry (T08c)', () => {
     expect(jobsPageQuery.parse({}).view).toBe('shown');
     expect(jobsPageQuery.parse({ view: 'all' }).view).toBe('all');
     expect(jobsPageQuery.safeParse({ view: 'hidden' }).success).toBe(false);
+  });
+});
+
+describe('tiers (#74)', () => {
+  it('a setting without them gets 10 tailorings a month, and the built-in premium values', () => {
+    const config = crawlLimitsConfig.parse({ dailyDefault: 20, dailyMax: 50 });
+    expect(config).toMatchObject({
+      platformTailoringsPerMonth: 10,
+      premium: DEFAULT_PREMIUM_LIMITS,
+    });
+    expect(limitsForTier(config, 'free')).toBe(config);
+    expect(limitsForTier(config, 'premium')).toEqual({ ...config, ...DEFAULT_PREMIUM_LIMITS });
+  });
+
+  it("takes the admin's premium values; the other limits stay the same", () => {
+    const config = crawlLimitsConfig.parse({
+      ...DEFAULT_CRAWL_LIMITS,
+      premium: { listsPerDay: 5, platformTailoringsPerMonth: 40 },
+    });
+    expect(limitsForTier(config, 'premium')).toMatchObject({
+      ...DEFAULT_PREMIUM_LIMITS,
+      listsPerDay: 5,
+      platformTailoringsPerMonth: 40,
+      companyJobsDefault: config.companyJobsDefault,
+      relevanceMaxJobs: config.relevanceMaxJobs,
+    });
+    expect(limitsForTier(config, 'free')).toMatchObject({ listsPerDay: 2, dailyMax: 50 });
+  });
+
+  it('never gives premium less than free', () => {
+    const config = crawlLimitsConfig.parse({
+      ...DEFAULT_CRAWL_LIMITS,
+      dailyDefault: 60,
+      dailyMax: 100,
+      platformRunsPerWeek: 40,
+      platformTailoringsPerMonth: 10,
+      premium: { platformTailoringsPerMonth: 0 },
+    });
+    expect(limitsForTier(config, 'premium')).toMatchObject({
+      dailyDefault: 60,
+      dailyMax: 100,
+      platformRunsPerWeek: 40,
+      platformRunsPerMonth: DEFAULT_PREMIUM_LIMITS.platformRunsPerMonth,
+      platformTailoringsPerMonth: 10,
+    });
+  });
+
+  it('makes a feature premium-only with a free 0, and off for everyone with 0 in both', () => {
+    const premiumOnly = crawlLimitsConfig.parse({
+      ...DEFAULT_CRAWL_LIMITS,
+      platformRunsPerWeek: 0,
+      listsPerDay: 0,
+    });
+    expect(limitsForTier(premiumOnly, 'free')).toMatchObject({
+      platformRunsPerWeek: 0,
+      listsPerDay: 0,
+    });
+    expect(limitsForTier(premiumOnly, 'premium')).toMatchObject({
+      platformRunsPerWeek: DEFAULT_PREMIUM_LIMITS.platformRunsPerWeek,
+      listsPerDay: DEFAULT_PREMIUM_LIMITS.listsPerDay,
+    });
+    const off = crawlLimitsConfig.parse({
+      ...DEFAULT_CRAWL_LIMITS,
+      platformTailoringsPerMonth: 0,
+      premium: { platformTailoringsPerMonth: 0 },
+    });
+    expect(limitsForTier(off, 'premium').platformTailoringsPerMonth).toBe(0);
+  });
+
+  it('lowers a premium default above the premium maximum instead of refusing the setting', () => {
+    const config = crawlLimitsConfig.parse({
+      ...DEFAULT_CRAWL_LIMITS,
+      dailyDefault: 5,
+      premium: { dailyMax: 30 },
+    });
+    expect(limitsForTier(config, 'premium')).toMatchObject({ dailyDefault: 30, dailyMax: 50 });
+  });
+
+  it('validates the premium values like the free ones', () => {
+    const with_ = (over: object) =>
+      crawlLimitsConfig.safeParse({ ...DEFAULT_CRAWL_LIMITS, ...over }).success;
+    expect(with_({ platformTailoringsPerMonth: -1 })).toBe(false);
+    expect(with_({ platformTailoringsPerMonth: 1001 })).toBe(false);
+    expect(with_({ premium: { listsPerDay: 11 } })).toBe(false);
+    expect(with_({ premium: { platformRunsPerWeek: 101 } })).toBe(false);
+    // Only the tier limits may differ.
+    expect(with_({ premium: { companyJobsMax: 20 } })).toBe(false);
+    expect(with_({ premium: { dailyMax: 30 } })).toBe(true);
   });
 });

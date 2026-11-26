@@ -14,10 +14,12 @@ import {
   TailoringAllowanceError,
   TailoringBusyError,
   TailoringRepository,
+  tieredLimits,
 } from '@jobdeputy/db';
 import {
   type AiSource,
   aiProvider,
+  type CrawlLimitsConfig,
   callerFromEvent,
   createLogger,
   createTailoringInput,
@@ -26,7 +28,6 @@ import {
   isTailoringStale,
   json,
   nextUtcMonthStart,
-  PLATFORM_TAILORINGS_PER_MONTH,
   parseJsonBody,
   problem,
   rankShown,
@@ -61,6 +62,8 @@ export interface TailoringDeps {
   runs: Pick<TailoringRepository, 'request' | 'list' | 'get' | 'platformRunsUsed'>;
   documents: Pick<DocumentRepository, 'list'>;
   shown: Pick<CompanyLimitRepository, 'get'>;
+  /** The admin limits (#74: the caller's tier's), for the monthly tailoring allowance. */
+  limits: () => Promise<CrawlLimitsConfig>;
   /** The jobs the user sees per company now (company-jobs-limit.ts). */
   companyJobsLimit: (userId: string) => Promise<number>;
   jobs: Pick<JobRepository, 'getSummaries'>;
@@ -165,10 +168,12 @@ async function request(
   }
   // The company's shown jobs, best first, still open and shown: those the user sees, at most
   // TAILORING_JOBS (and never more than their own jobs per company).
-  const [{ shown }, perCompany] = await Promise.all([
+  const [{ shown }, perCompany, limits] = await Promise.all([
     deps.shown.get(userId, companyKey),
     deps.companyJobsLimit(userId),
+    deps.limits(),
   ]);
+  const perMonth = limits.platformTailoringsPerMonth;
   const ranked = rankShown(shown).map((r) => r.jobId);
   const found = new Map((await deps.jobs.getSummaries(userId, ranked)).map((j) => [j.jobId, j]));
   const jobs = ranked
@@ -205,16 +210,16 @@ async function request(
         { type: 'document', id: documentId },
         `Tailored résumé asked for ${companyName ?? companyKey}`,
       ),
-      { perMonth: PLATFORM_TAILORINGS_PER_MONTH, staleMs: TAILORING_STALE_MS },
+      { perMonth, staleMs: TAILORING_STALE_MS },
     );
     logger.info('Tailoring requested', { documentId, jobs: jobs.length, aiSource: source });
     return json(202, { tailoring: tailoringView(doc, deps.now()) });
   } catch (error) {
     if (error instanceof TailoringAllowanceError) {
       const next = nextUtcMonthStart(deps.now());
-      const res = problem(429, 'Free tailoring used up', {
+      const res = problem(429, 'Tailoring allowance used up', {
         code: 'tailoring_allowance',
-        detail: `You've used your free tailored résumés (${PLATFORM_TAILORINGS_PER_MONTH} a month). The next one is available at ${next.toISOString()}. Until then, tailor with your own key.`,
+        detail: `You've used your tailored résumés (${perMonth} a month). The next one is available at ${next.toISOString()}. Until then, tailor with your own key.`,
         requestId,
       });
       const seconds = Math.max(1, Math.ceil((next.getTime() - deps.now().getTime()) / 1000));
@@ -231,11 +236,13 @@ async function request(
   }
 }
 
-export async function route(event: Event, deps: TailoringDeps): Promise<HttpResponse> {
+export async function route(event: Event, base: TailoringDeps): Promise<HttpResponse> {
   const requestId = event.requestContext.requestId;
   const caller = callerFromEvent(event);
   if (!caller) return problem(401, 'Unauthorized', { requestId });
   const { userId } = caller;
+  // #74: every limit this request checks or shows is the caller's tier's.
+  const deps: TailoringDeps = { ...base, limits: tieredLimits(base.limits, caller.tier) };
   const blocked = await refuseWritesWhileDeleting(
     event.routeKey,
     userId,
@@ -255,15 +262,16 @@ export async function route(event: Event, deps: TailoringDeps): Promise<HttpResp
       const query = tailoringsQuery.safeParse(event.queryStringParameters ?? {});
       if (!query.success) return validationProblem(query.error, requestId);
       const now = deps.now();
-      const [versions, used] = await Promise.all([
+      const [versions, used, limits] = await Promise.all([
         deps.runs.list(userId, query.data.companyKey),
         deps.runs.platformRunsUsed(userId, now),
+        deps.limits(),
       ]);
       return json(200, {
         tailorings: versions.map((v) => tailoringView(v, now)),
         allowance: {
           used,
-          perMonth: PLATFORM_TAILORINGS_PER_MONTH,
+          perMonth: limits.platformTailoringsPerMonth,
           nextAt: nextUtcMonthStart(now).toISOString(),
         },
       });
@@ -317,7 +325,9 @@ function defaultDeps(): TailoringDeps {
   const client = documentClient();
   const account = new AccountRepository(client, USERS_TABLE_NAME);
   const s3 = new S3Client({});
+  const limits = ssmCrawlLimits(CRAWL_LIMITS_PARAMETER);
   return {
+    limits,
     runs: new TailoringRepository(client, {
       documents: DOCUMENTS_TABLE_NAME,
       usage: USAGE_TABLE_NAME,
@@ -327,7 +337,7 @@ function defaultDeps(): TailoringDeps {
     documents: new DocumentRepository(client, DOCUMENTS_TABLE_NAME),
     shown: new CompanyLimitRepository(client, USAGE_TABLE_NAME),
     companyJobsLimit: companyJobsLimit({
-      limits: ssmCrawlLimits(CRAWL_LIMITS_PARAMETER),
+      limits,
       settings: new CrawlSettingsRepository(client, PREFERENCES_TABLE_NAME),
     }),
     jobs: new JobRepository(client, JOBS_TABLE_NAME),

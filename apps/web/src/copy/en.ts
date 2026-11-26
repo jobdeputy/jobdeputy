@@ -406,7 +406,7 @@ export const en = {
         refused: 'That link can’t be read. Check it, or try another page.',
         /** The free AI runs are used up for now (the platform model). */
         aiUsedUp:
-          'You’ve used your free AI scoring for now. Your deputy can still rank this link by keywords.',
+          'You’ve used your AI scoring for now. Your deputy can still rank this link by keywords.',
       },
       /** Beside an AI refusal: send the same link, ranked by keywords only (no AI scores). */
       withoutAi: 'Find jobs without AI scores',

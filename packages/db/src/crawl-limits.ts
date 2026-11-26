@@ -4,6 +4,8 @@ import {
   crawlLimitsConfig,
   createLogger,
   DEFAULT_CRAWL_LIMITS,
+  limitsForTier,
+  type Tier,
 } from '@jobdeputy/shared';
 
 const logger = createLogger('crawl-limits');
@@ -34,9 +36,20 @@ export function cachedCrawlLimits(
     }
     let value = DEFAULT_CRAWL_LIMITS;
     try {
-      const parsed = crawlLimitsConfig.safeParse(JSON.parse(raw ?? ''));
+      const json = JSON.parse(raw ?? '');
+      const parsed = crawlLimitsConfig.safeParse(json);
+      // #74: a mistake in the premium block only costs premium users their admin values.
+      const withoutPremium =
+        !parsed.success && parsed.error.issues.every((issue) => issue.path[0] === 'premium')
+          ? crawlLimitsConfig.safeParse({ ...json, premium: undefined })
+          : undefined;
       if (parsed.success) value = parsed.data;
-      else
+      else if (withoutPremium?.success) {
+        value = withoutPremium.data;
+        logger.error('Invalid premium limits; using the built-in premium values', {
+          issues: parsed.error.issues,
+        });
+      } else
         logger.error('Invalid crawl limits setting; using the defaults', {
           issues: parsed.error.issues,
         });
@@ -46,6 +59,14 @@ export function cachedCrawlLimits(
     cached = { value, at: now() };
     return value;
   };
+}
+
+/** #74: the same reader, giving one user's tier its limits (`limitsForTier`). */
+export function tieredLimits(
+  limits: () => Promise<CrawlLimitsConfig>,
+  tier: Tier,
+): () => Promise<CrawlLimitsConfig> {
+  return async () => limitsForTier(await limits(), tier);
 }
 
 export function ssmCrawlLimits(parameterName: string): () => Promise<CrawlLimitsConfig> {

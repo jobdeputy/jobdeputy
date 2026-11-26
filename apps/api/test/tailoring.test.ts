@@ -6,7 +6,8 @@ import {
   TailoringBusyError,
 } from '@jobdeputy/db';
 import {
-  PLATFORM_TAILORINGS_PER_MONTH,
+  DEFAULT_CRAWL_LIMITS,
+  DEFAULT_PREMIUM_LIMITS,
   type StructuredResume,
   TAILORING_STALE_MS,
   tailoringKeys,
@@ -37,6 +38,13 @@ function event(
 }
 
 const post = (body: unknown) => event('POST /me/tailorings', { body: JSON.stringify(body) });
+
+/** #74: the same request from a premium user (HTTP API passes the groups as one string). */
+function asPremium(e: APIGatewayProxyEventV2WithJWTAuthorizer) {
+  const claims = e.requestContext.authorizer.jwt.claims as Record<string, unknown>;
+  claims['cognito:groups'] = '[integration-tests premium]';
+  return e;
+}
 
 function version(over: Partial<GeneratedDocument> = {}): GeneratedDocument {
   return {
@@ -100,6 +108,7 @@ function setup(over: Partial<TailoringDeps> = {}) {
         shown: { [job(2)]: { p: 50, s: 60 }, [job(1)]: { p: 50, s: 90 }, [job(3)]: { p: 50 } },
       })),
     },
+    limits: vi.fn(async () => DEFAULT_CRAWL_LIMITS),
     companyJobsLimit: vi.fn(async () => 10),
     jobs: {
       getSummaries: vi.fn(async (_: string, ids: string[]) => ids.map((id) => summary(id))),
@@ -140,7 +149,7 @@ describe('POST /me/tailorings', () => {
         platformRun: true,
       }),
       expect.objectContaining({ entry: expect.objectContaining({ name: 'tailoring.requested' }) }),
-      { perMonth: PLATFORM_TAILORINGS_PER_MONTH, staleMs: TAILORING_STALE_MS },
+      { perMonth: DEFAULT_CRAWL_LIMITS.platformTailoringsPerMonth, staleMs: TAILORING_STALE_MS },
     );
     expect(body(res).tailoring).toMatchObject({ documentId: DOC, status: 'queued' });
   });
@@ -253,6 +262,25 @@ describe('POST /me/tailorings', () => {
     expect(body(conflict).code).toBe('tailoring_busy');
   });
 
+  it('gives a premium user the premium allowance, and says the number in the refusal', async () => {
+    const { deps, runs } = setup();
+    await route(asPremium(post({ companyKey: 'greenhouse:acme' })), deps);
+    expect(runs.request).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
+      perMonth: DEFAULT_PREMIUM_LIMITS.platformTailoringsPerMonth,
+      staleMs: TAILORING_STALE_MS,
+    });
+
+    // The admin's own premium value wins over the built-in one.
+    vi.mocked(deps.limits).mockResolvedValueOnce({
+      ...DEFAULT_CRAWL_LIMITS,
+      premium: { ...DEFAULT_PREMIUM_LIMITS, platformTailoringsPerMonth: 40 },
+    });
+    runs.request.mockRejectedValueOnce(new TailoringAllowanceError());
+    const res = await route(asPremium(post({ companyKey: 'greenhouse:acme' })), deps);
+    expect(res.statusCode).toBe(429);
+    expect(body(res).detail).toContain('(40 a month)');
+  });
+
   it('validates the body', async () => {
     const { deps } = setup();
     expect((await route(post({}), deps)).statusCode).toBe(400);
@@ -283,11 +311,22 @@ describe('GET /me/tailorings', () => {
       tailorings: [expect.objectContaining({ documentId: DOC, status: 'queued' })],
       allowance: {
         used: 2,
-        perMonth: PLATFORM_TAILORINGS_PER_MONTH,
+        perMonth: DEFAULT_CRAWL_LIMITS.platformTailoringsPerMonth,
         nextAt: '2026-12-01T00:00:00.000Z',
       },
     });
     expect((await route(event('GET /me/tailorings'), deps)).statusCode).toBe(400);
+  });
+
+  it('shows a premium user the premium allowance', async () => {
+    const { deps } = setup();
+    const res = await route(
+      asPremium(
+        event('GET /me/tailorings', { queryStringParameters: { companyKey: 'greenhouse:acme' } }),
+      ),
+      deps,
+    );
+    expect(body(res).allowance.perMonth).toBe(DEFAULT_PREMIUM_LIMITS.platformTailoringsPerMonth);
   });
 });
 

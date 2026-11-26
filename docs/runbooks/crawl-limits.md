@@ -32,10 +32,39 @@ aws ssm put-parameter --overwrite \
 - **Jobs the AI scores per crawl** (T08d): `relevanceMaxJobs` (1 to 50, default 50). The best candidates first (shown ones, then the rest); the others keep the keyword filter's verdict. At most 50, because it fixes the worst case of model calls per crawl (6 task calls, 18 model calls).
 - **Lowest score shown** (T08d): `relevanceMinScore` (0 to 100, default 30). A job the AI scores lower is hidden (`llm_low_score`) and expires like other hidden jobs. Applies from each crawl's next scoring.
 - **List runs** (#50): `listsPerDay` (0 to 10, default 2; 0 turns list runs off: submits get `409 lists-turned-off`) and `listCompanies` (1 to 50, default 20). A list run also counts as 1 crawl toward the daily limit and holds the user's one active slot while its companies are crawled, at most 3 at once. A change applies to the next list run.
+- **Platform tailored résumés** (#51, [0015](../decisions/0015-ats-match-score-and-tailored-resumes.md)): `platformTailoringsPerMonth` (0 to 1000, default 10) per user and calendar month (UTC). Runs with the user's own key are not counted. Past it, a tailoring request gets 429.
+
+## Premium tier (#74)
+
+Members of the Cognito group `premium` get their own values for a few limits; every other limit is the same for everyone. Set them in the same parameter, under `premium` (each one left out takes the built-in premium value):
+
+```json
+"premium": {"dailyDefault":50,"dailyMax":50,"platformRunsPerWeek":30,"platformRunsPerMonth":100,"listsPerDay":10,"platformTailoringsPerMonth":100}
+```
+
+- Same ranges as the free values above. A mistake inside `premium` (an unknown key, a value out of range) only drops the premium block: premium users get the built-in premium values, free users keep theirs, and the API logs `Invalid premium limits`. Check the logs after an edit.
+- A premium user always gets **the higher** of each premium and free value, so raising a free limit never leaves premium users below free ones. So a free 0 with a premium value makes a feature **premium-only**; to turn a feature off for **everyone** (list runs, platform AI runs, platform tailorings), set it to 0 in both the free values and `premium`.
+- A premium `dailyDefault` above the premium `dailyMax` is lowered to it (not refused).
+- **Dev:** keep at least one premium value (daily default or AI runs) above the free one; the integration test `premium.test.ts` checks that a member gets more somewhere and never less. A new stack starts with the free 20 and the built-in premium values, so this holds unless someone edits the parameter.
+
+### Add or remove a premium user
+
+In the user's home cell (its pool ID is the stack output `UserPoolId`). Never put a user's email in code or config.
+
+```sh
+aws cognito-idp admin-add-user-to-group \
+  --user-pool-id <UserPoolId> --username <email> --group-name premium \
+  --profile jobdeputy-dev-iad
+# Remove: admin-remove-user-from-group with the same arguments.
+```
+
+- **When it takes effect:** the tier is read from the user's access token, so a change applies when they next get a token: within 1 hour, or at once if they sign out and in. Their existing usage counts carry over.
+- **Removing someone at once is not possible:** a token they already hold keeps the premium limits until it expires (at most 1 hour). `admin-user-global-sign-out` stops new tokens but does not end that one.
+- **Check it:** `aws cognito-idp admin-list-groups-for-user --user-pool-id <UserPoolId> --username <email>`, and the user's `GET /me/ai-usage` shows the premium `perWeek` and `perMonth`.
 
 ## Notes
 
 - The value in `infra/lib/cell-stack.ts` is only the initial one. CloudFormation leaves the parameter alone on later deploys, unless that value in the code changes; then the deploy resets it. To change the limits permanently for every new cell, change the code as well.
 - Crawls already started today still count. A lower limit takes effect from the next submit, so a user who has already passed it simply can't start more today.
-- Limits for one specific user, set by an admin, are not supported yet (they need an admin screen).
+- Limits for one specific user, set by an admin, are not supported yet (they need an admin screen); the premium group is the only per-user switch.
 - **Dev:** the integration tests start about 10 crawls with one test user, so keep the dev daily default at 10 or more. Otherwise the Nightly run fails with 429. The tests read `maxActive` and submit in batches, so any value works for it.

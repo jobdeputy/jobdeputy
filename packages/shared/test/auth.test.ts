@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { callerFromEvent } from '../src/index.js';
+import { callerFromEvent, groupsFromClaim } from '../src/index.js';
 
 const withClaims = (claims?: Record<string, unknown>) => ({
   requestContext: { authorizer: { jwt: { ...(claims ? { claims } : {}) } } },
@@ -10,6 +10,7 @@ describe('callerFromEvent', () => {
     expect(callerFromEvent(withClaims({ sub: 'u-1', username: 'name-1' }))).toStrictEqual({
       userId: 'u-1',
       username: 'name-1',
+      tier: 'free',
     });
   });
 
@@ -37,5 +38,33 @@ describe('callerFromEvent', () => {
     ['no username', withClaims({ sub: 'u-1' })],
   ])('returns undefined with %s', (_, event) => {
     expect(callerFromEvent(event)).toBeUndefined();
+  });
+});
+
+describe('the tier (#74)', () => {
+  const tierOf = (groups: unknown) =>
+    callerFromEvent(withClaims({ sub: 'u', username: 'n', 'cognito:groups': groups }))?.tier;
+
+  it.each([
+    ['HTTP API’s one string', '[premium]', 'premium'],
+    ['several groups in one string', '[integration-tests premium]', 'premium'],
+    ['an array (a REST API)', ['integration-tests', 'premium'], 'premium'],
+    ['no groups claim', undefined, 'free'],
+    ['other groups only', '[integration-tests]', 'free'],
+    ['a name that only contains premium', '[premium-trial not-premium]', 'free'],
+    ['an empty list', '[]', 'free'],
+    ['not a string or array', 7, 'free'],
+  ])('reads %s', (_, groups, tier) => {
+    expect(tierOf(groups)).toBe(tier);
+  });
+
+  it('reads each group of a claim', () => {
+    expect(groupsFromClaim('[a b  c]')).toEqual(['a', 'b', 'c']);
+    expect(groupsFromClaim(['a', 1, 'b'])).toEqual(['a', 'b']);
+    expect(groupsFromClaim('["premium","integration-tests"]')).toEqual([
+      'premium',
+      'integration-tests',
+    ]);
+    expect(groupsFromClaim('')).toEqual([]);
   });
 });
