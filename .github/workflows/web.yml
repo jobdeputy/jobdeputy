@@ -80,7 +80,32 @@ jobs:
       - name: Install the browsers' system libraries
         if: steps.browsers.outputs.cache-hit == 'true'
         run: pnpm --filter @jobdeputy/web exec playwright install-deps chromium firefox webkit
+      # Main's screenshots (saved by "Keep main's screenshots" below): the suite's teardown
+      # (e2e/compare-screenshots.ts) lists which of this part's shots differ, so the PR comment
+      # shows only those. Those of the main commit the PR is tested on, else the newest (main's
+      # run failed or did not touch the web app). None (evicted after 7 days unused): the
+      # comment shows them all. A stacked PR is compared with main too, so its comment also
+      # shows the screens its base PRs change.
+      # The main commit this run tests the PR on: the merge commit's first parent (read from the
+      # commit itself, which a shallow checkout keeps). Not the event's base.sha, which can be
+      # older than the main the merge commit was built on.
+      - name: The main commit under the PR
+        id: main
+        if: github.event_name == 'pull_request'
+        run: echo "sha=$(git cat-file -p HEAD | awk '/^parent /{print $2; exit}')" >> "$GITHUB_OUTPUT"
+      - name: Main's screenshots, to compare with
+        id: baseline
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/web/screenshots-main
+          key: ui-screenshots-main-${{ steps.main.outputs.sha }}
+          restore-keys: ui-screenshots-main-
       - name: Playwright on every device (desktop, tablet, phones)
+        env:
+          UI_BASELINE_DIR: ${{ github.workspace }}/apps/web/screenshots-main
+          UI_BASELINE_KEY: ${{ steps.baseline.outputs.cache-matched-key }}
+          UI_COMPARE_ID: ${{ matrix.shard }}
         run: pnpm --filter @jobdeputy/web test:e2e --shard=${{ matrix.shard }}/16
       - name: Disk space after the suite
         if: always()
@@ -100,6 +125,31 @@ jobs:
           # A part may hold no screenshot tests (16 parts); Post screenshots checks there are some.
           if-no-files-found: ignore
           retention-days: 7
+
+  # Main's screenshots, kept for PRs to compare with, by commit. Writes only the Actions cache,
+  # so read-only permissions are enough. Old entries are evicted least recently used first, so
+  # they never push out the browsers and pnpm caches every run reads.
+  baseline:
+    name: Keep main's screenshots
+    needs: browser-tests
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: ui-screenshots-*
+          merge-multiple: true
+          path: apps/web/screenshots-main
+      - name: Check there are screenshots
+        run: |
+          count=$(find apps/web/screenshots-main -name '*.png' 2>/dev/null | wc -l)
+          echo "$count screenshots"
+          test "$count" -gt 0
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/web/screenshots-main
+          key: ui-screenshots-main-${{ github.sha }}
 
   screenshots:
     name: Post screenshots
@@ -134,4 +184,6 @@ jobs:
       - name: Post them on the PR
         env:
           GH_TOKEN: ${{ github.token }}
-        run: scripts/publish-ui-screenshots.sh "${{ github.event.pull_request.number }}" "${{ github.event.pull_request.head.sha }}" screenshots
+        run: |
+          UI_BASE_SHA="$(git cat-file -p HEAD | awk '/^parent /{print $2; exit}')" \
+            scripts/publish-ui-screenshots.sh "${{ github.event.pull_request.number }}" "${{ github.event.pull_request.head.sha }}" screenshots

@@ -20,9 +20,10 @@ for (const screen of SCREENS) {
   });
 }
 
-// The boot loader with scripts turned off: the noscript line, without a loading look.
+// The boot loader with scripts turned off: the noscript line, without a loading look. Under
+// reduced motion, like the other boot loader shots: the logo's settled frame, the same each run.
 test.describe('without JavaScript', () => {
-  test.use({ javaScriptEnabled: false });
+  test.use({ javaScriptEnabled: false, reducedMotion: 'reduce' });
 
   test('screenshot: boot-loader-no-js', async ({ page }, testInfo) => {
     await page.goto('/');

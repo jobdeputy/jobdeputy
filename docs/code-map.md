@@ -70,6 +70,7 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `e2e/checks.ts` | shared browser checks: no sideways scroll, no accessibility violations; `openHome` (the home page once the boot loader has handed over) |
 | `e2e/screens.ts` | every screen to screenshot and how to reach its frame (add each new screen here); used by both specs below |
 | `e2e/screenshots.spec.ts` | a shot of every screen on every device as PR proof; `screenshots-dir.ts` and `global-setup.ts` put them in `apps/web/screenshots/` and clear old ones |
+| `e2e/compare-screenshots.ts` | global teardown: which shots differ from `main`'s (restored by CI into `UI_BASELINE_DIR`), so the PR comment shows only those; tested by `compare-screenshots.spec.ts` |
 | `e2e/visual.spec.ts`, `e2e/__screenshots__/` | visual baselines: home, sign-in and the gallery compared pixel for pixel (0.1% allowed) on desktop Chrome, iPad and iPhone, on Linux only; made by the `.github/workflows/screenshot-baselines.yml` workflow (run by hand), which pushes them to a new branch for review; skipped while a baseline is missing |
 
 ## apps/api/src: one Lambda per feature (API Gateway HTTP API)
@@ -180,4 +181,4 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `scripts/request-account-deletion.sh` | the only way to delete an account by hand |
 | `scripts/cleanup-log-groups.sh`, `scripts/cloud-setup.sh` | orphaned log groups; cloud dev environment |
 | `scripts/delete-pr-stack.sh` | deletes a PR stack, retrying AWS internal delete failures (#61) |
-| `scripts/publish-ui-screenshots.sh` | posts a PR's UI screenshots as one comment; images on the `ui-screenshots` branch (one commit: each PR's last 3 pushes, kept 30 days after close; retries when two PRs publish at once) (#14) |
+| `scripts/publish-ui-screenshots.sh` | posts a PR's UI screenshots as one comment (only screens that differ from `main`'s, when `compare-*.json` covers every shot); images on the `ui-screenshots` branch (one commit: each PR's last 3 pushes, kept 30 days after close; retries when two PRs publish at once) (#14) |
