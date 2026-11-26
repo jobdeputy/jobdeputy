@@ -1,22 +1,39 @@
 import { useEffect, useRef } from 'react';
 import { BriefcaseIcon, DocumentIcon, PersonIcon } from '@/components/icons.tsx';
+import { HOME_TAB, JOBS_TABS } from '@/components/jobs/tabs.ts';
 import { copy } from '@/copy/index.ts';
 import { followLink } from '@/lib/router.ts';
 import { cn } from '@/lib/utils.ts';
 
-/** The app's pages, in the sidebar's order. Only pages that exist are listed (#33). */
+/**
+ * The app's pages, in the sidebar's order. Only pages that exist are listed (#33). `paths` are
+ * the addresses it shows at; its link goes to `path` (#52: Jobs is at each of its tabs, and its
+ * link goes to Matches).
+ */
 export const PAGES = [
-  { path: '/jobs', label: copy.nav.jobs, icon: <BriefcaseIcon /> },
-  { path: '/resumes', label: copy.nav.resumes, icon: <DocumentIcon /> },
-  { path: '/profile', label: copy.nav.profile, icon: <PersonIcon /> },
+  {
+    path: HOME_TAB.path,
+    paths: JOBS_TABS.map((tab) => tab.path),
+    label: copy.nav.jobs,
+    icon: <BriefcaseIcon />,
+  },
+  { path: '/resumes', paths: ['/resumes'], label: copy.nav.resumes, icon: <DocumentIcon /> },
+  { path: '/profile', paths: ['/profile'], label: copy.nav.profile, icon: <PersonIcon /> },
 ] as const;
 
-/** Where the app opens, and the page shown at an address that is no page: Job matches (#49). */
-export const HOME_PAGE = PAGES.find((page) => page.path === '/jobs') ?? PAGES[0];
+type AppPage = (typeof PAGES)[number];
 
-/** The page at this path; Job matches at an address that is no page. */
-export function pageAt(path: string): (typeof PAGES)[number] {
-  return PAGES.find((page) => page.path === path) ?? HOME_PAGE;
+/** Where the app opens, and the page shown at an address that is no page: Jobs' Matches (#52). */
+export const HOME_PAGE = PAGES[0];
+
+/** Whether `path` is one of `page`'s addresses. */
+export function isPageAt(page: AppPage, path: string): boolean {
+  return (page.paths as readonly string[]).includes(path);
+}
+
+/** The page at this path; Matches at an address that is no page. */
+export function pageAt(path: string): AppPage {
+  return PAGES.find((page) => isPageAt(page, path)) ?? HOME_PAGE;
 }
 
 /**

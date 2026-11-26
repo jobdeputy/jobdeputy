@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { FitLabel } from '@/components/jobs/fit-label.tsx';
 import { JobPreview } from '@/components/jobs/job-preview.tsx';
 import { whereText } from '@/components/jobs/job-text.ts';
+import { SEARCH_TAB } from '@/components/jobs/tabs.ts';
 import { CARD_CLASS, SECTION_TITLE_CLASS } from '@/components/section.tsx';
 import { LoadFailed } from '@/components/setup/parts.tsx';
 import { Button } from '@/components/ui/button.tsx';
@@ -14,6 +15,7 @@ import {
   type JobSummary,
   useCompanies,
 } from '@/lib/api/companies.ts';
+import { followLink } from '@/lib/router.ts';
 import { useWide } from '@/lib/use-wide.ts';
 import { cn } from '@/lib/utils.ts';
 
@@ -166,9 +168,18 @@ export function CompanyList({
           >
             {(shown) =>
               shown.length === 0 ? (
-                <div className="grid gap-1 rounded-[24px] border border-dashed border-line px-[21px] py-[34px] text-center">
+                <div className="grid justify-items-center gap-1 rounded-[24px] border border-dashed border-line px-[21px] py-[34px] text-center">
                   <p className="m-0 font-[700]">{text.emptyTitle}</p>
                   <p className="m-0 text-sm text-muted-foreground">{text.emptyLine}</p>
+                  {/* #52: an empty Matches points to Search, where links are given. */}
+                  <Button asChild variant="outline" className="mt-3">
+                    <a
+                      href={SEARCH_TAB.path}
+                      onClick={(event) => followLink(event, SEARCH_TAB.path)}
+                    >
+                      {text.toSearch}
+                    </a>
+                  </Button>
                 </div>
               ) : (
                 <div className="grid gap-5">

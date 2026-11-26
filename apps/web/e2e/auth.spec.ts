@@ -112,15 +112,26 @@ test('creates an account, confirms it with the code, lands signed in, and signs 
   await expectNoAccessibilityViolations(page);
   await expectNoHorizontalScroll(page);
   await page.getByRole('button', { name: 'Continue' }).click();
-  // Job matches (#49), where the app opens: at its own address, named in the tab, passing axe.
+  // Matches (#52), where the app opens: at its own address, named in the tab, passing axe; empty,
+  // it points to Search.
   await expect(
     page.getByRole('heading', { level: 1, name: 'The best jobs at each company.' }),
   ).toBeFocused();
-  await expect(page).toHaveURL(/\/jobs$/);
-  await expect(page).toHaveTitle('Job matches · JobDeputy');
+  await expect(page).toHaveURL(/\/matches$/);
+  await expect(page).toHaveTitle('Matches · JobDeputy');
+  const tabs = page.getByRole('navigation', { name: 'Jobs' });
+  await expect(tabs.getByRole('link', { name: 'Matches' })).toHaveAttribute('aria-current', 'page');
   await expectNoAccessibilityViolations(page);
   await expectNoHorizontalScroll(page);
-  // A link in: the deputy at work (axe while it works), then how it went.
+  await page.getByRole('link', { name: 'Go to Search' }).click();
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'Point your deputy at a company.' }),
+  ).toBeFocused();
+  await expect(page).toHaveURL(/\/search$/);
+  await expect(page).toHaveTitle('Search · JobDeputy');
+  await expect(page.getByText('No searches yet')).toBeVisible();
+  await expectNoAccessibilityViolations(page);
+  // A link in: the deputy at work (axe while it works), then how it went, and its run.
   await page.getByLabel('Careers page link').fill('boards.greenhouse.io/acme');
   await page.getByRole('button', { name: 'Find jobs' }).click();
   await expect(page.getByText('Finding jobs')).toBeVisible();
@@ -128,6 +139,14 @@ test('creates an account, confirms it with the code, lands signed in, and signs 
   await expect(page.getByText('Done with boards.greenhouse.io: 12 jobs read.')).toBeVisible({
     timeout: 15_000,
   });
+  const run = page.getByRole('table', { name: 'Your searches' }).getByRole('row').nth(1);
+  await expect(run.getByRole('cell', { name: 'Done', exact: true })).toBeVisible();
+  await expect(run.getByRole('link', { name: /boards\.greenhouse\.io/ })).toBeVisible();
+  await expectNoAccessibilityViolations(page);
+  await expectNoHorizontalScroll(page);
+  // Its jobs are in Matches.
+  await tabs.getByRole('link', { name: 'Matches' }).click();
+  await expect(page).toHaveURL(/\/matches$/);
   // The company it found, its best jobs ranked, each with its fit (#49 PR C).
   const acme = page.getByRole('article', { name: 'Acme' });
   await expect(acme.getByRole('listitem')).toHaveCount(3);

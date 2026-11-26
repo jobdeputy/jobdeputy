@@ -381,9 +381,21 @@ export function createFakeApi({
         return undefined as T;
       }
       const myCrawls = crawls.get(me) ?? [];
-      if (path === '/me/crawls?limit=1' && method === 'GET') {
-        const latest = myCrawls[0];
-        return { crawls: latest ? [crawlView(latest)] : [] } as T;
+      if (path.startsWith('/me/crawls?') && method === 'GET') {
+        // Newest first, a page at a time, as the API pages them (`?limit=&cursor=`).
+        const query = new URLSearchParams(path.slice(path.indexOf('?') + 1));
+        const limit = Number(query.get('limit') ?? 20);
+        const cursor = query.get('cursor');
+        const at = cursor ? myCrawls.findIndex((each) => each.view.crawlId === cursor) : -1;
+        // The API's cursor is a key: one it never gave is refused, never read as the start.
+        if (cursor && at < 0) throw new ApiError('invalid', { status: 400 });
+        const start = at + 1;
+        const page = myCrawls.slice(start, start + limit);
+        const more = start + limit < myCrawls.length;
+        return {
+          crawls: page.map(crawlView),
+          ...(more ? { nextCursor: page.at(-1)?.view.crawlId } : {}),
+        } as T;
       }
       if (path.startsWith('/me/companies') && method === 'GET') {
         return { companies: fakeCompanies(myCrawls.map(crawlView)) } as T;

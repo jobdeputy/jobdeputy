@@ -1,10 +1,12 @@
 import { parseCrawlUrl } from '@jobdeputy/shared/crawl';
 import { useQueryClient } from '@tanstack/react-query';
-import { type FormEvent, useEffect, useReducer, useRef, useState } from 'react';
+import { type FormEvent, useRef, useState } from 'react';
 import { Field } from '@/components/auth/fields.tsx';
 import { DeputyWorking } from '@/components/deputy/deputy-working.tsx';
 import { LinkIcon } from '@/components/icons.tsx';
-import { CompanyList } from '@/components/jobs/company-list.tsx';
+import { useRenderAtDeadline } from '@/components/jobs/latest-crawl.ts';
+import { RunHistory } from '@/components/jobs/run-history.tsx';
+import { HOME_TAB } from '@/components/jobs/tabs.ts';
 import { PageIntro } from '@/components/page-intro.tsx';
 import { Section } from '@/components/section.tsx';
 import { refusalText } from '@/components/setup/parts.tsx';
@@ -19,104 +21,57 @@ import {
   isStalled,
   latestCrawlQuery,
   listProgress,
-  listProgressKey,
   startCrawl,
   useLatestCrawl,
-  workDeadline,
 } from '@/lib/api/crawls.ts';
 import { ApiError, isFinal, useApi } from '@/lib/api/index.ts';
+import { followLink } from '@/lib/router.ts';
 
 const text = copy.jobsPage;
+const searchText = copy.searchPage;
 
 /**
- * The Job matches page (#49): a link in, the best jobs at each company out. Find jobs takes one
- * careers page; the deputy reads it in the background (the crawl), and the page follows the
- * newest crawl, so one started before a reload or in another tab is followed too. Under it, the
- * companies and their best jobs (CompanyList), read again whenever a crawl's work ends.
+ * The Search tab (#52; Find jobs came from #49's Job matches page): a link in. Find jobs takes one
+ * careers page or GitHub list; the deputy reads it in the background (the crawl), and the tab
+ * follows the newest crawl, so one started before a reload or in another tab is followed too.
+ * Under it, the runs so far (RunHistory). The jobs found show in Matches.
  */
-export function JobsPage({ checkEvery }: { checkEvery?: number }) {
+export function SearchPage({ checkEvery }: { checkEvery?: number }) {
   const latest = useLatestCrawl(checkEvery);
   const crawl = latest.data ?? null;
   useRenderAtDeadline(crawl);
-  const listVersion = useListVersion(latest);
   return (
-    // Wide enough for the companies beside a job's preview; the link form keeps its measure.
-    <div className="grid w-full max-w-[1120px] content-start gap-8">
-      <div className="grid w-full max-w-[880px] content-start gap-8">
-        <PageIntro id="jobs-title" eyebrow={text.eyebrow} title={text.title} intro={text.intro} />
-        <Section
-          id="find-jobs"
-          icon={<LinkIcon className="size-[22px]" />}
-          title={text.find.title}
-          line={text.find.line}
-        >
-          <div className="mt-6 grid gap-6">
-            <FindJobs />
-            {latest.isError && latest.data === undefined ? (
-              <ReadFailed
-                // A new failure is a new alert, so the same words are read out again.
-                key={latest.errorUpdateCount}
-                error={latest.error}
-                retrying={latest.isFetching}
-                onRetry={() => latest.refetch()}
-              />
-            ) : (
-              <CrawlProgress crawl={crawl} />
-            )}
-          </div>
-        </Section>
-      </div>
-      <CompanyList
-        version={listVersion}
-        progress={listProgressKey(crawl)}
-        offline={latest.isPaused}
+    <div className="grid w-full max-w-[880px] content-start gap-8">
+      <PageIntro
+        id="search-title"
+        eyebrow={searchText.eyebrow}
+        title={searchText.title}
+        intro={searchText.intro}
       />
+      <Section
+        id="find-jobs"
+        icon={<LinkIcon className="size-[22px]" />}
+        title={text.find.title}
+        line={text.find.line}
+      >
+        <div className="mt-6 grid gap-6">
+          <FindJobs />
+          {latest.isError && latest.data === undefined ? (
+            <ReadFailed
+              // A new failure is a new alert, so the same words are read out again.
+              key={latest.errorUpdateCount}
+              error={latest.error}
+              retrying={latest.isFetching}
+              onRetry={() => latest.refetch()}
+            />
+          ) : (
+            <CrawlProgress crawl={crawl} />
+          )}
+        </div>
+      </Section>
+      <RunHistory latest={latest.data} />
     </div>
   );
-}
-
-/**
- * What the companies list reflects: the newest crawl whose work ended, and how (read, scored, or
- * stalled; a crawl that failed changed nothing). A new version reads the list again from the
- * start, so a crawl that ended in another tab, or later than it seemed to (a stall that then
- * finished), counts too. While a crawl is at work the version stays (a list run's companies
- * are read again in place as each one ends: `listProgressKey` in lib/api/crawls.ts). Undefined
- * until the newest crawl is known, so the list is never read just before a crawl is seen as ended.
- */
-function useListVersion(latest: ReturnType<typeof useLatestCrawl>): string | undefined {
-  const last = useRef<string | undefined>(undefined);
-  if (latest.data === undefined && !latest.isError) return undefined;
-  const crawl = latest.data ?? null;
-  if (crawl && (isCrawling(crawl) || crawl.status === 'failed')) {
-    last.current ??= 'open';
-    return last.current;
-  }
-  last.current = crawl
-    ? [
-        crawl.crawlId,
-        crawl.status,
-        crawl.relevance?.status ?? '',
-        isStalled(crawl) ? 'stalled' : '',
-      ].join(':')
-    : 'none';
-  return last.current;
-}
-
-/**
- * Draws the page again when the deputy's current stage stops counting as work (a scoring that
- * never started, a crawl or scoring that stalled): nothing else changes then, so nothing else
- * would draw it.
- */
-function useRenderAtDeadline(crawl: Crawl | null) {
-  const [, redraw] = useReducer((n: number) => n + 1, 0);
-  const deadline = crawl ? workDeadline(crawl) : null;
-  useEffect(() => {
-    if (deadline === null || Number.isNaN(deadline)) return;
-    const wait = deadline - Date.now();
-    if (wait <= 0) return;
-    const timer = setTimeout(redraw, wait + 1);
-    return () => clearTimeout(timer);
-  }, [deadline]);
 }
 
 /**
@@ -336,7 +291,27 @@ function CrawlProgress({ crawl }: { crawl: Crawl | null }) {
       <div role="status" className="grid gap-1">
         {!working && <Outcome crawl={crawl} host={host} />}
       </div>
+      {/* #52: the jobs found are in the Matches tab. */}
+      {!working && foundJobs(crawl) && (
+        <Button asChild variant="outline" className="mt-4 justify-self-start">
+          <a href={HOME_TAB.path} onClick={(event) => followLink(event, HOME_TAB.path)}>
+            {text.result.toMatches}
+          </a>
+        </Button>
+      )}
     </div>
+  );
+}
+
+/**
+ * A run read with jobs that fit, or not scored yet (its scoring may have stalled): they show in
+ * Matches.
+ */
+function foundJobs(crawl: Crawl): boolean {
+  return (
+    crawl.status === 'succeeded' &&
+    (crawl.stats?.jobsFound ?? 0) > 0 &&
+    crawl.stats?.jobsRelevant !== 0
   );
 }
 
