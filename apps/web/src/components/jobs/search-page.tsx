@@ -303,11 +303,13 @@ function CrawlProgress({ crawl }: { crawl: Crawl | null }) {
   );
 }
 
-/** A run that ended with jobs that fit (or not scored yet): they show in Matches. */
+/**
+ * A run read with jobs that fit, or not scored yet (its scoring may have stalled): they show in
+ * Matches.
+ */
 function foundJobs(crawl: Crawl): boolean {
   return (
     crawl.status === 'succeeded' &&
-    !isStalled(crawl) &&
     (crawl.stats?.jobsFound ?? 0) > 0 &&
     crawl.stats?.jobsRelevant !== 0
   );

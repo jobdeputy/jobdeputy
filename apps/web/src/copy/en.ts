@@ -425,8 +425,8 @@ export const en = {
         failed: 'Failed',
         done: 'Done',
       },
-      /** A count not known yet: a run at work, or one that stalled. */
-      none: 'Not known yet',
+      /** A count not known: a run at work, stalled, or failed. */
+      none: 'Not known',
     },
   },
   /** The Matches tab (#52), where the app opens: the best jobs at each company. */

@@ -11,12 +11,12 @@ afterEach(cleanup);
 
 type FakeApi = ReturnType<typeof createFakeApi>;
 
-function renderHistory(api: FakeApi, latest: Crawl | null | undefined) {
+function renderHistory(api: FakeApi, latest: Crawl | null | undefined, checkEvery?: number) {
   const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = (crawl: Crawl | null | undefined) => (
     <QueryClientProvider client={queries}>
       <ApiContext.Provider value={api}>
-        <RunHistory latest={crawl} />
+        <RunHistory latest={crawl} {...(checkEvery ? { checkEvery } : {})} />
       </ApiContext.Provider>
     </QueryClientProvider>
   );
@@ -58,9 +58,8 @@ describe('Search’s run history (#52)', () => {
     renderHistory(api, null);
     await screen.findByRole('table', { name: 'Your searches' });
     const [working, failed, done] = rows();
-    expect(working?.slice(2)).toEqual(['Reading', '—Not known yet', '—Not known yet']);
-    // Ended: none, not a count still to come.
-    expect(failed?.slice(2)).toEqual(['Failed', '0', '0']);
+    expect(working?.slice(2)).toEqual(['Reading', '—Not known', '—Not known']);
+    expect(failed?.slice(2)).toEqual(['Failed', '—Not known', '—Not known']);
     expect(done?.[0]).toBe('boards.greenhouse.ioCareers page (opens in a new tab)');
     expect(done?.slice(2)).toEqual(['Done', '1', '12']);
     // Its link opens the page given, in a new tab.
@@ -120,6 +119,46 @@ describe('Search’s run history (#52)', () => {
     follow(next);
     await waitFor(() => expect(rows()).toHaveLength(2));
     expect(reads(request)).toBe(2);
+  });
+
+  it('reads the history again while a run in it is at work, then stops', async () => {
+    const api = createFakeApi({ delay: 0, crawlMs: 30 });
+    const request = vi.spyOn(api, 'request');
+    await give(api, 'boards.greenhouse.io/acme');
+    renderHistory(api, null, 10);
+    await screen.findByRole('table', { name: 'Your searches' });
+    expect(rows()[0]?.[2]).toBe('Waiting');
+    // An older run moves on with no new link given; then, done, it is no longer asked about.
+    expect(await screen.findByText('Done', {}, { timeout: 3000 })).toBeTruthy();
+    const after = reads(request);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(reads(request)).toBe(after);
+  });
+
+  it('moves the focus to the heading when More searches brings nothing', async () => {
+    const api = createFakeApi({ delay: 0, crawlMs: 0 });
+    for (let i = 0; i < 21; i += 1) await give(api, `careers${i}.example.com`);
+    renderHistory(api, null);
+    await screen.findByRole('table', { name: 'Your searches' });
+    // A page may come back with no runs and still say there may be more (the API stops after
+    // so many reads); then none came.
+    vi.spyOn(api, 'request')
+      .mockResolvedValueOnce({ crawls: [], nextCursor: 'x' })
+      .mockResolvedValueOnce({ crawls: [] });
+    const first = screen.getByRole('button', { name: 'More searches' });
+    // Not when the button is still there (it keeps the focus).
+    first.focus();
+    fireEvent.click(first);
+    await waitFor(() => expect(api.request).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(document.activeElement).toBe(first);
+    fireEvent.click(first);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('heading', { level: 2, name: 'Your searches' }),
+      ),
+    );
+    expect(rows()).toHaveLength(20);
   });
 
   it('says when the runs could not be read, and tries again', async () => {

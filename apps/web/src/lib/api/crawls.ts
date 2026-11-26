@@ -234,23 +234,35 @@ export function startCrawl(
 /** How many runs a page of the run history holds (#52). */
 export const RUNS_PAGE = 20;
 
+/** How often the run history is read again while one of its runs is at work. */
+export const RUNS_CHECK_EVERY_MS = 15_000;
+
 export const runsKey = ['crawls', 'runs'] as const;
+
+type RunsPage = { crawls: Crawl[]; nextCursor?: string };
 
 /**
  * The person's runs (#52, Search's history): the links they gave, newest first, a page at a time.
  * Only top-level runs: a list run's company crawls are part of it (the API leaves them out).
+ * While any run loaded is at work, every loaded page is read again each `checkEvery` ms, so a
+ * run's row moves on (an older one still scoring too); once none is, it is not read again.
  */
-export function useRuns() {
+export function useRuns(checkEvery = RUNS_CHECK_EVERY_MS) {
   const api = useApi();
   return useInfiniteQuery({
     queryKey: runsKey,
     queryFn: ({ pageParam }) =>
-      api.request<{ crawls: Crawl[]; nextCursor?: string }>(
+      api.request<RunsPage>(
         'GET',
         `/me/crawls?limit=${RUNS_PAGE}${pageParam ? `&cursor=${pageParam}` : ''}`,
       ),
     initialPageParam: '',
     getNextPageParam: (last) => last.nextCursor,
+    refetchInterval: ({ state }) =>
+      !isFinal(state.error) &&
+      state.data?.pages.some((page) => page.crawls.some((crawl) => isCrawling(crawl)))
+        ? checkEvery
+        : false,
     refetchOnWindowFocus: false,
     retry: (failures, error) =>
       failures < 1 && error instanceof ApiError && error.kind === 'offline',
@@ -260,7 +272,7 @@ export function useRuns() {
 
 /**
  * What a run looks like now, in one word: at work (waiting its turn, reading, scoring), stalled,
- * failed, or done. The history's status column, and when it changes, the history is read again.
+ * failed, or done: the history's status column.
  */
 export type RunState = 'waiting' | 'reading' | 'scoring' | 'stalled' | 'failed' | 'done';
 

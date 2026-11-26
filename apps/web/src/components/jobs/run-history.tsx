@@ -11,7 +11,6 @@ import { Button } from '@/components/ui/button.tsx';
 import { QueryRegion } from '@/components/ui/query-region.tsx';
 import { copy } from '@/copy/index.ts';
 import { type Crawl, crawlName, type RunState, runState, useRuns } from '@/lib/api/crawls.ts';
-import { useReadAgain } from '@/lib/use-read-again.ts';
 import { cn } from '@/lib/utils.ts';
 
 const text = copy.searchPage.runs;
@@ -19,35 +18,56 @@ const text = copy.searchPage.runs;
 /**
  * Search's run history (#52): every link given, newest first, 20 at a time with More searches,
  * in the jobs area's table. The newest run's row is the crawl the tab follows (`latest`), so it
- * keeps up as it is read with no read of the history; the history is read again only when a new
- * run is given (here or in another tab).
+ * keeps up at the tab's pace; the history is read once when that run isn't in it yet (a link just
+ * given, here or in another tab), and every 15 s while a run in it is at work (useRuns).
  *
- * Focus is never dropped: after More searches it moves to the first new run's link.
+ * Focus is never dropped: after More searches it moves to the first new run's link, or, when the
+ * read brought none and the button is gone, to the heading.
  */
-export function RunHistory({ latest }: { latest: Crawl | null | undefined }) {
-  const runs = useRuns();
-  // Undefined until the newest run is known: knowing it is no reason to read the history again.
-  useReadAgain(latest === undefined ? undefined : (latest?.crawlId ?? 'none'), runs, {
-    fromKnown: true,
-  });
-  const section = useRef<HTMLElement>(null);
-  // After More searches: the first new run takes the focus, once, when that read ends however
-  // it ended (rows, no rows, or failed); never later.
-  const firstNew = useRef<number | null>(null);
+export function RunHistory({
+  latest,
+  checkEvery,
+}: {
+  latest: Crawl | null | undefined;
+  checkEvery?: number;
+}) {
+  const runs = useRuns(checkEvery);
   const rows = runs.data;
-  const { isFetchingNextPage } = runs;
+  const { isFetching, isFetchingNextPage, hasNextPage, refetch } = runs;
+  // The newest run, not in the history yet: read it again, once for that run.
+  const asked = useRef<string | null>(null);
+  useEffect(() => {
+    if (!latest || !rows || isFetching || asked.current === latest.crawlId) return;
+    if (rows.some((run) => run.crawlId === latest.crawlId)) return;
+    asked.current = latest.crawlId;
+    void refetch();
+  }, [latest, rows, isFetching, refetch]);
+  const section = useRef<HTMLElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  // After More searches: where the focus goes once that read ends, however it ended; never later.
+  const firstNew = useRef<number | null>(null);
   useEffect(() => {
     if (isFetchingNextPage) return;
     const wanted = firstNew.current;
     firstNew.current = null;
-    if (wanted === null || !rows || rows.length <= wanted) return;
-    section.current?.querySelectorAll<HTMLElement>('tbody a')[wanted]?.focus();
-  }, [rows, isFetchingNextPage]);
+    if (wanted === null || !rows) return;
+    if (rows.length > wanted) {
+      section.current?.querySelectorAll<HTMLElement>('tbody a')[wanted]?.focus();
+    } else if (!hasNextPage) {
+      // Nothing more came, and its button went with the focus.
+      heading.current?.focus();
+    }
+  }, [rows, isFetchingNextPage, hasNextPage]);
   const refreshing = runs.isFetching && !runs.isFetchingNextPage;
   const moreFailed = runs.isFetchNextPageError && !runs.isFetchingNextPage;
   return (
     <section ref={section} aria-labelledby="runs-title" className="grid gap-5">
-      <h2 id="runs-title" className={SECTION_TITLE_CLASS}>
+      <h2
+        id="runs-title"
+        ref={heading}
+        tabIndex={-1}
+        className={cn(SECTION_TITLE_CLASS, 'outline-none')}
+      >
         {text.title}
       </h2>
       <QueryRegion
@@ -183,11 +203,10 @@ function companiesRead(run: Crawl): number | undefined {
   return run.status === 'succeeded' ? 1 : undefined;
 }
 
-/** A count; none when the run ended without one; a dash (read "Not known yet") while at work. */
+/** A count; 0 for a run done without one; else a dash, read "Not known". */
 function count(run: Crawl, value: number | undefined) {
   if (value !== undefined) return value.toLocaleString(copy.locale);
-  const state = runState(run);
-  if (state === 'failed' || state === 'done') return (0).toLocaleString(copy.locale);
+  if (runState(run) === 'done') return (0).toLocaleString(copy.locale);
   return (
     <>
       <span aria-hidden="true">—</span>

@@ -16,7 +16,6 @@ import {
   useCompanies,
 } from '@/lib/api/companies.ts';
 import { followLink } from '@/lib/router.ts';
-import { useReadAgain } from '@/lib/use-read-again.ts';
 import { useWide } from '@/lib/use-wide.ts';
 import { cn } from '@/lib/utils.ts';
 
@@ -46,8 +45,18 @@ export function CompanyList({
   offline?: boolean;
 }) {
   const companies = useCompanies(version);
-  // A company ended: the loaded pages are read again.
-  useReadAgain(progress, companies);
+  const { refetch, isFetching } = companies;
+  // A company ended: read the loaded pages again, once no read is on its way (a read sent before
+  // it ended may miss it, and More companies on its way is never cancelled).
+  const lastProgress = useRef(progress);
+  const due = useRef(false);
+  useEffect(() => {
+    if (progress !== lastProgress.current && progress !== undefined) due.current = true;
+    lastProgress.current = progress;
+    if (!due.current || isFetching) return;
+    due.current = false;
+    void refetch();
+  }, [progress, isFetching, refetch]);
   const wide = useWide();
   // The job open in the preview: as the list has it now (a list read again may have scored it),
   // else as it was when it was opened (a read that left it out).
