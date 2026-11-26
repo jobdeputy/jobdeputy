@@ -238,7 +238,7 @@ describe('Job matches: when the free AI runs are used up (#49)', () => {
     findJobs();
     await waitFor(() =>
       expect(notice()).toBe(
-        'You’ve used your free AI scoring for now. Your deputy can still rank this link by keywords.',
+        'You’ve used your AI scoring for now. Your deputy can still rank this link by keywords.',
       ),
     );
     expect(input().getAttribute('aria-invalid')).toBeNull();

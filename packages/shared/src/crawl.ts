@@ -162,6 +162,48 @@ export const crawlMessage = z.object({
 });
 export type CrawlMessage = z.infer<typeof crawlMessage>;
 
+/** #51 (0015): free platform tailored résumés a month. */
+export const DEFAULT_PLATFORM_TAILORINGS_PER_MONTH = 10;
+
+/** #74 (agreed 2026-11-22): about $5 a month at full use, well under the $20 spend block. */
+export const DEFAULT_PREMIUM_LIMITS = {
+  dailyDefault: 50,
+  dailyMax: 50,
+  platformRunsPerWeek: 30,
+  platformRunsPerMonth: 100,
+  listsPerDay: 10,
+  platformTailoringsPerMonth: 100,
+} as const;
+
+/**
+ * #74: the limits a premium user gets (each one left out takes its built-in premium
+ * value). Only these differ between tiers; every other limit is the same for everyone.
+ */
+const premiumLimits = z.strictObject({
+  dailyDefault: z.number().int().min(1).max(1000).default(DEFAULT_PREMIUM_LIMITS.dailyDefault),
+  dailyMax: z.number().int().min(1).max(1000).default(DEFAULT_PREMIUM_LIMITS.dailyMax),
+  platformRunsPerWeek: z
+    .number()
+    .int()
+    .min(0)
+    .max(100)
+    .default(DEFAULT_PREMIUM_LIMITS.platformRunsPerWeek),
+  platformRunsPerMonth: z
+    .number()
+    .int()
+    .min(0)
+    .max(400)
+    .default(DEFAULT_PREMIUM_LIMITS.platformRunsPerMonth),
+  listsPerDay: z.number().int().min(0).max(10).default(DEFAULT_PREMIUM_LIMITS.listsPerDay),
+  platformTailoringsPerMonth: z
+    .number()
+    .int()
+    .min(0)
+    .max(1000)
+    .default(DEFAULT_PREMIUM_LIMITS.platformTailoringsPerMonth),
+});
+export type PremiumLimits = z.infer<typeof premiumLimits>;
+
 /**
  * T06c: daily crawl limits (0007). The admin sets a default and a maximum per stage (SSM
  * Parameter Store, JSON like this); a user may choose their own limit up to the maximum.
@@ -190,6 +232,15 @@ export const crawlLimitsConfig = z
     /** #50: list runs a day (each also counts as 1 crawl), and companies crawled per list. */
     listsPerDay: z.number().int().min(0).max(10).default(DEFAULT_LISTS_PER_DAY),
     listCompanies: z.number().int().min(1).max(50).default(DEFAULT_LIST_COMPANIES),
+    /** #51 (0015): free platform tailored résumés a month; own-key runs are not capped. */
+    platformTailoringsPerMonth: z
+      .number()
+      .int()
+      .min(0)
+      .max(1000)
+      .default(DEFAULT_PLATFORM_TAILORINGS_PER_MONTH),
+    /** #74: the premium tier's own values (a Cognito group `premium`); the rest as above. */
+    premium: premiumLimits.prefault({}),
   })
   .refine((c) => c.dailyDefault <= c.dailyMax, 'dailyDefault must not exceed dailyMax')
   .refine(
@@ -212,7 +263,33 @@ export const DEFAULT_CRAWL_LIMITS: CrawlLimitsConfig = {
   relevanceMinScore: 30,
   listsPerDay: DEFAULT_LISTS_PER_DAY,
   listCompanies: DEFAULT_LIST_COMPANIES,
+  platformTailoringsPerMonth: DEFAULT_PLATFORM_TAILORINGS_PER_MONTH,
+  premium: { ...DEFAULT_PREMIUM_LIMITS },
 };
+
+/** #74: who gets which limits; `premium` comes only from the token's Cognito group. */
+export type Tier = 'free' | 'premium';
+
+/**
+ * The limits one user gets. Premium takes the higher of each premium and free value, so
+ * raising a free limit never leaves premium users below free ones (a free 0 with a premium
+ * value makes a feature premium-only; 0 in both turns it off). A premium default above the
+ * premium maximum is lowered to it (never refused: that would reset every user's limits).
+ */
+export function limitsForTier(config: CrawlLimitsConfig, tier: Tier): CrawlLimitsConfig {
+  if (tier === 'free') return config;
+  const p = config.premium;
+  const best = (key: keyof PremiumLimits, value = p[key]) => Math.max(config[key], value);
+  return {
+    ...config,
+    dailyDefault: best('dailyDefault', Math.min(p.dailyDefault, p.dailyMax)),
+    dailyMax: best('dailyMax'),
+    platformRunsPerWeek: best('platformRunsPerWeek'),
+    platformRunsPerMonth: best('platformRunsPerMonth'),
+    listsPerDay: best('listsPerDay'),
+    platformTailoringsPerMonth: best('platformTailoringsPerMonth'),
+  };
+}
 
 /**
  * `PUT /me/crawl-settings`: `null` goes back to the admin default. `companyJobsLimit`

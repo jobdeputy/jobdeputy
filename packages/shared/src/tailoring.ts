@@ -7,8 +7,6 @@ import { DERIVED_PREFIX, documentId } from './documents.js';
 
 /** Versions kept per company; older ones are deleted when a new one is ready. */
 export const TAILORING_VERSIONS_KEPT = 10;
-/** The free platform tailoring allowance (decision 0015); own-key runs are not capped. */
-export const PLATFORM_TAILORINGS_PER_MONTH = 10;
 /**
  * Below this share of the résumé's text covered by its structured copy, the version says
  * part of the résumé could not be read (the model stopped early or skipped entries).

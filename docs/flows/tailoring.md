@@ -129,6 +129,6 @@ Account deletion erases all of it (the `documents`, `jobs`, and `usage` tables, 
 | Task calls per run | at most 5 |
 | Résumé text sent to structure | 10,000 characters |
 | Versions kept per company | 10 |
-| Free platform runs | 10 a month |
+| Platform runs (own-key runs are not counted) | 10 a month, premium 100 (#74); the admin sets both (`platformTailoringsPerMonth`, [runbook](../runbooks/crawl-limits.md)) |
 | Worker timeout | 12 minutes; retries after 1 and 2 minutes; a run is stale after 60 |
 | Match threshold | 80% (below: `partial`, still usable) |

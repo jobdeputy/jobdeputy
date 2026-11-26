@@ -1,3 +1,5 @@
+import type { Tier } from './crawl.js';
+
 /**
  * The signed-in caller, taken only from the JWT claims that API Gateway has
  * already verified. Never read a user ID from the request body or URL.
@@ -9,6 +11,25 @@ export interface Caller {
   username: string;
   /** When the user last actually signed in (seconds since epoch); refreshing a session keeps it. */
   authTime?: number;
+  /** #74: `premium` when the token says the user is in the Cognito group of that name. */
+  tier: Tier;
+}
+
+/** #74: an admin adds a user to this group in their home cell's pool (never in code). */
+export const PREMIUM_GROUP = 'premium';
+
+/**
+ * The token's `cognito:groups`. HTTP API passes an array claim as one string, `[a b]`;
+ * a JSON-style string (`["a","b"]`) or a real array (a REST API, or a test) is read too.
+ * Our group names never hold whitespace, commas, or quotes.
+ */
+export function groupsFromClaim(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((g): g is string => typeof g === 'string');
+  if (typeof value !== 'string') return [];
+  return value
+    .replace(/^\[|\]$/g, '')
+    .split(/[\s,"]+/)
+    .filter((g) => g !== '');
 }
 
 interface EventWithClaims {
@@ -24,7 +45,15 @@ export function callerFromEvent(event: EventWithClaims): Caller | undefined {
   }
   // HTTP API passes claims as strings.
   const authTime = Number(claims?.auth_time);
-  return { userId, username, ...(Number.isFinite(authTime) && authTime > 0 ? { authTime } : {}) };
+  const tier: Tier = groupsFromClaim(claims?.['cognito:groups']).includes(PREMIUM_GROUP)
+    ? 'premium'
+    : 'free';
+  return {
+    userId,
+    username,
+    ...(Number.isFinite(authTime) && authTime > 0 ? { authTime } : {}),
+    tier,
+  };
 }
 
 /** T12: deleting an account needs a typed confirmation and a recent real sign-in. */

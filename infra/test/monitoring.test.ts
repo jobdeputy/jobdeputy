@@ -142,13 +142,16 @@ describe('monitoring (T13)', () => {
     });
     expect(env(dev)).toEqual(['true']);
     dev.hasResourceProperties('AWS::Cognito::UserPoolGroup', { GroupName: 'integration-tests' });
+    dev.hasResourceProperties('AWS::Cognito::UserPoolGroup', { GroupName: 'premium' });
     for (const cell of ['iad', 'bom', 'lhr']) {
       const prod = stack('prod', `jobdeputy-prod-${cell}`);
       prod.hasResourceProperties('AWS::Cognito::UserPool', {
         LambdaConfig: { PreSignUp: Match.anyValue() },
       });
       expect(env(prod), cell).toEqual(['false']);
-      prod.resourceCountIs('AWS::Cognito::UserPoolGroup', 0);
+      // #74: the premium group only; the integration-tests group never reaches prod.
+      prod.resourceCountIs('AWS::Cognito::UserPoolGroup', 1);
+      prod.hasResourceProperties('AWS::Cognito::UserPoolGroup', { GroupName: 'premium' });
     }
   });
 });

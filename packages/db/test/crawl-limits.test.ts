@@ -1,6 +1,6 @@
-import { DEFAULT_CRAWL_LIMITS } from '@jobdeputy/shared';
+import { DEFAULT_CRAWL_LIMITS, DEFAULT_PREMIUM_LIMITS } from '@jobdeputy/shared';
 import { describe, expect, it, vi } from 'vitest';
-import { cachedCrawlLimits, LIMITS_CACHE_MS } from '../src/crawl-limits.js';
+import { cachedCrawlLimits, LIMITS_CACHE_MS, tieredLimits } from '../src/crawl-limits.js';
 
 describe('cachedCrawlLimits', () => {
   it('reads the admin setting once, then serves it from memory for 5 minutes', async () => {
@@ -20,6 +20,8 @@ describe('cachedCrawlLimits', () => {
       relevanceMinScore: 30,
       listsPerDay: 2,
       listCompanies: 20,
+      platformTailoringsPerMonth: 10,
+      premium: DEFAULT_PREMIUM_LIMITS,
     });
     now = LIMITS_CACHE_MS - 1;
     await limits();
@@ -42,6 +44,8 @@ describe('cachedCrawlLimits', () => {
       relevanceMinScore: 30,
       listsPerDay: 2,
       listCompanies: 20,
+      platformTailoringsPerMonth: 10,
+      premium: DEFAULT_PREMIUM_LIMITS,
     });
   });
 
@@ -77,6 +81,41 @@ describe('cachedCrawlLimits', () => {
       relevanceMinScore: 30,
       listsPerDay: 2,
       listCompanies: 20,
+      platformTailoringsPerMonth: 10,
+      premium: DEFAULT_PREMIUM_LIMITS,
+    });
+  });
+
+  it('drops only the premium block when it alone is invalid (#74)', async () => {
+    const setting = (premium: object) =>
+      cachedCrawlLimits(async () => JSON.stringify({ dailyDefault: 7, dailyMax: 9, premium }))();
+    for (const premium of [{ listPerDay: 5 }, { platformRunsPerWeek: 150 }]) {
+      expect(await setting(premium)).toMatchObject({
+        dailyDefault: 7,
+        dailyMax: 9,
+        premium: DEFAULT_PREMIUM_LIMITS,
+      });
+    }
+    // A mistake outside the premium block still means the built-in defaults.
+    const both = cachedCrawlLimits(async () =>
+      JSON.stringify({ dailyDefault: 70, dailyMax: 9, premium: { listPerDay: 5 } }),
+    );
+    expect(await both()).toEqual(DEFAULT_CRAWL_LIMITS);
+  });
+});
+
+describe('tieredLimits (#74)', () => {
+  it('gives each tier its limits from the same admin setting', async () => {
+    const limits = async () => ({
+      ...DEFAULT_CRAWL_LIMITS,
+      premium: { ...DEFAULT_PREMIUM_LIMITS, listsPerDay: 6 },
+    });
+    expect((await tieredLimits(limits, 'free')()).listsPerDay).toBe(
+      DEFAULT_CRAWL_LIMITS.listsPerDay,
+    );
+    expect(await tieredLimits(limits, 'premium')()).toMatchObject({
+      ...DEFAULT_PREMIUM_LIMITS,
+      listsPerDay: 6,
     });
   });
 });

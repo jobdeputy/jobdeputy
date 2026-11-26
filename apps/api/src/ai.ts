@@ -11,6 +11,7 @@ import {
   listAiUsage,
   platformRunsUsed,
   ssmCrawlLimits,
+  tieredLimits,
   VersionConflictError,
 } from '@jobdeputy/db';
 import {
@@ -253,11 +254,13 @@ async function settingsView(userId: string, deps: AiDeps) {
 }
 
 /** The caller's AI keys and settings. The user is always the token's `sub`. */
-export async function route(event: Event, deps: AiDeps): Promise<HttpResponse> {
+export async function route(event: Event, base: AiDeps): Promise<HttpResponse> {
   const requestId = event.requestContext.requestId;
   const caller = callerFromEvent(event);
   if (!caller) return problem(401, 'Unauthorized', { requestId });
   const { userId } = caller;
+  // #74: every limit this request checks or shows is the caller's tier's.
+  const deps: AiDeps = { ...base, limits: tieredLimits(base.limits, caller.tier) };
   const blocked = await refuseWritesWhileDeleting(
     event.routeKey,
     userId,
