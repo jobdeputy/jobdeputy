@@ -1,6 +1,6 @@
 # 0006: Data model (tables, keys, and schemas)
 
-- **Status:** Accepted; amended by [0007](0007-crawler.md) (`sourceId` is a URL hash; `events` renamed `audit`, built in T06); amended by [0009](0009-llm-architecture-and-own-keys.md) (`ai-keys` table; AI usage counters); amended by [0015](0015-ats-match-score-and-tailored-resumes.md) (generated résumés and cover letters are `documents` items; a stream on `documents`)
+- **Status:** Accepted; amended by [0007](0007-crawler.md) (`sourceId` is a URL hash; `events` renamed `audit`, built in T06); amended by [0009](0009-llm-architecture-and-own-keys.md) (`ai-keys` table; AI usage counters); amended by [0015](0015-ats-match-score-and-tailored-resumes.md) (generated résumés and cover letters are `documents` items; a stream on `documents`); amended by [0018](0018-shared-job-catalog-and-matching.md) (shared `companies` and `catalog-jobs` tables, not keyed by `userId`; `jobs` keeps the user's own state)
 - **Date:** 2026-09-28
 - **Task:** t04
 

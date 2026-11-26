@@ -4,7 +4,7 @@
 - **Date:** 2026-09-29
 - **Task:** t08
 - **Amends:** [0005](0005-pre-launch-cost-guardrails.md) (a KMS key per cell; Bedrock calls to one pinned model, decided in [T08a](../tasks/t08a-ai-model.md)), [0006](0006-data-model.md) (`ai-keys` table; AI usage counters replace `MONTH#` `llmCalls`, `inputTokens`, `outputTokens`)
-- **Amended by:** [0015](0015-ats-match-score-and-tailored-resumes.md) (a separate platform allowance of 10 tailoring runs a month; the own-key consent text says the whole résumé goes to the provider)
+- **Amended by:** [0015](0015-ats-match-score-and-tailored-resumes.md) (a separate platform allowance of 10 tailoring runs a month; the own-key consent text says the whole résumé goes to the provider), [0018](0018-shared-job-catalog-and-matching.md) (AI choices by tier; automatic runs use an own key only after the user opts in)
 
 ## Context
 
