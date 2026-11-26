@@ -59,8 +59,7 @@ export const applicationsCursor = z.strictObject({
 
 /**
  * #49: the fields a list of jobs shows (`descriptionHash` stands for "has a description");
- * #52 adds the stage fields. The applications index projects exactly these, so the table
- * (infra) and the repository (packages/db, `SUMMARY_FIELDS`) read the same list.
+ * #52 adds the stage fields. Read by the repository (packages/db, `SUMMARY_FIELDS`).
  */
 export const JOB_SUMMARY_FIELDS = [
   'jobId',
@@ -90,5 +89,5 @@ export const JOB_SUMMARY_FIELDS = [
   'ttl',
 ] as const;
 
-/** #52: the jobs table's sparse index of applied jobs (key `userId`, `appliedAt`). */
+/** #52: the jobs table's sparse index of applied jobs (key `userId`, `appliedAt`; keys only). */
 export const APPLIED_INDEX = 'applied';

@@ -800,10 +800,12 @@ export class JobRepository {
   }
 
   /**
-   * #52: one page of the jobs the user applied to, newest applied first, from the sparse
-   * `applied` index (it holds only jobs with `appliedAt`, projected to `SUMMARY_FIELDS`, so
-   * hidden jobs are never read). The index is eventually consistent: a job marked applied
-   * a moment ago can be missing for a moment.
+   * #52: one page of the jobs the user applied to, newest applied first. The sparse `applied`
+   * index holds only jobs with `appliedAt`, keys only (DynamoDB lets an index copy at most 20
+   * attributes; a list shows more), so hidden jobs are never read; the page's jobs are then
+   * read in one consistent batch, as they are now. The index is eventually consistent: a job
+   * undone a moment ago (back to `new`) is dropped here; one applied a moment ago can be
+   * missing for a moment.
    */
   async listApplied(
     userId: string,
@@ -821,9 +823,13 @@ export class JobRepository {
         ...(after !== undefined ? { ExclusiveStartKey: { userId, ...after } } : {}),
       }),
     );
+    const ids = (res.Items ?? []).map((k) => String(k.jobId));
+    const found = new Map((await this.getSummaries(userId, ids)).map((j) => [j.jobId, j]));
     const last = res.LastEvaluatedKey;
     return {
-      items: (res.Items ?? []) as JobSummaryItem[],
+      items: ids
+        .map((id) => found.get(id))
+        .filter((j): j is JobSummaryItem => j !== undefined && j.status !== 'new'),
       ...(typeof last?.jobId === 'string' && typeof last.appliedAt === 'string'
         ? { next: { jobId: last.jobId, appliedAt: last.appliedAt } }
         : {}),

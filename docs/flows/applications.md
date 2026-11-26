@@ -50,8 +50,10 @@ sequenceDiagram
   participant Web as Web app (Applications tab)
   participant API as Jobs API
   participant I as jobs, index "applied"
+  participant J as jobs
   Web->>API: GET /me/applications?cursor=…
-  API->>I: Query userId, newest appliedAt first, 50 (eventually consistent)
+  API->>I: Query userId, newest appliedAt first, 50, keys only (eventually consistent)
+  API->>J: BatchGetItem the page's jobs (consistent, summary fields); drop any back at new
   API-->>Web: jobs, nextCursor
 ```
 
@@ -60,5 +62,5 @@ sequenceDiagram
 | What | Where |
 |---|---|
 | The stage, when applied, the résumé used | `jobs` item: `status`, `appliedAt`, `stageAt`, `appliedResumeId` |
-| Applied jobs, newest first | `jobs` GSI `applied` (`userId`, `appliedAt`), projecting the list fields only |
+| Applied jobs, newest first | `jobs` GSI `applied` (`userId`, `appliedAt`), keys only |
 | Who changed what | `audit` `job.stage_changed` (`from`, `stage`) |

@@ -3,7 +3,6 @@ import {
   crawlKeys,
   DEFAULT_CRAWL_LIMITS,
   DERIVED_PREFIX,
-  JOB_SUMMARY_FIELDS,
   SCANNED_PREFIX,
 } from '@jobdeputy/shared';
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps, Tags } from 'aws-cdk-lib';
@@ -186,14 +185,14 @@ export class CellStack extends Stack {
     // T07b (0008): jobs found for the user, one item per posting. T08c: hidden jobs, and
     // closed ones the user never acted on, expire (`ttl`, free deletes).
     const jobsTable = userTable('JobsTable', 'jobs', 'jobId', 'ttl');
-    // #52: the jobs applied to, newest first. Sparse (only jobs with `appliedAt`), projecting
-    // just what a list shows, so Applications never reads the hidden jobs nor descriptions.
+    // #52: the jobs applied to, newest first. Sparse (only jobs with `appliedAt`) and keys
+    // only (an index may copy at most 20 attributes; a list shows more): Applications reads
+    // the page's jobs in one batch, and never the hidden jobs.
     jobsTable.addGlobalSecondaryIndex({
       indexName: APPLIED_INDEX,
       partitionKey: { name: 'userId', type: AttributeType.STRING },
       sortKey: { name: 'appliedAt', type: AttributeType.STRING },
-      projectionType: ProjectionType.INCLUDE,
-      nonKeyAttributes: JOB_SUMMARY_FIELDS.filter((f) => f !== 'jobId' && f !== 'appliedAt'),
+      projectionType: ProjectionType.KEYS_ONLY,
     });
     // T08b2 (0009): the user's own AI keys, encrypted (stream → key-check worker).
     const aiKeysTable = userTable('AiKeysTable', 'ai-keys', 'provider', undefined, true);

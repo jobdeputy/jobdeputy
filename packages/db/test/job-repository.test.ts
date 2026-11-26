@@ -868,32 +868,73 @@ describe('JobRepository.setStage (#52)', () => {
 });
 
 describe('JobRepository.listApplied (#52)', () => {
-  it('reads the applied index newest first and returns where the page ends', async () => {
-    const last = { userId: USER, jobId: 'b'.repeat(32), appliedAt: '2026-10-01T00:00:00.000Z' };
-    const { c, send } = client(() => ({ Items: [{ jobId: 'x' }], LastEvaluatedKey: last }));
+  const [A, B, C] = ['a'.repeat(32), 'b'.repeat(32), 'c'.repeat(32)] as const;
+  /** The index answers keys; the batch read answers the jobs as they are now. */
+  function applied(keys: string[], now: Record<string, unknown>[], last?: Record<string, unknown>) {
+    return client((cmd) =>
+      cmd instanceof QueryCommand
+        ? {
+            Items: keys.map((jobId) => ({ userId: USER, jobId, appliedAt: 'x' })),
+            ...(last ? { LastEvaluatedKey: last } : {}),
+          }
+        : { Responses: { Jobs: now } },
+    );
+  }
+
+  it('reads the keys-only index newest first, then the page in one consistent batch, in order', async () => {
+    const last = { userId: USER, jobId: B, appliedAt: '2026-10-01T00:00:00.000Z' };
+    const { c, send } = applied(
+      [A, B],
+      [
+        { jobId: B, status: 'offer' },
+        { jobId: A, status: 'applied' },
+      ],
+      last,
+    );
     const page = await repo(c).listApplied(USER, 50, {
-      jobId: 'c'.repeat(32),
+      jobId: C,
       appliedAt: '2026-10-02T00:00:00.000Z',
     });
     expect(page).toEqual({
-      items: [{ jobId: 'x' }],
-      next: { jobId: last.jobId, appliedAt: last.appliedAt },
+      items: [
+        { jobId: A, status: 'applied' },
+        { jobId: B, status: 'offer' },
+      ],
+      next: { jobId: B, appliedAt: last.appliedAt },
     });
     const q = send.mock.calls[0]?.[0] as QueryCommand;
     expect(q.input).toMatchObject({
       IndexName: 'applied',
       ScanIndexForward: false,
       Limit: 50,
-      ExclusiveStartKey: {
-        userId: USER,
-        jobId: 'c'.repeat(32),
-        appliedAt: '2026-10-02T00:00:00.000Z',
-      },
+      ExclusiveStartKey: { userId: USER, jobId: C, appliedAt: '2026-10-02T00:00:00.000Z' },
+    });
+    const batch = send.mock.calls[1]?.[0] as {
+      input: { RequestItems: Record<string, Record<string, unknown>> };
+    };
+    expect(batch.input.RequestItems.Jobs).toMatchObject({
+      ConsistentRead: true,
+      Keys: [
+        { userId: USER, jobId: A },
+        { userId: USER, jobId: B },
+      ],
     });
   });
 
-  it('no next page at the end', async () => {
-    const { c } = client(() => ({ Items: [] }));
+  it('drops a job undone meanwhile (back at new) or gone, which the index still lists', async () => {
+    const { c } = applied(
+      [A, B, C],
+      [
+        { jobId: A, status: 'new' },
+        { jobId: C, status: 'rejected' },
+      ],
+    );
+    expect((await repo(c).listApplied(USER, 50)).items).toEqual([{ jobId: C, status: 'rejected' }]);
+  });
+
+  it('an empty page reads nothing more and has no next', async () => {
+    const { c, send } = applied([], []);
     expect(await repo(c).listApplied(USER, 50)).toEqual({ items: [] });
+    expect(send).toHaveBeenCalledTimes(1);
   });
 });

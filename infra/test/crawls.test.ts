@@ -179,10 +179,12 @@ describe('crawl pipeline (T06b)', () => {
     expect(jobs.flatMap((s) => [s.Action].flat()).some((a) => a.startsWith('s3:'))).toBe(false);
   });
 
-  it('indexes only applied jobs, projecting what a list shows and no description (#52)', () => {
+  it('indexes only applied jobs, keys only (#52)', () => {
     const table = Object.values(t.findResources('AWS::DynamoDB::Table')).find((r) =>
       String(r.Properties.TableName).endsWith('-jobs'),
     );
+    // Keys only: DynamoDB refuses an INCLUDE list of more than 20 attributes (PR #77's first
+    // deploy), and the list fields are more; the API reads the page's jobs in a batch.
     expect(table?.Properties.GlobalSecondaryIndexes).toEqual([
       {
         IndexName: 'applied',
@@ -190,15 +192,9 @@ describe('crawl pipeline (T06b)', () => {
           { AttributeName: 'userId', KeyType: 'HASH' },
           { AttributeName: 'appliedAt', KeyType: 'RANGE' },
         ],
-        Projection: {
-          ProjectionType: 'INCLUDE',
-          NonKeyAttributes: expect.arrayContaining(['title', 'status', 'stageAt', 'relevance']),
-        },
+        Projection: { ProjectionType: 'KEYS_ONLY' },
       },
     ]);
-    const projected = table?.Properties.GlobalSecondaryIndexes[0].Projection.NonKeyAttributes;
-    expect(projected).not.toContain('description');
-    expect(projected).not.toContain('keywords');
   });
 
   it('lets the audit API only read the audit table', () => {
