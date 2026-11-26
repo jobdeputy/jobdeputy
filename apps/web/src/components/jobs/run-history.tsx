@@ -18,8 +18,8 @@ const text = copy.searchPage.runs;
 /**
  * Search's run history (#52): every link given, newest first, 20 at a time with More searches,
  * in the jobs area's table. The newest run's row is the crawl the tab follows (`latest`), so it
- * keeps up at the tab's pace; the history is read once when that run isn't in it yet (a link just
- * given, here or in another tab), and every 15 s while a run in it is at work (useRuns).
+ * keeps up at the tab's pace, and shows at the top as soon as it is given (here or in another tab),
+ * when the history is read again once; while an older run is still at work, every 15 s (useRuns).
  *
  * Focus is never dropped: after More searches it moves to the first new run's link, or, when the
  * read brought none and the button is gone, to the heading.
@@ -31,7 +31,7 @@ export function RunHistory({
   latest: Crawl | null | undefined;
   checkEvery?: number;
 }) {
-  const runs = useRuns(checkEvery);
+  const runs = useRuns(latest?.crawlId, checkEvery);
   const rows = runs.data;
   const { isFetching, isFetchingNextPage, hasNextPage, refetch } = runs;
   // The newest run, not in the history yet: read it again, once for that run.
@@ -51,13 +51,16 @@ export function RunHistory({
     const wanted = firstNew.current;
     firstNew.current = null;
     if (wanted === null || !rows) return;
-    if (rows.length > wanted) {
-      section.current?.querySelectorAll<HTMLElement>('tbody a')[wanted]?.focus();
+    const first = rows[wanted];
+    if (first) {
+      // Its place as shown (the run followed may be shown first, before the history has it).
+      const at = withLatest(rows, latest).findIndex((run) => run.crawlId === first.crawlId);
+      section.current?.querySelectorAll<HTMLElement>('tbody a')[at]?.focus();
     } else if (!hasNextPage) {
       // Nothing more came, and its button went with the focus.
       heading.current?.focus();
     }
-  }, [rows, isFetchingNextPage, hasNextPage]);
+  }, [rows, isFetchingNextPage, hasNextPage, latest]);
   const refreshing = runs.isFetching && !runs.isFetchingNextPage;
   const moreFailed = runs.isFetchNextPageError && !runs.isFetchingNextPage;
   return (
@@ -92,9 +95,7 @@ export function RunHistory({
             <JobsTable
               label={text.title}
               columns={COLUMNS}
-              rows={
-                latest ? shown.map((run) => (run.crawlId === latest.crawlId ? latest : run)) : shown
-              }
+              rows={withLatest(shown, latest)}
               rowKey={(run) => run.crawlId}
               empty={<TableEmpty title={text.emptyTitle} line={text.emptyLine} />}
             />
@@ -129,6 +130,21 @@ export function RunHistory({
       </QueryRegion>
     </section>
   );
+}
+
+/**
+ * The runs as shown: the run the tab follows in place of its row, or first when the history
+ * doesn't hold it yet (just given; the history's own read may come later, or fail).
+ */
+export function withLatest(rows: Crawl[], latest: Crawl | null | undefined): Crawl[] {
+  if (!latest) return rows;
+  if (rows.some((run) => run.crawlId === latest.crawlId)) {
+    return rows.map((run) => (run.crawlId === latest.crawlId ? latest : run));
+  }
+  const newest = rows[0];
+  return !newest || Date.parse(latest.createdAt) >= Date.parse(newest.createdAt)
+    ? [latest, ...rows]
+    : rows;
 }
 
 const WHEN = new Intl.DateTimeFormat(copy.locale, { dateStyle: 'medium', timeStyle: 'short' });

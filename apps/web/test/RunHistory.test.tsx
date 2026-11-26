@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RunHistory } from '../src/components/jobs/run-history.tsx';
 import { ApiError } from '../src/lib/api/client.ts';
-import type { Crawl } from '../src/lib/api/crawls.ts';
+import { type Crawl, nextRunsCheck } from '../src/lib/api/crawls.ts';
 import { createFakeApi } from '../src/lib/api/fake.ts';
 import { ApiContext } from '../src/lib/api/index.ts';
 
@@ -21,7 +21,11 @@ function renderHistory(api: FakeApi, latest: Crawl | null | undefined, checkEver
     </QueryClientProvider>
   );
   const { rerender } = render(view(latest));
-  return { follow: (crawl: Crawl | null) => rerender(view(crawl)) };
+  return {
+    follow: (crawl: Crawl | null) => rerender(view(crawl)),
+    /** Until no read is on its way (an observable fact, never a fixed wait). */
+    settled: () => waitFor(() => expect(queries.isFetching()).toBe(0)),
+  };
 }
 
 const give = (api: FakeApi, url: string) =>
@@ -103,42 +107,44 @@ describe('Search’s run history (#52)', () => {
     const request = vi.spyOn(api, 'request');
     const first = await give(api, 'boards.greenhouse.io/acme');
     // The tab knows the newest run only after the history's first read: still one read.
-    const { follow } = renderHistory(api, undefined);
+    const { follow, settled } = renderHistory(api, undefined);
     await screen.findByRole('table', { name: 'Your searches' });
     follow(first);
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await settled();
     expect(reads(request)).toBe(1);
     // The run followed moves on: its row shows it, with no read.
     const { stats: _done, ...reading } = first;
     follow({ ...reading, status: 'running' });
     expect(rows()[0]?.[2]).toBe('Reading');
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await settled();
     expect(reads(request)).toBe(1);
-    // A new link: the history is read again, and its row comes in.
+    // A new link: its row shows at once, first, and the history is read again.
     const next = await give(api, 'still-crawling.example.com/careers');
     follow(next);
-    await waitFor(() => expect(rows()).toHaveLength(2));
-    expect(reads(request)).toBe(2);
+    expect(rows()).toHaveLength(2);
+    expect(rows()[0]?.[0]).toMatch(/^still-crawling/);
+    await waitFor(() => expect(reads(request)).toBe(2));
+    await settled();
+    expect(rows()).toHaveLength(2);
   });
 
-  it('reads the history again while a run in it is at work, then stops', async () => {
-    const api = createFakeApi({ delay: 0, crawlMs: 30 });
-    const request = vi.spyOn(api, 'request');
+  it('reads the history again while an older run in it is at work', async () => {
+    // Its stages move on only when the test moves the fake's clock: no race with the real one.
+    let t = Date.now();
+    const api = createFakeApi({ delay: 0, crawlMs: 60_000, now: () => t });
     await give(api, 'boards.greenhouse.io/acme');
     renderHistory(api, null, 10);
     await screen.findByRole('table', { name: 'Your searches' });
     expect(rows()[0]?.[2]).toBe('Waiting');
-    // An older run moves on with no new link given; then, done, it is no longer asked about.
-    expect(await screen.findByText('Done', {}, { timeout: 3000 })).toBeTruthy();
-    const after = reads(request);
-    await new Promise((resolve) => setTimeout(resolve, 60));
-    expect(reads(request)).toBe(after);
+    // It moves on with no new link given.
+    t += 5 * 60_000;
+    expect(await screen.findByText('Done')).toBeTruthy();
   });
 
   it('moves the focus to the heading when More searches brings nothing', async () => {
     const api = createFakeApi({ delay: 0, crawlMs: 0 });
     for (let i = 0; i < 21; i += 1) await give(api, `careers${i}.example.com`);
-    renderHistory(api, null);
+    const { settled } = renderHistory(api, null);
     await screen.findByRole('table', { name: 'Your searches' });
     // A page may come back with no runs and still say there may be more (the API stops after
     // so many reads); then none came.
@@ -150,7 +156,7 @@ describe('Search’s run history (#52)', () => {
     first.focus();
     fireEvent.click(first);
     await waitFor(() => expect(api.request).toHaveBeenCalledTimes(1));
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await settled();
     expect(document.activeElement).toBe(first);
     fireEvent.click(first);
     await waitFor(() =>
@@ -168,5 +174,23 @@ describe('Search’s run history (#52)', () => {
     expect(await screen.findByText('Your searches didn’t load.', { exact: false })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('No searches yet')).toBeTruthy();
+  });
+});
+
+describe('nextRunsCheck (#52)', () => {
+  const at = (crawlId: string, status: Crawl['status']): Crawl => ({
+    crawlId,
+    url: 'https://example.com',
+    status,
+    createdAt: new Date().toISOString(),
+  });
+  it('asks again only while a run other than the one followed is at work', () => {
+    const pages = [{ crawls: [at('new', 'running'), at('old', 'succeeded')] }];
+    expect(nextRunsCheck(pages, 'new', 15_000)).toBe(false);
+    expect(nextRunsCheck(pages, undefined, 15_000)).toBe(15_000);
+    expect(nextRunsCheck([{ crawls: [at('new', 'running'), at('old', 'queued')] }], 'new', 9)).toBe(
+      9,
+    );
+    expect(nextRunsCheck(undefined, undefined, 9)).toBe(false);
   });
 });

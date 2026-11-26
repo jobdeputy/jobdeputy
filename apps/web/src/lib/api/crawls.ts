@@ -244,10 +244,9 @@ type RunsPage = { crawls: Crawl[]; nextCursor?: string };
 /**
  * The person's runs (#52, Search's history): the links they gave, newest first, a page at a time.
  * Only top-level runs: a list run's company crawls are part of it (the API leaves them out).
- * While any run loaded is at work, every loaded page is read again each `checkEvery` ms, so a
- * run's row moves on (an older one still scoring too); once none is, it is not read again.
+ * `following`: the run the tab already follows (its row mirrors it). See `nextRunsCheck`.
  */
-export function useRuns(checkEvery = RUNS_CHECK_EVERY_MS) {
+export function useRuns(following: string | undefined, checkEvery = RUNS_CHECK_EVERY_MS) {
   const api = useApi();
   return useInfiniteQuery({
     queryKey: runsKey,
@@ -259,15 +258,29 @@ export function useRuns(checkEvery = RUNS_CHECK_EVERY_MS) {
     initialPageParam: '',
     getNextPageParam: (last) => last.nextCursor,
     refetchInterval: ({ state }) =>
-      !isFinal(state.error) &&
-      state.data?.pages.some((page) => page.crawls.some((crawl) => isCrawling(crawl)))
-        ? checkEvery
-        : false,
+      isFinal(state.error) ? false : nextRunsCheck(state.data?.pages, following, checkEvery),
     refetchOnWindowFocus: false,
     retry: (failures, error) =>
       failures < 1 && error instanceof ApiError && error.kind === 'offline',
     select: (data) => data.pages.flatMap((page) => page.crawls),
   });
+}
+
+/**
+ * When to read the loaded runs again: every `every` ms while a run in them is at work, other
+ * than the one the tab follows (an older run still scoring after a new link was given), so its
+ * row moves on; else not again.
+ */
+export function nextRunsCheck(
+  pages: RunsPage[] | undefined,
+  following: string | undefined,
+  every: number,
+  now = Date.now(),
+): number | false {
+  const atWork = pages?.some((page) =>
+    page.crawls.some((crawl) => crawl.crawlId !== following && isCrawling(crawl, now)),
+  );
+  return atWork ? every : false;
 }
 
 /**
