@@ -88,6 +88,15 @@ export const SCREENS: Screen[] = [
     still: true,
     steps: toMatchesApplied,
   },
+  // #52 PR D: Applications, empty (pointing to Matches), and with a job applied to, its stage set.
+  {
+    name: 'applications-empty',
+    path: '/',
+    open: 'Get started free',
+    still: true,
+    steps: toApplicationsEmpty,
+  },
+  { name: 'applications', path: '/', open: 'Get started free', still: true, steps: toApplications },
   {
     name: 'jobs-ai-used-up',
     path: '/',
@@ -375,7 +384,7 @@ async function toJobs(page: Page) {
 }
 
 /** A jobs tab (#52), from the tab row. */
-async function openTab(page: Page, name: 'Search' | 'Matches') {
+async function openTab(page: Page, name: 'Search' | 'Matches' | 'Applications') {
   await page.getByRole('navigation', { name: 'Jobs' }).getByRole('link', { name }).click();
 }
 
@@ -457,6 +466,25 @@ async function toMatchesApplied(page: Page) {
   await toJobsApplyAsk(page);
   await page.getByRole('button', { name: 'I applied' }).click();
   await page.getByRole('button', { name: 'Undo' }).waitFor();
+}
+
+/** #52 PR D: Applications before any job is applied to. */
+async function toApplicationsEmpty(page: Page) {
+  await toJobs(page);
+  await openTab(page, 'Applications');
+  await page.getByText('No applications yet').waitFor();
+}
+
+/** #52 PR D: Applications with the job applied to in Matches, moved on to Interviewing. */
+async function toApplications(page: Page) {
+  await toMatchesApplied(page);
+  await openTab(page, 'Applications');
+  const stage = page.getByRole('combobox', { name: 'Stage for Senior Backend Engineer at Acme' });
+  await stage.selectOption('interviewing');
+  await page
+    .getByRole('status')
+    .filter({ hasText: 'Senior Backend Engineer at Acme: Interviewing.' })
+    .waitFor({ state: 'attached' });
 }
 
 /** A link that could not be read, its reason beside it. */

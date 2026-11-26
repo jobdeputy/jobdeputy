@@ -82,7 +82,9 @@ export function createFakeApi({
   const documents = new Map<string, FakeDocument[]>();
   const crawls = new Map<string, FakeCrawl[]>();
   /** #52: each person's jobs that left `new` (applied to, or later), by job ID. */
-  const stages = new Map<string, Map<string, { stage: string; at: string }>>();
+  const stages = new Map<string, Map<string, FakeStage>>();
+  /** The order jobs were applied to in, to keep same-moment ones newest first. */
+  let stageOrder = 0;
   let lastRole = 0;
 
   /**
@@ -399,7 +401,7 @@ export function createFakeApi({
           ...(more ? { nextCursor: page.at(-1)?.view.crawlId } : {}),
         } as T;
       }
-      const myStages = stages.get(me) ?? new Map<string, { stage: string; at: string }>();
+      const myStages = stages.get(me) ?? new Map<string, FakeStage>();
       stages.set(me, myStages);
       /** The fake's jobs, each with its stage (#52), as the API lists them. */
       const myJobs = (): Record<string, unknown>[] =>
@@ -408,7 +410,7 @@ export function createFakeApi({
           .map((job) => {
             const moved = myStages.get(String(job.jobId));
             return moved
-              ? { ...job, status: moved.stage, appliedAt: moved.at, stageAt: moved.at }
+              ? { ...job, status: moved.stage, appliedAt: moved.appliedAt, stageAt: moved.stageAt }
               : { ...job, status: 'new' };
           });
       if (path === '/me/matches' && method === 'GET') {
@@ -419,6 +421,51 @@ export function createFakeApi({
           .sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || a.at - b.at)
           .map(({ job }) => job);
         return { jobs, truncated: false } as T;
+      }
+      if (path.startsWith('/me/applications?') && method === 'GET') {
+        // Applied to, newest applied first, a page at a time (`?limit=&cursor=`), as the API.
+        const query = new URLSearchParams(path.slice(path.indexOf('?') + 1));
+        // The API's limits (packages/shared `applicationsPageQuery`): 1 to 50.
+        const limit = Number(query.get('limit') ?? 50);
+        if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+          throw new ApiError('invalid', { status: 400 });
+        }
+        // Applied to, newest first; a moment's ties, the one applied to last first.
+        const key = (job: Record<string, unknown>) => ({
+          a: String(job.appliedAt),
+          o: myStages.get(String(job.jobId))?.order ?? 0,
+        });
+        const after = (x: { a: string; o: number }, y: { a: string; o: number }) =>
+          x.a < y.a || (x.a === y.a && x.o < y.o);
+        const applied = myJobs()
+          .filter((job) => job.status !== 'new')
+          .sort((x, y) => (after(key(x), key(y)) ? 1 : after(key(y), key(x)) ? -1 : 0));
+        // A key, as the API's (opaque to the app): the page goes on after it even if its job left.
+        const raw = query.get('cursor');
+        let from: { a: string; o: number } | null = null;
+        if (raw !== null) {
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(atob(raw));
+          } catch {
+            parsed = null;
+          }
+          const ok =
+            typeof parsed === 'object' &&
+            parsed !== null &&
+            typeof (parsed as { a?: unknown }).a === 'string' &&
+            typeof (parsed as { o?: unknown }).o === 'number';
+          if (!ok) throw new ApiError('invalid', { status: 400 });
+          from = parsed as { a: string; o: number };
+        }
+        const start = from;
+        const rest = start ? applied.filter((job) => after(key(job), start)) : applied;
+        const page = rest.slice(0, limit);
+        const last = page.at(-1);
+        return {
+          jobs: page,
+          ...(rest.length > limit && last ? { nextCursor: btoa(JSON.stringify(key(last))) } : {}),
+        } as T;
       }
       const stageOf = /^\/me\/jobs\/([0-9a-f]{32})\/stage$/.exec(path)?.[1];
       if (stageOf && method === 'PUT') {
@@ -437,8 +484,15 @@ export function createFakeApi({
         }
         if (stage === 'new') myStages.delete(stageOf);
         else {
+          // Its applied date stays; a later stage moves `stageAt` only.
+          const at = new Date(now()).toISOString();
           const was = myStages.get(stageOf);
-          myStages.set(stageOf, { stage, at: was?.at ?? new Date(now()).toISOString() });
+          myStages.set(stageOf, {
+            stage,
+            appliedAt: was?.appliedAt ?? at,
+            stageAt: at,
+            order: was?.order ?? ++stageOrder,
+          });
         }
         return myJobs().find((each) => each.jobId === stageOf) as T;
       }
@@ -616,6 +670,14 @@ const FAKE_LIST_COMPANIES = [
   { name: 'Umbrella', url: 'https://job-boards.greenhouse.io/umbrella' },
   { name: 'Hooli', url: 'https://jobs.ashbyhq.com/hooli' },
 ];
+
+/** #52: a job's stage once it left `new`: when applied, when its stage last moved. */
+interface FakeStage {
+  stage: string;
+  appliedAt: string;
+  stageAt: string;
+  order: number;
+}
 
 interface FakeCrawl {
   view: Record<string, unknown>;

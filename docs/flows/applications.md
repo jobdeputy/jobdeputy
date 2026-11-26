@@ -2,7 +2,7 @@
 
 A job lives in one `jobs` item, and its **stage** (`status`) says which tab shows it: `new` in **Matches**; `applied`, `interviewing`, `offer`, `rejected` or `withdrawn` in **Applications**. Moving a job changes that one item; nothing is copied. Decision: [0016](../decisions/0016-applications-are-job-stages.md). Before this: [relevance flow](relevance.md) (which jobs a company shows).
 
-- **Task:** [#52](https://github.com/jobdeputy/jobdeputy/issues/52). Matches and applying by hand: PR C. The Applications tab comes in PR D; the cooldown (3 applications per company in 30 days) in PR E.
+- **Task:** [#52](https://github.com/jobdeputy/jobdeputy/issues/52). Matches and applying by hand: PR C. The Applications tab: PR D; the cooldown (3 applications per company in 30 days) in PR E.
 - **Keep it true:** a PR that changes this flow updates this file, like [data-model.md](../data-model.md).
 
 ## Matches
@@ -63,7 +63,18 @@ sequenceDiagram
   API->>I: Query userId, newest appliedAt first, 50, keys only (eventually consistent)
   API->>J: BatchGetItem the page's jobs (consistent, summary fields); drop any back at new
   API-->>Web: jobs, nextCursor
+  Note over Web: the table in the server's order (More applications reads the next page)
+  Web->>API: PUT /me/jobs/{jobId}/stage {stage: interviewing, from: applied}
+  alt changed meanwhile (another tab or device)
+    API-->>Web: 404 / 409 stage-changed
+    Note over Web: said in an alert; GET /me/applications again (the job as it is now, or gone)
+  else saved
+    API-->>Web: 200, the job
+    Note over Web: the row shows the stage saved, kept in its place (the order is by appliedAt);<br/>a row read later shows its own stage only if its stageAt is as new or newer
+  end
 ```
+
+In Applications a stage moves between `applied`, `interviewing`, `offer`, `rejected` and `withdrawn` in any direction (a stage set by mistake can be put back). Back to `new` is only Matches' Undo.
 
 ## Where the data is
 
