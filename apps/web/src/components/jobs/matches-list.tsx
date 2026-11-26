@@ -147,11 +147,12 @@ export function MatchesList({
   }, [wide, open]);
   function close() {
     const jobId = openId;
+    const pane = document.getElementById('job-preview');
     setOpened(null);
     // Back to the row that opened it, once the table shows again; to the heading if a list read
     // again left it out. Not if the focus went somewhere meanwhile.
     requestAnimationFrame(() => {
-      if (!focusFreed(null)) return;
+      if (!focusFreed(pane)) return;
       const row = section.current?.querySelector<HTMLElement>(`[data-job-id="${jobId}"]`);
       (row ?? heading.current)?.focus();
     });
@@ -455,5 +456,11 @@ function NoticeLine({
  */
 function focusFreed(...gone: (Element | null)[]): boolean {
   const at = document.activeElement;
-  return at === null || at === document.body || gone.some((each) => each?.contains(at));
+  return (
+    at === null ||
+    at === document.body ||
+    // WebKit can keep a removed element as the active one: its focus is lost all the same.
+    !at.isConnected ||
+    gone.some((each) => each?.contains(at))
+  );
 }
