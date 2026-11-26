@@ -1,4 +1,4 @@
-import type { Crawl, Job, JobRelevance } from '@jobdeputy/db';
+import { type Crawl, type Job, type JobRelevance, RelevanceConflictError } from '@jobdeputy/db';
 import { promptVersion, relevanceTask } from '@jobdeputy/llm';
 import { type StubReply, stubSource } from '@jobdeputy/llm/testing';
 import type { SQSRecord } from 'aws-lambda';
@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { FitInputs } from '../src/relevance/fit.js';
 import { inputsHash, modelProfile } from '../src/relevance/llm-inputs.js';
 import {
+  LEASE_MS,
   processRecord,
   type RelevanceWorkerDeps,
   STALE_AFTER_MS,
@@ -14,6 +15,7 @@ import {
 const USER = '0f8fad5b-d9cb-469f-a165-70867728950e';
 const CRAWL = '01J8ZQ4Y3N5W6X7Y8Z9A0B1C2D';
 const NOW = new Date('2026-10-01T06:00:00.000Z');
+const LEASE = '2026-10-01T06:06:00.000Z';
 
 const record = (body: unknown = { userId: USER, crawlId: CRAWL }, receiveCount = 1) =>
   ({
@@ -127,9 +129,16 @@ function setup(
     isBeingDeleted: vi.fn(async () => false),
     getCrawl: vi.fn(async () => stored),
     runs: {
-      begin: vi.fn(async () => {
-        if (stored && !stored.relevance) stored = { ...stored, relevance: RUNNING };
-        return true;
+      // Like the repository: the run records which delivery holds it.
+      begin: vi.fn(async (): Promise<string | undefined> => {
+        if (stored && !stored.relevance)
+          stored = { ...stored, relevance: { ...RUNNING, leaseId: LEASE } };
+        return LEASE;
+      }),
+      claim: vi.fn(async (): Promise<string | undefined> => {
+        if (stored?.relevance)
+          stored = { ...stored, relevance: { ...stored.relevance, leaseId: LEASE } };
+        return LEASE;
       }),
       saveCall: vi.fn<RelevanceWorkerDeps['runs']['saveCall']>(async () => undefined),
       finish: vi.fn<RelevanceWorkerDeps['runs']['finish']>(async () => true),
@@ -186,7 +195,10 @@ describe('relevance worker: a run', () => {
   it('scores the candidates, stores the call with its usage, hides low scores, and ranks by score', async () => {
     const { deps } = setup();
     expect(await processRecord(record(), deps)).toBe('done');
-    expect(deps.runs.begin).toHaveBeenCalledWith(USER, CRAWL);
+    expect(deps.runs.begin).toHaveBeenCalledWith(USER, CRAWL, LEASE_MS);
+    // Its calls and its end are stored only while it holds the lease.
+    expect(deps.runs.saveCall.mock.calls[0]?.[0].lease).toBe(LEASE);
+    expect(deps.runs.finish.mock.calls[0]?.[0].lease).toBe(LEASE);
 
     // Sent best first (the crawl's order), with the résumé; one call for both jobs.
     const saved = deps.runs.saveCall.mock.calls[0]?.[0];
@@ -318,6 +330,105 @@ describe('relevance worker: retries and the fixed worst case', () => {
       usage: { runs: 0 },
     });
     expect(deps.runs.finish.mock.calls[0]?.[0].stats).toMatchObject({ scored: 1, unscored: 1 });
+  });
+
+  it('skips a duplicate delivery: the run another one started, or one whose lease it holds', async () => {
+    const started = setup();
+    started.deps.runs.begin.mockResolvedValueOnce(undefined);
+    expect(await processRecord(record(), started.deps)).toBe('skipped');
+    expect(started.deps.runs.saveCall).not.toHaveBeenCalled();
+    expect(started.deps.runs.finish).not.toHaveBeenCalled();
+
+    // Before the fix, this one found the other's scores, called them reused, and ended the run.
+    const held = setup({ crawl: { relevance: { ...RUNNING, calls: 1, sent: ['weak', 'good'] } } });
+    held.deps.runs.claim.mockResolvedValueOnce(undefined);
+    expect(await processRecord(record(), held.deps)).toBe('skipped');
+    expect(held.deps.runs.saveCall).not.toHaveBeenCalled();
+    expect(held.deps.runs.finish).not.toHaveBeenCalled();
+    expect(held.deps.runs.claim).toHaveBeenCalledWith(USER, CRAWL, LEASE_MS);
+  });
+
+  it('a retry takes over a run whose lease passed, and counts what it scored before as scored', async () => {
+    // Attempt 1 sent and scored `weak` in this run, then failed; the retry scores `good`.
+    const version = promptVersion(relevanceTask);
+    const user = modelProfile(INPUTS.profile, 'Résumé text');
+    const weak = job('weak', { title: 'Data Engineer' });
+    const relevance: JobRelevance = {
+      score: 10,
+      reasons: ['earlier attempt'],
+      model: 'm',
+      promptVersion: version,
+      inputsHash: inputsHash(weak, user.hash, version),
+      scoredAt: NOW.toISOString(),
+    };
+    const { deps } = setup({
+      jobs: [{ ...weak, relevance }, job('good')],
+      crawl: { relevance: { ...RUNNING, calls: 1, sent: ['weak'] } },
+    });
+    expect(await processRecord(record(undefined, 2), deps)).toBe('done');
+    expect(deps.runs.claim).toHaveBeenCalledWith(USER, CRAWL, LEASE_MS);
+    expect(deps.runs.saveCall.mock.calls[0]?.[0].sent).toEqual(['good']);
+    expect(deps.runs.finish.mock.calls[0]?.[0].stats).toMatchObject({ scored: 2, reused: 0 });
+  });
+
+  it('a delivery that lost its lease stops: no call stored, no job changed, no end', async () => {
+    // The fence refused its call: another delivery holds the run now.
+    const refused = setup();
+    refused.deps.runs.saveCall.mockRejectedValueOnce(new RelevanceConflictError());
+    expect(await processRecord(record(), refused.deps)).toBe('skipped');
+    expect(refused.deps.jobs.applyRelevance).not.toHaveBeenCalled();
+    expect(refused.deps.runs.finish).not.toHaveBeenCalled();
+
+    // Taken over before it ended: it changes no job.
+    const taken = setup({ jobs: [] });
+    taken.deps.getCrawl.mockImplementation(async () => ({
+      ...crawlItem(),
+      relevance: { ...RUNNING, leaseId: 'someone-else' },
+    }));
+    taken.deps.runs.claim.mockResolvedValueOnce(LEASE);
+    expect(await processRecord(record(), taken.deps)).toBe('skipped');
+    expect(taken.deps.jobs.applyRelevance).not.toHaveBeenCalled();
+    expect(taken.deps.runs.finish).not.toHaveBeenCalled();
+
+    // Its end did not take (the fence): it says so rather than claiming the run ended.
+    const late = setup();
+    late.deps.runs.finish.mockResolvedValueOnce(false);
+    expect(await processRecord(record(), late.deps)).toBe('skipped');
+  });
+
+  it('on a retry, a score from before the run started is reused; a missing key keeps the earlier scores', async () => {
+    const version = promptVersion(relevanceTask);
+    const user = modelProfile(INPUTS.profile, 'Résumé text');
+    const weak = job('weak', { title: 'Data Engineer' });
+    const scoredAt = (at: Date) => ({
+      score: 10,
+      reasons: ['x'],
+      model: 'm',
+      promptVersion: version,
+      inputsHash: inputsHash(weak, user.hash, version),
+      scoredAt: at.toISOString(),
+    });
+    const before = setup({
+      jobs: [{ ...weak, relevance: scoredAt(new Date(NOW.getTime() - 60_000)) }],
+      crawl: { candidates: ['weak'], relevance: { ...RUNNING, calls: 1, sent: ['weak'] } },
+    });
+    await processRecord(record(undefined, 2), before.deps);
+    expect(before.deps.runs.finish.mock.calls[0]?.[0].stats).toMatchObject({
+      scored: 0,
+      reused: 1,
+    });
+
+    const keyGone = setup({
+      model: 'key_missing',
+      jobs: [{ ...weak, relevance: scoredAt(NOW) }, job('good')],
+      crawl: { aiSource: 'openai', relevance: { ...RUNNING, calls: 1, sent: ['weak'] } },
+    });
+    expect(await processRecord(record(undefined, 2), keyGone.deps)).toBe('failed');
+    expect(keyGone.deps.runs.finish.mock.calls[0]?.[0].stats).toMatchObject({
+      scored: 1,
+      reused: 0,
+      unscored: 1,
+    });
   });
 
   it('makes no call once the crawl has used its 6 task calls', async () => {

@@ -16,6 +16,7 @@ import {
   JobRepository,
   PreferencesRepository,
   ProfileRepository,
+  RelevanceConflictError,
   type RelevanceDecision,
   type RelevanceFailure,
   RelevanceRepository,
@@ -54,6 +55,13 @@ export const MAX_RECEIVES = 3;
  * longer ago than this without a run are left alone (they were never meant to be scored).
  */
 export const STALE_AFTER_MS = 30 * 60 * 1000;
+/**
+ * How long a delivery holds a run: longer than the worker's timeout (5 minutes,
+ * RELEVANCE_WORKER_TIMEOUT), and far shorter than the queue's visibility timeout (6 × that),
+ * so a retry after a failed attempt always finds the lease passed. infra/test/relevance.test.ts
+ * checks both against the deployed values.
+ */
+export const LEASE_MS = 6 * 60 * 1000;
 /** Stop starting task calls this long before Lambda's own timeout. */
 export const SAFETY_MARGIN_MS = 10_000;
 export const LOW_SCORE_REASON = 'llm_low_score';
@@ -61,7 +69,7 @@ export const LOW_SCORE_REASON = 'llm_low_score';
 export interface RelevanceWorkerDeps {
   isBeingDeleted: (userId: string) => Promise<boolean>;
   getCrawl: (userId: string, crawlId: string) => Promise<Crawl | undefined>;
-  runs: Pick<RelevanceRepository, 'begin' | 'saveCall' | 'finish'>;
+  runs: Pick<RelevanceRepository, 'begin' | 'claim' | 'saveCall' | 'finish'>;
   /** The model for the crawl's AI source, or why there is none. */
   model: (userId: string, aiSource: AiSource) => Promise<ModelSource | RelevanceFailure>;
   fitInputs: (userId: string) => Promise<FitInputs>;
@@ -98,20 +106,38 @@ export async function processRecord(
     logger.info('Nothing to score', { crawlId });
     return 'skipped';
   }
+  // One delivery at a time scores a crawl: the one that starts the run, or a retry once the
+  // failed attempt's lease has passed. A duplicate delivery arriving meanwhile skips; without
+  // this, it found the first one's scores, called them reused, and ended the run early. Its
+  // calls and its end are stored only while it still holds the lease (fencing).
+  let lease: string | undefined;
   if (!crawl.relevance) {
     const finished = Date.parse(crawl.finishedAt ?? '');
     if (!(deps.now().getTime() - finished < STALE_AFTER_MS)) {
       logger.info('Crawl finished too long ago (a replayed stream record); skipping', { crawlId });
       return 'skipped';
     }
-    await deps.runs.begin(userId, crawlId);
-    crawl = await deps.getCrawl(userId, crawlId);
+    lease = await deps.runs.begin(userId, crawlId, LEASE_MS);
+    if (!lease) {
+      logger.info('Run not started: another delivery started it, or the crawl changed', {
+        crawlId,
+      });
+      return 'skipped';
+    }
+  } else if (crawl.relevance.status === 'running') {
+    lease = await deps.runs.claim(userId, crawlId, LEASE_MS);
+    if (!lease) {
+      logger.info('Another delivery is scoring this crawl; skipping', { crawlId });
+      return 'skipped';
+    }
   }
+  crawl = await deps.getCrawl(userId, crawlId);
   const run = crawl?.relevance;
-  if (!crawl || run?.status !== 'running') {
+  if (!crawl || run?.status !== 'running' || !lease) {
     logger.info('Run already ended', { crawlId });
     return 'skipped';
   }
+  const held = lease;
   const aiSource = crawl.aiSource as AiSource;
 
   const [inputs, resume] = await Promise.all([deps.fitInputs(userId), deps.resume(userId)]);
@@ -130,11 +156,22 @@ export async function processRecord(
     if (j.relevance && j.relevance.inputsHash === hashes.get(j.jobId))
       scores.set(j.jobId, j.relevance);
   }
-  const reused = scores.size;
   const sentBefore = new Set(run.sent);
+  // Jobs this run scored in an earlier attempt (a retry) count as scored, not as reused: sent
+  // by this run, and scored since it started (not by another crawl's run).
+  const scoredBefore = [...scores].filter(
+    ([id, r]) => sentBefore.has(id) && r.scoredAt >= run.startedAt,
+  ).length;
+  const reused = scores.size - scoredBefore;
   const toScore = jobs.filter((j) => !scores.has(j.jobId) && !sentBefore.has(j.jobId));
 
   const end = async (status: 'done' | 'failed', scored: number, reason?: RelevanceFailure) => {
+    // Still this delivery's run? One that lost its lease changes no job (the other has them).
+    const now = await deps.getCrawl(userId, crawlId);
+    if (now?.relevance?.status !== 'running' || now.relevance.leaseId !== held) {
+      logger.info('Lease lost before ending; skipping', { crawlId });
+      return 'skipped' as const;
+    }
     const applied = await applyScores(userId, jobs, scores, inputs, deps);
     const stats: RelevanceStats = {
       candidates: jobs.length,
@@ -143,9 +180,10 @@ export async function processRecord(
       unscored: jobs.length - scores.size,
       ...applied,
     };
-    await deps.runs.finish({
+    const ended = await deps.runs.finish({
       userId,
       crawlId,
+      lease: held,
       status,
       ...(reason ? { reason } : {}),
       stats,
@@ -163,13 +201,17 @@ export async function processRecord(
         },
       },
     });
+    if (!ended) {
+      logger.info('Run ended elsewhere (lease lost); skipping', { crawlId });
+      return 'skipped' as const;
+    }
     logger.info('Scoring ended', { crawlId, status, reason, ...stats });
     return status;
   };
 
-  if (toScore.length === 0) return end('done', 0);
+  if (toScore.length === 0) return end('done', scoredBefore);
   const model = await deps.model(userId, aiSource);
-  if (typeof model === 'string') return end('failed', 0, model);
+  if (typeof model === 'string') return end('failed', scoredBefore, model);
 
   const short = new Map(toScore.map((j, i) => [`j${i + 1}`, j]));
   let calls = run.calls;
@@ -181,7 +223,7 @@ export async function processRecord(
     inputTokens: 0,
     outputTokens: 0,
   };
-  let scored = 0;
+  let scored = scoredBefore;
   // Errors while storing a call are ours, not the model's: the queue retries them, and
   // the last one goes to the dead-letter queue.
   let storing = false;
@@ -229,6 +271,7 @@ export async function processRecord(
           await deps.runs.saveCall({
             userId,
             crawlId,
+            lease: held,
             callsBefore: calls,
             sent: call.sent.map((id) => (short.get(id) as Job).jobId),
             llm,
@@ -250,6 +293,11 @@ export async function processRecord(
       },
     );
   } catch (error) {
+    // The fence refused the call: another delivery holds the run now and goes on with it.
+    if (storing && error instanceof RelevanceConflictError) {
+      logger.info('Lease lost while storing a call; skipping', { crawlId });
+      return 'skipped';
+    }
     if (storing) throw error;
     // The user's key stopped working: no retry helps.
     if (model.keySource === 'own' && invalidReason(error)) {

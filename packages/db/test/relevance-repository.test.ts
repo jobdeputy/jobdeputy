@@ -38,6 +38,7 @@ const relevance = (score: number) => ({
 const call = (jobIds: string[]) => ({
   userId: USER,
   crawlId: CRAWL,
+  lease: 'L1',
   callsBefore: 0,
   sent: jobIds,
   llm: {
@@ -66,12 +67,20 @@ const items = (cmd: unknown) => (cmd as TransactWriteCommand).input.TransactItem
 describe('RelevanceRepository.begin', () => {
   it('starts a run only on a succeeded crawl that has none', async () => {
     const { repo, send } = setup();
-    expect(await repo.begin(USER, CRAWL)).toBe(true);
+    const lease = await repo.begin(USER, CRAWL, 60_000);
+    expect(lease).toMatch(/^[0-9a-f-]{36}$/);
     const update = send.mock.calls[0]?.[0] as UpdateCommand;
     expect(update.input).toMatchObject({
       ConditionExpression: 'attribute_not_exists(relevance) AND #status = :succeeded',
       ExpressionAttributeValues: expect.objectContaining({
-        ':relevance': { status: 'running', startedAt: NOW.toISOString(), calls: 0, sent: [] },
+        ':relevance': {
+          status: 'running',
+          startedAt: NOW.toISOString(),
+          calls: 0,
+          sent: [],
+          leaseUntil: new Date(NOW.getTime() + 60_000).toISOString(),
+          leaseId: lease,
+        },
       }),
     });
   });
@@ -80,7 +89,65 @@ describe('RelevanceRepository.begin', () => {
     const { repo } = setup(() => {
       throw named('ConditionalCheckFailedException');
     });
-    expect(await repo.begin(USER, CRAWL)).toBe(false);
+    expect(await repo.begin(USER, CRAWL, 60_000)).toBeUndefined();
+  });
+});
+
+describe('RelevanceRepository.claim', () => {
+  it('takes over a running run only once its lease has passed', async () => {
+    const { repo, send } = setup();
+    const lease = await repo.claim(USER, CRAWL, 60_000);
+    expect(lease).toMatch(/^[0-9a-f-]{36}$/);
+    const update = send.mock.calls[0]?.[0] as UpdateCommand;
+    expect(update.input.ConditionExpression).toBe(
+      'relevance.#status = :running AND (relevance.leaseUntil < :now OR (attribute_not_exists(relevance.leaseUntil) AND relevance.startedAt < :startedBefore))',
+    );
+    expect(update.input.ExpressionAttributeValues).toMatchObject({
+      ':now': NOW.toISOString(),
+      ':startedBefore': new Date(NOW.getTime() - 60_000).toISOString(),
+      ':leaseId': lease,
+      ':until': new Date(NOW.getTime() + 60_000).toISOString(),
+    });
+  });
+
+  it('false while another delivery holds it, or once it ended', async () => {
+    const { repo } = setup(() => {
+      throw named('ConditionalCheckFailedException');
+    });
+    expect(await repo.claim(USER, CRAWL, 60_000)).toBeUndefined();
+  });
+});
+
+describe('RelevanceRepository fencing', () => {
+  it('stores a call and ends a run only while this delivery holds the lease', async () => {
+    const { repo, send } = setup();
+    await repo.saveCall(call(['j1']));
+    const store = items(send.mock.calls[0]?.[0])[0]?.Update;
+    expect(store?.ConditionExpression).toBe(
+      'relevance.#status = :running AND relevance.calls = :before AND relevance.leaseId = :lease',
+    );
+    expect(store?.ExpressionAttributeValues?.[':lease']).toBe('L1');
+    await repo.finish({
+      userId: USER,
+      crawlId: CRAWL,
+      lease: 'L1',
+      status: 'done',
+      stats: { candidates: 0, scored: 0, reused: 0, unscored: 0, hidden: 0, overLimit: 0 },
+      audit: {
+        table: 'audit',
+        entry: {
+          auditId: 'a',
+          name: 'crawl.scored',
+          entity: { type: 'crawl', id: CRAWL },
+          actor: 'system',
+          summary: 's',
+        },
+      },
+    });
+    const end = items(send.mock.calls[1]?.[0])[0]?.Update;
+    expect(end?.ConditionExpression).toBe(
+      'relevance.#status = :running AND relevance.leaseId = :lease',
+    );
   });
 });
 
@@ -92,7 +159,8 @@ describe('RelevanceRepository.saveCall', () => {
     expect(list).toHaveLength(4);
     expect(list[0]?.Update).toMatchObject({
       TableName: 'crawls',
-      ConditionExpression: 'relevance.#status = :running AND relevance.calls = :before',
+      ConditionExpression:
+        'relevance.#status = :running AND relevance.calls = :before AND relevance.leaseId = :lease',
       ExpressionAttributeValues: expect.objectContaining({
         ':calls': 1,
         ':before': 0,
@@ -166,6 +234,7 @@ describe('RelevanceRepository.finish', () => {
       await repo.finish({
         userId: USER,
         crawlId: CRAWL,
+        lease: 'L1',
         status: 'failed',
         reason: 'key_invalid',
         stats,
@@ -181,8 +250,15 @@ describe('RelevanceRepository.finish', () => {
     const { repo } = setup(() => {
       throw cancelled('ConditionalCheckFailed', 'None');
     });
-    expect(await repo.finish({ userId: USER, crawlId: CRAWL, status: 'done', stats, audit })).toBe(
-      false,
-    );
+    expect(
+      await repo.finish({
+        userId: USER,
+        crawlId: CRAWL,
+        lease: 'L1',
+        status: 'done',
+        stats,
+        audit,
+      }),
+    ).toBe(false);
   });
 });
