@@ -148,21 +148,28 @@ describe('crawl pipeline (T06b)', () => {
     expect(api.flatMap((s) => [s.Action].flat()).some((a) => a.startsWith('s3:'))).toBe(false);
   });
 
-  it('lets the jobs API only read the jobs table, the companies it shows, and their limit (T07b, #49)', () => {
+  it('lets the jobs API read the jobs it shows, and change only a job and its audit entry (T07b, #49, #52)', () => {
     const jobs = statementsFor('JobsApiFn');
     const dynamo = jobs.filter((s) => [s.Action].flat().some((a) => a.startsWith('dynamodb:')));
     expect(dynamo.flatMap((s) => [s.Action].flat()).sort()).toEqual([
       'dynamodb:BatchGetItem',
       'dynamodb:GetItem',
       'dynamodb:GetItem',
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
       'dynamodb:Query',
       'dynamodb:Query',
+      'dynamodb:UpdateItem',
     ]);
     expect(actionsOn(jobs, 'JobsTable')).toEqual([
       'dynamodb:BatchGetItem',
       'dynamodb:GetItem',
       'dynamodb:Query',
+      'dynamodb:UpdateItem',
     ]);
+    // #52: the stage change's audit entry, and the account-deletion marker (read only).
+    expect(actionsOn(jobs, 'AuditTable')).toEqual(['dynamodb:PutItem']);
+    expect(actionsOn(jobs, 'UsersTable')).toEqual(['dynamodb:GetItem']);
     expect(actionsOn(jobs, 'UsageTable')).toEqual(['dynamodb:Query']);
     // The jobs-per-company limit: the user's setting and the admin's parameter, read only.
     expect(actionsOn(jobs, 'PreferencesTable')).toEqual(['dynamodb:GetItem']);
@@ -170,6 +177,28 @@ describe('crawl pipeline (T06b)', () => {
     expect(ssm.flatMap((s) => [s.Action].flat())).toEqual(['ssm:GetParameter']);
     expect(JSON.stringify(ssm[0]?.Resource)).toMatch(/:parameter",{"Ref":"CrawlLimits/);
     expect(jobs.flatMap((s) => [s.Action].flat()).some((a) => a.startsWith('s3:'))).toBe(false);
+  });
+
+  it('indexes only applied jobs, projecting what a list shows and no description (#52)', () => {
+    const table = Object.values(t.findResources('AWS::DynamoDB::Table')).find((r) =>
+      String(r.Properties.TableName).endsWith('-jobs'),
+    );
+    expect(table?.Properties.GlobalSecondaryIndexes).toEqual([
+      {
+        IndexName: 'applied',
+        KeySchema: [
+          { AttributeName: 'userId', KeyType: 'HASH' },
+          { AttributeName: 'appliedAt', KeyType: 'RANGE' },
+        ],
+        Projection: {
+          ProjectionType: 'INCLUDE',
+          NonKeyAttributes: expect.arrayContaining(['title', 'status', 'stageAt', 'relevance']),
+        },
+      },
+    ]);
+    const projected = table?.Properties.GlobalSecondaryIndexes[0].Projection.NonKeyAttributes;
+    expect(projected).not.toContain('description');
+    expect(projected).not.toContain('keywords');
   });
 
   it('lets the audit API only read the audit table', () => {

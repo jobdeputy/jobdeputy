@@ -31,7 +31,7 @@ What is deployed today, per cell. Every table is DynamoDB on-demand (`PAY_PER_RE
 | `<stack>-crawls` | `userId` (S) | `crawlId` (S) | `NEW_IMAGE` → Pipe (only `queued` inserts; sends `userId` and `crawlId`) → queue | `ttl` (180 days) | prod only | dev: deleted; prod: kept | T06b |
 | `<stack>-audit` | `userId` (S) | `auditId` (S) | — | `ttl` (1 year) | prod only | dev: deleted; prod: kept | T06b |
 | `<stack>-usage` | `userId` (S) | `sk` (S) | — | `ttl` (`DAY#` items only: 7 days) | prod only | dev: deleted; prod: kept | T06c |
-| `<stack>-jobs` | `userId` (S) | `jobId` (S) | — | `ttl` (T08c: hidden jobs, and closed ones the user never acted on) | prod only | dev: deleted; prod: kept | T07b, `ttl` T08c |
+| `<stack>-jobs` | `userId` (S) | `jobId` (S) | — | `ttl` (T08c: hidden jobs, and closed ones the user never acted on) | prod only | dev: deleted; prod: kept | T07b, `ttl` T08c; GSI `applied` (#52, [0016](decisions/0016-applications-are-job-stages.md)): `userId` + `appliedAt`, sparse, projecting `JOB_SUMMARY_FIELDS` |
 | `<stack>-ai-keys` | `userId` (S) | `provider` (S) | `NEW_IMAGE` → Pipe (inserts and updates with `status = checking`; sends `userId` and `provider`) → queue | — | prod only | dev: deleted; prod: kept | T08b2 |
 | `<stack>-ping-jobs` | `id` (S) | — | `NEW_IMAGE` → Pipe → queue | `ttl` (1 day) | — | **dev stacks only** (deleted with the stack) | T04 |
 | `<stack>-idempotency` | `id` (S) | — | — | `expiration` | — | **dev stacks only** (used by the ping worker only) | T04 |
@@ -90,6 +90,9 @@ Every `TransactWriteItems` goes through `transactWrite` (`packages/db/src/transa
 | `preferences`, `users` | `Query` `ROLE#`; `GetItem` `SEARCH`, `CRAWL_SETTINGS`; `GetItem` `PROFILE` | `userId` | crawl worker (T08c): what the code filter needs, once per crawl |
 | `jobs` | `Query`, key order, `Limit`, `ExclusiveStartKey`; T08c: by default a `FilterExpression` leaves out `filter.state = not_relevant` and `limitState = over_limit` (a page can be short, even empty, and still have a next one) | `userId` | `GET /me/jobs` (paged; `view=all` lists every job) |
 | `jobs` | `GetItem` | `userId`, `jobId` | `GET /me/jobs/{jobId}` |
+| `jobs` + `audit` | `GetItem` (consistent); `TransactWriteItems`: `UpdateItem` `SET #status, stageAt` (leaving `new`: `appliedAt`, `appliedResumeId`; `REMOVE ttl`; back to `new`: `REMOVE appliedAt, appliedResumeId`) with `attribute_exists(userId) AND #status = :from`, `PutItem` audit entry (`job.stage_changed`) | `userId`, `jobId` | `PUT /me/jobs/{jobId}/stage` (#52) |
+| `jobs` (GSI `applied`) | `Query`, newest first, `Limit`, `ExclusiveStartKey` (eventually consistent) | `userId` | `GET /me/applications` (#52) |
+| `usage`, `jobs` | as `GET /me/companies` below: every `COMPANY#` item, then `BatchGetItem` of the ranked shown jobs (at most the user's jobs per company each), 100 at a time, until 500 are kept | `userId`, `jobId` | `GET /me/matches` (#52) |
 | `usage` | `Query` `begins_with(sk, COMPANY#)`, every page, projection `sk, shown`; ranked in memory (best job first, the worker's `compareRank`) | `userId` | `GET /me/companies` (#49; cursor = the last company's best job) |
 | `jobs` | `BatchGetItem` (consistent: read right after a crawl ends; projection of the summary fields only, every name aliased: no description) of the page's shown jobs; hidden or closed ones are left out, and a page left short reads the next companies (at most 3 reads) | `userId`, `jobId` | `GET /me/companies` (#49) |
 | `preferences` | `GetItem` `CRAWL_SETTINGS` (with the admin's `crawl-limits` parameter) | `userId`, `sk` | `GET /me/companies` (#49): each company capped at the user's jobs per company now |
@@ -298,7 +301,10 @@ A re-crawl updates only the posting and discovery groups; it never overwrites th
 
 | Attribute | Type | Required | Notes |
 |---|---|---|---|
-| `status` | S | yes | `new` (on first save), `shortlisted`, `dismissed`, `applying`, `applied`, or `archived` |
+| `status` | S | yes | The job's stage (#52, [0016](decisions/0016-applications-are-job-stages.md)): `new` (on first save; shown in Matches), then, set by the user: `applied`, `interviewing`, `offer`, `rejected`, or `withdrawn` (shown in Applications). Back to `new` undoes an apply. |
+| `appliedAt` | S | no | #52: when the user said they applied; kept through later stages, removed when the apply is undone. The `applied` index's sort key, so only applied jobs are in it. |
+| `stageAt` | S | no | #52: when the stage last changed |
+| `appliedResumeId` | S | no | #52: the tailored résumé (`materials.resumeDocumentId`) the job had when the user applied |
 | `starred` | B | yes | `false` on first save |
 | `notes` | S | no | The user's own text |
 | `applicationId` | S | no | Phase 2 |
@@ -427,3 +433,4 @@ Everything under `users/<userId>/` and `derived/users/<userId>/` goes with accou
 | 2026-11-22 | List runs: `crawls.kind`, `listSource`, `list`, `queuedCount`, `runningIds`, `childIds`, `childrenEnded`, `parentCrawlId`, `listShare`; `trigger` `list`; `stats.companies`; `sources.kind` `list`; `usage` `DAY#` `lists`. Company crawls are `crawls` items too; `GET /me/crawls` leaves them out | #50 |
 | 2026-11-22 | `documents`: stream (only generated `queued` inserts → the tailoring worker); generated versions (`origin: generated`, `companyKey`, `jobIds`, `baseDocumentId`, `aiSource`, `platformRun`, `tailoring`, `generation`, `fileName`), never listed or counted with uploads; uploads' `structured`. `jobs`: `keywords`, `match` (built), `materials.resumeDocumentId`. `usage`: `MONTH#` `tailoringRunIds`, `TAILOR#<companyKey>` lock. S3: `structured-<eTag>.json`, `resume.{json,pdf,docx}` | #51 |
 | 2026-11-22 | `crawls.relevance.leaseUntil`, `leaseId`: one delivery scores a crawl at a time (a duplicate delivery had ended a run early, counting its scores as reused) | fix after #71 |
+| 2026-11-25 | `jobs.status` is the job's stage: `new`, `applied`, `interviewing`, `offer`, `rejected`, `withdrawn` (the unused `shortlisted`, `dismissed`, `applying`, `archived` dropped); `appliedAt`, `stageAt`, `appliedResumeId`; GSI `applied`; audit `job.stage_changed`. The `applications` table stays Phase 2 (the extension's runs) | #52 |

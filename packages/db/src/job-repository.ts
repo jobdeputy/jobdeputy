@@ -1,7 +1,10 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { BatchGetCommand, GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { APPLIED_INDEX, JOB_SUMMARY_FIELDS, type JobStage } from '@jobdeputy/shared';
+import { type AuditWrite, auditPut } from './audit-repository.js';
 import { isConditionFailure } from './client.js';
 import type { JobKeywordsCache } from './tailoring-repository.js';
+import { cancellationCodes, transactWrite } from './transact.js';
 
 /**
  * `jobs` (docs/data-model.md §8, decision 0008): jobs found for the user. Keys: `userId`,
@@ -91,7 +94,10 @@ export interface RelevanceDecision {
 export const isHidden = (fit: { filter?: { state: string }; limitState?: LimitState }) =>
   fit.filter?.state === 'not_relevant' || fit.limitState === 'over_limit';
 
-export type JobStatus = 'new' | 'shortlisted' | 'dismissed' | 'applying' | 'applied' | 'archived';
+/** #52: the job's stage (`JOB_STAGES` in packages/shared). */
+export type JobStatus = JobStage;
+
+export { APPLIED_INDEX };
 
 /** #51: a tailored version's score for this job (decision 0015). */
 export interface JobMatch {
@@ -127,6 +133,12 @@ export interface Job extends JobPosting {
   /** Epoch seconds: DynamoDB deletes the job after this (T08c, hidden or closed and untouched). */
   ttl?: number;
   status: JobStatus;
+  /** #52: when the user said they applied (kept through later stages; removed on undo). */
+  appliedAt?: string;
+  /** #52: when the stage last changed. */
+  stageAt?: string;
+  /** #52: the tailored résumé the job had when the user applied (`materials.resumeDocumentId`). */
+  appliedResumeId?: string;
   starred: boolean;
   notes?: string;
   createdAt: string;
@@ -176,32 +188,21 @@ export interface SaveStats {
 }
 
 /** Writes at the same time while saving one crawl's jobs: fast, and gentle on the table. */
+/** #52: the result of a stage change; `conflict` carries the job as it is now. */
+export type StageResult =
+  | { kind: 'ok'; job: Job }
+  | { kind: 'not-found' }
+  | { kind: 'conflict'; job: Job };
+
+/** #52: where a page of the applications index ends. */
+export interface AppliedCursor {
+  jobId: string;
+  appliedAt: string;
+}
+
 export const SAVE_CONCURRENCY = 10;
 /** #49: the fields a list of jobs shows (`descriptionHash` stands for "has a description"). */
-export const SUMMARY_FIELDS = [
-  'jobId',
-  'title',
-  'companyName',
-  'companyKey',
-  'locations',
-  'workplace',
-  'employmentType',
-  'salary',
-  'jobUrl',
-  'applyUrl',
-  'ats',
-  'postedAt',
-  'descriptionHash',
-  'firstSeenAt',
-  'lastSeenAt',
-  'closedAt',
-  'status',
-  'starred',
-  'filter',
-  'limitState',
-  'relevance',
-  'ttl',
-] as const satisfies readonly (keyof Job)[];
+export const SUMMARY_FIELDS = JOB_SUMMARY_FIELDS satisfies readonly (keyof Job)[];
 
 export type JobSummaryItem = Pick<Job, (typeof SUMMARY_FIELDS)[number]> &
   Partial<Pick<Job, 'description'>>;
@@ -669,6 +670,110 @@ export class JobRepository {
     return {
       items: (res.Items ?? []) as Job[],
       ...(typeof last === 'string' ? { next: last } : {}),
+    };
+  }
+
+  /**
+   * #52: moves a job to `stage`, if it is still at `from` (the stage the user saw), with its
+   * audit entry in the same transaction. Leaving `new` records `appliedAt` and the tailored
+   * résumé the job has now; back to `new` (an undone apply) removes them. A job the user
+   * applied to never expires (`ttl` removed), whatever the filter said.
+   */
+  async setStage(
+    userId: string,
+    jobId: string,
+    change: { stage: JobStage; from: JobStage },
+    audit: AuditWrite,
+  ): Promise<StageResult> {
+    const job = await this.getConsistent(userId, jobId);
+    if (!job) return { kind: 'not-found' };
+    if (job.status !== change.from) return { kind: 'conflict', job };
+    if (change.stage === change.from) return { kind: 'ok', job };
+    const now = this.now().toISOString();
+    const set = ['#status = :stage', 'stageAt = :now', 'updatedAt = :now'];
+    const remove: string[] = [];
+    const values: Record<string, unknown> = {
+      ':stage': change.stage,
+      ':from': change.from,
+      ':now': now,
+    };
+    if (change.stage === 'new') {
+      remove.push('appliedAt', 'appliedResumeId');
+    } else {
+      remove.push('#ttl');
+      if (change.from === 'new') {
+        set.push('appliedAt = :now');
+        const resume = job.materials?.resumeDocumentId;
+        if (resume !== undefined) {
+          set.push('appliedResumeId = :resume');
+          values[':resume'] = resume;
+        }
+      }
+    }
+    try {
+      await transactWrite(this.client, {
+        TransactItems: [
+          {
+            Update: {
+              TableName: this.table,
+              Key: { userId, jobId },
+              UpdateExpression: `SET ${set.join(', ')} REMOVE ${remove.join(', ')}`,
+              ConditionExpression: 'attribute_exists(userId) AND #status = :from',
+              ExpressionAttributeNames: {
+                '#status': 'status',
+                ...(remove.includes('#ttl') ? { '#ttl': 'ttl' } : {}),
+              },
+              ExpressionAttributeValues: values,
+            },
+          },
+          auditPut(audit, userId, this.now()),
+        ],
+      });
+    } catch (error) {
+      if (!cancellationCodes(error)?.includes('ConditionalCheckFailed')) throw error;
+      // Changed or deleted (expired) between the read and the write: say what it is now.
+      const current = await this.getConsistent(userId, jobId);
+      return current ? { kind: 'conflict', job: current } : { kind: 'not-found' };
+    }
+    const saved = await this.getConsistent(userId, jobId);
+    return saved ? { kind: 'ok', job: saved } : { kind: 'not-found' };
+  }
+
+  private async getConsistent(userId: string, jobId: string): Promise<Job | undefined> {
+    const res = await this.client.send(
+      new GetCommand({ TableName: this.table, Key: { userId, jobId }, ConsistentRead: true }),
+    );
+    return res.Item as Job | undefined;
+  }
+
+  /**
+   * #52: one page of the jobs the user applied to, newest applied first, from the sparse
+   * `applied` index (it holds only jobs with `appliedAt`, projected to `SUMMARY_FIELDS`, so
+   * hidden jobs are never read). The index is eventually consistent: a job marked applied
+   * a moment ago can be missing for a moment.
+   */
+  async listApplied(
+    userId: string,
+    limit: number,
+    after?: AppliedCursor,
+  ): Promise<{ items: JobSummaryItem[]; next?: AppliedCursor }> {
+    const res = await this.client.send(
+      new QueryCommand({
+        TableName: this.table,
+        IndexName: APPLIED_INDEX,
+        KeyConditionExpression: 'userId = :u',
+        ExpressionAttributeValues: { ':u': userId },
+        ScanIndexForward: false,
+        Limit: limit,
+        ...(after !== undefined ? { ExclusiveStartKey: { userId, ...after } } : {}),
+      }),
+    );
+    const last = res.LastEvaluatedKey;
+    return {
+      items: (res.Items ?? []) as JobSummaryItem[],
+      ...(typeof last?.jobId === 'string' && typeof last.appliedAt === 'string'
+        ? { next: { jobId: last.jobId, appliedAt: last.appliedAt } }
+        : {}),
     };
   }
 }

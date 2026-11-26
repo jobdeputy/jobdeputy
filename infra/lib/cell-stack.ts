@@ -1,4 +1,11 @@
-import { crawlKeys, DEFAULT_CRAWL_LIMITS, DERIVED_PREFIX, SCANNED_PREFIX } from '@jobdeputy/shared';
+import {
+  APPLIED_INDEX,
+  crawlKeys,
+  DEFAULT_CRAWL_LIMITS,
+  DERIVED_PREFIX,
+  JOB_SUMMARY_FIELDS,
+  SCANNED_PREFIX,
+} from '@jobdeputy/shared';
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps, Tags } from 'aws-cdk-lib';
 import { CorsHttpMethod, HttpApi, HttpMethod, HttpStage } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
@@ -11,7 +18,13 @@ import {
 } from 'aws-cdk-lib/aws-cloudwatch';
 import { SnsAction } from 'aws-cdk-lib/aws-cloudwatch-actions';
 import { UserPoolOperation } from 'aws-cdk-lib/aws-cognito';
-import { AttributeType, BillingMode, StreamViewType, Table } from 'aws-cdk-lib/aws-dynamodb';
+import {
+  AttributeType,
+  BillingMode,
+  ProjectionType,
+  StreamViewType,
+  Table,
+} from 'aws-cdk-lib/aws-dynamodb';
 import { Rule, Schedule } from 'aws-cdk-lib/aws-events';
 import { LambdaFunction } from 'aws-cdk-lib/aws-events-targets';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
@@ -173,6 +186,15 @@ export class CellStack extends Stack {
     // T07b (0008): jobs found for the user, one item per posting. T08c: hidden jobs, and
     // closed ones the user never acted on, expire (`ttl`, free deletes).
     const jobsTable = userTable('JobsTable', 'jobs', 'jobId', 'ttl');
+    // #52: the jobs applied to, newest first. Sparse (only jobs with `appliedAt`), projecting
+    // just what a list shows, so Applications never reads the hidden jobs nor descriptions.
+    jobsTable.addGlobalSecondaryIndex({
+      indexName: APPLIED_INDEX,
+      partitionKey: { name: 'userId', type: AttributeType.STRING },
+      sortKey: { name: 'appliedAt', type: AttributeType.STRING },
+      projectionType: ProjectionType.INCLUDE,
+      nonKeyAttributes: JOB_SUMMARY_FIELDS.filter((f) => f !== 'jobId' && f !== 'appliedAt'),
+    });
     // T08b2 (0009): the user's own AI keys, encrypted (stream → key-check worker).
     const aiKeysTable = userTable('AiKeysTable', 'ai-keys', 'provider', undefined, true);
     /**
@@ -637,12 +659,24 @@ export class CellStack extends Stack {
         USAGE_TABLE_NAME: usageTable.tableName,
         PREFERENCES_TABLE_NAME: preferencesTable.tableName,
         CRAWL_LIMITS_PARAMETER: crawlLimits.parameterName,
+        USERS_TABLE_NAME: usersTable.tableName,
+        AUDIT_TABLE_NAME: auditTable.tableName,
       },
     });
-    // Read-only for now: the user's own changes to jobs come with the interface (T09).
     // #49: GET /me/companies reads the `COMPANY#` usage items, then the page's jobs in a batch,
     // capped at the user's jobs per company (their setting, within the admin's limits).
-    jobsTable.grant(jobsApi.fn, 'dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:BatchGetItem');
+    // #52: Matches reads the same; Applications queries the `applied` index; the user's one
+    // change to a job, its stage, is an UpdateItem with its audit entry (PutItem) in one
+    // transaction, refused while the account is being deleted (the users table's marker).
+    jobsTable.grant(
+      jobsApi.fn,
+      'dynamodb:Query',
+      'dynamodb:GetItem',
+      'dynamodb:BatchGetItem',
+      'dynamodb:UpdateItem',
+    );
+    usersTable.grant(jobsApi.fn, 'dynamodb:GetItem');
+    auditTable.grant(jobsApi.fn, 'dynamodb:PutItem');
     usageTable.grant(jobsApi.fn, 'dynamodb:Query');
     preferencesTable.grant(jobsApi.fn, 'dynamodb:GetItem');
     jobsApi.fn.addToRolePolicy(
@@ -801,6 +835,22 @@ export class CellStack extends Stack {
     httpApi.addRoutes({
       path: '/me/jobs/{jobId}',
       methods: [HttpMethod.GET],
+      integration: jobsIntegration,
+    });
+    // #52: the Matches and Applications tabs, and a job's stage.
+    httpApi.addRoutes({
+      path: '/me/matches',
+      methods: [HttpMethod.GET],
+      integration: jobsIntegration,
+    });
+    httpApi.addRoutes({
+      path: '/me/applications',
+      methods: [HttpMethod.GET],
+      integration: jobsIntegration,
+    });
+    httpApi.addRoutes({
+      path: '/me/jobs/{jobId}/stage',
+      methods: [HttpMethod.PUT],
       integration: jobsIntegration,
     });
 

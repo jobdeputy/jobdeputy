@@ -1,5 +1,5 @@
 import type { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, QueryCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import { describe, expect, it, vi } from 'vitest';
 import { type JobPosting, JobRepository, SAVE_CONCURRENCY, SUMMARY_FIELDS } from '../src/index.js';
 
@@ -548,5 +548,176 @@ describe('JobRepository.closeGone (T08d3)', () => {
       throw new Error('throttled');
     });
     await expect(repo(c).closeGone(USER, ['a'], 123)).rejects.toThrow('throttled');
+  });
+});
+
+describe('JobRepository.setStage (#52)', () => {
+  const J = 'a'.repeat(32);
+  const audit = {
+    table: 'Audit',
+    entry: {
+      auditId: 'A1',
+      name: 'job.stage_changed',
+      entity: { type: 'job', id: J },
+      actor: 'user' as const,
+      summary: 's',
+    },
+  };
+  const cancelled = (code: string) =>
+    Object.assign(new Error('cancelled'), {
+      name: 'TransactionCanceledException',
+      CancellationReasons: [{ Code: code }, { Code: 'None' }],
+    });
+  /** Answers reads from `items` in turn; the transaction with `write`. */
+  function store(
+    items: (Record<string, unknown> | undefined)[],
+    write: () => unknown = () => ({}),
+  ) {
+    let read = 0;
+    return client((cmd) => {
+      if (cmd instanceof GetCommand) {
+        expect(cmd.input.ConsistentRead).toBe(true);
+        return { Item: items[Math.min(read++, items.length - 1)] };
+      }
+      if (cmd instanceof TransactWriteCommand) return write();
+      throw new Error('unexpected command');
+    });
+  }
+  const update = (send: ReturnType<typeof client>['send']) => {
+    const tx = send.mock.calls.map((c) => c[0]).find((c) => c instanceof TransactWriteCommand) as
+      | TransactWriteCommand
+      | undefined;
+    return tx?.input.TransactItems?.[0]?.Update;
+  };
+
+  it('applying records when, the tailored résumé it had, and never expires the job', async () => {
+    const { c, send } = store([
+      { jobId: J, status: 'new', ttl: 5, materials: { resumeDocumentId: 'R1' } },
+      { jobId: J, status: 'applied' },
+    ]);
+    const r = await repo(c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit);
+    expect(r).toEqual({ kind: 'ok', job: { jobId: J, status: 'applied' } });
+    const u = update(send);
+    expect(u?.UpdateExpression).toBe(
+      'SET #status = :stage, stageAt = :now, updatedAt = :now, appliedAt = :now, appliedResumeId = :resume REMOVE #ttl',
+    );
+    expect(u?.ConditionExpression).toBe('attribute_exists(userId) AND #status = :from');
+    expect(u?.ExpressionAttributeValues).toEqual({
+      ':stage': 'applied',
+      ':from': 'new',
+      ':now': NOW.toISOString(),
+      ':resume': 'R1',
+    });
+    const tx = send.mock.calls
+      .map((c) => c[0])
+      .find((c) => c instanceof TransactWriteCommand) as TransactWriteCommand;
+    expect(tx.input.TransactItems?.[1]?.Put?.Item).toMatchObject({
+      userId: USER,
+      name: 'job.stage_changed',
+    });
+  });
+
+  it('a later stage keeps appliedAt; back to new removes it and the résumé', async () => {
+    const later = store([
+      { jobId: J, status: 'applied' },
+      { jobId: J, status: 'offer' },
+    ]);
+    await repo(later.c).setStage(USER, J, { stage: 'offer', from: 'applied' }, audit);
+    expect(update(later.send)?.UpdateExpression).toBe(
+      'SET #status = :stage, stageAt = :now, updatedAt = :now REMOVE #ttl',
+    );
+    const undo = store([
+      { jobId: J, status: 'applied' },
+      { jobId: J, status: 'new' },
+    ]);
+    await repo(undo.c).setStage(USER, J, { stage: 'new', from: 'applied' }, audit);
+    const u = update(undo.send);
+    expect(u?.UpdateExpression).toBe(
+      'SET #status = :stage, stageAt = :now, updatedAt = :now REMOVE appliedAt, appliedResumeId',
+    );
+    expect(u?.ExpressionAttributeNames).toEqual({ '#status': 'status' });
+  });
+
+  it('not found, a stale `from`, or the same stage: no write', async () => {
+    const gone = store([undefined]);
+    expect(await repo(gone.c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit)).toEqual({
+      kind: 'not-found',
+    });
+    const stale = store([{ jobId: J, status: 'applied' }]);
+    expect(await repo(stale.c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit)).toEqual(
+      {
+        kind: 'conflict',
+        job: { jobId: J, status: 'applied' },
+      },
+    );
+    const same = store([{ jobId: J, status: 'offer' }]);
+    expect(
+      (await repo(same.c).setStage(USER, J, { stage: 'offer', from: 'offer' }, audit)).kind,
+    ).toBe('ok');
+    for (const s of [gone, stale, same]) expect(update(s.send)).toBeUndefined();
+  });
+
+  it('a change between the read and the write is a conflict (or not-found if it expired)', async () => {
+    const moved = store(
+      [
+        { jobId: J, status: 'new' },
+        { jobId: J, status: 'withdrawn' },
+      ],
+      () => {
+        throw cancelled('ConditionalCheckFailed');
+      },
+    );
+    expect(await repo(moved.c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit)).toEqual(
+      {
+        kind: 'conflict',
+        job: { jobId: J, status: 'withdrawn' },
+      },
+    );
+    const expired = store([{ jobId: J, status: 'new' }, undefined], () => {
+      throw cancelled('ConditionalCheckFailed');
+    });
+    expect(
+      (await repo(expired.c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit)).kind,
+    ).toBe('not-found');
+  });
+
+  it('other errors are thrown', async () => {
+    const broken = store([{ jobId: J, status: 'new' }], () => {
+      throw new Error('boom');
+    });
+    await expect(
+      repo(broken.c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit),
+    ).rejects.toThrow('boom');
+  });
+});
+
+describe('JobRepository.listApplied (#52)', () => {
+  it('reads the applied index newest first and returns where the page ends', async () => {
+    const last = { userId: USER, jobId: 'b'.repeat(32), appliedAt: '2026-10-01T00:00:00.000Z' };
+    const { c, send } = client(() => ({ Items: [{ jobId: 'x' }], LastEvaluatedKey: last }));
+    const page = await repo(c).listApplied(USER, 50, {
+      jobId: 'c'.repeat(32),
+      appliedAt: '2026-10-02T00:00:00.000Z',
+    });
+    expect(page).toEqual({
+      items: [{ jobId: 'x' }],
+      next: { jobId: last.jobId, appliedAt: last.appliedAt },
+    });
+    const q = send.mock.calls[0]?.[0] as QueryCommand;
+    expect(q.input).toMatchObject({
+      IndexName: 'applied',
+      ScanIndexForward: false,
+      Limit: 50,
+      ExclusiveStartKey: {
+        userId: USER,
+        jobId: 'c'.repeat(32),
+        appliedAt: '2026-10-02T00:00:00.000Z',
+      },
+    });
+  });
+
+  it('no next page at the end', async () => {
+    const { c } = client(() => ({ Items: [] }));
+    expect(await repo(c).listApplied(USER, 50)).toEqual({ items: [] });
   });
 });
