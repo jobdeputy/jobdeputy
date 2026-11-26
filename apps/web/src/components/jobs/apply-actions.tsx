@@ -1,8 +1,16 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import { dayHere } from '@/components/jobs/job-text.ts';
 import { Button, buttonVariants } from '@/components/ui/button.tsx';
-import { copy } from '@/copy/index.ts';
+import { copy, fill, plural } from '@/copy/index.ts';
 import { ApiError, useApi } from '@/lib/api/index.ts';
-import { type JobSummary, setStage, stageGone } from '@/lib/api/jobs.ts';
+import {
+  type Cooldown,
+  companyName,
+  coolingDown,
+  type JobSummary,
+  setStage,
+  stageGone,
+} from '@/lib/api/jobs.ts';
 import { cn } from '@/lib/utils.ts';
 
 const text = copy.matchesPage.apply;
@@ -18,14 +26,22 @@ const text = copy.matchesPage.apply;
  * the employer's tab. A job found changed elsewhere (409 `stage-changed`: applied in another
  * tab; it can only have moved on) or gone (404) leaves Matches (`onGone`). Any other failure is said in the
  * question, and the list is read again (`onFailed`).
+ *
+ * #52 PR E (0013): while the job's company cools down (`coolingDownUntil`), Manual apply is
+ * unavailable, saying until when. An "I applied" refused for that (the list was out of date) says
+ * so, and the list read again turns Manual apply off: the question goes, and if it had the focus,
+ * Manual apply takes it (its description says why and until when).
  */
 export function ApplyActions({
   job,
+  cooldown,
   onApplied,
   onGone,
   onFailed,
 }: {
   job: JobSummary;
+  /** Matches' cooldown rule, to say it. */
+  cooldown?: Cooldown;
   /** Saved: the job as the API has it now (applied). */
   onApplied: (job: JobSummary) => void;
   /** Not in Matches any more: applied to elsewhere, or taken down. */
@@ -38,11 +54,24 @@ export function ApplyActions({
   // What went wrong, and how many times (a new failure is a new alert, read out again).
   const [failure, setFailure] = useState<{ words: string; count: number } | null>(null);
   const manual = useRef<HTMLAnchorElement>(null);
+  const manualOff = useRef<HTMLButtonElement>(null);
   const question = useRef<HTMLFieldSetElement>(null);
   const ids = { manual: useId(), auto: useId(), askLine: useId() };
+  const until = job.coolingDownUntil;
   useEffect(() => {
     if (asking) question.current?.focus();
   }, [asking]);
+  // Cooling down now while asking (the list read again): nothing to ask any more.
+  useEffect(() => {
+    if (until === undefined || !asking) return;
+    const active = document.activeElement;
+    const hadFocus =
+      question.current?.contains(active) === true || active === null || active === document.body;
+    setAsking(false);
+    setSaving(false);
+    setFailure(null);
+    if (hadFocus) manualOff.current?.focus();
+  }, [until, asking]);
   async function applied() {
     setSaving(true);
     try {
@@ -54,7 +83,11 @@ export function ApplyActions({
       }
       setSaving(false);
       setFailure((was) => ({
-        words: error instanceof ApiError && error.kind === 'offline' ? text.offline : text.failed,
+        words: coolingDown(error)
+          ? text.coolingRefused
+          : error instanceof ApiError && error.kind === 'offline'
+            ? text.offline
+            : text.failed,
         count: (was?.count ?? 0) + 1,
       }));
       onFailed();
@@ -68,24 +101,31 @@ export function ApplyActions({
   return (
     <div className="grid gap-3">
       <div className="flex flex-wrap items-center gap-3">
-        <a
-          ref={manual}
-          href={job.applyUrl ?? job.jobUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-describedby={ids.manual}
-          // The employer's tab opens; the question waits here for the way back.
-          onClick={() => setAsking(true)}
-          // A middle click opens it in a tab behind: ask all the same.
-          onAuxClick={(event) => {
-            if (event.button === 1) setAsking(true);
-          }}
-          className={cn(buttonVariants(), 'no-underline')}
-        >
-          {text.manual}
-          <span aria-hidden="true">↗</span>
-          <span className="sr-only"> {copy.jobsPage.preview.newTab}</span>
-        </a>
+        {until !== undefined ? (
+          // Unavailable, not disabled: it can still be reached, and says why and until when.
+          <Button ref={manualOff} aria-disabled aria-describedby={ids.manual}>
+            {text.manual}
+          </Button>
+        ) : (
+          <a
+            ref={manual}
+            href={job.applyUrl ?? job.jobUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-describedby={ids.manual}
+            // The employer's tab opens; the question waits here for the way back.
+            onClick={() => setAsking(true)}
+            // A middle click opens it in a tab behind: ask all the same.
+            onAuxClick={(event) => {
+              if (event.button === 1) setAsking(true);
+            }}
+            className={cn(buttonVariants(), 'no-underline')}
+          >
+            {text.manual}
+            <span aria-hidden="true">↗</span>
+            <span className="sr-only"> {copy.jobsPage.preview.newTab}</span>
+          </a>
+        )}
         {/* Unavailable, not disabled: it can still be reached, and says why. */}
         <Button variant="outline" aria-disabled aria-describedby={ids.auto}>
           {text.auto}
@@ -96,7 +136,7 @@ export function ApplyActions({
       </div>
       <div className="grid gap-1 text-sm text-muted-foreground">
         <p id={ids.manual} className="m-0">
-          {text.manualHint}
+          {until !== undefined ? coolingLine(job, until, cooldown) : text.manualHint}
         </p>
         <p id={ids.auto} className="m-0">
           {text.autoHint}
@@ -135,4 +175,16 @@ export function ApplyActions({
       )}
     </div>
   );
+}
+
+/** Why Manual apply is off, and until when (the day here). */
+function coolingLine(job: JobSummary, until: string, cooldown: Cooldown | undefined): string {
+  const values = { company: companyName(job), date: dayHere(until) ?? until };
+  return cooldown
+    ? fill(text.cooling, {
+        ...values,
+        applications: plural(text.applications, cooldown.limit),
+        days: plural(text.days, cooldown.days),
+      })
+    : fill(text.coolingShort, values);
 }

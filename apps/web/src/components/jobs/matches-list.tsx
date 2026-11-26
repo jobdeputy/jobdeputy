@@ -3,7 +3,7 @@ import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from 're
 import { ApplyActions } from '@/components/jobs/apply-actions.tsx';
 import { FitLabel } from '@/components/jobs/fit-label.tsx';
 import { JobPreview } from '@/components/jobs/job-preview.tsx';
-import { postedDay, postedTime, whereText } from '@/components/jobs/job-text.ts';
+import { dayHere, postedDay, postedTime, whereText } from '@/components/jobs/job-text.ts';
 import {
   JOBS_TABLE_SKELETON,
   type JobsColumn,
@@ -318,6 +318,7 @@ export function MatchesList({
             actions={
               <ApplyActions
                 job={open}
+                {...(matches.data?.cooldown ? { cooldown: matches.data.cooldown } : {})}
                 onApplied={() =>
                   leave(open, { kind: 'applied', job: open, undo: 'ready', tries: 0 })
                 }
@@ -357,7 +358,20 @@ function columnsFor(openId: string | null, onOpen: (job: JobSummary) => void) {
       key: 'company',
       label: text.columns.company,
       sortValue: (job) => companyName(job),
-      cell: (job) => companyName(job),
+      // #52 PR E: a company that had the most applications for now says until when.
+      cell: (job) =>
+        job.coolingDownUntil === undefined ? (
+          companyName(job)
+        ) : (
+          <span className="grid gap-0.5">
+            <span>{companyName(job)}</span>
+            <span className="text-xs text-muted-foreground">
+              {fill(text.coolingDown, {
+                date: dayHere(job.coolingDownUntil) ?? job.coolingDownUntil,
+              })}
+            </span>
+          </span>
+        ),
     },
     {
       key: 'where',

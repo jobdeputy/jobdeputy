@@ -88,6 +88,14 @@ export const SCREENS: Screen[] = [
     still: true,
     steps: toMatchesApplied,
   },
+  // #52 PR E: a company cooling down: the table says until when, and Manual apply is off.
+  {
+    name: 'matches-cooling',
+    path: '/',
+    open: 'Get started free',
+    still: true,
+    steps: toMatchesCooling,
+  },
   // #52 PR D: Applications, empty (pointing to Matches), and with a job applied to, its stage set.
   {
     name: 'applications-empty',
@@ -466,6 +474,19 @@ async function toMatchesApplied(page: Page) {
   await toJobsApplyAsk(page);
   await page.getByRole('button', { name: 'I applied' }).click();
   await page.getByRole('button', { name: 'Undo' }).waitFor();
+}
+
+/**
+ * #52 PR E: a company applied to 3 times in 30 days (the fake's "cooling" board): its rows say
+ * until when, and its job's pane has Manual apply unavailable, saying why.
+ */
+async function toMatchesCooling(page: Page) {
+  await findJobs(page, 'boards.greenhouse.io/cooling-co');
+  await page.getByRole('cell', { name: 'Done', exact: true }).waitFor({ timeout: 15_000 });
+  await openTab(page, 'Matches');
+  await page.getByRole('button', { name: 'Senior Backend Engineer' }).click();
+  await page.getByText(/^You reached the limit of 3 applications to Cooling co/).waitFor();
+  await page.getByText(/Design and run TypeScript services on AWS/).waitFor();
 }
 
 /** #52 PR D: Applications before any job is applied to. */

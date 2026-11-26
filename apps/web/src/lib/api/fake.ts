@@ -1,3 +1,8 @@
+import {
+  cooldownUntil,
+  DEFAULT_APPLY_COMPANY_LIMIT,
+  DEFAULT_APPLY_COOLDOWN_DAYS,
+} from '@jobdeputy/shared/applications';
 import { CRAWL_ERRORS, parseCrawlUrl } from '@jobdeputy/shared/crawl';
 import {
   createDocumentInput,
@@ -413,14 +418,45 @@ export function createFakeApi({
               ? { ...job, status: moved.stage, appliedAt: moved.appliedAt, stageAt: moved.stageAt }
               : { ...job, status: 'new' };
           });
+      /**
+       * #52 PR E: when applying to a job's company opens again, as the API counts: the other
+       * jobs applied to there in the last 30 days (3 at most). A company whose board address says
+       * "cooling" was applied to 3 times already, 5, 10 and 20 days ago.
+       */
+      const coolingUntil = (job: Record<string, unknown>) => {
+        const at = myJobs()
+          .filter(
+            (each) =>
+              each.companyKey === job.companyKey &&
+              each.jobId !== job.jobId &&
+              typeof each.appliedAt === 'string',
+          )
+          .map((each) => String(each.appliedAt));
+        if (/cooling/i.test(String(job.companyKey))) {
+          at.push(...[5, 10, 20].map((days) => new Date(now() - days * 86_400_000).toISOString()));
+        }
+        return cooldownUntil(
+          at,
+          new Date(now()),
+          DEFAULT_APPLY_COMPANY_LIMIT,
+          DEFAULT_APPLY_COOLDOWN_DAYS,
+        );
+      };
       if (path === '/me/matches' && method === 'GET') {
         // Not applied to, best first (a job not scored yet after the scored ones).
         const jobs = myJobs()
           .filter((job) => job.status === 'new')
           .map((job, at) => ({ job, at, score: (job.relevance as { score?: number })?.score }))
           .sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || a.at - b.at)
-          .map(({ job }) => job);
-        return { jobs, truncated: false } as T;
+          .map(({ job }) => {
+            const until = coolingUntil(job);
+            return until ? { ...job, coolingDownUntil: until } : job;
+          });
+        return {
+          jobs,
+          truncated: false,
+          cooldown: { limit: DEFAULT_APPLY_COMPANY_LIMIT, days: DEFAULT_APPLY_COOLDOWN_DAYS },
+        } as T;
       }
       if (path.startsWith('/me/applications?') && method === 'GET') {
         // Applied to, newest applied first, a page at a time (`?limit=&cursor=`), as the API.
@@ -481,6 +517,9 @@ export function createFakeApi({
         // Changed meanwhile (another tab): refused, never overwritten.
         if (job.status !== from) {
           throw new ApiError('conflict', { status: 409, code: 'stage-changed' });
+        }
+        if (from === 'new' && stage === 'applied' && coolingUntil(job)) {
+          throw new ApiError('conflict', { status: 409, code: 'cooling-down' });
         }
         if (stage === 'new') myStages.delete(stageOf);
         else {

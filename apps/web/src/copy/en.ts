@@ -459,6 +459,8 @@ export const en = {
       postedNone: 'Not given',
       /** The board gave no place. */
       whereNone: 'Not given',
+      /** #52 PR E: under the company's name while applying there waits (0013). */
+      coolingDown: 'Cooling down until {date}',
       /** A job opened here left Matches without this page's doing (another tab, or a crawl). */
       left: '{title} at {company} is no longer in Matches: it was marked as applied elsewhere, or its posting closed.',
     },
@@ -485,6 +487,20 @@ export const en = {
       undoFailed: 'Couldn’t undo that. Try again.',
       /** The job moved on elsewhere (another tab): Undo goes. */
       undoChanged: 'Couldn’t undo: this job was changed elsewhere.',
+      /**
+       * #52 PR E (0013): the company had the most applications for now, so Manual apply is off.
+       * `{applications}` and `{days}` are `applications` and `days` below.
+       */
+      cooling:
+        'You reached the limit of {applications} to {company} in {days}. You can apply here again on {date}.',
+      /** The same, when the rule itself is not known. */
+      coolingShort:
+        'You reached the limit of applications to {company} for now. You can apply here again on {date}.',
+      applications: { one: '{count} application', other: '{count} applications' },
+      days: { one: '{count} day', other: '{count} days' },
+      /** I applied was refused: the company reached the limit meanwhile (another tab). */
+      coolingRefused:
+        'That wasn’t saved: you reached the limit of applications to this company for now.',
     },
   },
   /** The Applications tab (#52 PR D): the jobs applied to, each with its stage. */
