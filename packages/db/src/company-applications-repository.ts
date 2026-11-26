@@ -114,7 +114,8 @@ export class CompanyApplicationsRepository {
         const applying = change.from === 'new' && change.stage === 'applied';
         const undoing = change.from === 'applied' && change.stage === 'new';
         if (!applying && !undoing) return {};
-        // Its stage moved after the apply: no longer a "Yes" given by mistake.
+        // Its stage moved after the apply: no longer a "Yes" given by mistake. An undo takes out
+        // only the entry this apply wrote (same time as the job's appliedAt).
         if (undoing && job.stageAt !== job.appliedAt) return {};
         const [current, counting] = await Promise.all([
           this.get(userId, job.companyKey),
@@ -128,12 +129,21 @@ export class CompanyApplicationsRepository {
         );
         if (counting) {
           const { limit, days } = counting;
-          // Its own earlier entry (applied, undone after later stages, applied again) is replaced.
           const until = cooldownUntil(Object.values(applied), now, limit, days);
           if (until !== undefined) return { refuse: { until, limit, days } };
-          applied[job.jobId] = now.toISOString();
-        } else if (!(job.jobId in current.applied)) {
-          // Applied before the cooldown existed, or aged out: nothing to take out.
+          // Its own earlier entry (applied, undone after a later stage, applied again) keeps its
+          // time: the company saw that application, and an undo of this one never removes it.
+          const earlier = current.applied[job.jobId];
+          applied[job.jobId] =
+            earlier !== undefined && Date.parse(earlier) + keep > now.getTime()
+              ? earlier
+              : now.toISOString();
+        } else if (
+          current.applied[job.jobId] === undefined ||
+          current.applied[job.jobId] !== job.appliedAt
+        ) {
+          // Not this apply's entry: applied before the cooldown existed, aged out, or an earlier
+          // application kept by a re-apply. Nothing to take out.
           return {};
         }
         return { item: this.put(userId, job.companyKey, applied, current.version, now) };

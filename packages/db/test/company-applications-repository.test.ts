@@ -14,6 +14,12 @@ const rule = { limit: 3, days: 30 };
 const apply = { stage: 'applied', from: 'new' } as const;
 const undo = { stage: 'new', from: 'applied' } as const;
 const job = (jobId: string, companyKey = ACME) => ({ jobId, companyKey });
+/** A job just marked applied at NOW (its entry's time), as an undo reads it. */
+const justApplied = (jobId: string) => ({
+  ...job(jobId),
+  appliedAt: NOW.toISOString(),
+  stageAt: NOW.toISOString(),
+});
 const daysAgo = (d: number) => new Date(NOW.getTime() - d * 86_400_000).toISOString();
 
 const KEEP = APPLIED_KEEP_DAYS * 86_400_000;
@@ -84,7 +90,7 @@ describe('CompanyApplicationsRepository (#52 PR E)', () => {
     const { guard, write, stored } = setup();
     for (const id of ['j0', 'j1', 'j2']) await write(await guard.check(job(id), apply, NOW));
     expect(await guard.check(job('j3'), apply, NOW)).toHaveProperty('refuse');
-    await write(await guard.check(job('j1'), undo, NOW));
+    await write(await guard.check(justApplied('j1'), undo, NOW));
     expect(Object.keys(stored()?.applied as object).sort()).toEqual(['j0', 'j2']);
     expect(await guard.check(job('j3'), apply, NOW)).toHaveProperty('item');
     // Applied before the cooldown existed (no entry): nothing to take out.
@@ -98,7 +104,7 @@ describe('CompanyApplicationsRepository (#52 PR E)', () => {
     expect(await guard.check(moved, undo, NOW)).toEqual({});
     expect(Object.keys(stored()?.applied as object)).toHaveLength(3);
     // Straight after its apply (stageAt = appliedAt), it is taken out.
-    const straight = { ...job('j1'), appliedAt: daysAgo(1), stageAt: daysAgo(1) };
+    const straight = justApplied('j1');
     await write(await guard.check(straight, undo, NOW));
     expect(Object.keys(stored()?.applied as object)).toHaveLength(2);
   });
@@ -109,14 +115,31 @@ describe('CompanyApplicationsRepository (#52 PR E)', () => {
     const failing = repo.guard(USER, async () => Promise.reject(new Error('SSM down')));
     await expect(failing.check(job('j0'), apply, NOW)).rejects.toThrow('SSM down');
     await write(await guard.check(job('j0'), apply, NOW));
-    await write(await failing.check(job('j0'), undo, NOW));
+    await write(await failing.check(justApplied('j0'), undo, NOW));
     expect(stored()?.applied).toEqual({});
+  });
+
+  it('a re-apply keeps the earlier application; undoing the re-apply never erases it', async () => {
+    const { guard, write, stored } = setup();
+    const first = daysAgo(5);
+    await write(await guard.check(job('x'), apply, new Date(first)));
+    // Interviewing, back to applied, then undone: the entry stays (the company saw it).
+    expect(
+      await guard.check({ ...job('x'), appliedAt: first, stageAt: daysAgo(3) }, undo, NOW),
+    ).toEqual({});
+    // Applied again: its earlier time is kept.
+    await write(await guard.check(job('x'), apply, NOW));
+    expect(stored()?.applied).toEqual({ x: first });
+    // Undone at once (this apply's appliedAt is now): not this apply's entry, so it stays.
+    const again = { ...job('x'), appliedAt: NOW.toISOString(), stageAt: NOW.toISOString() };
+    expect(await guard.check(again, undo, NOW)).toEqual({});
+    expect(stored()?.applied).toEqual({ x: first });
   });
 
   it('an item left empty expires at once (not at a 1970 time, which TTL never deletes)', async () => {
     const { guard, write, stored } = setup();
     await write(await guard.check(job('j0'), apply, NOW));
-    await write(await guard.check(job('j0'), undo, NOW));
+    await write(await guard.check(justApplied('j0'), undo, NOW));
     expect(stored()).toMatchObject({ applied: {}, ttl: Math.floor(NOW.getTime() / 1000) });
   });
 
