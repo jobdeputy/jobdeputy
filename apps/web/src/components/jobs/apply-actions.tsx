@@ -52,54 +52,41 @@ export function ApplyActions({
   const [asking, setAsking] = useState(false);
   const [saving, setSaving] = useState(false);
   // What went wrong, and how many times (a new failure is a new alert, read out again).
-  const [failure, setFailure] = useState<{ words: string; count: number } | null>(null);
+  const [failure, setFailure] = useState<{
+    words: string;
+    count: number;
+    /** A refusal for the cooldown: no longer true once it ends. */
+    cooling: boolean;
+  } | null>(null);
   const manual = useRef<HTMLAnchorElement>(null);
-  const manualOff = useRef<HTMLButtonElement>(null);
   const question = useRef<HTMLFieldSetElement>(null);
   const ids = { manual: useId(), auto: useId(), askLine: useId() };
-  // Which asking a save belongs to: one answered after its question closed changes nothing.
-  const asked = useRef(0);
-  // Whether the unavailable Manual apply has the focus (it is swapped for the link at the end).
-  const offFocused = useRef(false);
   // The parent draws again when a cooldown ends (useRedrawAt), so this is always current.
   const until = coolingUntil(job);
   useEffect(() => {
     if (asking) question.current?.focus();
   }, [asking]);
-  // Cooling down now while asking (the list read again): nothing to ask any more. The focus, if
-  // the question had it, goes to Manual apply, which says why and until when.
+  // Cooling down now while asking (the list read again): nothing to ask any more. Manual apply
+  // is the same element, now unavailable: the focus, if the question had it, goes there. What
+  // went wrong stays said (a refusal for the cooldown is why the question goes).
   useEffect(() => {
     if (until === undefined || !asking) return;
     const active = document.activeElement;
     const hadFocus =
       question.current?.contains(active) === true || active === null || active === document.body;
-    asked.current += 1;
-    // What went wrong stays said (a refusal for the cooldown is why the question goes).
     setAsking(false);
-    setSaving(false);
-    if (hadFocus) manualOff.current?.focus();
+    if (hadFocus) manual.current?.focus();
   }, [until, asking]);
-  // The cooldown ended with the focus on Manual apply: the link in its place takes it.
+  // The cooldown is over: its refusal is no longer true.
   useEffect(() => {
-    if (until !== undefined || !offFocused.current) return;
-    offFocused.current = false;
-    const active = document.activeElement;
-    if (active === null || active === document.body) manual.current?.focus();
+    if (until === undefined) setFailure((was) => (was?.cooling ? null : was));
   }, [until]);
   function ask() {
-    asked.current += 1;
     setAsking(true);
-    setSaving(false);
-    setFailure(null);
-  }
-  function close() {
-    asked.current += 1;
-    setAsking(false);
-    setSaving(false);
-    setFailure(null);
+    // A save under way keeps its answer to come; otherwise a fresh question.
+    if (!saving) setFailure(null);
   }
   async function applied() {
-    const mine = asked.current;
     setSaving(true);
     try {
       const saved = await setStage(api, job.jobId, 'applied', 'new');
@@ -109,9 +96,9 @@ export function ApplyActions({
         onGone();
         return;
       }
-      if (asked.current !== mine) return;
       setSaving(false);
       setFailure((was) => ({
+        cooling: coolingDown(error),
         words: coolingDown(error)
           ? text.coolingRefused
           : error instanceof ApiError && error.kind === 'offline'
@@ -123,48 +110,44 @@ export function ApplyActions({
     }
   }
   function notYet() {
-    close();
+    setAsking(false);
+    setFailure(null);
     manual.current?.focus();
   }
   return (
     <div className="grid gap-3">
       <div className="flex flex-wrap items-center gap-3">
-        {until !== undefined ? (
-          // Unavailable, not disabled: it can still be reached, and says why and until when.
-          <Button
-            ref={manualOff}
-            aria-disabled
-            aria-describedby={ids.manual}
-            onFocus={() => {
-              offFocused.current = true;
-            }}
-            onBlur={(event) => {
-              // Moved elsewhere (not lost because the button went away).
-              if (event.relatedTarget !== null) offFocused.current = false;
-            }}
-          >
-            {text.manual}
-          </Button>
-        ) : (
-          <a
-            ref={manual}
-            href={job.applyUrl ?? job.jobUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-describedby={ids.manual}
-            // The employer's tab opens; the question waits here for the way back.
-            onClick={ask}
-            // A middle click opens it in a tab behind: ask all the same.
-            onAuxClick={(event) => {
-              if (event.button === 1) ask();
-            }}
-            className={cn(buttonVariants(), 'no-underline')}
-          >
-            {text.manual}
-            <span aria-hidden="true">↗</span>
-            <span className="sr-only"> {copy.jobsPage.preview.newTab}</span>
-          </a>
-        )}
+        {/*
+         * One element in both states, so the focus stays on it when a cooldown starts or ends.
+         * While cooling down it is unavailable, not disabled (no address: nothing opens): it can
+         * still be reached, and says why and until when.
+         */}
+        <a
+          ref={manual}
+          {...(until === undefined
+            ? {
+                href: job.applyUrl ?? job.jobUrl,
+                target: '_blank',
+                rel: 'noopener noreferrer',
+                // The employer's tab opens; the question waits here for the way back.
+                onClick: ask,
+                // A middle click opens it in a tab behind: ask all the same.
+                onAuxClick: (event: React.MouseEvent) => {
+                  if (event.button === 1) ask();
+                },
+              }
+            : { role: 'link', tabIndex: 0, 'aria-disabled': true, 'data-unavailable': true })}
+          aria-describedby={ids.manual}
+          className={cn(buttonVariants(), 'no-underline')}
+        >
+          {text.manual}
+          {until === undefined && (
+            <>
+              <span aria-hidden="true">↗</span>
+              <span className="sr-only"> {copy.jobsPage.preview.newTab}</span>
+            </>
+          )}
+        </a>
         {/* Unavailable, not disabled: it can still be reached, and says why. */}
         <Button variant="outline" aria-disabled aria-describedby={ids.auto}>
           {text.auto}
