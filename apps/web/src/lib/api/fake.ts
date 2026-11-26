@@ -20,6 +20,7 @@ import {
   MAX_SKILLS,
   profileInput,
 } from '@jobdeputy/shared/profile';
+import type { StructuredResume } from '@jobdeputy/shared/resume';
 import { createTailoringInput } from '@jobdeputy/shared/tailoring';
 import { type ApiClient, ApiError, type UploadForm, type UploadOptions } from './client.ts';
 
@@ -556,6 +557,12 @@ export function createFakeApi({
           companyName: String(jobs[0]?.companyName ?? companyKey),
           jobIds: jobs.map((job) => String(job.jobId)),
           scores: jobs.map((job, at) => fakeScore(String(job.jobId), at, skills)),
+          resume: fakeResume(
+            String(jobs[0]?.companyName ?? companyKey),
+            ((saved?.skills as string[] | undefined) ?? []).filter((s) =>
+              FAKE_UNPROVEN.some((u) => u.toLowerCase() === s.toLowerCase()),
+            ),
+          ),
           startedAt: now(),
         };
         myTailorings.unshift(tailoring);
@@ -585,6 +592,7 @@ export function createFakeApi({
         if (view.status !== 'ready') return view as T;
         return {
           ...view,
+          resume: found.resume,
           downloads: {
             pdf: `data:application/pdf;base64,${btoa('%PDF-1.4 fake')}`,
             docx: `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${btoa('fake')}`,
@@ -877,6 +885,8 @@ interface FakeTailoring {
   jobIds: string[];
   /** Made when asked for, from the profile's skills then (as the worker reads them). */
   scores: FakeScore[];
+  /** #51 PR C2: the résumé, as `resume.json` holds it. */
+  resume: StructuredResume;
   startedAt: number;
 }
 
@@ -903,6 +913,61 @@ function fakeScore(jobId: string, at: number, skills: string[]): FakeScore {
     tailored,
     missingProven: ['GraphQL'],
     missingUnproven: unproven,
+  };
+}
+
+/**
+ * #51 PR C2: the fake's tailored résumé (a made-up person): its summary names the company, and
+ * the skills the profile added through I have this join its skills.
+ */
+function fakeResume(company: string, added: string[]): StructuredResume {
+  return {
+    contact: {
+      name: 'Sam Example',
+      headline: 'Senior Backend Engineer',
+      email: 'sam@example.com',
+      location: 'New York, NY',
+      links: ['https://github.com/sam-example'],
+    },
+    summary: `Backend engineer with 7 years building TypeScript services on AWS, ready to bring payments and platform experience to ${company}.`,
+    skills: [
+      { group: 'Languages', items: ['TypeScript', 'Go', 'SQL'] },
+      { group: 'Cloud', items: ['AWS Lambda', 'DynamoDB', 'GraphQL', ...added] },
+    ],
+    experience: [
+      {
+        id: 'e1',
+        employer: 'Example Logistics',
+        title: 'Senior Software Engineer',
+        location: 'New York, NY',
+        start: 'Mar 2021',
+        end: 'Present',
+        bullets: [
+          'Led the move of 12 services to AWS Lambda, cutting hosting costs by 40%.',
+          'Designed the shipment events API used by 3 partner teams.',
+        ],
+      },
+      {
+        id: 'e2',
+        employer: 'Sample Bank',
+        title: 'Software Engineer',
+        start: '2018',
+        end: '2021',
+        bullets: ['Built the card payments ledger in TypeScript and PostgreSQL.'],
+      },
+    ],
+    education: [
+      {
+        id: 'd1',
+        school: 'State University',
+        degree: 'BSc',
+        field: 'Computer Science',
+        end: '2018',
+        details: [],
+      },
+    ],
+    certifications: [{ id: 'c1', name: 'AWS Certified Developer', issuer: 'Amazon', date: '2022' }],
+    projects: [],
   };
 }
 

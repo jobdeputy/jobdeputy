@@ -467,4 +467,65 @@ describe('tailoring in the job pane (#51 PR C)', () => {
       timeout: 5000,
     });
   });
+
+  it('previews the résumé in a dialog, laid out as its files, with the downloads under it (C2)', async () => {
+    const { fake } = await setUp();
+    await fake.request('PUT', '/me/profile', {
+      version: 0,
+      firstName: 'Sam',
+      lastName: 'Example',
+      skills: ['Kafka'],
+    });
+    const section = await openSection(BACKEND);
+    fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
+    const open = await section.findByRole('button', { name: 'Preview' });
+    fireEvent.click(open);
+    const dialog = within(await screen.findByRole('dialog', { name: 'Your résumé for Acme' }));
+    const page = within(await dialog.findByRole('article', { name: 'Résumé preview' }));
+    expect(page.getByRole('heading', { level: 3, name: 'Sam Example' })).toBeTruthy();
+    expect(page.getAllByRole('heading', { level: 4 }).map((h) => h.textContent)).toEqual([
+      'Summary',
+      'Skills',
+      'Experience',
+      'Education',
+      'Certifications',
+    ]);
+    expect(page.getByText(/ready to bring payments and platform experience to Acme/)).toBeTruthy();
+    // A skill the profile added (I have this) is in the tailored skills.
+    expect(page.getByText(/AWS Lambda, DynamoDB, GraphQL, Kafka/)).toBeTruthy();
+    expect(page.getByText('Senior Software Engineer, Example Logistics')).toBeTruthy();
+    expect(page.getByText('New York, NY | Mar 2021 – Present')).toBeTruthy();
+    expect(page.getAllByRole('listitem').map((li) => li.textContent)).toContain(
+      'Led the move of 12 services to AWS Lambda, cutting hosting costs by 40%.',
+    );
+    expect(page.getByText('BSc in Computer Science, State University')).toBeTruthy();
+    fireEvent.click(dialog.getByRole('button', { name: 'Download PDF' }));
+    await waitFor(() => expect(pressed).toEqual([expect.stringMatching(/^data:application\/pdf/)]));
+    fireEvent.click(dialog.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(open));
+  });
+
+  it('says when the preview did not load, and reads it again on Try again (C2)', async () => {
+    let fail = true;
+    await setUp({
+      wrap: (api) => ({
+        ...api,
+        async request<T>(m: ApiMethod, p: `/${string}`, body?: unknown): Promise<T> {
+          if (fail && m === 'GET' && /^\/me\/tailorings\/\d+$/.test(p)) {
+            throw new ApiError('server', { status: 500 });
+          }
+          return api.request<T>(m, p, body);
+        },
+      }),
+    });
+    const section = await openSection(BACKEND);
+    fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
+    fireEvent.click(await section.findByRole('button', { name: 'Preview' }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Your résumé for Acme' }));
+    expect(await dialog.findByText('Your résumé didn’t load.')).toBeTruthy();
+    fail = false;
+    fireEvent.click(dialog.getByRole('button', { name: 'Try again' }));
+    expect(await dialog.findByRole('article', { name: 'Résumé preview' })).toBeTruthy();
+  });
 });

@@ -1,7 +1,8 @@
 import { COVERAGE_WARNING } from '@jobdeputy/shared/tailoring';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useId, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { momentHere } from '@/components/jobs/cooldown.ts';
+import { ResumePreviewButton } from '@/components/jobs/resume-preview.tsx';
 import { LoadFailed } from '@/components/setup/parts.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { Skeleton } from '@/components/ui/skeleton.tsx';
@@ -162,7 +163,15 @@ export function TailorSection({
         )}
       </div>
       {/* Keyed by version: a new one starts with nothing said about the one before. */}
-      {ready && <ReadyVersion key={ready.documentId} version={ready} job={job} working={working} />}
+      {ready && (
+        <ReadyVersion
+          key={ready.documentId}
+          version={ready}
+          job={job}
+          company={company}
+          working={working}
+        />
+      )}
       <div className="grid justify-items-start gap-2">
         <Button
           variant={ready ? 'outline' : 'default'}
@@ -261,10 +270,12 @@ function refusalOf(
 function ReadyVersion({
   version,
   job,
+  company,
   working,
 }: {
   version: Tailoring;
   job: JobSummary;
+  company: string;
   /** A new run is at work: "Re-tailor to use it" is being done. */
   working: boolean;
 }) {
@@ -294,7 +305,16 @@ function ReadyVersion({
       {score && score.missingUnproven.length > 0 && (
         <MissingSkills keywords={score.missingUnproven} working={working} />
       )}
-      <Downloads version={version} />
+      <Downloads
+        version={version}
+        preview={
+          <ResumePreviewButton
+            version={version}
+            company={company}
+            footer={<Downloads version={version} />}
+          />
+        }
+      />
     </div>
   );
 }
@@ -419,7 +439,7 @@ function skillRefusal(error: unknown, skill: string): Omit<Said, 'count'> {
 }
 
 /** PDF (the default) and DOCX: each click reads fresh 5-minute links, then starts the download. */
-function Downloads({ version }: { version: Tailoring }) {
+function Downloads({ version, preview }: { version: Tailoring; preview?: ReactNode }) {
   const api = useApi();
   const [getting, setGetting] = useState<'pdf' | 'docx' | null>(null);
   const [said, setSaid] = useState<Said | null>(null);
@@ -442,6 +462,7 @@ function Downloads({ version }: { version: Tailoring }) {
   return (
     <div className="grid gap-2">
       <div className="flex flex-wrap items-center gap-3">
+        {preview}
         <Button
           variant="outline"
           pending={getting === 'pdf'}

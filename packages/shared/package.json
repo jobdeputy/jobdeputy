@@ -11,6 +11,7 @@
     "./lists": "./src/lists.ts",
     "./match-score": "./src/match-score.ts",
     "./profile": "./src/profile.ts",
+    "./resume": "./src/resume.ts",
     "./tailoring": "./src/tailoring.ts"
   },
   "scripts": {

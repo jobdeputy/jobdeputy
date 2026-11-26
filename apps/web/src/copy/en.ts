@@ -518,6 +518,17 @@ export const en = {
       skillsFull:
         'Your profile has 100 skills, the most it holds. Remove one on your profile first.',
       coverage: 'Part of your résumé couldn’t be read, so this version may leave some of it out.',
+      /** #51 PR C2: the résumé in a wide dialog, from the same blocks as its files. */
+      preview: {
+        open: 'Preview',
+        title: 'Your résumé for {company}',
+        line: 'What the PDF and DOCX hold, laid out the same way.',
+        close: 'Close',
+        label: 'Résumé preview',
+        loading: 'Loading your résumé',
+        loadFailed: 'Your résumé didn’t load.',
+        retry: 'Try again',
+      },
       downloadPdf: 'Download PDF',
       downloadDocx: 'Download DOCX',
       downloading: 'Preparing…',
