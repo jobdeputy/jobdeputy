@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { dayHere } from '../src/components/jobs/job-text.ts';
+import { momentHere } from '../src/components/jobs/cooldown.ts';
 import { MatchesList } from '../src/components/jobs/matches-list.tsx';
 import { ApiError } from '../src/lib/api/client.ts';
 import { createFakeApi } from '../src/lib/api/fake.ts';
@@ -699,13 +699,32 @@ describe('applying from the job’s pane (#52 PR C)', () => {
 
 describe('the company cooldown (#52 PR E)', () => {
   const COOLING = 'https://boards.greenhouse.io/cooling-co';
+  /** A cooldown ending in 10 days. */
+  const SOON = new Date(Date.now() + 10 * 86_400_000).toISOString();
+  /** Matches as the fake gives it, with each job's `coolingDownUntil` set to `until`. */
+  function coolingAll(api: FakeApi, until: () => string | undefined) {
+    const request = api.request.bind(api);
+    return vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      const answer = await request(method, path, body);
+      const at = until();
+      return path === '/me/matches' && at
+        ? ({
+            ...(answer as object),
+            jobs: (answer as { jobs: object[] }).jobs.map((job) => ({
+              ...job,
+              coolingDownUntil: at,
+            })),
+          } as never)
+        : answer;
+    });
+  }
   /** When the fake says Cooling co's cooldown ends, as the app shows that day. */
   async function untilDay(api: FakeApi) {
     const matches = await api.request<{ jobs: { coolingDownUntil?: string }[] }>(
       'GET',
       '/me/matches',
     );
-    return dayHere(matches.jobs[0]?.coolingDownUntil);
+    return momentHere(matches.jobs[0]?.coolingDownUntil ?? '');
   }
 
   it('says under the company until when, and Manual apply is unavailable, saying why', async () => {
@@ -723,7 +742,7 @@ describe('the company cooldown (#52 PR E)', () => {
     expect(
       document.getElementById(manual.getAttribute('aria-describedby') ?? '')?.textContent,
     ).toBe(
-      `You reached the limit of 3 applications to Cooling co in 30 days. You can apply here again on ${day}.`,
+      `You reached the limit of 3 applications to Cooling co in 30 days. You can apply here again from ${day}.`,
     );
     // Pressing it neither opens anything nor asks.
     fireEvent.click(manual);
@@ -755,7 +774,7 @@ describe('the company cooldown (#52 PR E)', () => {
             ...(answer as object),
             jobs: (answer as { jobs: object[] }).jobs.map((job) => ({
               ...job,
-              coolingDownUntil: '2026-12-01T12:00:00.000Z',
+              coolingDownUntil: SOON,
             })),
           } as never)
         : answer;
@@ -769,7 +788,11 @@ describe('the company cooldown (#52 PR E)', () => {
     expect(preview().queryByRole('group')).toBeNull();
     expect(
       document.getElementById(manual.getAttribute('aria-describedby') ?? '')?.textContent,
-    ).toContain(`You can apply here again on ${dayHere('2026-12-01T12:00:00.000Z')}.`);
+    ).toContain(`You can apply here again from ${momentHere(SOON)}.`);
+    // The refusal stays said after the question went.
+    expect(preview().getByRole('alert').textContent).toBe(
+      'That wasn’t saved: you reached the limit of applications to this company for now.',
+    );
     expect(screen.queryByText(/is no longer in Matches/)).toBeNull();
   });
 
@@ -789,6 +812,49 @@ describe('the company cooldown (#52 PR E)', () => {
         'That wasn’t saved: you reached the limit of applications to this company for now.',
       ),
     );
+  });
+
+  it('a cooldown already over says nothing, and applying is open', async () => {
+    screenWide(true);
+    const api = createFakeApi({ delay: 0, crawlMs: 0 });
+    coolingAll(api, () => new Date(Date.now() - 1000).toISOString());
+    await renderList(api);
+    expect(screen.queryByText(/^Cooling down until/)).toBeNull();
+    openJob('Senior Backend Engineer');
+    expect(preview().getByRole('link', { name: /^Manual apply/ })).toBeTruthy();
+  });
+
+  it('turns applying back on when the cooldown ends, the focus moving to the link', async () => {
+    screenWide(true);
+    const api = createFakeApi({ delay: 0, crawlMs: 0 });
+    const ends = Date.now() + 1500;
+    coolingAll(api, () => new Date(ends).toISOString());
+    await renderList(api);
+    openJob('Senior Backend Engineer');
+    const off = preview().getByRole('button', { name: 'Manual apply' });
+    off.focus();
+    // Nothing is read again: the cooldown's own time turns it off.
+    const link = await waitFor(() => preview().getByRole('link', { name: /^Manual apply/ }), {
+      timeout: 4000,
+    });
+    expect(screen.queryByText(/^Cooling down until/)).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(link));
+  });
+
+  it('a failure stays said until Manual apply is pressed again', async () => {
+    screenWide(true);
+    const api = await renderList();
+    const request = api.request.bind(api);
+    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      if (method === 'PUT') throw new ApiError('conflict', { status: 409, code: 'cooling-down' });
+      return request(method, path, body);
+    });
+    openJob('Senior Backend Engineer');
+    fireEvent.click(preview().getByRole('link', { name: /^Manual apply/ }));
+    fireEvent.click(preview().getByRole('button', { name: 'I applied' }));
+    await waitFor(() => expect(preview().getByRole('alert').textContent).not.toBe(''));
+    fireEvent.click(preview().getByRole('link', { name: /^Manual apply/ }));
+    expect(preview().getByRole('alert').textContent).toBe('');
   });
 
   it('the fake refuses a fourth application to one company in 30 days, as the API', async () => {

@@ -492,10 +492,10 @@ export const en = {
        * `{applications}` and `{days}` are `applications` and `days` below.
        */
       cooling:
-        'You reached the limit of {applications} to {company} in {days}. You can apply here again on {date}.',
+        'You reached the limit of {applications} to {company} in {days}. You can apply here again from {date}.',
       /** The same, when the rule itself is not known. */
       coolingShort:
-        'You reached the limit of applications to {company} for now. You can apply here again on {date}.',
+        'You reached the limit of applications to {company} for now. You can apply here again from {date}.',
       applications: { one: '{count} application', other: '{count} applications' },
       days: { one: '{count} day', other: '{count} days' },
       /** I applied was refused: the company reached the limit meanwhile (another tab). */

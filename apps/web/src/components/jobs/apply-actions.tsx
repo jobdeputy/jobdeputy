@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { dayHere } from '@/components/jobs/job-text.ts';
+import { coolingUntil, momentHere } from '@/components/jobs/cooldown.ts';
 import { Button, buttonVariants } from '@/components/ui/button.tsx';
 import { copy, fill, plural } from '@/copy/index.ts';
 import { ApiError, useApi } from '@/lib/api/index.ts';
@@ -24,8 +24,8 @@ const text = copy.matchesPage.apply;
  *
  * The question takes the focus when it shows, so it is the first thing met on coming back from
  * the employer's tab. A job found changed elsewhere (409 `stage-changed`: applied in another
- * tab; it can only have moved on) or gone (404) leaves Matches (`onGone`). Any other failure is said in the
- * question, and the list is read again (`onFailed`).
+ * tab; it can only have moved on) or gone (404) leaves Matches (`onGone`). Any other failure is said below the
+ * actions, and the list is read again (`onFailed`).
  *
  * #52 PR E (0013): while the job's company cools down (`coolingDownUntil`), Manual apply is
  * unavailable, saying until when. An "I applied" refused for that (the list was out of date) says
@@ -57,30 +57,59 @@ export function ApplyActions({
   const manualOff = useRef<HTMLButtonElement>(null);
   const question = useRef<HTMLFieldSetElement>(null);
   const ids = { manual: useId(), auto: useId(), askLine: useId() };
-  const until = job.coolingDownUntil;
+  // Which asking a save belongs to: one answered after its question closed changes nothing.
+  const asked = useRef(0);
+  // Whether the unavailable Manual apply has the focus (it is swapped for the link at the end).
+  const offFocused = useRef(false);
+  // The parent draws again when a cooldown ends (useRedrawAt), so this is always current.
+  const until = coolingUntil(job);
   useEffect(() => {
     if (asking) question.current?.focus();
   }, [asking]);
-  // Cooling down now while asking (the list read again): nothing to ask any more.
+  // Cooling down now while asking (the list read again): nothing to ask any more. The focus, if
+  // the question had it, goes to Manual apply, which says why and until when.
   useEffect(() => {
     if (until === undefined || !asking) return;
     const active = document.activeElement;
     const hadFocus =
       question.current?.contains(active) === true || active === null || active === document.body;
+    asked.current += 1;
+    // What went wrong stays said (a refusal for the cooldown is why the question goes).
+    setAsking(false);
+    setSaving(false);
+    if (hadFocus) manualOff.current?.focus();
+  }, [until, asking]);
+  // The cooldown ended with the focus on Manual apply: the link in its place takes it.
+  useEffect(() => {
+    if (until !== undefined || !offFocused.current) return;
+    offFocused.current = false;
+    const active = document.activeElement;
+    if (active === null || active === document.body) manual.current?.focus();
+  }, [until]);
+  function ask() {
+    asked.current += 1;
+    setAsking(true);
+    setSaving(false);
+    setFailure(null);
+  }
+  function close() {
+    asked.current += 1;
     setAsking(false);
     setSaving(false);
     setFailure(null);
-    if (hadFocus) manualOff.current?.focus();
-  }, [until, asking]);
+  }
   async function applied() {
+    const mine = asked.current;
     setSaving(true);
     try {
-      onApplied(await setStage(api, job.jobId, 'applied', 'new'));
+      const saved = await setStage(api, job.jobId, 'applied', 'new');
+      onApplied(saved);
     } catch (error) {
       if (stageGone(error)) {
         onGone();
         return;
       }
+      if (asked.current !== mine) return;
       setSaving(false);
       setFailure((was) => ({
         words: coolingDown(error)
@@ -94,8 +123,7 @@ export function ApplyActions({
     }
   }
   function notYet() {
-    setAsking(false);
-    setFailure(null);
+    close();
     manual.current?.focus();
   }
   return (
@@ -103,7 +131,18 @@ export function ApplyActions({
       <div className="flex flex-wrap items-center gap-3">
         {until !== undefined ? (
           // Unavailable, not disabled: it can still be reached, and says why and until when.
-          <Button ref={manualOff} aria-disabled aria-describedby={ids.manual}>
+          <Button
+            ref={manualOff}
+            aria-disabled
+            aria-describedby={ids.manual}
+            onFocus={() => {
+              offFocused.current = true;
+            }}
+            onBlur={(event) => {
+              // Moved elsewhere (not lost because the button went away).
+              if (event.relatedTarget !== null) offFocused.current = false;
+            }}
+          >
             {text.manual}
           </Button>
         ) : (
@@ -114,10 +153,10 @@ export function ApplyActions({
             rel="noopener noreferrer"
             aria-describedby={ids.manual}
             // The employer's tab opens; the question waits here for the way back.
-            onClick={() => setAsking(true)}
+            onClick={ask}
             // A middle click opens it in a tab behind: ask all the same.
             onAuxClick={(event) => {
-              if (event.button === 1) setAsking(true);
+              if (event.button === 1) ask();
             }}
             className={cn(buttonVariants(), 'no-underline')}
           >
@@ -162,24 +201,27 @@ export function ApplyActions({
                 {text.no}
               </Button>
             </div>
-            {/* Always there, so a failure is read out when it comes. */}
-            <p
-              key={failure?.count ?? 0}
-              role="alert"
-              className={failure ? 'm-0 mt-3 text-sm font-[650] text-danger-ink' : 'sr-only'}
-            >
-              {failure?.words ?? ''}
-            </p>
           </fieldset>
         </div>
       )}
+      {/*
+       * Always there, so a failure is read out when it comes. Outside the question: a refusal for
+       * the cooldown closes the question, and stays said until Manual apply is pressed again.
+       */}
+      <p
+        key={failure?.count ?? 0}
+        role="alert"
+        className={failure ? 'm-0 text-sm font-[650] text-danger-ink' : 'sr-only'}
+      >
+        {failure?.words ?? ''}
+      </p>
     </div>
   );
 }
 
 /** Why Manual apply is off, and until when (the day here). */
 function coolingLine(job: JobSummary, until: string, cooldown: Cooldown | undefined): string {
-  const values = { company: companyName(job), date: dayHere(until) ?? until };
+  const values = { company: companyName(job), date: momentHere(until) };
   return cooldown
     ? fill(text.cooling, {
         ...values,
