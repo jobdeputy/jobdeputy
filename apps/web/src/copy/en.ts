@@ -529,6 +529,8 @@ export const en = {
         loadFailed: 'Your résumé didn’t load.',
         retry: 'Try again',
         unavailable: 'This version’s résumé isn’t available. Re-tailor to make a new one.',
+        /** A re-tailor ended while the preview was open: it shows the new version now. */
+        newer: 'Your re-tailored résumé is ready. It’s shown below.',
       },
       downloadPdf: 'Download PDF',
       downloadDocx: 'Download DOCX',

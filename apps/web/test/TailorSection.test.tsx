@@ -547,8 +547,13 @@ describe('tailoring in the job pane (#51 PR C)', () => {
     expect(await dialog.findByText(/AWS Lambda, DynamoDB, GraphQL$/)).toBeTruthy();
     clock.now += 2000;
     await act(() => vi.advanceTimersByTimeAsync(5000));
-    // Still open: the new version's résumé (with Kafka) replaces the one before.
+    // Still open: the new version's résumé (with Kafka) replaces the one before, and says so.
     expect(await dialog.findByText(/AWS Lambda, DynamoDB, GraphQL, Kafka/)).toBeTruthy();
+    expect(
+      dialog
+        .getAllByRole('status')
+        .some((s) => s.textContent === 'Your re-tailored résumé is ready. It’s shown below.'),
+    ).toBe(true);
     expect(screen.getByRole('dialog', { name: 'Your résumé for Acme' })).toBeTruthy();
   });
 
@@ -572,5 +577,58 @@ describe('tailoring in the job pane (#51 PR C)', () => {
     const dialog = within(await screen.findByRole('dialog', { name: 'Your résumé for Acme' }));
     expect(await dialog.findByText(/isn’t available\. Re-tailor to make a new one\./)).toBeTruthy();
     expect(dialog.queryByRole('button', { name: 'Try again' })).toBeNull();
+  });
+
+  it('says a download asked for in the preview failed, in the pane once the dialog closes (C2 round 2)', async () => {
+    let fail = false;
+    await setUp({
+      wrap: (api) => ({
+        ...api,
+        async request<T>(m: ApiMethod, p: `/${string}`, body?: unknown): Promise<T> {
+          if (fail && m === 'GET' && /^\/me\/tailorings\/\d+$/.test(p)) {
+            throw new ApiError('offline');
+          }
+          return api.request<T>(m, p, body);
+        },
+      }),
+    });
+    const section = await openSection(BACKEND);
+    fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
+    fireEvent.click(await section.findByRole('button', { name: 'Preview' }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Your résumé for Acme' }));
+    await dialog.findByRole('article', { name: 'Résumé preview' });
+    fail = true;
+    fireEvent.click(dialog.getByRole('button', { name: 'Download PDF' }));
+    fireEvent.click(dialog.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await section.findByText('The download didn’t start. Try again.')).toBeTruthy();
+    expect(pressed).toEqual([]);
+  });
+
+  it('hands the focus to the notice when the job leaves Matches with its preview open (C2 round 2)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { fake, clock } = await setUp({ crawlMs: 1000 });
+    const section = await openSection(BACKEND);
+    fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
+    await section.findByText('Tailoring your résumé for Acme…');
+    clock.now += 2000;
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    await section.findByText('86%');
+    fireEvent.click(section.getByRole('button', { name: 'Re-tailor' }));
+    await section.findByText('Tailoring your résumé for Acme…');
+    fireEvent.click(section.getByRole('button', { name: 'Preview' }));
+    await screen.findByRole('dialog', { name: 'Your résumé for Acme' });
+    // Applied in another tab meanwhile: the list read when the run ends leaves it out.
+    const { jobs } = await fake.request<{ jobs: { jobId: string; title: string }[] }>(
+      'GET',
+      '/me/matches',
+    );
+    const jobId = jobs.find((j) => j.title === BACKEND)?.jobId;
+    await fake.request('PUT', `/me/jobs/${jobId}/stage`, { stage: 'applied', from: 'new' });
+    clock.now += 2000;
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const notice = await screen.findByText(/is no longer in Matches/);
+    await waitFor(() => expect(document.activeElement).toBe(notice));
   });
 });

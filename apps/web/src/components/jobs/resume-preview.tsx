@@ -1,6 +1,6 @@
 import { type ResumeBlock, resumeBlocks, type StructuredResume } from '@jobdeputy/shared/resume';
 import { useQuery } from '@tanstack/react-query';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { LoadFailed } from '@/components/setup/parts.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import {
@@ -33,8 +33,23 @@ export function ResumePreviewButton({
   footer: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  // A re-tailor that ends while the dialog is open shows its version here: said inside the
+  // dialog (the page behind it is hidden from screen readers while it is open).
+  const [shown, setShown] = useState(version.documentId);
+  const [newer, setNewer] = useState(false);
+  useEffect(() => {
+    if (version.documentId === shown) return;
+    setShown(version.documentId);
+    setNewer(open);
+  }, [version.documentId, shown, open]);
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        setNewer(false);
+      }}
+    >
       <DialogTrigger asChild>
         <Button variant="outline">{text.open}</Button>
       </DialogTrigger>
@@ -53,6 +68,9 @@ export function ResumePreviewButton({
               <Button variant="outline">{text.close}</Button>
             </DialogClose>
           </div>
+          <p role="status" className={newer ? 'm-0 text-sm font-[650] text-green-ink' : 'sr-only'}>
+            {newer ? text.newer : ''}
+          </p>
           {/* Radix keeps the content mounted while it fades out: the résumé stays with it. */}
           <ResumeSheet documentId={version.documentId} />
           {footer}
@@ -70,6 +88,7 @@ function ResumeSheet({ documentId }: { documentId: string }) {
     queryFn: () => tailoringFiles(api, documentId),
     // A ready version never changes: once read, it is kept while the page is open.
     staleTime: Number.POSITIVE_INFINITY,
+    gcTime: Number.POSITIVE_INFINITY,
     refetchOnWindowFocus: false,
     retry: (failures, error) =>
       failures < 1 && error instanceof ApiError && error.kind === 'offline',

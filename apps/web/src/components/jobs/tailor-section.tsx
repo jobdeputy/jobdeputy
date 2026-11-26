@@ -275,6 +275,7 @@ function ReadyVersion({
   working: boolean;
 }) {
   const score = version.scores?.find((s) => s.jobId === job.jobId);
+  const downloads = useDownloads(version);
   return (
     <div className="grid gap-4">
       {score ? (
@@ -306,11 +307,12 @@ function ReadyVersion({
       )}
       <Downloads
         version={version}
+        state={downloads}
         preview={
           <ResumePreviewButton
             version={version}
             company={company}
-            footer={<Downloads version={version} />}
+            footer={<Downloads version={version} state={downloads} />}
           />
         }
       />
@@ -437,32 +439,57 @@ function skillRefusal(error: unknown, skill: string): Omit<Said, 'count'> {
   return { words: fill(text.addFailed, { skill }) };
 }
 
-/** PDF (the default) and DOCX: each click reads fresh 5-minute links, then starts the download. */
-function Downloads({ version, preview }: { version: Tailoring; preview?: ReactNode }) {
+/**
+ * The downloads' state, shared by the pane's buttons and the preview's: a download asked for in
+ * the dialog is said in the pane when the dialog has closed. A result for a version that is no
+ * longer the newest (a re-tailor ended meanwhile) is dropped, and a new version starts clean.
+ */
+function useDownloads(version: Tailoring) {
   const api = useApi();
   const [getting, setGetting] = useState<'pdf' | 'docx' | null>(null);
   const [said, setSaid] = useState<Said | null>(null);
-  // A new version: what was said about the one before no longer holds.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: cleared on each new version.
+  const current = useRef(version.documentId);
   useEffect(() => {
+    if (current.current === version.documentId) return;
+    current.current = version.documentId;
+    setGetting(null);
     setSaid(null);
   }, [version.documentId]);
   async function download(kind: 'pdf' | 'docx') {
     if (getting !== null) return;
+    const asked = version.documentId;
     setGetting(kind);
     setSaid(null);
     try {
-      const files = await tailoringFiles(api, version.documentId);
+      const files = await tailoringFiles(api, asked);
       const url = files.downloads?.[kind];
       if (!url) throw new Error('no download');
+      if (current.current !== asked) return;
       const pdfName = version.fileName ?? text.fileNameFallback;
       saveFile(url, kind === 'pdf' ? pdfName : pdfName.replace(/\.pdf$/, '.docx'));
     } catch {
+      if (current.current !== asked) return;
       setSaid((was) => ({ words: text.downloadFailed, count: (was?.count ?? 0) + 1 }));
     } finally {
-      setGetting(null);
+      if (current.current === asked) setGetting(null);
     }
   }
+  return { getting, said, download };
+}
+
+type DownloadsState = ReturnType<typeof useDownloads>;
+
+/** PDF (the default) and DOCX: each click reads fresh 5-minute links, then starts the download. */
+function Downloads({
+  version,
+  state,
+  preview,
+}: {
+  version: Tailoring;
+  state: DownloadsState;
+  preview?: ReactNode;
+}) {
+  const { getting, said, download } = state;
   return (
     <div className="grid gap-2">
       <div className="flex flex-wrap items-center gap-3">
