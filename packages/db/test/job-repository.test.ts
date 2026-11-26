@@ -1,7 +1,14 @@
 import type { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { GetCommand, QueryCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import { describe, expect, it, vi } from 'vitest';
-import { type JobPosting, JobRepository, SAVE_CONCURRENCY, SUMMARY_FIELDS } from '../src/index.js';
+import {
+  ConcurrentUpdateError,
+  type JobPosting,
+  JobRepository,
+  SAVE_CONCURRENCY,
+  type StageGuardCheck,
+  SUMMARY_FIELDS,
+} from '../src/index.js';
 
 const NOW = new Date('2026-09-29T12:00:00.000Z');
 const USER = '0f8fad5b-d9cb-469f-a165-70867728950e';
@@ -680,6 +687,129 @@ describe('JobRepository.setStage (#52)', () => {
     expect(tx.input.TransactItems?.[1]?.Put?.Item).toMatchObject({
       userId: USER,
       name: 'job.stage_changed',
+    });
+  });
+
+  describe('with the company cooldown (PR E)', () => {
+    const guardItem = { Put: { TableName: 'Usage', Item: { sk: 'APPLIED#greenhouse:acme' } } };
+    const guard = (checks: StageGuardCheck[]) => {
+      let n = 0;
+      return {
+        check: vi.fn(async () => checks[Math.min(n++, checks.length - 1)] as StageGuardCheck),
+      };
+    };
+    const job = { jobId: J, status: 'new', companyKey: 'greenhouse:acme' };
+    const codes = (...c: string[]) =>
+      Object.assign(new Error('cancelled'), {
+        name: 'TransactionCanceledException',
+        CancellationReasons: c.map((Code) => ({ Code })),
+      });
+
+    it('writes the guard item last in the same transaction, with the time it records', async () => {
+      const { c, send } = store([job]);
+      const g = guard([{ item: guardItem }]);
+      const r = await repo(c).setStage(
+        USER,
+        J,
+        { stage: 'applied', from: 'new' },
+        audit,
+        async () => 9,
+        g,
+      );
+      expect(r.kind).toBe('ok');
+      expect(g.check).toHaveBeenCalledWith(job, { stage: 'applied', from: 'new' }, NOW);
+      const tx = send.mock.calls
+        .map((x) => x[0])
+        .find((x) => x instanceof TransactWriteCommand) as TransactWriteCommand;
+      expect(tx.input.TransactItems?.map((i) => Object.keys(i)[0])).toEqual([
+        'Update',
+        'Put',
+        'Put',
+      ]);
+      expect(tx.input.TransactItems?.[2]).toBe(guardItem);
+    });
+
+    it('a cooling-down company: refused with when it ends, and nothing written', async () => {
+      const { c, send } = store([job]);
+      const r = await repo(c).setStage(
+        USER,
+        J,
+        { stage: 'applied', from: 'new' },
+        audit,
+        async () => 9,
+        guard([{ refuse: { until: '2026-10-20T00:00:00.000Z' } }]),
+      );
+      expect(r).toEqual({ kind: 'cooling-down', job, until: '2026-10-20T00:00:00.000Z' });
+      expect(send.mock.calls.some((x) => x[0] instanceof TransactWriteCommand)).toBe(false);
+    });
+
+    it("tries again from a fresh read when only the guard's condition failed", async () => {
+      let tries = 0;
+      const { c, send } = store([job], () => {
+        if (++tries === 1) throw codes('None', 'None', 'ConditionalCheckFailed');
+        return {};
+      });
+      const g = guard([{ item: guardItem }, { refuse: { until: 'U' } }]);
+      // The second read sees the other apply: now the company cools down.
+      const r = await repo(c).setStage(
+        USER,
+        J,
+        { stage: 'applied', from: 'new' },
+        audit,
+        async () => 9,
+        g,
+      );
+      expect(r).toMatchObject({ kind: 'cooling-down', until: 'U' });
+      expect(g.check).toHaveBeenCalledTimes(2);
+      expect(send.mock.calls.filter((x) => x[0] instanceof GetCommand)).toHaveLength(2);
+    });
+
+    it("gives up after 3 tries (409 try again); the job's own condition is still a conflict", async () => {
+      const busy = store([job], () => {
+        throw codes('None', 'None', 'ConditionalCheckFailed');
+      });
+      await expect(
+        repo(busy.c).setStage(
+          USER,
+          J,
+          { stage: 'applied', from: 'new' },
+          audit,
+          async () => 9,
+          guard([{ item: guardItem }]),
+        ),
+      ).rejects.toBeInstanceOf(ConcurrentUpdateError);
+      expect(busy.send.mock.calls.filter((x) => x[0] instanceof TransactWriteCommand)).toHaveLength(
+        3,
+      );
+
+      const moved = store([job, { ...job, status: 'applied' }], () => {
+        throw codes('ConditionalCheckFailed', 'None', 'ConditionalCheckFailed');
+      });
+      const r = await repo(moved.c).setStage(
+        USER,
+        J,
+        { stage: 'applied', from: 'new' },
+        audit,
+        async () => 9,
+        guard([{ item: guardItem }]),
+      );
+      expect(r).toMatchObject({ kind: 'conflict', job: { status: 'applied' } });
+    });
+
+    it('without a guard item, a failed third reason is not a retry', async () => {
+      const { c } = store([job], () => {
+        throw codes('None', 'ConditionalCheckFailed');
+      });
+      await expect(
+        repo(c).setStage(
+          USER,
+          J,
+          { stage: 'applied', from: 'new' },
+          audit,
+          async () => 9,
+          guard([{}]),
+        ),
+      ).rejects.toMatchObject({ name: 'TransactionCanceledException' });
     });
   });
 

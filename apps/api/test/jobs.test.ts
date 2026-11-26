@@ -1,4 +1,11 @@
-import type { AppliedCursor, CompanyShown, CrawlSettings, Job, StageResult } from '@jobdeputy/db';
+import type {
+  AppliedCursor,
+  CompanyShown,
+  CrawlSettings,
+  Job,
+  StageGuard,
+  StageResult,
+} from '@jobdeputy/db';
 import { DEFAULT_CRAWL_LIMITS } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
@@ -71,6 +78,10 @@ function deps(
     ...over,
   };
   const companies = { listShown: vi.fn(async () => shown) };
+  const applications = {
+    list: vi.fn(async () => new Map<string, string[]>()),
+    guard: vi.fn((): StageGuard => ({ check: async () => ({}) })),
+  };
   const limits = vi.fn(async () => ({ ...DEFAULT_CRAWL_LIMITS }));
   const settings = {
     get: vi.fn(
@@ -83,6 +94,7 @@ function deps(
   return {
     repo,
     companies,
+    applications,
     limits,
     settings,
     isBeingDeleted: vi.fn(async () => false),
@@ -466,6 +478,48 @@ describe('GET /me/matches (#52)', () => {
     expect(r.titles).toEqual(['B']);
   });
 
+  it('marks every job of a company cooling down, until its oldest counted application ages out (PR E)', async () => {
+    const getSummaries = vi.fn(async (_u: string, ids: string[]) =>
+      stored({ c: { companyKey: 'lever:globex' }, d: { companyKey: 'ashby:initech' } }).filter(
+        (j) => ids.includes(j.jobId),
+      ),
+    );
+    const d = deps({ getSummaries }, shown);
+    d.applications.list.mockResolvedValue(
+      new Map([
+        // Acme: 3 within 30 days (the oldest ends the cooldown); one older does not count.
+        [
+          'greenhouse:acme',
+          [
+            '2026-09-01T00:00:00.000Z',
+            '2026-09-20T08:00:00.000Z',
+            '2026-10-01T00:00:00.000Z',
+            '2026-10-09T00:00:00.000Z',
+          ],
+        ],
+        // Globex: 2, under the limit.
+        ['lever:globex', ['2026-10-01T00:00:00.000Z', '2026-10-02T00:00:00.000Z']],
+      ]),
+    );
+    const res = await route(event('GET /me/matches'), d);
+    const body = JSON.parse(res.body as string);
+    const until = Object.fromEntries(
+      body.jobs.map((j: { title: string; coolingDownUntil?: string }) => [
+        j.title,
+        j.coolingDownUntil,
+      ]),
+    );
+    expect(until).toEqual({
+      A: '2026-10-20T08:00:00.000Z',
+      B: '2026-10-20T08:00:00.000Z',
+      E: '2026-10-20T08:00:00.000Z',
+      C: undefined,
+      D: undefined,
+    });
+    expect(body.cooldown).toEqual({ limit: 3, days: 30 });
+    expect(d.applications.list).toHaveBeenCalledWith('user-a');
+  });
+
   it('keeps a job last seen exactly 30 days ago', async () => {
     const r = await call(stored({ d: { lastSeenAt: '2026-09-10T12:00:00.000Z' } }));
     expect(r.titles).toContain('D');
@@ -591,10 +645,12 @@ describe('PUT /me/jobs/{jobId}/stage (#52)', () => {
         }),
       },
       expect.any(Function),
+      d.applications.guard.mock.results[0]?.value,
     );
-    // The admin's expiry (7 days) from now, read only when called (an undo on a hidden job).
+    // #52 PR E: the company cooldown, with the admin's rule (3 in 30 days by default).
+    expect(d.applications.guard).toHaveBeenCalledWith('user-a', { limit: 3, days: 30 });
+    // The admin's expiry (7 days) from now, computed only when called (an undo on a hidden job).
     const expiry = vi.mocked(d.repo.setStage).mock.calls[0]?.[4] as () => Promise<number>;
-    expect(d.limits).not.toHaveBeenCalled();
     expect(await expiry()).toBe(NOW.getTime() / 1000 + 7 * 86_400);
   });
 
@@ -613,6 +669,24 @@ describe('PUT /me/jobs/{jobId}/stage (#52)', () => {
       deps({ setStage: vi.fn(async () => ({ kind: 'not-found' as const })) }),
     );
     expect(gone.statusCode).toBe(404);
+  });
+
+  it('409 cooling-down with when it ends and the job, when the company cools down (PR E)', async () => {
+    const until = '2026-10-20T09:00:00.000Z';
+    const d = deps({
+      setStage: vi.fn(async () => ({ kind: 'cooling-down' as const, job: job(), until })),
+    });
+    d.limits.mockResolvedValue({
+      ...DEFAULT_CRAWL_LIMITS,
+      applyCompanyLimit: 2,
+      applyCooldownDays: 14,
+    });
+    const res = await put({ stage: 'applied', from: 'new' }, d);
+    expect(res.statusCode).toBe(409);
+    const body = JSON.parse(res.body as string);
+    expect(body).toMatchObject({ code: 'cooling-down', until, job: { jobId: J1, status: 'new' } });
+    expect(body.detail).toContain('2 jobs at this company in the last 14 days');
+    expect(d.applications.guard).toHaveBeenCalledWith('user-a', { limit: 2, days: 14 });
   });
 
   it('409 try-again when the write kept colliding', async () => {

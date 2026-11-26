@@ -472,7 +472,7 @@ export class CellStack extends Stack {
     const crawlLimits = new StringParameter(this, 'CrawlLimits', {
       parameterName: `/jobdeputy/${id}/crawl-limits`,
       description:
-        'Crawl limits: {"dailyDefault": N, "dailyMax": N, "maxActive": N, "platformRunsPerWeek": N, "platformRunsPerMonth": N, "companyJobsDefault": N, "companyJobsMax": N, "jobExpiryDays": N}. Read live by the API and the crawl worker (5-minute cache).',
+        'Crawl limits: {"dailyDefault": N, "dailyMax": N, "maxActive": N, "platformRunsPerWeek": N, "platformRunsPerMonth": N, "companyJobsDefault": N, "companyJobsMax": N, "jobExpiryDays": N, "applyCompanyLimit": N, "applyCooldownDays": N}. Read live by the API and the crawl worker (5-minute cache).',
       // Unchanged since T06c on purpose: a new value here would overwrite the admin's live
       // setting on the next deploy. Fields added later (the platform runs, T08b3) take
       // their defaults until the admin sets them.
@@ -667,6 +667,8 @@ export class CellStack extends Stack {
     // #52: Matches reads the same; Applications queries the `applied` index; the user's one
     // change to a job, its stage, is an UpdateItem with its audit entry (PutItem) in one
     // transaction, refused while the account is being deleted (the users table's marker).
+    // #52 PR E: applying or undoing one also replaces the company's `APPLIED#` usage item in
+    // that transaction (read first, consistently: GetItem; Matches queries them).
     jobsTable.grant(
       jobsApi.fn,
       'dynamodb:Query',
@@ -676,7 +678,7 @@ export class CellStack extends Stack {
     );
     usersTable.grant(jobsApi.fn, 'dynamodb:GetItem');
     auditTable.grant(jobsApi.fn, 'dynamodb:PutItem');
-    usageTable.grant(jobsApi.fn, 'dynamodb:Query');
+    usageTable.grant(jobsApi.fn, 'dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:PutItem');
     preferencesTable.grant(jobsApi.fn, 'dynamodb:GetItem');
     jobsApi.fn.addToRolePolicy(
       new PolicyStatement({ actions: ['ssm:GetParameter'], resources: [crawlLimits.parameterArn] }),

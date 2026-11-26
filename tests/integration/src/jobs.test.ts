@@ -300,9 +300,12 @@ describe('jobs (deployed)', () => {
     expect(applied.status, JSON.stringify(applied.body)).toBe(200);
     expect(applied.body).toMatchObject({ status: 'applied' });
     expect(applied.body.appliedAt).toBe(applied.body.stageAt);
-    expect(titlesOf((await callApi(api, 'GET', 'me/matches', token)).body)).toEqual([
-      'Data Engineer',
-    ]);
+    // PR E: the apply also wrote the company's cooldown item in the same transaction (IAM and
+    // the three-table transaction on real AWS); one application is under the limit.
+    const after = (await callApi(api, 'GET', 'me/matches', token)).body;
+    expect(titlesOf(after)).toEqual(['Data Engineer']);
+    expect(after.jobs[0].coolingDownUntil).toBeUndefined();
+    expect(after.cooldown).toEqual({ limit: expect.any(Number), days: expect.any(Number) });
     expect((await applications(1)).jobs[0]).toMatchObject({
       jobId: backend.jobId,
       status: 'applied',

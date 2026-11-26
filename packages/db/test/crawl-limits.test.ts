@@ -21,6 +21,8 @@ describe('cachedCrawlLimits', () => {
       listsPerDay: 2,
       listCompanies: 20,
       platformTailoringsPerMonth: 10,
+      applyCompanyLimit: 3,
+      applyCooldownDays: 30,
       premium: DEFAULT_PREMIUM_LIMITS,
     });
     now = LIMITS_CACHE_MS - 1;
@@ -45,6 +47,8 @@ describe('cachedCrawlLimits', () => {
       listsPerDay: 2,
       listCompanies: 20,
       platformTailoringsPerMonth: 10,
+      applyCompanyLimit: 3,
+      applyCooldownDays: 30,
       premium: DEFAULT_PREMIUM_LIMITS,
     });
   });
@@ -82,6 +86,8 @@ describe('cachedCrawlLimits', () => {
       listsPerDay: 2,
       listCompanies: 20,
       platformTailoringsPerMonth: 10,
+      applyCompanyLimit: 3,
+      applyCooldownDays: 30,
       premium: DEFAULT_PREMIUM_LIMITS,
     });
   });
