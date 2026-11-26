@@ -425,8 +425,8 @@ export const en = {
         failed: 'Failed',
         done: 'Done',
       },
-      /** A count not known yet (a run at work, or one that failed). */
-      none: 'None yet',
+      /** A count not known yet: a run at work, or one that stalled. */
+      none: 'Not known yet',
     },
   },
   /** The Matches tab (#52), where the app opens: the best jobs at each company. */
@@ -569,6 +569,8 @@ export const en = {
     },
     /** How the last link went. */
     result: {
+      /** #52: after a run that found jobs, to the Matches tab. */
+      toMatches: 'See your matches',
       /** `{count}` is how many jobs the page listed. */
       done: {
         one: 'Done with {host}: {count} job read.',

@@ -6,6 +6,7 @@ import { DeputyWorking } from '@/components/deputy/deputy-working.tsx';
 import { LinkIcon } from '@/components/icons.tsx';
 import { useRenderAtDeadline } from '@/components/jobs/latest-crawl.ts';
 import { RunHistory } from '@/components/jobs/run-history.tsx';
+import { HOME_TAB } from '@/components/jobs/tabs.ts';
 import { PageIntro } from '@/components/page-intro.tsx';
 import { Section } from '@/components/section.tsx';
 import { refusalText } from '@/components/setup/parts.tsx';
@@ -24,6 +25,7 @@ import {
   useLatestCrawl,
 } from '@/lib/api/crawls.ts';
 import { ApiError, isFinal, useApi } from '@/lib/api/index.ts';
+import { followLink } from '@/lib/router.ts';
 
 const text = copy.jobsPage;
 const searchText = copy.searchPage;
@@ -289,7 +291,25 @@ function CrawlProgress({ crawl }: { crawl: Crawl | null }) {
       <div role="status" className="grid gap-1">
         {!working && <Outcome crawl={crawl} host={host} />}
       </div>
+      {/* #52: the jobs found are in the Matches tab. */}
+      {!working && foundJobs(crawl) && (
+        <Button asChild variant="outline" className="mt-4 justify-self-start">
+          <a href={HOME_TAB.path} onClick={(event) => followLink(event, HOME_TAB.path)}>
+            {text.result.toMatches}
+          </a>
+        </Button>
+      )}
     </div>
+  );
+}
+
+/** A run that ended with jobs that fit (or not scored yet): they show in Matches. */
+function foundJobs(crawl: Crawl): boolean {
+  return (
+    crawl.status === 'succeeded' &&
+    !isStalled(crawl) &&
+    (crawl.stats?.jobsFound ?? 0) > 0 &&
+    crawl.stats?.jobsRelevant !== 0
   );
 }
 

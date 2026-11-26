@@ -145,6 +145,10 @@ describe('Job matches: Find jobs (#49)', () => {
       { timeout: 3000 },
     );
     expect(done.closest('[role="status"]')).toBeTruthy();
+    // #52: its jobs are in Matches, a link away.
+    expect(screen.getByRole('link', { name: 'See your matches' }).getAttribute('href')).toBe(
+      '/matches',
+    );
   });
 
   it('says why a link could not be read', async () => {
@@ -160,6 +164,8 @@ describe('Job matches: Find jobs (#49)', () => {
       ),
     ).toBeTruthy();
     expect(screen.getByText('Check the link, or try another page.')).toBeTruthy();
+    // Nothing found: no way to Matches.
+    expect(screen.queryByRole('link', { name: 'See your matches' })).toBeNull();
   });
 
   it('leaves links at work to the API: one it turns away is said under the buttons', async () => {

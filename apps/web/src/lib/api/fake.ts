@@ -386,7 +386,10 @@ export function createFakeApi({
         const query = new URLSearchParams(path.slice(path.indexOf('?') + 1));
         const limit = Number(query.get('limit') ?? 20);
         const cursor = query.get('cursor');
-        const start = cursor ? myCrawls.findIndex((each) => each.view.crawlId === cursor) + 1 : 0;
+        const at = cursor ? myCrawls.findIndex((each) => each.view.crawlId === cursor) : -1;
+        // The API's cursor is a key: one it never gave is refused, never read as the start.
+        if (cursor && at < 0) throw new ApiError('invalid', { status: 400 });
+        const start = at + 1;
         const page = myCrawls.slice(start, start + limit);
         const more = start + limit < myCrawls.length;
         return {

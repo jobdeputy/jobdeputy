@@ -1,7 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { AppNav, HOME_PAGE, isPageAt, PAGES, pageAt } from '@/components/app-shell.tsx';
-import { JobsArea, tabAt } from '@/components/jobs/jobs-area.tsx';
+import { JobsArea } from '@/components/jobs/jobs-area.tsx';
+import { tabAt } from '@/components/jobs/tabs.ts';
 import { type AuthControl, AuthDrawer, type AuthMode } from '@/components/landing/auth-drawer.tsx';
 import { Hero } from '@/components/landing/hero.tsx';
 import { SiteHeader } from '@/components/landing/site-header.tsx';

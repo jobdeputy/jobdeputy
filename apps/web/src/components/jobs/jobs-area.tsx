@@ -1,41 +1,23 @@
 import { MatchesPage } from '@/components/jobs/matches-page.tsx';
 import { SearchPage } from '@/components/jobs/search-page.tsx';
+import { JOBS_TABS, type JobsTabPath, SEARCH_TAB } from '@/components/jobs/tabs.ts';
 import { copy } from '@/copy/index.ts';
 import { followLink } from '@/lib/router.ts';
 import { cn } from '@/lib/utils.ts';
-
-/**
- * The jobs area's tabs (#52, locked on the issue): Search (links given, and their runs) and
- * Matches (the jobs found, where the app opens); Applications joins in PR D. Each is a page of
- * its own, at its own address, so a tab is a link (marked `aria-current`), not an ARIA tab.
- */
-export const JOBS_TABS = [
-  { path: '/search', label: copy.jobsTabs.search },
-  { path: '/matches', label: copy.jobsTabs.matches },
-] as const;
-
-export type JobsTabPath = (typeof JOBS_TABS)[number]['path'];
-
-/** The tab the app opens on (#52): Matches. */
-export const HOME_TAB = JOBS_TABS[1];
-
-/** The jobs tab at `path`; Matches at any other address. */
-export function tabAt(path: string): (typeof JOBS_TABS)[number] {
-  return JOBS_TABS.find((tab) => tab.path === path) ?? HOME_TAB;
-}
 
 /** The jobs area: its tab row, then the tab at `path`. */
 export function JobsArea({ path }: { path: JobsTabPath }) {
   return (
     <div className="grid w-full max-w-[1120px] content-start gap-8">
       <JobsTabs path={path} />
-      {path === '/search' ? <SearchPage /> : <MatchesPage />}
+      {path === SEARCH_TAB.path ? <SearchPage /> : <MatchesPage />}
     </div>
   );
 }
 
 /**
- * The tab row (the round 7 prototype's `.tabs`): the tab shown sits on the surface with a green
+ * The tab row (the round 7 prototype's `.tabs`). A tab is a page at its own address, so it is a
+ * link (marked `aria-current`), not an ARIA tab: the tab shown sits on the surface with a green
  * bottom edge (a border, so it survives forced colours); the row wraps on a narrow phone.
  */
 export function JobsTabs({ path }: { path: JobsTabPath }) {

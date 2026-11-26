@@ -18,30 +18,31 @@ const text = copy.searchPage.runs;
 
 /**
  * Search's run history (#52): every link given, newest first, 20 at a time with More searches,
- * in the jobs area's table. The newest crawl is followed by the tab (`latest`); whenever its state
- * changes (a new link, a stage ended), the loaded pages are read again, so its row keeps up.
+ * in the jobs area's table. The newest run's row is the crawl the tab follows (`latest`), so it
+ * keeps up as it is read with no read of the history; the history is read again only when a new
+ * run is given (here or in another tab).
  *
  * Focus is never dropped: after More searches it moves to the first new run's link.
  */
 export function RunHistory({ latest }: { latest: Crawl | null | undefined }) {
   const runs = useRuns();
-  useReadAgain(
-    latest ? `${latest.crawlId}:${runState(latest)}:${latest.list?.ended ?? ''}` : undefined,
-    runs,
-  );
+  // Undefined until the newest run is known: knowing it is no reason to read the history again.
+  useReadAgain(latest === undefined ? undefined : (latest?.crawlId ?? 'none'), runs, {
+    fromKnown: true,
+  });
   const section = useRef<HTMLElement>(null);
-  // After More searches: the first new run takes the focus (once, whatever came back).
+  // After More searches: the first new run takes the focus, once, when that read ends however
+  // it ended (rows, no rows, or failed); never later.
   const firstNew = useRef<number | null>(null);
   const rows = runs.data;
+  const { isFetchingNextPage } = runs;
   useEffect(() => {
+    if (isFetchingNextPage) return;
     const wanted = firstNew.current;
-    if (wanted === null || !rows || rows.length <= wanted) return;
     firstNew.current = null;
+    if (wanted === null || !rows || rows.length <= wanted) return;
     section.current?.querySelectorAll<HTMLElement>('tbody a')[wanted]?.focus();
-  }, [rows]);
-  useEffect(() => {
-    if (runs.isFetchNextPageError) firstNew.current = null;
-  }, [runs.isFetchNextPageError]);
+  }, [rows, isFetchingNextPage]);
   const refreshing = runs.isFetching && !runs.isFetchingNextPage;
   const moreFailed = runs.isFetchNextPageError && !runs.isFetchingNextPage;
   return (
@@ -71,7 +72,9 @@ export function RunHistory({ latest }: { latest: Crawl | null | undefined }) {
             <JobsTable
               label={text.title}
               columns={COLUMNS}
-              rows={shown}
+              rows={
+                latest ? shown.map((run) => (run.crawlId === latest.crawlId ? latest : run)) : shown
+              }
               rowKey={(run) => run.crawlId}
               empty={<TableEmpty title={text.emptyTitle} line={text.emptyLine} />}
             />
@@ -164,13 +167,13 @@ const COLUMNS: JobsColumn<Crawl>[] = [
     key: 'companies',
     label: text.columns.companies,
     numeric: true,
-    cell: (run) => count(companiesRead(run)),
+    cell: (run) => count(run, companiesRead(run)),
   },
   {
     key: 'jobs',
     label: text.columns.jobs,
     numeric: true,
-    cell: (run) => count(run.stats?.jobsFound),
+    cell: (run) => count(run, run.stats?.jobsFound),
   },
 ];
 
@@ -180,9 +183,11 @@ function companiesRead(run: Crawl): number | undefined {
   return run.status === 'succeeded' ? 1 : undefined;
 }
 
-/** A count, or a dash (read out as "none yet") before there is one. */
-function count(value: number | undefined) {
+/** A count; none when the run ended without one; a dash (read "Not known yet") while at work. */
+function count(run: Crawl, value: number | undefined) {
   if (value !== undefined) return value.toLocaleString(copy.locale);
+  const state = runState(run);
+  if (state === 'failed' || state === 'done') return (0).toLocaleString(copy.locale);
   return (
     <>
       <span aria-hidden="true">—</span>

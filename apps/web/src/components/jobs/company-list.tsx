@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { FitLabel } from '@/components/jobs/fit-label.tsx';
 import { JobPreview } from '@/components/jobs/job-preview.tsx';
 import { whereText } from '@/components/jobs/job-text.ts';
+import { SEARCH_TAB } from '@/components/jobs/tabs.ts';
 import { CARD_CLASS, SECTION_TITLE_CLASS } from '@/components/section.tsx';
 import { LoadFailed } from '@/components/setup/parts.tsx';
 import { Button } from '@/components/ui/button.tsx';
@@ -163,7 +164,10 @@ export function CompanyList({
                   <p className="m-0 text-sm text-muted-foreground">{text.emptyLine}</p>
                   {/* #52: an empty Matches points to Search, where links are given. */}
                   <Button asChild variant="outline" className="mt-3">
-                    <a href="/search" onClick={(event) => followLink(event, '/search')}>
+                    <a
+                      href={SEARCH_TAB.path}
+                      onClick={(event) => followLink(event, SEARCH_TAB.path)}
+                    >
                       {text.toSearch}
                     </a>
                   </Button>
