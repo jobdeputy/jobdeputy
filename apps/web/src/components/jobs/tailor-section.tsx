@@ -1,0 +1,432 @@
+import { COVERAGE_WARNING } from '@jobdeputy/shared/tailoring';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useId, useRef, useState } from 'react';
+import { momentHere } from '@/components/jobs/cooldown.ts';
+import { LoadFailed } from '@/components/setup/parts.tsx';
+import { Button } from '@/components/ui/button.tsx';
+import { Skeleton } from '@/components/ui/skeleton.tsx';
+import { Spinner } from '@/components/ui/spinner.tsx';
+import { copy, fill } from '@/copy/index.ts';
+import { ApiError, useApi } from '@/lib/api/index.ts';
+import { companyName, type JobSummary, matchesKey } from '@/lib/api/jobs.ts';
+import {
+  addSkill,
+  isTailoring,
+  READY_SCORE,
+  requestTailoring,
+  type Tailoring,
+  type Tailorings,
+  tailoringFiles,
+  tailoringsKey,
+  useTailorings,
+} from '@/lib/api/tailorings.ts';
+import { followLink } from '@/lib/router.ts';
+import { cn } from '@/lib/utils.ts';
+
+const text = copy.matchesPage.tailor;
+
+/** A message the section says, with a link to fix it where there is one. */
+interface Said {
+  words: string;
+  link?: { label: string; path: string };
+  /** A new failure is a new alert, read out again. */
+  count: number;
+}
+
+/**
+ * #51 PR C (decision 0015, the plan agreed on #51): the job pane's "Your résumé for {company}".
+ * One version a run covers the company's top shown jobs; this shows the newest ready one's score
+ * for **this** job (the tailored one, with the base résumé's beside it) and the 80% line, the
+ * keywords still missing (those the résumé backs; those it doesn't, each with **I have this**,
+ * which saves the skill to the profile and offers Re-tailor), and the PDF and DOCX downloads
+ * (their 5-minute links read on the click). A run at work is followed every 5 s; the score
+ * already there stays meanwhile. Once a run ends ready, Matches is read again (its Score column).
+ */
+export function TailorSection({ job }: { job: JobSummary }) {
+  const api = useApi();
+  const queries = useQueryClient();
+  const list = useTailorings(job.companyKey);
+  const ids = { title: useId(), status: useId() };
+  const company = companyName(job);
+  const [starting, setStarting] = useState(false);
+  const [refusal, setRefusal] = useState<Said | null>(null);
+  const versions = list.data?.tailorings ?? [];
+  const newest = versions[0];
+  const working = isTailoring(newest);
+  const ready = versions.find((v) => v.status === 'ready');
+  const failed = newest?.status === 'failed' ? newest : undefined;
+
+  // A run that ends ready changes the jobs' scores: Matches reads them again.
+  const wasWorking = useRef(working);
+  useEffect(() => {
+    if (wasWorking.current && !working) void queries.invalidateQueries({ queryKey: matchesKey });
+    wasWorking.current = working;
+  }, [working, queries]);
+
+  async function start() {
+    setStarting(true);
+    setRefusal(null);
+    try {
+      const { tailoring } = await requestTailoring(api, job.companyKey);
+      // Shown at once (and followed), before the list is read again.
+      queries.setQueryData<Tailorings>(tailoringsKey(job.companyKey), (was) =>
+        was ? { ...was, tailorings: [tailoring, ...was.tailorings] } : was,
+      );
+    } catch (error) {
+      setRefusal((was) => ({
+        ...refusalOf(error, list.data?.allowance),
+        count: (was?.count ?? 0) + 1,
+      }));
+    } finally {
+      setStarting(false);
+      // The allowance (a run counted), or a run found at work: the list as the API has it.
+      void list.refetch();
+    }
+  }
+
+  if (list.isPending) {
+    return (
+      <section aria-labelledby={ids.title} aria-busy="true" className={SECTION_CLASS}>
+        <Heading id={ids.title} company={company} />
+        <Skeleton kind="lines" rows={2} />
+      </section>
+    );
+  }
+  if (list.isError && !list.data) {
+    return (
+      <section aria-labelledby={ids.title} className={SECTION_CLASS}>
+        <Heading id={ids.title} company={company} />
+        <LoadFailed
+          error={list.error}
+          message={text.loadFailed}
+          retry={text.retry}
+          onRetry={() => void list.refetch()}
+          retrying={list.isFetching}
+        />
+      </section>
+    );
+  }
+  const allowance = list.data.allowance;
+  const left = Math.max(0, allowance.perMonth - allowance.used);
+  return (
+    <section aria-labelledby={ids.title} className={SECTION_CLASS}>
+      <div className="grid gap-1">
+        <Heading id={ids.title} company={company} />
+        {!ready && <p className="m-0 text-sm text-muted-foreground">{text.intro}</p>}
+      </div>
+      {/* Always there, so the run's progress and its end are read out as they come. */}
+      <div id={ids.status} role="status" className="grid gap-1 empty:hidden">
+        {working && (
+          <>
+            <p className="m-0 flex items-center gap-2 font-[650] text-ink">
+              <Spinner />
+              {fill(text.working, { company })}
+            </p>
+            <p className="m-0 text-sm text-muted-foreground">{text.workingLine}</p>
+          </>
+        )}
+        {failed && (
+          <>
+            <p className="m-0 font-[650] text-danger-ink">{text.failedTitle}</p>
+            {failed.message && <p className="m-0 text-sm text-ink-soft">{failed.message}</p>}
+          </>
+        )}
+      </div>
+      {ready && <ReadyVersion version={ready} job={job} />}
+      <div className="grid justify-items-start gap-2">
+        <Button
+          variant={ready ? 'outline' : 'default'}
+          pending={starting}
+          pendingLabel={text.starting}
+          aria-disabled={working || undefined}
+          data-unavailable={working || undefined}
+          aria-describedby={working ? ids.status : undefined}
+          onClick={() => {
+            if (!working) void start();
+          }}
+        >
+          {ready ? text.again : text.start}
+        </Button>
+        <p className="m-0 text-sm text-muted-foreground">
+          {left > 0
+            ? fill(text.allowance, { left: String(left), perMonth: String(allowance.perMonth) })
+            : fill(text.allowanceNone, {
+                perMonth: String(allowance.perMonth),
+                date: momentHere(allowance.nextAt),
+              })}
+        </p>
+      </div>
+      <Alert said={refusal} />
+    </section>
+  );
+}
+
+// A plain section of the pane, as Why it fits: the score's panel is the one box in it.
+const SECTION_CLASS = 'grid gap-4';
+
+function Heading({ id, company }: { id: string; company: string }) {
+  return (
+    <h3 id={id} className="m-0 text-base font-[700] [overflow-wrap:anywhere]">
+      {fill(text.title, { company })}
+    </h3>
+  );
+}
+
+/** Always there, so a failure is read out when it comes. */
+function Alert({ said }: { said: Said | null }) {
+  return (
+    <div
+      key={said?.count ?? 0}
+      role="alert"
+      className={said ? 'grid justify-items-start gap-2' : 'sr-only'}
+    >
+      {said && (
+        <>
+          <p className="m-0 text-sm font-[650] text-danger-ink">{said.words}</p>
+          {said.link && (
+            <a
+              href={said.link.path}
+              onClick={(event) => followLink(event, said.link?.path ?? '/')}
+              className="text-sm font-[650] text-green-ink"
+            >
+              {said.link.label}
+            </a>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Why a Tailor click started nothing (apps/api/src/tailoring.ts codes). */
+function refusalOf(
+  error: unknown,
+  allowance: Tailorings['allowance'] | undefined,
+): Omit<Said, 'count'> {
+  if (!(error instanceof ApiError)) return { words: text.startFailed };
+  switch (error.code) {
+    case 'tailoring_allowance':
+      // The list read again after it says the same, with the day more come.
+      return allowance
+        ? {
+            words: fill(text.allowanceNone, {
+              perMonth: String(allowance.perMonth),
+              date: momentHere(allowance.nextAt),
+            }),
+          }
+        : { words: text.startFailed };
+    case 'tailoring_busy':
+      return { words: text.busy };
+    case 'model_needed':
+      return { words: text.modelNeeded };
+    case 'no_resume':
+      return { words: text.noResume, link: { label: text.toResumes, path: '/resumes' } };
+    case 'no_jobs':
+      return { words: text.noJobs };
+  }
+  return { words: error.kind === 'offline' ? text.offline : text.startFailed };
+}
+
+/** The newest ready version, as it reads for this job. */
+function ReadyVersion({ version, job }: { version: Tailoring; job: JobSummary }) {
+  const score = version.scores?.find((s) => s.jobId === job.jobId);
+  return (
+    <div className="grid gap-4">
+      {score ? (
+        <ScoreBox base={score.base} tailored={score.tailored} />
+      ) : (
+        <p className="m-0 text-sm font-[650] text-ink-soft">{text.notIncluded}</p>
+      )}
+      {version.coverage !== undefined && version.coverage < COVERAGE_WARNING && (
+        <p className="m-0 text-sm text-ink-soft">{text.coverage}</p>
+      )}
+      {score && score.missingProven.length > 0 && (
+        <div className="grid gap-2">
+          <h4 className="m-0 text-sm font-[700]">{text.missingProven}</h4>
+          <ul className="m-0 flex list-none flex-wrap gap-2 p-0">
+            {score.missingProven.map((keyword) => (
+              <li key={keyword} className={CHIP_CLASS}>
+                {keyword}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {score && score.missingUnproven.length > 0 && (
+        <MissingSkills keywords={score.missingUnproven} />
+      )}
+      <Downloads version={version} />
+    </div>
+  );
+}
+
+const CHIP_CLASS =
+  'rounded-full border border-line bg-paper px-3 py-1 text-[0.8125rem] font-[620] text-ink-soft';
+
+/** This job's score: the tailored résumé's, large, with the base résumé's under it. */
+function ScoreBox({ base, tailored }: { base: number | null; tailored: number | null }) {
+  const isReady = tailored !== null && tailored >= READY_SCORE;
+  return (
+    <div
+      className={cn(
+        'grid gap-1 rounded-[14px] border p-3',
+        isReady ? 'border-green-line bg-green-wash' : 'border-orange-soft bg-paper',
+      )}
+    >
+      <p className="m-0 text-xs font-[750] tracking-[0.12em] text-muted-foreground uppercase">
+        {text.scoreLabel}
+      </p>
+      <p className="m-0 font-display text-[2rem] leading-none font-medium tracking-[-0.03em]">
+        {tailored === null ? text.scoreNone : fill(text.score, { score: String(tailored) })}
+      </p>
+      <p className="m-0 text-sm text-muted-foreground">
+        {base === null ? text.baseNone : fill(text.base, { score: String(base) })}
+      </p>
+      <p className={cn('m-0 text-sm font-[650]', isReady ? 'text-green-ink' : 'text-ink-soft')}>
+        {isReady ? text.ready : text.below}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * The keywords the résumé doesn't show, each with I have this: it saves the skill to the profile
+ * (`POST /me/profile/skills`), so the next run may use it; once added, the chip says so.
+ */
+function MissingSkills({ keywords }: { keywords: string[] }) {
+  const api = useApi();
+  const queries = useQueryClient();
+  const [added, setAdded] = useState<ReadonlySet<string>>(new Set());
+  const [adding, setAdding] = useState<string | null>(null);
+  const [said, setSaid] = useState<Said | null>(null);
+  const [done, setDone] = useState<{ words: string; count: number } | null>(null);
+  const lineId = useId();
+  async function have(skill: string) {
+    if (adding !== null) return;
+    setAdding(skill);
+    setSaid(null);
+    try {
+      await addSkill(api, skill);
+      setAdded((was) => new Set(was).add(skill));
+      setDone((was) => ({ words: fill(text.added, { skill }), count: (was?.count ?? 0) + 1 }));
+      void queries.invalidateQueries({ queryKey: ['profile'] });
+    } catch (error) {
+      setDone(null);
+      setSaid((was) => ({ ...skillRefusal(error, skill), count: (was?.count ?? 0) + 1 }));
+    } finally {
+      setAdding(null);
+    }
+  }
+  return (
+    <div className="grid gap-2">
+      <h4 className="m-0 text-sm font-[700]">{text.missingUnproven}</h4>
+      <p id={lineId} className="m-0 text-sm text-muted-foreground">
+        {text.missingUnprovenLine}
+      </p>
+      <ul className="m-0 grid list-none gap-2 p-0">
+        {keywords.map((skill) => (
+          <li key={skill} className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-sm font-[650] [overflow-wrap:anywhere]">{skill}</span>
+            {added.has(skill) ? (
+              <span className="text-[0.8125rem] font-[650] text-green-ink">{text.addedShort}</span>
+            ) : (
+              <Button
+                variant="outline"
+                pending={adding === skill}
+                pendingLabel={text.adding}
+                aria-disabled={(adding !== null && adding !== skill) || undefined}
+                aria-describedby={lineId}
+                aria-label={fill(text.haveName, { skill })}
+                onClick={() => void have(skill)}
+              >
+                {text.have}
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p
+        key={done?.count ?? 0}
+        role="status"
+        className={done ? 'm-0 text-sm text-green-ink' : 'sr-only'}
+      >
+        {done?.words ?? ''}
+      </p>
+      <Alert said={said} />
+    </div>
+  );
+}
+
+function skillRefusal(error: unknown, skill: string): Omit<Said, 'count'> {
+  if (error instanceof ApiError && error.code === 'profile-needed') {
+    return { words: text.profileNeeded, link: { label: text.toProfile, path: '/profile' } };
+  }
+  if (error instanceof ApiError && error.code === 'skills-full') {
+    return { words: text.skillsFull, link: { label: text.toProfile, path: '/profile' } };
+  }
+  return { words: fill(text.addFailed, { skill }) };
+}
+
+/** PDF (the default) and DOCX: each click reads fresh 5-minute links, then starts the download. */
+function Downloads({ version }: { version: Tailoring }) {
+  const api = useApi();
+  const [getting, setGetting] = useState<'pdf' | 'docx' | null>(null);
+  const [said, setSaid] = useState<Said | null>(null);
+  async function download(kind: 'pdf' | 'docx') {
+    if (getting !== null) return;
+    setGetting(kind);
+    setSaid(null);
+    try {
+      const files = await tailoringFiles(api, version.documentId);
+      const url = files.downloads?.[kind];
+      if (!url) throw new Error('no download');
+      startDownload(url);
+    } catch {
+      setSaid((was) => ({ words: text.downloadFailed, count: (was?.count ?? 0) + 1 }));
+    } finally {
+      setGetting(null);
+    }
+  }
+  return (
+    <div className="grid gap-2">
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          variant="outline"
+          pending={getting === 'pdf'}
+          pendingLabel={text.downloading}
+          onClick={() => void download('pdf')}
+        >
+          {text.downloadPdf}
+        </Button>
+        <Button
+          variant="outline"
+          pending={getting === 'docx'}
+          pendingLabel={text.downloading}
+          onClick={() => void download('docx')}
+        >
+          {text.downloadDocx}
+        </Button>
+      </div>
+      {version.finishedAt && (
+        <p className="m-0 text-sm text-muted-foreground">
+          {fill(text.made, { date: momentHere(version.finishedAt) })}
+        </p>
+      )}
+      <Alert said={said} />
+    </div>
+  );
+}
+
+/**
+ * Starts a download from a link that answers as an attachment (S3's presigned `GET` with its
+ * content disposition), so the page stays where it is.
+ */
+export function startDownload(url: string) {
+  const link = document.createElement('a');
+  link.href = url;
+  link.rel = 'noopener';
+  link.download = '';
+  document.body.append(link);
+  link.click();
+  link.remove();
+}

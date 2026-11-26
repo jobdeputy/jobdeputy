@@ -6,7 +6,7 @@ import type {
   StageGuard,
   StageResult,
 } from '@jobdeputy/db';
-import { DEFAULT_CRAWL_LIMITS } from '@jobdeputy/shared';
+import { DEFAULT_CRAWL_LIMITS, MATCH_SCORE_VERSION } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
 import { COMPANY_PAGE_READS, type JobsDeps, route } from '../src/jobs.js';
@@ -463,6 +463,28 @@ describe('GET /me/matches (#52)', () => {
     const r = await call(stored());
     expect(r.titles).toEqual(['C', 'A', 'B', 'E', 'D']);
     expect(r.truncated).toBe(false);
+  });
+
+  it("gives each job its tailored résumé's score, only when made by today's score code (#51)", async () => {
+    const match = (version: number) => ({
+      resumeDocumentId: 'R'.repeat(26),
+      score: 82,
+      base: 61,
+      missing: ['Kafka'],
+      version,
+      scoredAt: recent,
+    });
+    const jobs = stored({ a: { match: match(MATCH_SCORE_VERSION) }, b: { match: match(-1) } });
+    const getSummaries = vi.fn(async (_u: string, ids: string[]) =>
+      jobs.filter((j) => ids.includes(j.jobId)),
+    );
+    const res = await route(event('GET /me/matches'), deps({ getSummaries }, shown));
+    const byTitle = Object.fromEntries(
+      JSON.parse(res.body as string).jobs.map((j: { title: string }) => [j.title, j]),
+    );
+    expect(byTitle.A.match).toEqual({ score: 82, base: 61, resumeDocumentId: 'R'.repeat(26) });
+    expect(byTitle.B).not.toHaveProperty('match');
+    expect(byTitle.C).not.toHaveProperty('match');
   });
 
   it('leaves out jobs applied to, closed, hidden, or not seen in 30 days; no refill', async () => {

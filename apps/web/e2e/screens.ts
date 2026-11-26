@@ -88,6 +88,22 @@ export const SCREENS: Screen[] = [
     still: true,
     steps: toMatchesApplied,
   },
+  // #51 PR C: the company's tailored résumé in the pane: ready (80% or more), and below 80%
+  // with the keywords still missing (I have this).
+  {
+    name: 'matches-tailored',
+    path: '/',
+    open: 'Get started free',
+    still: true,
+    steps: (page) => toMatchesTailored(page, 'Senior Backend Engineer', '86%'),
+  },
+  {
+    name: 'matches-tailored-below',
+    path: '/',
+    open: 'Get started free',
+    still: true,
+    steps: (page) => toMatchesTailored(page, 'Platform Engineer, Developer Experience', '72%'),
+  },
   // #52 PR E: a company cooling down: the table says until when, and Manual apply is off.
   {
     name: 'matches-cooling',
@@ -455,6 +471,21 @@ async function toJobsPreview(page: Page) {
   await toMatches(page);
   await page.getByRole('button', { name: 'Senior Backend Engineer' }).click();
   await page.getByText(/Design and run TypeScript services on AWS/).waitFor();
+}
+
+/**
+ * #51 PR C: Tailor résumé pressed in a job's pane, and the run followed until its score shows
+ * (the fake's run takes two of its stages); beside the table, its Score column has it too.
+ */
+async function toMatchesTailored(page: Page, title: string, score: string) {
+  await toMatches(page);
+  await page.getByRole('button', { name: title }).click();
+  const section = page.getByRole('region', { name: 'Your résumé for Acme' });
+  await section.getByRole('button', { name: 'Tailor résumé' }).click();
+  await section.getByText(score, { exact: true }).waitFor({ timeout: 15_000 });
+  // Beside the table (wide screens), the shot waits for its Score column read again too.
+  const table = page.getByRole('table', { name: 'Your matches' });
+  if (await table.isVisible()) await table.getByText(score).waitFor();
 }
 
 /**

@@ -48,6 +48,16 @@ export const SENIORITY = [
   'executive',
 ] as const;
 
+/** A profile's skills: at most this many, each at most SKILL_MAX characters. */
+export const MAX_SKILLS = 100;
+const SKILL_MAX = 60;
+
+/**
+ * #51 PR C: `POST /me/profile/skills`, one skill the user confirmed ("I have this" in the job
+ * pane), added to the profile's skills without sending the whole profile.
+ */
+export const addSkillInput = z.strictObject({ skill: text(SKILL_MAX) });
+
 /** The version the client last read; 0 for a first save. A mismatch is a 409 conflict. */
 const expectedVersion = z.number().int().nonnegative();
 
@@ -73,7 +83,7 @@ export const profileInput = z.strictObject({
   headline: text(200).optional(),
   summary: text(5000).optional(),
   yearsExperience: z.number().int().min(0).max(70).optional(),
-  skills: list(text(60), 100),
+  skills: list(text(SKILL_MAX), MAX_SKILLS),
   languages: list(
     z.strictObject({
       name: text(60),

@@ -770,6 +770,7 @@ export class CellStack extends Stack {
     const profileIntegration = new HttpLambdaIntegration('ProfileIntegration', profile.fn);
     const profileRoutes: [string, HttpMethod[]][] = [
       ['/me/profile', [HttpMethod.GET, HttpMethod.PUT]],
+      ['/me/profile/skills', [HttpMethod.POST]],
       ['/me/preferences/search', [HttpMethod.GET, HttpMethod.PUT]],
       ['/me/roles', [HttpMethod.GET, HttpMethod.POST]],
       ['/me/roles/{roleId}', [HttpMethod.PUT, HttpMethod.DELETE]],

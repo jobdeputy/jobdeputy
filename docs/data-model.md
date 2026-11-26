@@ -45,7 +45,7 @@ Every `TransactWriteItems` goes through `transactWrite` (`packages/db/src/transa
 | Table | Operation | Key | Used by |
 |---|---|---|---|
 | `users` | `GetItem` (consistent) | `userId`, `sk = PROFILE` | `GET` and `PUT /me/profile` |
-| `users` + `audit` | `TransactWriteItems`: `PutItem` with `attribute_not_exists(userId)` or `version = :expected`, `PutItem` audit entry | `userId`, `sk = PROFILE` | `PUT /me/profile` |
+| `users` + `audit` | `TransactWriteItems`: `PutItem` with `attribute_not_exists(userId)` or `version = :expected`, `PutItem` audit entry | `userId`, `sk = PROFILE` | `PUT /me/profile`; `POST /me/profile/skills` (#51 PR C: the saved profile with one skill added, at the version read, up to 3 tries) |
 | `users` | `PutItem` with `attribute_not_exists(userId)` | `userId`, `sk = DELETION` | `DELETE /me` (T12) |
 | `users` | `GetItem` | `userId`, `sk = DELETION` | every write route: refused with 410 while it exists; `GET /me` |
 | every user table | `Query` (keys only) + `BatchWriteItem` deletes, paged | `userId` | deletion worker: erases everything but the `DELETION` item |
@@ -436,3 +436,4 @@ Everything under `users/<userId>/` and `derived/users/<userId>/` goes with accou
 | 2026-11-22 | `crawls.relevance.leaseUntil`, `leaseId`: one delivery scores a crawl at a time (a duplicate delivery had ended a run early, counting its scores as reused) | fix after #71 |
 | 2026-11-25 | `jobs.status` is the job's stage: `new`, `applied`, `interviewing`, `offer`, `rejected`, `withdrawn` (the unused `shortlisted`, `dismissed`, `applying`, `archived` dropped); `appliedAt`, `stageAt`, `appliedResumeId`; GSI `applied`; audit `job.stage_changed`. The `applications` table stays Phase 2 (the extension's runs) | #52 |
 | 2026-11-26 | `usage` `APPLIED#<companyKey>` (applications per company in the last 365 days, the longest cooldown window: `applied`, `version`, `ttl`) | #52 PR E |
+| 2026-11-26 | No new attribute: `POST /me/profile/skills` writes `users` `PROFILE` (`skills`, audit `profile.skillAdded`); `GET /me/matches` reads `jobs.match` (its `score`, `base`, `resumeDocumentId`, only at today's `MATCH_SCORE_VERSION`) | #51 PR C |

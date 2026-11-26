@@ -9,7 +9,9 @@
     "./crawl": "./src/crawl.ts",
     "./documents": "./src/documents.ts",
     "./lists": "./src/lists.ts",
-    "./profile": "./src/profile.ts"
+    "./match-score": "./src/match-score.ts",
+    "./profile": "./src/profile.ts",
+    "./tailoring": "./src/tailoring.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -18,6 +18,7 @@ import {
   TableEmpty,
 } from '@/components/jobs/jobs-table.tsx';
 import { SEARCH_TAB } from '@/components/jobs/tabs.ts';
+import { TailorSection } from '@/components/jobs/tailor-section.tsx';
 import { SECTION_TITLE_CLASS } from '@/components/section.tsx';
 import { LoadFailed } from '@/components/setup/parts.tsx';
 import { Button } from '@/components/ui/button.tsx';
@@ -324,15 +325,18 @@ export function MatchesList({
             wide={wide}
             onClose={close}
             actions={
-              <ApplyActions
-                job={open}
-                {...(matches.data?.cooldown ? { cooldown: matches.data.cooldown } : {})}
-                onApplied={() =>
-                  leave(open, { kind: 'applied', job: open, undo: 'ready', tries: 0 })
-                }
-                onGone={() => leave(open, { kind: 'left', job: open })}
-                onFailed={() => void refetch()}
-              />
+              <>
+                <TailorSection job={open} />
+                <ApplyActions
+                  job={open}
+                  {...(matches.data?.cooldown ? { cooldown: matches.data.cooldown } : {})}
+                  onApplied={() =>
+                    leave(open, { kind: 'applied', job: open, undo: 'ready', tries: 0 })
+                  }
+                  onGone={() => leave(open, { kind: 'left', job: open })}
+                  onFailed={() => void refetch()}
+                />
+              </>
             }
           />
         )}
@@ -394,6 +398,20 @@ function columnsFor(openId: string | null, onOpen: (job: JobSummary) => void) {
       sortValue: (job) => job.relevance?.score,
       sortFirst: 'descending',
       cell: (job) => <FitLabel fit={fitOf(job)} />,
+    },
+    {
+      key: 'score',
+      label: text.columns.score,
+      // #51 PR C: the tailored résumé's ATS match, once the company has one.
+      sortValue: (job) => job.match?.score ?? undefined,
+      sortFirst: 'descending',
+      numeric: true,
+      cell: (job) =>
+        typeof job.match?.score === 'number' ? (
+          `${job.match.score}%`
+        ) : (
+          <span className="text-muted-foreground">{text.scoreNone}</span>
+        ),
     },
     {
       key: 'posted',

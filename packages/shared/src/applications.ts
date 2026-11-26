@@ -116,6 +116,8 @@ export const JOB_SUMMARY_FIELDS = [
   'filter',
   'limitState',
   'relevance',
+  // #51 PR C: the tailored résumé's score (Matches' Score column).
+  'match',
   'ttl',
 ] as const;
 
