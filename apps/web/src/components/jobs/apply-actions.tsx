@@ -88,6 +88,8 @@ export function ApplyActions({
   }
   async function applied() {
     setSaving(true);
+    // A new try: what the last one said no longer applies.
+    setFailure(null);
     try {
       const saved = await setStage(api, job.jobId, 'applied', 'new');
       onApplied(saved);
