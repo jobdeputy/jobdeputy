@@ -3,7 +3,8 @@ import { CRAWL_ERRORS } from '@jobdeputy/shared/crawl';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { JobsPage, withScheme } from '../src/components/jobs/jobs-page.tsx';
+import { MatchesPage } from '../src/components/jobs/matches-page.tsx';
+import { SearchPage, withScheme } from '../src/components/jobs/search-page.tsx';
 import { copy } from '../src/copy/index.ts';
 import { ApiError } from '../src/lib/api/client.ts';
 import { companiesKey } from '../src/lib/api/companies.ts';
@@ -51,7 +52,9 @@ async function renderPage(api: FakeApi = heldApi()) {
   render(
     <QueryClientProvider client={queries}>
       <ApiContext.Provider value={api}>
-        <JobsPage checkEvery={20} />
+        {/* The two tabs at once: a link given in Search, its jobs in Matches (#52). */}
+        <SearchPage checkEvery={20} />
+        <MatchesPage checkEvery={20} />
       </ApiContext.Provider>
     </QueryClientProvider>,
   );

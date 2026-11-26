@@ -44,8 +44,12 @@ describe('Your companies (#49 PR C)', () => {
     renderList(createFakeApi({ delay: 0, crawlMs: 0 }));
     expect(await screen.findByText('No matches yet')).toBeTruthy();
     expect(
-      screen.getByText('Paste a careers page above. The best roles at each company land here.'),
+      screen.getByText(
+        'Give your deputy a careers page in Search. The best roles at each company land here.',
+      ),
     ).toBeTruthy();
+    // #52: it points to Search.
+    expect(screen.getByRole('link', { name: 'Go to Search' }).getAttribute('href')).toBe('/search');
   });
 
   it('lists each company with its best jobs ranked, their fit, where, and a link to each posting', async () => {

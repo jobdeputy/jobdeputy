@@ -113,7 +113,7 @@ describe('the landing page’s address', () => {
 });
 
 describe('the signed-in app’s pages', () => {
-  it('opens Job matches at /jobs once the set-up is done, whatever the path was (#49)', async () => {
+  it('opens Matches at /matches once the set-up is done, whatever the path was (#52)', async () => {
     const auth = createFakeAuth({ delay: 0 });
     await auth.signUp('new@example.com', 'a long enough password');
     await auth.confirmSignUp('new@example.com', 'a long enough password', '123456');
@@ -126,20 +126,18 @@ describe('the signed-in app’s pages', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'The best jobs at each company.' }),
     ).toBeTruthy();
-    expect(window.location.pathname).toBe('/jobs');
-    expect(document.title).toBe('Job matches · JobDeputy');
+    expect(window.location.pathname).toBe('/matches');
+    expect(document.title).toBe('Matches · JobDeputy');
     // The page list is a landmark of its own, beside the page's main content, not inside it.
     const nav = screen.getByRole('navigation', { name: 'Primary' });
     expect(screen.getByRole('main').contains(nav)).toBe(false);
-    // Later (Back to an entry from before), the address is left alone: Job matches still shows.
+    // Later (Back to an entry from before), the address is left alone: Matches still shows.
     act(() => navigate('/nowhere'));
     expect(window.location.pathname).toBe('/nowhere');
     expect(
       screen.getByRole('heading', { level: 1, name: 'The best jobs at each company.' }),
     ).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Job matches' }).getAttribute('aria-current')).toBe(
-      'page',
-    );
+    expect(screen.getByRole('link', { name: 'Jobs' }).getAttribute('aria-current')).toBe('page');
     // Signing out goes back to the landing page's address, and its title.
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
     await screen.findByRole('heading', { level: 1, name: 'You set it up. Your deputy applies.' });
@@ -511,5 +509,47 @@ describe('Target roles on the Profile page', () => {
     expect(shownTitles()).toEqual(['Staff engineer']);
     expect(await savedTitles(api)).toEqual(['Staff engineer']);
     expect(within(groupOf('Target roles')).queryByText('Saved')).toBeNull();
+  });
+});
+
+describe('the jobs tabs (#52)', () => {
+  it('shows each tab at its own address, with Jobs marked in the sidebar on both', async () => {
+    const auth = createFakeAuth({ delay: 0 });
+    await auth.signUp('new@example.com', 'a long enough password');
+    await auth.confirmSignUp('new@example.com', 'a long enough password', '123456');
+    const api = createFakeApi({ delay: 0 });
+    await api.request('PUT', '/me/profile', { version: 0, firstName: 'Alex', lastName: 'Morgan' });
+    // #49's old address goes to Matches.
+    window.history.replaceState(null, '', '/jobs');
+    await renderApp(auth, {}, api);
+    await screen.findByRole('heading', { level: 1, name: 'The best jobs at each company.' });
+    expect(window.location.pathname).toBe('/matches');
+    const tabs = within(screen.getByRole('navigation', { name: 'Jobs' }));
+    expect(tabs.getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Search',
+      'Matches',
+    ]);
+    expect(tabs.getByRole('link', { name: 'Matches' }).getAttribute('aria-current')).toBe('page');
+    fireEvent.click(tabs.getByRole('link', { name: 'Search' }));
+    const title = await screen.findByRole('heading', {
+      level: 1,
+      name: 'Point your deputy at a company.',
+    });
+    await waitFor(() => expect(document.activeElement).toBe(title));
+    expect(window.location.pathname).toBe('/search');
+    expect(document.title).toBe('Search · JobDeputy');
+    expect(tabs.getByRole('link', { name: 'Search' }).getAttribute('aria-current')).toBe('page');
+    expect(tabs.getByRole('link', { name: 'Matches' }).getAttribute('aria-current')).toBeNull();
+    // The sidebar marks Jobs on every tab; its link goes to Matches.
+    const jobs = within(screen.getByRole('navigation', { name: 'Primary' })).getByRole('link', {
+      name: 'Jobs',
+    });
+    expect(jobs.getAttribute('aria-current')).toBe('page');
+    expect(jobs.getAttribute('href')).toBe('/matches');
+    // Back returns to Matches.
+    act(() => window.history.back());
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'The best jobs at each company.' }),
+    ).toBeTruthy();
   });
 });

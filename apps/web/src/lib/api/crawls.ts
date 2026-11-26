@@ -1,5 +1,5 @@
 import { crawlsCompanies, githubListFromUrl, STALE_LIST_MS } from '@jobdeputy/shared/lists';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { type ApiClient, ApiError, isFinal, useApi } from './index.ts';
 
 /**
@@ -229,4 +229,47 @@ export function startCrawl(
     url,
     ...(withoutAi ? { aiSource: 'none' } : {}),
   });
+}
+
+/** How many runs a page of the run history holds (#52). */
+export const RUNS_PAGE = 20;
+
+export const runsKey = ['crawls', 'runs'] as const;
+
+/**
+ * The person's runs (#52, Search's history): the links they gave, newest first, a page at a time.
+ * Only top-level runs: a list run's company crawls are part of it (the API leaves them out).
+ */
+export function useRuns() {
+  const api = useApi();
+  return useInfiniteQuery({
+    queryKey: runsKey,
+    queryFn: ({ pageParam }) =>
+      api.request<{ crawls: Crawl[]; nextCursor?: string }>(
+        'GET',
+        `/me/crawls?limit=${RUNS_PAGE}${pageParam ? `&cursor=${pageParam}` : ''}`,
+      ),
+    initialPageParam: '',
+    getNextPageParam: (last) => last.nextCursor,
+    refetchOnWindowFocus: false,
+    retry: (failures, error) =>
+      failures < 1 && error instanceof ApiError && error.kind === 'offline',
+    select: (data) => data.pages.flatMap((page) => page.crawls),
+  });
+}
+
+/**
+ * What a run looks like now, in one word: at work (waiting its turn, reading, scoring), stalled,
+ * failed, or done. The history's status column, and when it changes, the history is read again.
+ */
+export type RunState = 'waiting' | 'reading' | 'scoring' | 'stalled' | 'failed' | 'done';
+
+export function runState(crawl: Crawl, now = Date.now()): RunState {
+  if (crawl.status === 'failed') return 'failed';
+  if (isStalled(crawl, now)) return 'stalled';
+  if (isCrawling(crawl, now)) {
+    const stage = crawlStage(crawl);
+    return stage === 'waiting' || stage === 'scoring' ? stage : 'reading';
+  }
+  return 'done';
 }

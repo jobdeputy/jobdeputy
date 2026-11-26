@@ -372,18 +372,71 @@ export const en = {
   /** The signed-in app's page list (the sidebar; across the top on phones). */
   nav: {
     label: 'Primary',
-    jobs: 'Job matches',
+    jobs: 'Jobs',
     profile: 'Profile',
     resumes: 'Résumés',
     /** The browser tab's title on a page: "Profile · JobDeputy". */
     pageTitle: '{page} · JobDeputy',
   },
-  /** The Job matches page: a link in, the best jobs at each company out (#49). */
-  jobsPage: {
-    eyebrow: 'Job matches',
-    title: 'The best jobs at each company.',
+  /** The Jobs page's tabs (#52): each is a page of its own. */
+  jobsTabs: {
+    label: 'Jobs',
+    search: 'Search',
+    matches: 'Matches',
+  },
+  /** The jobs area's one table (#52), on every tab. */
+  jobsTable: {
+    /** Read out when a column is sorted. */
+    sorted: {
+      ascending: 'Sorted by {column}, ascending.',
+      descending: 'Sorted by {column}, descending.',
+    },
+  },
+  /** The Search tab (#52): Find jobs, and the runs so far. */
+  searchPage: {
+    eyebrow: 'Search',
+    title: 'Point your deputy at a company.',
     intro:
-      'Paste a careers page. Your deputy reads it and keeps the 3 roles that fit you best at each company.',
+      'Paste a careers page or a GitHub list. Your deputy reads it and keeps the 3 roles that fit you best at each company, in Matches.',
+    runs: {
+      title: 'Your searches',
+      loading: 'Loading your searches',
+      loadFailed: 'Your searches didn’t load.',
+      retry: 'Try again',
+      emptyTitle: 'No searches yet',
+      emptyLine: 'Each link you give your deputy shows here, with how it went.',
+      more: 'More searches',
+      moreFailed: 'More searches didn’t load. Press More searches to try again.',
+      loadingMore: 'Loading more…',
+      columns: {
+        link: 'Link',
+        started: 'Started',
+        status: 'Status',
+        companies: 'Companies',
+        jobs: 'Jobs found',
+      },
+      /** Under a run's name: what was given. */
+      kind: { page: 'Careers page', list: 'GitHub list' },
+      states: {
+        waiting: 'Waiting',
+        reading: 'Reading',
+        scoring: 'Scoring',
+        stalled: 'Stalled',
+        failed: 'Failed',
+        done: 'Done',
+      },
+      /** A count not known yet (a run at work, or one that failed). */
+      none: 'None yet',
+    },
+  },
+  /** The Matches tab (#52), where the app opens: the best jobs at each company. */
+  matchesPage: {
+    eyebrow: 'Matches',
+    title: 'The best jobs at each company.',
+    intro: 'The 3 roles that fit you best at each company your deputy has read.',
+  },
+  /** Find jobs, its progress and outcome, and the companies (#49), shared by the jobs tabs. */
+  jobsPage: {
     find: {
       title: 'Find jobs',
       line: 'A company’s careers page or job board, or a GitHub list of open roles.',
@@ -472,7 +525,10 @@ export const en = {
       loadFailed: 'Your matches didn’t load.',
       retry: 'Try again',
       emptyTitle: 'No matches yet',
-      emptyLine: 'Paste a careers page above. The best roles at each company land here.',
+      emptyLine:
+        'Give your deputy a careers page in Search. The best roles at each company land here.',
+      /** #52: the empty Matches tab points to Search. */
+      toSearch: 'Go to Search',
       /** Beside a company: how many of its best roles show (not how many it has). */
       roles: { one: 'Its best role', other: 'Its best {count} roles' },
       more: 'More companies',

@@ -14,6 +14,8 @@ import {
   type JobSummary,
   useCompanies,
 } from '@/lib/api/companies.ts';
+import { followLink } from '@/lib/router.ts';
+import { useReadAgain } from '@/lib/use-read-again.ts';
 import { useWide } from '@/lib/use-wide.ts';
 import { cn } from '@/lib/utils.ts';
 
@@ -43,18 +45,8 @@ export function CompanyList({
   offline?: boolean;
 }) {
   const companies = useCompanies(version);
-  const { refetch, isFetching } = companies;
-  // A company ended: read the loaded pages again, once no read is on its way (a read sent before
-  // it ended may miss it, and More companies on its way is never cancelled).
-  const lastProgress = useRef(progress);
-  const due = useRef(false);
-  useEffect(() => {
-    if (progress !== lastProgress.current && progress !== undefined) due.current = true;
-    lastProgress.current = progress;
-    if (!due.current || isFetching) return;
-    due.current = false;
-    void refetch();
-  }, [progress, isFetching, refetch]);
+  // A company ended: the loaded pages are read again.
+  useReadAgain(progress, companies);
   const wide = useWide();
   // The job open in the preview: as the list has it now (a list read again may have scored it),
   // else as it was when it was opened (a read that left it out).
@@ -166,9 +158,15 @@ export function CompanyList({
           >
             {(shown) =>
               shown.length === 0 ? (
-                <div className="grid gap-1 rounded-[24px] border border-dashed border-line px-[21px] py-[34px] text-center">
+                <div className="grid justify-items-center gap-1 rounded-[24px] border border-dashed border-line px-[21px] py-[34px] text-center">
                   <p className="m-0 font-[700]">{text.emptyTitle}</p>
                   <p className="m-0 text-sm text-muted-foreground">{text.emptyLine}</p>
+                  {/* #52: an empty Matches points to Search, where links are given. */}
+                  <Button asChild variant="outline" className="mt-3">
+                    <a href="/search" onClick={(event) => followLink(event, '/search')}>
+                      {text.toSearch}
+                    </a>
+                  </Button>
                 </div>
               ) : (
                 <div className="grid gap-5">

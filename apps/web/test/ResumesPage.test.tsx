@@ -696,7 +696,7 @@ describe('the Résumés page in the app', () => {
     await screen.findByRole('heading', { level: 1, name: 'The best jobs at each company.' });
     const nav = within(screen.getByRole('navigation', { name: 'Primary' }));
     expect(nav.getAllByRole('link').map((link) => link.textContent)).toEqual([
-      'Job matches',
+      'Jobs',
       'Résumés',
       'Profile',
     ]);

@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-import { AppNav, HOME_PAGE, PAGES, pageAt } from '@/components/app-shell.tsx';
-import { JobsPage } from '@/components/jobs/jobs-page.tsx';
+import { AppNav, HOME_PAGE, isPageAt, PAGES, pageAt } from '@/components/app-shell.tsx';
+import { JobsArea, tabAt } from '@/components/jobs/jobs-area.tsx';
 import { type AuthControl, AuthDrawer, type AuthMode } from '@/components/landing/auth-drawer.tsx';
 import { Hero } from '@/components/landing/hero.tsx';
 import { SiteHeader } from '@/components/landing/site-header.tsx';
@@ -63,9 +63,11 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
   // The app's pages, once the profile is read and the set-up is done.
   const pages = !step && profile.data !== undefined;
   const path = usePath();
-  // The page shown is the one marked: Job matches also at an address that is no page.
+  // The page shown is the one marked: Matches also at an address that is no page.
   const page = pageAt(path);
-  usePageAddress(pages, path, page.label);
+  // #52: in Jobs, the tab at this address (Matches, Jobs' own, at any other).
+  const tab = tabAt(path);
+  usePageAddress(pages, path, page === HOME_PAGE ? tab.label : page.label);
   return (
     <SignedInLayout onSignedOut={signedOut} nav={pages ? <AppNav path={page.path} /> : undefined}>
       {/* The shared loading states (#17): nothing for 300 ms, then a skeleton read out as
@@ -89,8 +91,8 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
               onNext={() => setSetUpStep(SET_UP_NEXT[step])}
               onBack={() => setSetUpStep(SET_UP_BACK[step])}
             />
-          ) : page.path === '/jobs' ? (
-            <JobsPage />
+          ) : page === HOME_PAGE ? (
+            <JobsArea path={tab.path} />
           ) : page.path === '/resumes' ? (
             <ResumesPage />
           ) : (
@@ -104,15 +106,15 @@ function SignedInApp({ email, onSignedOut }: { email: string; onSignedOut: () =>
 
 /**
  * The address and title of the app's pages (#33), once they are shown: arriving at a path that is
- * no page (the landing's `/`, an old link) goes to the Profile page, once (Back past it later is
- * left alone, and still shows Profile); the tab's title names the page shown.
+ * no page (the landing's `/`, an old link such as #49's `/jobs`) goes to Matches, once (Back past
+ * it later is left alone, and still shows Matches); the tab's title names the page shown.
  */
 function usePageAddress(pages: boolean, path: string, label: string) {
   const arrived = useRef(false);
   useEffect(() => {
     if (!pages || arrived.current) return;
     arrived.current = true;
-    if (!PAGES.some((page) => page.path === path)) navigate(HOME_PAGE.path, { replace: true });
+    if (!PAGES.some((page) => isPageAt(page, path))) navigate(HOME_PAGE.path, { replace: true });
   }, [pages, path]);
   useEffect(() => {
     if (!pages) return;
