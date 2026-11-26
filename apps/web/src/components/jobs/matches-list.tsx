@@ -1,6 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ApplyActions } from '@/components/jobs/apply-actions.tsx';
+import {
+  coolingUntil,
+  momentHere,
+  nextCoolingEnd,
+  useRedrawAt,
+} from '@/components/jobs/cooldown.ts';
 import { FitLabel } from '@/components/jobs/fit-label.tsx';
 import { JobPreview } from '@/components/jobs/job-preview.tsx';
 import { postedDay, postedTime, whereText } from '@/components/jobs/job-text.ts';
@@ -105,6 +111,8 @@ export function MatchesList({
     noticeNow.current = notice;
   });
   const rows = matches.data?.jobs;
+  // #52 PR E: a cooldown that ends turns applying back on, with nothing else changing.
+  useRedrawAt(nextCoolingEnd(rows));
   const open = (openId !== null && rows?.find((job) => job.jobId === openId)) || null;
   // The job open left the list without this page's doing (another tab, a crawl): the pane
   // closes and says why.
@@ -318,6 +326,7 @@ export function MatchesList({
             actions={
               <ApplyActions
                 job={open}
+                {...(matches.data?.cooldown ? { cooldown: matches.data.cooldown } : {})}
                 onApplied={() =>
                   leave(open, { kind: 'applied', job: open, undo: 'ready', tries: 0 })
                 }
@@ -357,7 +366,20 @@ function columnsFor(openId: string | null, onOpen: (job: JobSummary) => void) {
       key: 'company',
       label: text.columns.company,
       sortValue: (job) => companyName(job),
-      cell: (job) => companyName(job),
+      // #52 PR E: a company that had the most applications for now says until when.
+      cell: (job) => {
+        const until = coolingUntil(job);
+        return until === undefined ? (
+          companyName(job)
+        ) : (
+          <span className="grid gap-0.5">
+            <span>{companyName(job)}</span>
+            <span className="text-xs text-muted-foreground">
+              {fill(text.coolingDown, { date: momentHere(until) })}
+            </span>
+          </span>
+        );
+      },
     },
     {
       key: 'where',

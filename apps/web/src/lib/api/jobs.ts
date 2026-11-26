@@ -34,6 +34,11 @@ export interface JobSummary {
   /** Whether the board shared the posting's text (read with the job itself). */
   hasDescription?: boolean;
   relevance?: { score: number; reasons: string[] };
+  /**
+   * #52 PR E: Matches only. The company had the most applications for now (`Matches.cooldown`):
+   * applying there is refused until this time.
+   */
+  coolingDownUntil?: string;
 }
 
 /**
@@ -85,6 +90,13 @@ export function companyName(company: Pick<JobSummary, 'companyKey' | 'companyNam
 export interface Matches {
   jobs: JobSummary[];
   truncated: boolean;
+  /** #52 PR E: the cooldown rule, `limit` applications to one company in `days` rolling days. */
+  cooldown?: Cooldown;
+}
+
+export interface Cooldown {
+  limit: number;
+  days: number;
 }
 
 /** The Matches query's key, before what it reflects (the newest ended crawl). */
@@ -115,6 +127,11 @@ export function useMatches(version: string | undefined) {
  */
 export function setStage(api: ApiClient, jobId: string, stage: JobStage, from: JobStage) {
   return api.request<JobSummary>('PUT', `/me/jobs/${jobId}/stage`, { stage, from });
+}
+
+/** #52 PR E: applying was refused because the company cools down (409 `cooling-down`). */
+export function coolingDown(error: unknown): boolean {
+  return error instanceof ApiError && error.kind === 'conflict' && error.code === 'cooling-down';
 }
 
 /**
