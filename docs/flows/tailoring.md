@@ -129,6 +129,7 @@ The **Matches** job pane has **Your résumé for {company}** above Manual apply 
 sequenceDiagram
   actor U as User
   participant P as Job pane
+  participant M as Matches
   participant A as API
   P->>A: GET /me/tailorings?companyKey (versions, free runs left)
   U->>P: Tailor résumé (or Re-tailor)
@@ -137,8 +138,9 @@ sequenceDiagram
   loop every 5 s while the newest version is queued or processing
     P->>A: GET /me/tailorings?companyKey
   end
-  Note over P: ready: this job's score (tailored, base), 80% line, missing keywords
-  P->>A: GET /me/matches (read again: the Résumé score column)
+  Note over P: ready: this job's score (tailored, base), 80% line, missing keywords (and read out)
+  Note over M: follows the run too (RunWatcher), even once the pane closes
+  M->>A: GET /me/matches (read again when it ends: the Résumé score column)
   U->>P: I have this (a keyword the résumé doesn't show)
   P->>A: POST /me/profile/skills {skill}
   Note over A: added at the profile version read (3 tries); 409 profile-needed, 422 skills-full

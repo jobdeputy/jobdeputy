@@ -1,5 +1,5 @@
 import { MATCH_THRESHOLD } from '@jobdeputy/shared/match-score';
-import { useQuery } from '@tanstack/react-query';
+import { type QueryClient, useQuery } from '@tanstack/react-query';
 import { type ApiClient, ApiError, isFinal, useApi } from './index.ts';
 import type { Profile } from './profile.ts';
 
@@ -84,6 +84,18 @@ export function useTailorings(companyKey: string, checkEvery = TAILORING_CHECK_M
     retry: (failures, error) =>
       failures < 1 && error instanceof ApiError && error.kind === 'offline',
   });
+}
+
+/**
+ * The companies whose newest run was last seen at work, from the cached version lists: Matches
+ * follows them again when it opens anew (another tab and back) while a run is still going.
+ */
+export function companiesTailoring(queries: QueryClient): string[] {
+  return queries
+    .getQueriesData<Tailorings>({ queryKey: ['tailorings'] })
+    .flatMap(([key, data]) =>
+      key.length === 2 && isTailoring(data?.tailorings?.[0]) ? [String(key[1])] : [],
+    );
 }
 
 /** `POST /me/tailorings`: one run for the company (202, queued), with the user's AI setting. */

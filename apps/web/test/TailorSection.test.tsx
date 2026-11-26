@@ -59,15 +59,20 @@ async function setUp({
   clock.now += 10 * crawlMs;
   const api = wrap ? wrap(fake) : fake;
   const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
+  const tree = (shown: boolean) => (
     <QueryClientProvider client={queries}>
-      <ApiContext.Provider value={api}>
-        <MatchesList version="v1" />
-      </ApiContext.Provider>
-    </QueryClientProvider>,
+      <ApiContext.Provider value={api}>{shown && <MatchesList version="v1" />}</ApiContext.Provider>
+    </QueryClientProvider>
   );
+  const view = render(tree(true));
   await screen.findByRole('button', { name: BACKEND });
-  return { fake, clock };
+  /** Matches left (another tab), then opened again, with the same cache. */
+  const remount = async () => {
+    view.rerender(tree(false));
+    view.rerender(tree(true));
+    await screen.findByRole('button', { name: BACKEND });
+  };
+  return { fake, clock, remount };
 }
 
 /** The open job's tailoring section, once its versions are read. */
@@ -168,6 +173,7 @@ describe('tailoring in the job pane (#51 PR C)', () => {
     fireEvent.click(section.getByRole('button', { name: 'Download DOCX' }));
     await waitFor(() => expect(pressed).toHaveLength(2));
     expect(pressed[1]).toMatch(/^data:application\/vnd\.openxmlformats/);
+    expect(savedAs).toEqual(['Sam Example – Acme.pdf', 'Sam Example – Acme.docx']);
     expect(
       read.mock.calls.filter(([m, p]) => m === 'GET' && /^\/me\/tailorings\/\d+$/.test(p)),
     ).toHaveLength(2);
@@ -357,5 +363,77 @@ describe('tailoring in the job pane (#51 PR C)', () => {
     );
     expect(section.queryByText(/Below 80%/)).toBeNull();
     expect(section.queryByText(/Ready to apply/)).toBeNull();
+  });
+
+  it('follows a run again when Matches opens anew mid-run (review round 2)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { clock, remount } = await setUp({ crawlMs: 1000 });
+    const section = await openSection(BACKEND);
+    fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
+    expect(await section.findByText('Tailoring your résumé for Acme…')).toBeTruthy();
+    await remount();
+    const scoreColumn = screen
+      .getAllByRole('columnheader')
+      .findIndex((h) => /Résumé score/.test(h.textContent ?? ''));
+    expect(cell(BACKEND, scoreColumn)).toBe('Not tailored');
+    clock.now += 2000;
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    await waitFor(() => expect(cell(BACKEND, scoreColumn)).toBe('86%'));
+  });
+
+  it('says a run followed here ended ready, and a new version starts with nothing said', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { fake, clock } = await setUp({ crawlMs: 1000 });
+    await fake.request('PUT', '/me/profile', { version: 0, firstName: 'Sam', lastName: 'Example' });
+    const section = await openSection(PLATFORM);
+    fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
+    await section.findByText('Tailoring your résumé for Acme…');
+    clock.now += 2000;
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    const status = () =>
+      section.getAllByRole('status').find((s) => /is ready/.test(s.textContent ?? ''));
+    await waitFor(() =>
+      expect(status()?.textContent).toBe('Your résumé for Acme is ready: 72% match for this job.'),
+    );
+    fireEvent.click(section.getByRole('button', { name: 'I have Kafka' }));
+    await section.findByText('Kafka was added to your profile. Re-tailor to use it.');
+    fireEvent.click(section.getByRole('button', { name: 'Re-tailor' }));
+    await section.findByText('Tailoring your résumé for Acme…');
+    expect(status()).toBeUndefined();
+    clock.now += 2000;
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    expect(await section.findByText('78%')).toBeTruthy();
+    // The new version: the line about the one before is gone.
+    expect(section.queryByText('Kafka was added to your profile. Re-tailor to use it.')).toBeNull();
+  });
+
+  it('clears a refused start once the run it met ends (review round 2)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let busy = true;
+    const { clock, fake } = await setUp({
+      crawlMs: 1000,
+      wrap: (api) => ({
+        ...api,
+        async request<T>(m: ApiMethod, p: `/${string}`, body?: unknown): Promise<T> {
+          if (busy && m === 'POST' && p === '/me/tailorings') {
+            // Another tab's run: started, then this click refused.
+            await api.request(m, p, body);
+            busy = false;
+            throw new ApiError('conflict', { status: 409, code: 'tailoring_busy' });
+          }
+          return api.request<T>(m, p, body);
+        },
+      }),
+    });
+    void fake;
+    const section = await openSection(BACKEND);
+    fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
+    expect(
+      await section.findByText('A tailoring for this company is already running.'),
+    ).toBeTruthy();
+    clock.now += 2000;
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    expect(await section.findByText('86%')).toBeTruthy();
+    expect(section.queryByText('A tailoring for this company is already running.')).toBeNull();
   });
 });

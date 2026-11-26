@@ -485,6 +485,11 @@ export const en = {
         'You’ve used this month’s {perMonth} free tailorings. More from {date}, or use your own AI key.',
       working: 'Tailoring your résumé for {company}…',
       workingLine: 'This takes a minute or two. You can keep browsing.',
+      /** Read out (not shown) when a run followed in the pane ends ready. */
+      readyNow: 'Your résumé for {company} is ready.',
+      readyNowScore: 'Your résumé for {company} is ready: {score}% match for this job.',
+      /** A version's file name when it has none (never expected). */
+      fileNameFallback: 'Résumé.pdf',
       /** The score: the base résumé's, then the tailored one's (0015: shown side by side). */
       scoreLabel: 'ATS match for this job',
       score: '{score}%',

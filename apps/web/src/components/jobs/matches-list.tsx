@@ -35,6 +35,7 @@ import {
   stageGone,
   useMatches,
 } from '@/lib/api/jobs.ts';
+import { companiesTailoring } from '@/lib/api/tailorings.ts';
 import { followLink } from '@/lib/router.ts';
 import { useWide } from '@/lib/use-wide.ts';
 import { cn } from '@/lib/utils.ts';
@@ -89,7 +90,10 @@ export function MatchesList({
   const { refetch, isFetching } = matches;
   // #51 PR C: companies whose tailoring run is at work, followed here to their end (RunWatcher),
   // so the Score column updates even once the pane that started one closes.
-  const [watching, setWatching] = useState<ReadonlySet<string>>(new Set());
+  // Rebuilt from the cache when Matches opens anew (another tab and back) mid-run.
+  const [watching, setWatching] = useState<ReadonlySet<string>>(
+    () => new Set(companiesTailoring(queries)),
+  );
   const watch = useCallback(
     (companyKey: string) =>
       setWatching((was) => (was.has(companyKey) ? was : new Set(was).add(companyKey))),

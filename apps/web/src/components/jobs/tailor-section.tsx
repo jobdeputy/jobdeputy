@@ -1,13 +1,13 @@
 import { COVERAGE_WARNING } from '@jobdeputy/shared/tailoring';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { momentHere } from '@/components/jobs/cooldown.ts';
 import { LoadFailed } from '@/components/setup/parts.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { Skeleton } from '@/components/ui/skeleton.tsx';
 import { Spinner } from '@/components/ui/spinner.tsx';
 import { copy, fill } from '@/copy/index.ts';
-import { ApiError, useApi } from '@/lib/api/index.ts';
+import { ApiError, isFinal, useApi } from '@/lib/api/index.ts';
 import { companyName, type JobSummary, matchesKey } from '@/lib/api/jobs.ts';
 import { useProfile } from '@/lib/api/profile.ts';
 import {
@@ -69,6 +69,23 @@ export function TailorSection({
   useEffect(() => {
     if (working) onWorking?.(job.companyKey);
   }, [working, onWorking, job.companyKey]);
+  // A run seen at work here that ends ready is said (the score shows outside the status region).
+  const wasWorking = useRef(working);
+  const [justReady, setJustReady] = useState<{ score: number | null } | null>(null);
+  useEffect(() => {
+    if (wasWorking.current && !working && newest?.status === 'ready') {
+      const score = newest.scores?.find((s) => s.jobId === job.jobId)?.tailored;
+      setJustReady({ score: score ?? null });
+    }
+    if (working) setJustReady(null);
+    wasWorking.current = working;
+  }, [working, newest, job.jobId]);
+  // A refusal is about the run it met: once a run starts or ends, it no longer holds.
+  const newestId = newest?.documentId;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: cleared on each change of these.
+  useEffect(() => {
+    setRefusal(null);
+  }, [newestId, working]);
 
   async function start() {
     setStarting(true);
@@ -121,7 +138,7 @@ export function TailorSection({
         <Heading id={ids.title} company={company} />
         {!ready && <p className="m-0 text-sm text-muted-foreground">{text.intro}</p>}
       </div>
-      {/* Always there, so the run's progress and its end are read out as they come. */}
+      {/* Always there, so the run's progress and its end (ready or failed) are read out. */}
       <div id={ids.status} role="status" className={working || failed ? 'grid gap-1' : 'sr-only'}>
         {working && (
           <>
@@ -132,6 +149,14 @@ export function TailorSection({
             <p className="m-0 text-sm text-muted-foreground">{text.workingLine}</p>
           </>
         )}
+        {/* Said only (the score shows below): the run seen at work here ended ready. */}
+        {!working && !failed && justReady && (
+          <p className="m-0">
+            {justReady.score === null
+              ? fill(text.readyNow, { company })
+              : fill(text.readyNowScore, { company, score: String(justReady.score) })}
+          </p>
+        )}
         {failed && (
           <>
             <p className="m-0 font-[650] text-danger-ink">{text.failedTitle}</p>
@@ -139,7 +164,8 @@ export function TailorSection({
           </>
         )}
       </div>
-      {ready && <ReadyVersion version={ready} job={job} />}
+      {/* Keyed by version: a new one starts with nothing said about the one before. */}
+      {ready && <ReadyVersion key={ready.documentId} version={ready} job={job} />}
       <div className="grid justify-items-start gap-2">
         <Button
           variant={ready ? 'outline' : 'default'}
@@ -398,7 +424,7 @@ function Downloads({ version }: { version: Tailoring }) {
       const files = await tailoringFiles(api, version.documentId);
       const url = files.downloads?.[kind];
       if (!url) throw new Error('no download');
-      const pdfName = version.fileName ?? 'Résumé.pdf';
+      const pdfName = version.fileName ?? text.fileNameFallback;
       saveFile(url, kind === 'pdf' ? pdfName : pdfName.replace(/\.pdf$/, '.docx'));
     } catch {
       setSaid((was) => ({ words: text.downloadFailed, count: (was?.count ?? 0) + 1 }));
@@ -451,10 +477,16 @@ export function RunWatcher({
   const queries = useQueryClient();
   const list = useTailorings(companyKey);
   const working = isTailoring(list.data?.tailorings[0]);
+  const stopped = isFinal(list.error);
   useEffect(() => {
+    // Signed out (or the account closed): the run can't be read any more, so it isn't followed.
+    if (stopped) {
+      onDone(companyKey);
+      return;
+    }
     if (!list.data || working) return;
     void queries.invalidateQueries({ queryKey: matchesKey });
     onDone(companyKey);
-  }, [list.data, working, queries, onDone, companyKey]);
+  }, [list.data, working, stopped, queries, onDone, companyKey]);
   return null;
 }
