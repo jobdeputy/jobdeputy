@@ -194,7 +194,7 @@ export type StageResult =
   | { kind: 'not-found' }
   | { kind: 'conflict'; job: Job }
   /** #52 PR E: applying is refused while the company cools down, until this time. */
-  | { kind: 'cooling-down'; job: Job; until: string };
+  | { kind: 'cooling-down'; job: Job; until: string; limit: number; days: number };
 
 /** Tries of a stage change whose company cooldown item changed meanwhile, then 409 "try again". */
 export const STAGE_GUARD_ATTEMPTS = 3;
@@ -734,7 +734,7 @@ export class JobRepository {
     if (change.stage === change.from) return { kind: 'ok', job };
     const at = this.now();
     const checked = guard ? await guard.check(job, change, at) : {};
-    if ('refuse' in checked) return { kind: 'cooling-down', job, until: checked.refuse.until };
+    if ('refuse' in checked) return { kind: 'cooling-down', job, ...checked.refuse };
     const now = at.toISOString();
     const set = ['#status = :stage', 'stageAt = :now', 'updatedAt = :now'];
     const remove: string[] = [];

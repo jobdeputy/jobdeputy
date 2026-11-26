@@ -405,7 +405,6 @@ export async function route(event: Event, deps: JobsDeps): Promise<HttpResponse>
       const body = jobStageBody.safeParse(raw);
       if (!body.success) return validationProblem(body.error, requestId);
       const { stage, from } = body.data;
-      const { applyCompanyLimit: limit, applyCooldownDays: days } = await deps.limits();
       try {
         const result = await deps.repo.setStage(
           caller.userId,
@@ -421,11 +420,15 @@ export async function route(event: Event, deps: JobsDeps): Promise<HttpResponse>
             },
           ),
           () => expiresAt(deps),
-          deps.applications.guard(caller.userId, { limit, days }),
+          // Read only when applying or undoing: later stages never need the admin's limits.
+          deps.applications.guard(caller.userId, async () => {
+            const limits = await deps.limits();
+            return { limit: limits.applyCompanyLimit, days: limits.applyCooldownDays };
+          }),
         );
         if (result.kind === 'cooling-down') {
           return problem(409, 'Cooling down', {
-            detail: `You applied to ${limit} jobs at this company in the last ${days} days. Applying here opens again at the time given as until.`,
+            detail: `You reached the limit of ${result.limit} applications to this company in ${result.days} days.`,
             code: 'cooling-down',
             until: result.until,
             requestId,

@@ -80,7 +80,9 @@ function deps(
   const companies = { listShown: vi.fn(async () => shown) };
   const applications = {
     list: vi.fn(async () => new Map<string, string[]>()),
-    guard: vi.fn((): StageGuard => ({ check: async () => ({}) })),
+    guard: vi.fn(
+      (_userId: string, _rule: () => Promise<unknown>): StageGuard => ({ check: async () => ({}) }),
+    ),
   };
   const limits = vi.fn(async () => ({ ...DEFAULT_CRAWL_LIMITS }));
   const settings = {
@@ -647,11 +649,14 @@ describe('PUT /me/jobs/{jobId}/stage (#52)', () => {
       expect.any(Function),
       d.applications.guard.mock.results[0]?.value,
     );
-    // #52 PR E: the company cooldown, with the admin's rule (3 in 30 days by default).
-    expect(d.applications.guard).toHaveBeenCalledWith('user-a', { limit: 3, days: 30 });
-    // The admin's expiry (7 days) from now, computed only when called (an undo on a hidden job).
+    // The admin's limits are read only when needed: the expiry (7 days from now, an undo on a
+    // hidden job) and #52 PR E's cooldown rule (3 in 30 days by default; applying or undoing).
+    expect(d.limits).not.toHaveBeenCalled();
     const expiry = vi.mocked(d.repo.setStage).mock.calls[0]?.[4] as () => Promise<number>;
     expect(await expiry()).toBe(NOW.getTime() / 1000 + 7 * 86_400);
+    const rule = d.applications.guard.mock.calls[0]?.[1] as () => Promise<unknown>;
+    expect(d.applications.guard.mock.calls[0]?.[0]).toBe('user-a');
+    expect(await rule()).toEqual({ limit: 3, days: 30 });
   });
 
   it('409 stage-changed when the job moved meanwhile; 404 when it is gone', async () => {
@@ -674,19 +679,19 @@ describe('PUT /me/jobs/{jobId}/stage (#52)', () => {
   it('409 cooling-down with when it ends and the job, when the company cools down (PR E)', async () => {
     const until = '2026-10-20T09:00:00.000Z';
     const d = deps({
-      setStage: vi.fn(async () => ({ kind: 'cooling-down' as const, job: job(), until })),
-    });
-    d.limits.mockResolvedValue({
-      ...DEFAULT_CRAWL_LIMITS,
-      applyCompanyLimit: 2,
-      applyCooldownDays: 14,
+      setStage: vi.fn(async () => ({
+        kind: 'cooling-down' as const,
+        job: job(),
+        until,
+        limit: 2,
+        days: 14,
+      })),
     });
     const res = await put({ stage: 'applied', from: 'new' }, d);
     expect(res.statusCode).toBe(409);
     const body = JSON.parse(res.body as string);
     expect(body).toMatchObject({ code: 'cooling-down', until, job: { jobId: J1, status: 'new' } });
-    expect(body.detail).toContain('2 jobs at this company in the last 14 days');
-    expect(d.applications.guard).toHaveBeenCalledWith('user-a', { limit: 2, days: 14 });
+    expect(body.detail).toBe('You reached the limit of 2 applications to this company in 14 days.');
   });
 
   it('409 try-again when the write kept colliding', async () => {

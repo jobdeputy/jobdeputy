@@ -737,9 +737,15 @@ describe('JobRepository.setStage (#52)', () => {
         { stage: 'applied', from: 'new' },
         audit,
         async () => 9,
-        guard([{ refuse: { until: '2026-10-20T00:00:00.000Z' } }]),
+        guard([{ refuse: { until: '2026-10-20T00:00:00.000Z', limit: 3, days: 30 } }]),
       );
-      expect(r).toEqual({ kind: 'cooling-down', job, until: '2026-10-20T00:00:00.000Z' });
+      expect(r).toEqual({
+        kind: 'cooling-down',
+        job,
+        until: '2026-10-20T00:00:00.000Z',
+        limit: 3,
+        days: 30,
+      });
       expect(send.mock.calls.some((x) => x[0] instanceof TransactWriteCommand)).toBe(false);
     });
 
@@ -749,7 +755,7 @@ describe('JobRepository.setStage (#52)', () => {
         if (++tries === 1) throw codes('None', 'None', 'ConditionalCheckFailed');
         return {};
       });
-      const g = guard([{ item: guardItem }, { refuse: { until: 'U' } }]);
+      const g = guard([{ item: guardItem }, { refuse: { until: 'U', limit: 3, days: 30 } }]);
       // The second read sees the other apply: now the company cools down.
       const r = await repo(c).setStage(
         USER,

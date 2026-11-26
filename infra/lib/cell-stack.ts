@@ -668,7 +668,9 @@ export class CellStack extends Stack {
     // change to a job, its stage, is an UpdateItem with its audit entry (PutItem) in one
     // transaction, refused while the account is being deleted (the users table's marker).
     // #52 PR E: applying or undoing one also replaces the company's `APPLIED#` usage item in
-    // that transaction (read first, consistently: GetItem; Matches queries them).
+    // that transaction (read first, consistently: GetItem; Matches queries them). IAM cannot
+    // narrow a grant to one sort-key prefix; as for the other APIs that write `usage`, the code
+    // writes only its own item kind, through packages/db.
     jobsTable.grant(
       jobsApi.fn,
       'dynamodb:Query',

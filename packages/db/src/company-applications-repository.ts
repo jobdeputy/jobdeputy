@@ -25,8 +25,16 @@ export interface CooldownRule {
   days: number;
 }
 
+/**
+ * Applications are kept this long (the admin's longest window), whatever the window now: a
+ * window raised later still counts the ones already made. Counting uses the current window.
+ */
+export const APPLIED_KEEP_DAYS = 365;
+
 /** What a stage change must also write, or why it is refused (JobRepository.setStage). */
-export type StageGuardCheck = { item?: TransactItem } | { refuse: { until: string } };
+export type StageGuardCheck =
+  | { item?: TransactItem }
+  | { refuse: { until: string; limit: number; days: number } };
 
 export interface StageGuard {
   /**
@@ -35,7 +43,7 @@ export interface StageGuard {
    * change is tried again from a fresh read.
    */
   check(
-    job: { jobId: string; companyKey: string },
+    job: { jobId: string; companyKey: string; appliedAt?: string; stageAt?: string },
     change: { stage: JobStage; from: JobStage },
     now: Date,
   ): Promise<StageGuardCheck>;
@@ -93,31 +101,38 @@ export class CompanyApplicationsRepository {
   /**
    * The cooldown, for JobRepository.setStage: applying (new → applied) is refused while the
    * company cools down, else adds the job; undoing it (applied → new) takes it out again.
-   * Later stages leave the count as it is.
+   * Later stages leave the count as it is, and so does undoing an application that went past
+   * applied (it was at interviewing or later, then set back): the company saw it. The rule is
+   * read only when applying or undoing.
    */
-  guard(userId: string, rule: CooldownRule): StageGuard {
+  guard(userId: string, rule: () => Promise<CooldownRule>): StageGuard {
     return {
       check: async (job, change, now) => {
         const applying = change.from === 'new' && change.stage === 'applied';
         const undoing = change.from === 'applied' && change.stage === 'new';
         if (!applying && !undoing) return {};
-        const current = await this.get(userId, job.companyKey);
-        // Only what still counts is kept: the item never grows past the window.
-        const span = rule.days * 86_400_000;
+        // Its stage moved after the apply: no longer a "Yes" given by mistake.
+        if (undoing && job.stageAt !== job.appliedAt) return {};
+        const [current, { limit, days }] = await Promise.all([
+          this.get(userId, job.companyKey),
+          rule(),
+        ]);
+        const keep = APPLIED_KEEP_DAYS * 86_400_000;
         const applied = Object.fromEntries(
           Object.entries(current.applied).filter(
-            ([id, at]) => id !== job.jobId && Date.parse(at) + span > now.getTime(),
+            ([id, at]) => id !== job.jobId && Date.parse(at) + keep > now.getTime(),
           ),
         );
         if (applying) {
-          const until = cooldownUntil(Object.values(applied), now, rule.limit, rule.days);
-          if (until !== undefined) return { refuse: { until } };
+          // Its own earlier entry (applied, undone after later stages, applied again) is replaced.
+          const until = cooldownUntil(Object.values(applied), now, limit, days);
+          if (until !== undefined) return { refuse: { until, limit, days } };
           applied[job.jobId] = now.toISOString();
         } else if (!(job.jobId in current.applied)) {
-          // Applied before the cooldown existed, or already aged out: nothing to take out.
+          // Applied before the cooldown existed, or aged out: nothing to take out.
           return {};
         }
-        return { item: this.put(userId, job.companyKey, applied, current.version, rule.days) };
+        return { item: this.put(userId, job.companyKey, applied, current.version, now) };
       },
     };
   }
@@ -127,9 +142,13 @@ export class CompanyApplicationsRepository {
     companyKey: string,
     applied: CompanyApplied['applied'],
     expectedVersion: number,
-    days: number,
+    now: Date,
   ): TransactItem {
-    const newest = Math.max(0, ...Object.values(applied).map((at) => Date.parse(at)));
+    // An empty item from now: TTL skips times more than five years past (Math.max(0) = 1970).
+    const newest = Math.max(
+      now.getTime() - APPLIED_KEEP_DAYS * 86_400_000,
+      ...Object.values(applied).map((at) => Date.parse(at)),
+    );
     return {
       Put: {
         TableName: this.table,
@@ -140,8 +159,8 @@ export class CompanyApplicationsRepository {
           companyKey,
           applied,
           version: expectedVersion + 1,
-          // Gone once nothing in it counts any more (an empty one at once).
-          ttl: Math.floor((newest + days * 86_400_000) / 1000),
+          // Gone once nothing in it is kept any more (an empty one at once).
+          ttl: Math.floor((newest + APPLIED_KEEP_DAYS * 86_400_000) / 1000),
           schemaVersion: 1,
         },
         ConditionExpression:
