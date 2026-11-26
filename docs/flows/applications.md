@@ -2,7 +2,7 @@
 
 A job lives in one `jobs` item, and its **stage** (`status`) says which tab shows it: `new` in **Matches**; `applied`, `interviewing`, `offer`, `rejected` or `withdrawn` in **Applications**. Moving a job changes that one item; nothing is copied. Decision: [0016](../decisions/0016-applications-are-job-stages.md). Before this: [relevance flow](relevance.md) (which jobs a company shows).
 
-- **Task:** [#52](https://github.com/jobdeputy/jobdeputy/issues/52). Matches and applying by hand: PR C. The Applications tab: PR D; the cooldown (3 applications per company in 30 days) in PR E.
+- **Task:** [#52](https://github.com/jobdeputy/jobdeputy/issues/52). Matches and applying by hand: PR C. The Applications tab: PR D. The cooldown (3 applications per company in a rolling 30 days, [0013](../decisions/0013-apply-flow-rules.md)): PR E.
 - **Keep it true:** a PR that changes this flow updates this file, like [data-model.md](../data-model.md).
 
 ## Matches
@@ -11,13 +11,14 @@ A job lives in one `jobs` item, and its **stage** (`status`) says which tab show
 sequenceDiagram
   participant Web as Web app (Matches tab)
   participant API as Jobs API
-  participant U as usage (COMPANY#)
+  participant U as usage (COMPANY#, APPLIED#)
   participant J as jobs
   Web->>API: GET /me/matches
-  API->>U: Query every COMPANY# item (shown jobs and their rank)
+  API->>U: Query every COMPANY# item (shown jobs and their rank)<br/>and every APPLIED# item (applications per company), at the same time
   API->>J: BatchGetItem the shown jobs (summary fields), 100 a batch, 4 at a time
   Note over API: per company: open, not hidden, at most the user's jobs per company<br/>(an applied job keeps its place while open: no refill)<br/>then only stage new, seen in the last 30 days
-  API-->>Web: jobs best first (at most 500), truncated
+  Note over API: PR E: a company with 3 applications in 30 days marks its jobs<br/>coolingDownUntil (when its oldest counted application is 30 days old)
+  API-->>Web: jobs best first (at most 500), truncated, cooldown {limit, days}
   Note over Web: sorts any column in the browser: every row is there
 ```
 
@@ -30,6 +31,7 @@ sequenceDiagram
   participant Web as Web app
   participant API as Jobs API
   participant J as jobs
+  participant U as usage (APPLIED#)
   participant A as audit
   User->>Web: a Matches row → the job's pane → Manual apply
   Web->>Emp: open applyUrl (else jobUrl) in a new tab
@@ -38,18 +40,26 @@ sequenceDiagram
   User->>Web: I applied
   Web->>API: PUT /me/jobs/{jobId}/stage {stage: applied, from: new}
   API->>J: GetItem (consistent)
+  API->>U: GetItem APPLIED#<companyKey> (consistent; applying, or undoing an apply not yet moved on)
   alt gone / not at "from"
     API-->>Web: 404 / 409 stage-changed (with the job as it is now)
+  else 3 applications to the company in the last 30 days (PR E)
+    API-->>Web: 409 cooling-down, until (with the job)
   else
     API->>J: TransactWriteItems: SET status, stageAt, appliedAt, appliedResumeId, REMOVE ttl<br/>if status = from
     API->>A: (same transaction) PutItem job.stage_changed
+    API->>U: (same transaction) PutItem APPLIED# + this job, if still at the version read<br/>(changed meanwhile: read both again, at most 3 tries, then 409 try-again)
     API-->>Web: 200 the job
   end
   Note over J: appliedAt puts the job in the sparse "applied" index
   Note over Web: 200: out of the table at once, the pane closes, "Marked as applied" with Undo<br/>(PUT {stage: new, from: applied}); then GET /me/matches again.<br/>An error: said in the question, and Matches read again (a job gone from it closes the pane, saying why)
 ```
 
-From `new` the only move is to `applied` (nothing else has an applied date). Later stages change `status` and `stageAt` only; `appliedAt` stays. Back to `new` (an apply undone, only from `applied`) removes `appliedAt` and `appliedResumeId`, which takes the job out of the index; a closed or hidden job then expires again (`ttl`), as one never acted on. The undo is conditioned on the closed and hidden state it read, so a crawl changing either meanwhile makes it a 409 rather than a wrong expiry. A crawl closing a job sets its expiry only if it is still `new` at that moment (the user may apply between the crawl's two writes).
+From `new` the only move is to `applied` (nothing else has an applied date). Later stages change `status` and `stageAt` only; `appliedAt` stays. Back to `new` (an apply undone, only from `applied`) removes `appliedAt` and `appliedResumeId`, which takes the job out of the index; a closed or hidden job then expires again (`ttl`), as one never acted on, and takes the job out of its company's `APPLIED#` item (freeing its place in the cooldown) if its stage never moved past applied. The undo is conditioned on the closed and hidden state it read, so a crawl changing either meanwhile makes it a 409 rather than a wrong expiry. A crawl closing a job sets its expiry only if it is still `new` at that moment (the user may apply between the crawl's two writes).
+
+## The company cooldown (PR E)
+
+Applying (`new` → `applied`) to a company the user applied to 3 times in the last 30 days is refused (409 `cooling-down`, with `until`); Matches marks that company's jobs `coolingDownUntil` (a job's own entry never counts against applying to it again, in Matches as in the stage change). Every application counts for 30 days from `appliedAt`, whatever its later stage (withdrawn and rejected too: the company saw it); an apply undone straight away (a "Yes" by mistake) does not count, but one undone after a later stage (set back to applied, then undone) still does; applying to that job again keeps the earlier entry, so undoing the new apply never erases it. The count lives in one `usage` item per company, `APPLIED#<companyKey>`, replaced whole in the stage change's own transaction only at the version read, so two applies at once (two tabs) can never both take the last place: the second reads again and is refused. Applications are kept for 365 days (the longest window an admin can set, so raising the window counts the ones already made), and the item expires (`ttl`) a year after its newest one; one left empty expires at once. The limit and the window are the admin's `applyCompanyLimit` and `applyCooldownDays` ([runbook](../runbooks/crawl-limits.md)). Applications made before PR E have no entry, so they do not count (there were none in prod).
 
 ## Applications
 
@@ -83,3 +93,4 @@ In Applications a stage moves between `applied`, `interviewing`, `offer`, `rejec
 | The stage, when applied, the résumé used | `jobs` item: `status`, `appliedAt`, `stageAt`, `appliedResumeId` |
 | Applied jobs, newest first | `jobs` GSI `applied` (`userId`, `appliedAt`), keys only |
 | Who changed what | `audit` `job.stage_changed` (`from`, `stage`) |
+| Applications per company in the last 365 days (PR E) | `usage` `APPLIED#<companyKey>`: `applied` (`jobId` → `appliedAt`), `version`, `ttl` |

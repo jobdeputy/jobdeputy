@@ -1,6 +1,7 @@
 import {
   AccountRepository,
   type AppliedCursor,
+  CompanyApplicationsRepository,
   CompanyLimitRepository,
   CrawlSettingsRepository,
   documentClient,
@@ -17,6 +18,7 @@ import {
   callerFromEvent,
   companiesPageQuery,
   compareRank,
+  cooldownUntil,
   createLogger,
   type HttpResponse,
   jobId as jobIdSchema,
@@ -46,6 +48,8 @@ export interface JobsDeps {
   repo: Pick<JobRepository, 'list' | 'get' | 'getSummaries' | 'setStage' | 'listApplied'>;
   /** #49: each company's shown jobs (`usage` `COMPANY#` items), read-only. */
   companies: Pick<CompanyLimitRepository, 'listShown'>;
+  /** #52 PR E: each company's applications in the last 365 days (`usage` `APPLIED#`). */
+  applications: Pick<CompanyApplicationsRepository, 'list' | 'guard'>;
   /** #49: the admin's limits (jobs shown per company), and the user's own choice. */
   limits: () => Promise<CrawlLimitsConfig>;
   settings: Pick<CrawlSettingsRepository, 'get'>;
@@ -84,6 +88,7 @@ function defaultDeps(): JobsDeps {
     now: () => new Date(),
     repo: new JobRepository(client, JOBS_TABLE_NAME),
     companies: new CompanyLimitRepository(client, USAGE_TABLE_NAME),
+    applications: new CompanyApplicationsRepository(client, USAGE_TABLE_NAME),
     limits: ssmCrawlLimits(CRAWL_LIMITS_PARAMETER),
     settings: new CrawlSettingsRepository(client, PREFERENCES_TABLE_NAME),
   };
@@ -251,13 +256,25 @@ const MATCHES_PARALLEL = 4;
  * over all of them. Each company's places are counted as `GET /me/companies` counts them
  * (open, shown jobs, at most the user's jobs per company), and a job applied to keeps its
  * place while its posting is open: it leaves a gap rather than letting the next job in. `truncated` says
- * more than `MATCHES_MAX` jobs qualified.
+ * more than `MATCHES_MAX` jobs qualified. #52 PR E: a company's jobs say `coolingDownUntil`
+ * while it cools down (applying is refused until then), and `cooldown` is the rule.
  */
 async function matches(userId: string, deps: JobsDeps) {
-  const [shown, perCompany] = await Promise.all([
+  const [shown, perCompany, applied, limits] = await Promise.all([
     deps.companies.listShown(userId),
     companyJobsLimitFor(userId, deps),
+    deps.applications.list(userId),
+    deps.limits(),
   ]);
+  const now = deps.now();
+  // As the stage change counts: a job's own entry (undone after a later stage) never counts
+  // against applying to it again.
+  const cooling = (job: JobSummaryItem) => {
+    const byJob = applied.get(job.companyKey);
+    if (!byJob) return undefined;
+    const others = Object.entries(byJob).flatMap(([id, at]) => (id === job.jobId ? [] : [at]));
+    return cooldownUntil(others, now, limits.applyCompanyLimit, limits.applyCooldownDays);
+  };
   const companies = shown.map((c) => rankShown(c.shown));
   const ids = companies.flat().map((r) => r.jobId);
   const batches: string[][] = [];
@@ -269,8 +286,11 @@ async function matches(userId: string, deps: JobsDeps) {
     );
     for (const j of read.flat()) found.set(j.jobId, j);
   }
-  const since = deps.now().getTime() - MATCHES_WINDOW_DAYS * 86_400_000;
-  const rows: { rank: RankedJob; view: ReturnType<typeof jobSummary> }[] = [];
+  const since = now.getTime() - MATCHES_WINDOW_DAYS * 86_400_000;
+  const rows: {
+    rank: RankedJob;
+    view: ReturnType<typeof jobSummary> & { coolingDownUntil?: string };
+  }[] = [];
   for (const ranked of companies) {
     const places = ranked
       .map((rank) => ({ rank, job: found.get(rank.jobId) }))
@@ -285,7 +305,11 @@ async function matches(userId: string, deps: JobsDeps) {
       .slice(0, perCompany);
     for (const { rank, job } of places) {
       if (job.status === 'new' && Date.parse(job.lastSeenAt) >= since) {
-        rows.push({ rank, view: jobSummary(job) });
+        const until = cooling(job);
+        rows.push({
+          rank,
+          view: { ...jobSummary(job), ...(until ? { coolingDownUntil: until } : {}) },
+        });
       }
     }
   }
@@ -293,6 +317,7 @@ async function matches(userId: string, deps: JobsDeps) {
   return {
     jobs: rows.slice(0, MATCHES_MAX).map((r) => r.view),
     truncated: rows.length > MATCHES_MAX,
+    cooldown: { limit: limits.applyCompanyLimit, days: limits.applyCooldownDays },
   };
 }
 
@@ -399,7 +424,21 @@ export async function route(event: Event, deps: JobsDeps): Promise<HttpResponse>
             },
           ),
           () => expiresAt(deps),
+          // Read only when applying or undoing: later stages never need the admin's limits.
+          deps.applications.guard(caller.userId, async () => {
+            const limits = await deps.limits();
+            return { limit: limits.applyCompanyLimit, days: limits.applyCooldownDays };
+          }),
         );
+        if (result.kind === 'cooling-down') {
+          return problem(409, 'Cooling down', {
+            detail: `You reached the limit of ${plural(result.limit, 'application')} to this company in ${plural(result.days, 'day')}.`,
+            code: 'cooling-down',
+            until: result.until,
+            requestId,
+            job: jobView(result.job),
+          });
+        }
         if (result.kind === 'not-found') return problem(404, 'Not found', { requestId });
         if (result.kind === 'conflict') {
           // With the job as it is now, so the app can show its real stage without asking again.
@@ -421,6 +460,9 @@ export async function route(event: Event, deps: JobsDeps): Promise<HttpResponse>
       return problem(404, 'Not found', { requestId });
   }
 }
+
+/** "1 day", "30 days". */
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 let deps: JobsDeps | undefined;
 

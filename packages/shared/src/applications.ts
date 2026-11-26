@@ -37,6 +37,36 @@ export const jobStageBody = z
     path: ['stage'],
   });
 
+/**
+ * #52 PR E (0013): by default, 3 applications to one company in a rolling 30 days start a
+ * cooldown (admin config `applyCompanyLimit`, `applyCooldownDays`).
+ */
+export const DEFAULT_APPLY_COMPANY_LIMIT = 3;
+export const DEFAULT_APPLY_COOLDOWN_DAYS = 30;
+/** The longest window an admin can set; applications are kept this long (packages/db). */
+export const MAX_APPLY_COOLDOWN_DAYS = 365;
+
+/**
+ * When a company's cooldown ends, or undefined if the user may apply there now. Every
+ * `appliedAt` counts for `days` days after it (stages after applied, even withdrawn, still
+ * count: the company saw the application). With `limit` or more counted, the cooldown lasts
+ * until enough of them age out to leave fewer than `limit`.
+ */
+export function cooldownUntil(
+  appliedAt: Iterable<string>,
+  now: Date,
+  limit: number,
+  days: number,
+): string | undefined {
+  const span = days * 86_400_000;
+  const ends = [...appliedAt]
+    .map((at) => Date.parse(at) + span)
+    .filter((end) => Number.isFinite(end) && end > now.getTime())
+    .sort((a, b) => a - b);
+  if (ends.length < limit) return undefined;
+  return new Date(ends[ends.length - limit] as number).toISOString();
+}
+
 /** Matches lists the shown, not-applied jobs seen in this many days. */
 export const MATCHES_WINDOW_DAYS = 30;
 /** At most this many rows in Matches; past it, the answer says `truncated`. */

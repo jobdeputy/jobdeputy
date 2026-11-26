@@ -148,7 +148,7 @@ describe('crawl pipeline (T06b)', () => {
     expect(api.flatMap((s) => [s.Action].flat()).some((a) => a.startsWith('s3:'))).toBe(false);
   });
 
-  it('lets the jobs API read the jobs it shows, and change only a job and its audit entry (T07b, #49, #52)', () => {
+  it("lets the jobs API read the jobs it shows, and change only a job, its audit entry, and its company's applications (T07b, #49, #52)", () => {
     const jobs = statementsFor('JobsApiFn');
     const dynamo = jobs.filter((s) => [s.Action].flat().some((a) => a.startsWith('dynamodb:')));
     expect(dynamo.flatMap((s) => [s.Action].flat()).sort()).toEqual([
@@ -156,6 +156,8 @@ describe('crawl pipeline (T06b)', () => {
       'dynamodb:GetItem',
       'dynamodb:GetItem',
       'dynamodb:GetItem',
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
       'dynamodb:PutItem',
       'dynamodb:Query',
       'dynamodb:Query',
@@ -170,7 +172,13 @@ describe('crawl pipeline (T06b)', () => {
     // #52: the stage change's audit entry, and the account-deletion marker (read only).
     expect(actionsOn(jobs, 'AuditTable')).toEqual(['dynamodb:PutItem']);
     expect(actionsOn(jobs, 'UsersTable')).toEqual(['dynamodb:GetItem']);
-    expect(actionsOn(jobs, 'UsageTable')).toEqual(['dynamodb:Query']);
+    // #52 PR E: the company's applications (`APPLIED#`), read, then replaced in the stage's
+    // transaction; Matches queries them.
+    expect(actionsOn(jobs, 'UsageTable')).toEqual([
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+      'dynamodb:Query',
+    ]);
     // The jobs-per-company limit: the user's setting and the admin's parameter, read only.
     expect(actionsOn(jobs, 'PreferencesTable')).toEqual(['dynamodb:GetItem']);
     const ssm = jobs.filter((s) => [s.Action].flat().some((a) => a.startsWith('ssm:')));

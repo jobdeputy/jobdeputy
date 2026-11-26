@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+  DEFAULT_APPLY_COMPANY_LIMIT,
+  DEFAULT_APPLY_COOLDOWN_DAYS,
+  MAX_APPLY_COOLDOWN_DAYS,
+} from './applications.js';
 import { DERIVED_PREFIX, ulidId } from './documents.js';
 import { DEFAULT_LIST_COMPANIES, DEFAULT_LISTS_PER_DAY } from './lists.js';
 
@@ -239,6 +244,14 @@ export const crawlLimitsConfig = z
       .min(0)
       .max(1000)
       .default(DEFAULT_PLATFORM_TAILORINGS_PER_MONTH),
+    /** #52 PR E (0013): applications to one company in a rolling window, then a cooldown. */
+    applyCompanyLimit: z.number().int().min(1).max(100).default(DEFAULT_APPLY_COMPANY_LIMIT),
+    applyCooldownDays: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_APPLY_COOLDOWN_DAYS)
+      .default(DEFAULT_APPLY_COOLDOWN_DAYS),
     /** #74: the premium tier's own values (a Cognito group `premium`); the rest as above. */
     premium: premiumLimits.prefault({}),
   })
@@ -264,6 +277,8 @@ export const DEFAULT_CRAWL_LIMITS: CrawlLimitsConfig = {
   listsPerDay: DEFAULT_LISTS_PER_DAY,
   listCompanies: DEFAULT_LIST_COMPANIES,
   platformTailoringsPerMonth: DEFAULT_PLATFORM_TAILORINGS_PER_MONTH,
+  applyCompanyLimit: DEFAULT_APPLY_COMPANY_LIMIT,
+  applyCooldownDays: DEFAULT_APPLY_COOLDOWN_DAYS,
   premium: { ...DEFAULT_PREMIUM_LIMITS },
 };
 

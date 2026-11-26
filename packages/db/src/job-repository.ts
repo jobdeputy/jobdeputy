@@ -3,8 +3,9 @@ import { BatchGetCommand, GetCommand, QueryCommand, UpdateCommand } from '@aws-s
 import { APPLIED_INDEX, JOB_SUMMARY_FIELDS, type JobStage } from '@jobdeputy/shared';
 import { type AuditWrite, auditPut } from './audit-repository.js';
 import { isConditionFailure } from './client.js';
+import type { StageGuard } from './company-applications-repository.js';
 import type { JobKeywordsCache } from './tailoring-repository.js';
-import { cancellationCodes, transactWrite } from './transact.js';
+import { ConcurrentUpdateError, cancellationCodes, transactWrite } from './transact.js';
 
 /**
  * `jobs` (docs/data-model.md §8, decision 0008): jobs found for the user. Keys: `userId`,
@@ -191,7 +192,12 @@ export interface SaveStats {
 export type StageResult =
   | { kind: 'ok'; job: Job }
   | { kind: 'not-found' }
-  | { kind: 'conflict'; job: Job };
+  | { kind: 'conflict'; job: Job }
+  /** #52 PR E: applying is refused while the company cools down, until this time. */
+  | { kind: 'cooling-down'; job: Job; until: string; limit: number; days: number };
+
+/** Tries of a stage change whose company cooldown item changed meanwhile, then 409 "try again". */
+export const STAGE_GUARD_ATTEMPTS = 3;
 
 /** #52: where a page of the applications index ends. */
 export interface AppliedCursor {
@@ -703,12 +709,33 @@ export class JobRepository {
     audit: AuditWrite,
     /** Read only when needed: an undone apply on a closed or hidden job. */
     expiresAt: () => Promise<number>,
+    /** #52 PR E: the company cooldown, written in the same transaction (or a refusal). */
+    guard?: StageGuard,
   ): Promise<StageResult> {
+    for (let attempt = 1; ; attempt++) {
+      const result = await this.trySetStage(userId, jobId, change, audit, expiresAt, guard);
+      if (result !== 'guard-changed') return result;
+      // The company's applications changed between the read and the write: read again.
+      if (attempt >= STAGE_GUARD_ATTEMPTS) throw new ConcurrentUpdateError('stage guard');
+    }
+  }
+
+  private async trySetStage(
+    userId: string,
+    jobId: string,
+    change: { stage: JobStage; from: JobStage },
+    audit: AuditWrite,
+    expiresAt: () => Promise<number>,
+    guard: StageGuard | undefined,
+  ): Promise<StageResult | 'guard-changed'> {
     const job = await this.getConsistent(userId, jobId);
     if (!job) return { kind: 'not-found' };
     if (job.status !== change.from) return { kind: 'conflict', job };
     if (change.stage === change.from) return { kind: 'ok', job };
-    const now = this.now().toISOString();
+    const at = this.now();
+    const checked = guard ? await guard.check(job, change, at) : {};
+    if ('refuse' in checked) return { kind: 'cooling-down', job, ...checked.refuse };
+    const now = at.toISOString();
     const set = ['#status = :stage', 'stageAt = :now', 'updatedAt = :now'];
     const remove: string[] = [];
     const values: Record<string, unknown> = {
@@ -778,12 +805,18 @@ export class JobRepository {
               ExpressionAttributeValues: values,
             },
           },
-          auditPut(audit, userId, this.now()),
+          auditPut(audit, userId, at),
+          // Last, so the job stays first and the audit entry second.
+          ...(checked.item ? [checked.item] : []),
         ],
       });
     } catch (error) {
-      // Only the job's own condition is a conflict; anything else (the audit entry's) is thrown.
-      if (cancellationCodes(error)?.[0] !== 'ConditionalCheckFailed') throw error;
+      const codes = cancellationCodes(error);
+      // The job's own condition is a conflict; the guard's, a retry; anything else is thrown.
+      if (codes?.[0] !== 'ConditionalCheckFailed') {
+        if (checked.item && codes?.[2] === 'ConditionalCheckFailed') return 'guard-changed';
+        throw error;
+      }
       // Changed or deleted (expired) between the read and the write: say what it is now.
       const current = await this.getConsistent(userId, jobId);
       return current ? { kind: 'conflict', job: current } : { kind: 'not-found' };
