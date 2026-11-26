@@ -2,7 +2,7 @@
 
 A job lives in one `jobs` item, and its **stage** (`status`) says which tab shows it: `new` in **Matches**; `applied`, `interviewing`, `offer`, `rejected` or `withdrawn` in **Applications**. Moving a job changes that one item; nothing is copied. Decision: [0016](../decisions/0016-applications-are-job-stages.md). Before this: [relevance flow](relevance.md) (which jobs a company shows).
 
-- **Task:** [#52](https://github.com/jobdeputy/jobdeputy/issues/52). The web tabs come in the next PRs of its stack; the cooldown (3 applications per company in 30 days) in PR E.
+- **Task:** [#52](https://github.com/jobdeputy/jobdeputy/issues/52). Matches and applying by hand: PR C. The Applications tab comes in PR D; the cooldown (3 applications per company in 30 days) in PR E.
 - **Keep it true:** a PR that changes this flow updates this file, like [data-model.md](../data-model.md).
 
 ## Matches
@@ -25,10 +25,17 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
+  actor User
+  participant Emp as Employer's site (new tab)
   participant Web as Web app
   participant API as Jobs API
   participant J as jobs
   participant A as audit
+  User->>Web: a Matches row → the job's pane → Manual apply
+  Web->>Emp: open applyUrl (else jobUrl) in a new tab
+  User->>Emp: applies there, and clicks Submit
+  Web->>User: "Did you apply on the employer site?" (I applied / Not yet)
+  User->>Web: I applied
   Web->>API: PUT /me/jobs/{jobId}/stage {stage: applied, from: new}
   API->>J: GetItem (consistent)
   alt gone / not at "from"
@@ -39,6 +46,7 @@ sequenceDiagram
     API-->>Web: 200 the job
   end
   Note over J: appliedAt puts the job in the sparse "applied" index
+  Note over Web: 200: out of the table at once, the pane closes, "Marked as applied" with Undo<br/>(PUT {stage: new, from: applied}); then GET /me/matches again.<br/>An error: said in the question, and Matches read again (a job gone from it closes the pane, saying why)
 ```
 
 From `new` the only move is to `applied` (nothing else has an applied date). Later stages change `status` and `stageAt` only; `appliedAt` stays. Back to `new` (an apply undone, only from `applied`) removes `appliedAt` and `appliedResumeId`, which takes the job out of the index; a closed or hidden job then expires again (`ttl`), as one never acted on. The undo is conditioned on the closed and hidden state it read, so a crawl changing either meanwhile makes it a 409 rather than a wrong expiry. A crawl closing a job sets its expiry only if it is still `new` at that moment (the user may apply between the crawl's two writes).

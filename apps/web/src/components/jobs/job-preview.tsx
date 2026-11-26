@@ -1,21 +1,21 @@
-import { useEffect, useRef } from 'react';
+import { type ReactNode, useEffect, useRef } from 'react';
 import { FitLabel } from '@/components/jobs/fit-label.tsx';
-import { whereText } from '@/components/jobs/job-text.ts';
+import { postedDay, whereText } from '@/components/jobs/job-text.ts';
 import { CARD_CLASS } from '@/components/section.tsx';
 import { LoadFailed } from '@/components/setup/parts.tsx';
 import { Button, buttonVariants } from '@/components/ui/button.tsx';
 import { QueryRegion } from '@/components/ui/query-region.tsx';
 import { copy, fill } from '@/copy/index.ts';
-import { companyName, fitOf, type JobSummary } from '@/lib/api/companies.ts';
 import { ApiError } from '@/lib/api/index.ts';
-import { type Job, useJob } from '@/lib/api/jobs.ts';
+import { companyName, fitOf, type Job, type JobSummary, useJob } from '@/lib/api/jobs.ts';
 import { cn } from '@/lib/utils.ts';
 
 const text = copy.jobsPage.preview;
 
 /**
  * The job open beside the list (#49 PR D, the prototype's preview pane): what it is, its fit and
- * score, why it fits (the AI's reasons), then the posting's own text, read when it opens. Beside
+ * score, what can be done with it (`actions`: in Matches, applying, #52), why it fits (the AI's
+ * reasons), then the posting's own text, read when it opens. Beside
  * the list on a wide screen; on a narrower one it is a view of its own, with a way back. Its
  * title takes the focus when it opens, so the change is announced; closing hands the focus back
  * (the caller's job, to the row that opened it).
@@ -24,12 +24,15 @@ export function JobPreview({
   summary,
   wide,
   onClose,
+  actions,
 }: {
   /** The job as the list has it: shown at once while the rest is read. */
   summary: JobSummary;
-  /** Beside the list (a Close button), or a view of its own (Back to your companies). */
+  /** Beside the list (a Close button), or a view of its own (Back to Matches). */
   wide: boolean;
   onClose: () => void;
+  /** What can be done with the job, under its fit. */
+  actions?: ReactNode;
 }) {
   // `summary` is the job as the list has it now (read again when a crawl's work ends); the job read
   // here only adds the posting's text, and only when the board shared one (the list says so).
@@ -77,7 +80,7 @@ export function JobPreview({
           {summary.title}
         </h2>
         <p className="m-0 text-sm text-muted-foreground">
-          {[companyName(summary), where, posted(summary)].filter(Boolean).join(' · ')}
+          {[companyName(summary), where, postedText(summary)].filter(Boolean).join(' · ')}
         </p>
       </header>
       <div className="grid gap-1">
@@ -88,6 +91,7 @@ export function JobPreview({
           </p>
         )}
       </div>
+      {actions}
       <section aria-labelledby="job-why-title" className="grid gap-3">
         <h3 id="job-why-title" className="m-0 text-base font-[700]">
           {text.whyTitle}
@@ -149,7 +153,7 @@ export function JobPreview({
           href={summary.jobUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className={cn(buttonVariants(), 'no-underline')}
+          className={cn(buttonVariants({ variant: 'outline' }), 'no-underline')}
         >
           {text.openPosting}
           <span className="sr-only"> {text.newTab}</span>
@@ -176,21 +180,8 @@ function Posting({ job }: { job: Job }) {
   );
 }
 
-/** Dates in the copy's language: one for a date-only posting (kept as midnight UTC), one local. */
-const DAY_UTC = new Intl.DateTimeFormat(copy.locale, { dateStyle: 'medium', timeZone: 'UTC' });
-const DAY_HERE = new Intl.DateTimeFormat(copy.locale, { dateStyle: 'medium' });
-
-/**
- * "Posted Nov 3, 2026", when the board said. A board that gives only a day is kept as midnight
- * UTC, so that is read in UTC (else it would be the day before here); a real time is read here.
- */
-function posted(job: Pick<JobSummary, 'postedAt'>): string | null {
-  const at = job.postedAt ? new Date(job.postedAt) : null;
-  if (!at || Number.isNaN(at.getTime())) return null;
-  const dateOnly =
-    at.getUTCHours() === 0 &&
-    at.getUTCMinutes() === 0 &&
-    at.getUTCSeconds() === 0 &&
-    at.getUTCMilliseconds() === 0;
-  return fill(text.posted, { date: (dateOnly ? DAY_UTC : DAY_HERE).format(at) });
+/** "Posted Nov 3, 2026", when the board said. */
+function postedText(job: Pick<JobSummary, 'postedAt'>): string | null {
+  const day = postedDay(job);
+  return day && fill(text.posted, { date: day });
 }

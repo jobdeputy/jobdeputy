@@ -41,7 +41,8 @@ export const JOBS_TABLE_SKELETON = { kind: 'rows', rows: 4 } as const;
  * size container: narrower than 695px the rows stack, each cell after the title labelled from its
  * column (`data-label`), so a phone reads a row top to bottom; the header row stays for screen
  * readers.
- * With no rows, `empty` fills one full-width cell.
+ * With no rows, `empty` fills one full-width cell. `openKey` marks the row whose job is open
+ * beside the table (a green edge); a cell can stretch its button over the row (`ROW_BUTTON_CLASS`).
  */
 export function JobsTable<Row>({
   label,
@@ -50,6 +51,7 @@ export function JobsTable<Row>({
   rowKey,
   empty,
   sort: initialSort,
+  openKey,
 }: {
   /** The table's name (its caption, read out; not shown). */
   label: string;
@@ -59,6 +61,8 @@ export function JobsTable<Row>({
   empty: ReactNode;
   /** The order it opens in; without one, the rows' own (the server's). */
   sort?: JobsSort;
+  /** The row open beside the table, by its `rowKey`. */
+  openKey?: string | undefined;
 }) {
   const [sort, setSort] = useState<JobsSort | undefined>(initialSort);
   const sortBy = sort && columns.find((column) => column.key === sort.key);
@@ -130,7 +134,11 @@ export function JobsTable<Row>({
             </tr>
           ) : (
             shown.map((row) => (
-              <tr key={rowKey(row)} className={ROW_CLASS}>
+              <tr
+                key={rowKey(row)}
+                data-open={openKey !== undefined && rowKey(row) === openKey ? '' : undefined}
+                className={ROW_CLASS}
+              >
                 {columns.map((column) => (
                   <td
                     key={column.key}
@@ -182,12 +190,22 @@ export function sortRows<Row>(
 const HEAD_CLASS =
   'bg-paper-deep text-start align-middle text-xs/[1.3] font-[750] tracking-[0.12em] text-ink-soft uppercase first:rounded-ss-[21px] last:rounded-se-[21px]';
 
-/** A row: a lift on hover; stacked, a grid with a line between rows. */
+/**
+ * A row: a lift on hover; the open one washed green, with a green edge at its start (an outline
+ * in forced colours); stacked, a grid with a line between rows. Relative, for a stretched button.
+ */
 const ROW_CLASS =
-  'group/row @max-[694px]:grid @max-[694px]:gap-y-1 @max-[694px]:p-[13px] @max-[694px]:not-first:border-t @max-[694px]:not-first:border-line @max-[694px]:hover:bg-surface-strong';
+  'group/row relative data-open:forced-colors:outline-2 data-open:forced-colors:-outline-offset-2 data-open:forced-colors:outline-solid @max-[694px]:grid @max-[694px]:gap-y-1 @max-[694px]:p-[13px] @max-[694px]:not-first:border-t @max-[694px]:not-first:border-line @max-[694px]:hover:bg-surface-strong @max-[694px]:data-open:bg-green-wash @max-[694px]:data-open:shadow-[inset_3px_0_0_var(--color-green)]';
 
 const CELL_CLASS =
-  'h-[52px] border-t border-line p-[13px] align-middle transition-colors duration-180 group-hover/row:bg-surface-strong @max-[694px]:h-auto @max-[694px]:border-t-0 @max-[694px]:px-0 @max-[694px]:py-1 @max-[694px]:group-hover/row:bg-transparent';
+  'h-[52px] border-t border-line p-[13px] align-middle transition-colors duration-180 group-hover/row:bg-surface-strong group-data-open/row:bg-green-wash group-data-open/row:first:shadow-[inset_3px_0_0_var(--color-green)] @max-[694px]:h-auto @max-[694px]:border-t-0 @max-[694px]:px-0 @max-[694px]:py-1 @max-[694px]:group-hover/row:bg-transparent @max-[694px]:group-data-open/row:bg-transparent @max-[694px]:group-data-open/row:first:shadow-none';
+
+/**
+ * A button in a cell that the whole row presses (its `::after` covers the row, which is
+ * relative): the row is one target, and its one tab stop.
+ */
+export const ROW_BUTTON_CLASS =
+  'cursor-pointer border-0 bg-transparent p-0 text-start font-[inherit] text-[length:inherit] text-ink underline-offset-4 outline-none after:absolute after:inset-0 after:content-[""] hover:underline focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring focus-visible:after:outline-solid';
 
 const TITLE_CELL_CLASS = 'font-[680] @max-[694px]:block';
 

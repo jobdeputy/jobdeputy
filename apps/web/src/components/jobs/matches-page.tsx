@@ -1,5 +1,5 @@
-import { CompanyList } from '@/components/jobs/company-list.tsx';
 import { useListVersion, useRenderAtDeadline } from '@/components/jobs/latest-crawl.ts';
+import { MatchesList } from '@/components/jobs/matches-list.tsx';
 import { PageIntro } from '@/components/page-intro.tsx';
 import { copy } from '@/copy/index.ts';
 import { listProgressKey, useLatestCrawl } from '@/lib/api/crawls.ts';
@@ -7,9 +7,9 @@ import { listProgressKey, useLatestCrawl } from '@/lib/api/crawls.ts';
 const text = copy.matchesPage;
 
 /**
- * The Matches tab (#52), where the app opens: the best jobs at each company (CompanyList, #49),
- * read again whenever a crawl's work ends, and in place as a list run's companies are read, so a
- * link given in Search shows here as it is read. (PR C turns the companies into the jobs table.)
+ * The Matches tab (#52), where the app opens: the jobs not applied to yet (MatchesList), read
+ * again whenever a crawl's work ends, and in place as a list run's companies are read, so a link
+ * given in Search shows here as it is read.
  */
 export function MatchesPage({ checkEvery }: { checkEvery?: number }) {
   const latest = useLatestCrawl(checkEvery);
@@ -17,8 +17,8 @@ export function MatchesPage({ checkEvery }: { checkEvery?: number }) {
   useRenderAtDeadline(crawl);
   const listVersion = useListVersion(latest);
   return (
-    // Wide enough for the companies beside a job's preview; the intro keeps its measure.
-    <div className="grid w-full max-w-[1120px] content-start gap-8">
+    // Wide enough for the table beside a job's pane; the intro keeps its measure.
+    <div className="grid w-full max-w-[1240px] content-start gap-8">
       <div className="max-w-[880px]">
         <PageIntro
           id="matches-title"
@@ -27,7 +27,7 @@ export function MatchesPage({ checkEvery }: { checkEvery?: number }) {
           intro={text.intro}
         />
       </div>
-      <CompanyList
+      <MatchesList
         version={listVersion}
         progress={listProgressKey(crawl)}
         offline={latest.isPaused}

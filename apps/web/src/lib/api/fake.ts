@@ -81,6 +81,8 @@ export function createFakeApi({
   const roles = new Map<string, Record<string, unknown>[]>();
   const documents = new Map<string, FakeDocument[]>();
   const crawls = new Map<string, FakeCrawl[]>();
+  /** #52: each person's jobs that left `new` (applied to, or later), by job ID. */
+  const stages = new Map<string, Map<string, { stage: string; at: string }>>();
   let lastRole = 0;
 
   /**
@@ -397,14 +399,50 @@ export function createFakeApi({
           ...(more ? { nextCursor: page.at(-1)?.view.crawlId } : {}),
         } as T;
       }
-      if (path.startsWith('/me/companies') && method === 'GET') {
-        return { companies: fakeCompanies(myCrawls.map(crawlView)) } as T;
+      const myStages = stages.get(me) ?? new Map<string, { stage: string; at: string }>();
+      stages.set(me, myStages);
+      /** The fake's jobs, each with its stage (#52), as the API lists them. */
+      const myJobs = (): Record<string, unknown>[] =>
+        fakeCompanies(myCrawls.map(crawlView))
+          .flatMap((company) => company.jobs as Record<string, unknown>[])
+          .map((job) => {
+            const moved = myStages.get(String(job.jobId));
+            return moved
+              ? { ...job, status: moved.stage, appliedAt: moved.at, stageAt: moved.at }
+              : { ...job, status: 'new' };
+          });
+      if (path === '/me/matches' && method === 'GET') {
+        // Not applied to, best first (a job not scored yet after the scored ones).
+        const jobs = myJobs()
+          .filter((job) => job.status === 'new')
+          .map((job, at) => ({ job, at, score: (job.relevance as { score?: number })?.score }))
+          .sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || a.at - b.at)
+          .map(({ job }) => job);
+        return { jobs, truncated: false } as T;
+      }
+      const stageOf = /^\/me\/jobs\/([0-9a-f]{32})\/stage$/.exec(path)?.[1];
+      if (stageOf && method === 'PUT') {
+        const job = myJobs().find((each) => each.jobId === stageOf);
+        if (!job) throw new ApiError('not-found', { status: 404 });
+        const { stage, from } = (body ?? {}) as { stage?: string; from?: string };
+        // The API's rules (packages/shared `jobStageBody`): new ⇄ applied, onward from applied.
+        const allowed =
+          from === 'new' ? stage === 'applied' : stage !== 'new' || from === 'applied';
+        if (!stage || !from || !allowed) throw new ApiError('invalid', { status: 400 });
+        // Changed meanwhile (another tab): refused, never overwritten.
+        if (job.status !== from) {
+          throw new ApiError('conflict', { status: 409, code: 'stage-changed' });
+        }
+        if (stage === 'new') myStages.delete(stageOf);
+        else {
+          const was = myStages.get(stageOf);
+          myStages.set(stageOf, { stage, at: was?.at ?? new Date(now()).toISOString() });
+        }
+        return myJobs().find((each) => each.jobId === stageOf) as T;
       }
       const jobId = /^\/me\/jobs\/([0-9a-f]{32})$/.exec(path)?.[1];
       if (jobId && method === 'GET') {
-        const job = fakeCompanies(myCrawls.map(crawlView))
-          .flatMap((company) => company.jobs as Record<string, unknown>[])
-          .find((each) => each.jobId === jobId);
+        const job = myJobs().find((each) => each.jobId === jobId);
         if (!job) throw new ApiError('not-found', { status: 404 });
         // The third job's board shared no description.
         return (
@@ -475,7 +513,7 @@ export function createFakeApi({
 }
 
 /**
- * The companies the fake's finished crawls found (#49 PR C), newest crawl first, one per link:
+ * The companies the fake's finished crawls found (#49), newest crawl first, one per link:
  * named from the link ("boards.greenhouse.io/acme" is Acme), with three jobs, ranked. A link with
  * "no-ai" in it was ranked without AI (no scores); "nothing-fits" found none that fit.
  */
@@ -511,6 +549,11 @@ function fakeCompanies(views: Record<string, unknown>[]): Record<string, unknown
         locations: [{ text: job.place }],
         ...(job.workplace ? { workplace: job.workplace } : {}),
         jobUrl: `${url.origin}${url.pathname.replace(/\/$/, '')}/jobs/${i + 1}`,
+        // The first job's board has an application page of its own (Manual apply opens it).
+        ...(i === 0
+          ? { applyUrl: `${url.origin}${url.pathname.replace(/\/$/, '')}/jobs/${i + 1}/apply` }
+          : {}),
+        ...(job.posted ? { postedAt: job.posted } : {}),
         firstSeenAt: String(crawl.createdAt),
         // The third job's board shared no text.
         hasDescription: !job.title.startsWith('Staff'),
@@ -539,6 +582,8 @@ const FAKE_JOBS = [
     title: 'Senior Backend Engineer',
     place: 'New York, NY',
     workplace: 'hybrid',
+    // Date only (kept as midnight UTC), as most boards give it.
+    posted: '2026-11-20T00:00:00.000Z',
     score: 86,
     reasons: ['Matches your target role Backend engineer', 'Asks for TypeScript and AWS'],
   },
@@ -546,6 +591,7 @@ const FAKE_JOBS = [
     title: 'Platform Engineer, Developer Experience',
     place: 'Remote, United States',
     workplace: 'remote',
+    posted: '2026-11-12T15:30:00.000Z',
     score: 63,
     reasons: ['Close to Platform engineer', 'Kubernetes is not on your résumé'],
   },
@@ -553,6 +599,8 @@ const FAKE_JOBS = [
     title: 'Staff Software Engineer, Payments',
     place: 'San Francisco, CA',
     workplace: 'onsite',
+    // The board gave no date.
+    posted: undefined,
     score: 41,
     reasons: ['More senior than your roles'],
   },
