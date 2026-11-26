@@ -15,17 +15,21 @@ const text = copy.matchesPage.apply;
  * until the browser extension (#54).
  *
  * The question takes the focus when it shows, so it is the first thing met on coming back from
- * the employer's tab. A save that failed says so in the question, and the list is read again
- * (`onFailed`): a job already applied to elsewhere leaves it then.
+ * the employer's tab. A job found changed elsewhere (409: applied in another tab; it can only
+ * have moved on) or gone (404) leaves Matches (`onGone`). Any other failure is said in the
+ * question, and the list is read again (`onFailed`).
  */
 export function ApplyActions({
   job,
   onApplied,
+  onGone,
   onFailed,
 }: {
   job: JobSummary;
   /** Saved: the job as the API has it now (applied). */
   onApplied: (job: JobSummary) => void;
+  /** Not in Matches any more: applied to elsewhere, or taken down. */
+  onGone: () => void;
   onFailed: () => void;
 }) {
   const api = useApi();
@@ -44,6 +48,10 @@ export function ApplyActions({
     try {
       onApplied(await setStage(api, job.jobId, 'applied', 'new'));
     } catch (error) {
+      if (error instanceof ApiError && (error.kind === 'conflict' || error.kind === 'not-found')) {
+        onGone();
+        return;
+      }
       setSaving(false);
       setFailure((was) => ({
         words: error instanceof ApiError && error.kind === 'offline' ? text.offline : text.failed,
@@ -68,6 +76,10 @@ export function ApplyActions({
           aria-describedby={ids.manual}
           // The employer's tab opens; the question waits here for the way back.
           onClick={() => setAsking(true)}
+          // A middle click opens it in a tab behind: ask all the same.
+          onAuxClick={(event) => {
+            if (event.button === 1) setAsking(true);
+          }}
           className={cn(buttonVariants(), 'no-underline')}
         >
           {text.manual}

@@ -1,13 +1,28 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MatchesList } from '../src/components/jobs/matches-list.tsx';
 import { ApiError } from '../src/lib/api/client.ts';
 import { createFakeApi } from '../src/lib/api/fake.ts';
 import { ApiContext } from '../src/lib/api/index.ts';
 import { companyName, fitOf } from '../src/lib/api/jobs.ts';
 
+/**
+ * A link pressed here never navigates: happy-dom would open the employer's real page (a request
+ * to the internet). The app's own handlers still run (React listens after this capture).
+ */
+function stayHere(event: MouseEvent) {
+  if ((event.target as Element | null)?.closest?.('a')) event.preventDefault();
+}
+
+beforeEach(() => {
+  document.addEventListener('click', stayHere, true);
+  document.addEventListener('auxclick', stayHere, true);
+});
+
 afterEach(() => {
+  document.removeEventListener('click', stayHere, true);
+  document.removeEventListener('auxclick', stayHere, true);
   cleanup();
   vi.unstubAllGlobals();
 });
@@ -537,5 +552,72 @@ describe('applying from the job’s pane (#52 PR C)', () => {
       expect(screen.getByRole('alert').textContent).toBe('Couldn’t undo that. Try again.'),
     );
     expect(screen.getByRole('button', { name: 'Undo' })).toBeTruthy();
+  });
+
+  it('asks too when Manual apply is middle-clicked (a tab behind)', async () => {
+    screenWide(true);
+    await renderList();
+    openJob('Senior Backend Engineer');
+    fireEvent(
+      preview().getByRole('link', { name: /^Manual apply/ }),
+      new MouseEvent('auxclick', { bubbles: true, button: 1 }),
+    );
+    expect(
+      preview().getByRole('group', { name: 'Did you apply on the employer site?' }),
+    ).toBeTruthy();
+  });
+
+  it('leaves another job opened meanwhile open, and its focus where it is', async () => {
+    screenWide(true);
+    const api = await renderList();
+    const request = api.request.bind(api);
+    let release = () => {};
+    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      if (method === 'PUT') await new Promise<void>((resolve) => (release = resolve));
+      return request(method, path, body);
+    });
+    openJob('Senior Backend Engineer');
+    fireEvent.click(preview().getByRole('link', { name: /^Manual apply/ }));
+    fireEvent.click(preview().getByRole('button', { name: 'I applied' }));
+    // Another job opened while the save is on its way.
+    openJob('Platform Engineer, Developer Experience');
+    const other = screen.getByRole('region', { name: 'Platform Engineer, Developer Experience' });
+    const title = within(other).getByRole('heading', { level: 2 });
+    expect(document.activeElement).toBe(title);
+    release();
+    expect(await screen.findByText(/^Marked as applied: Senior Backend Engineer/)).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Platform Engineer, Developer Experience' })).toBe(
+      other,
+    );
+    expect(document.activeElement).toBe(title);
+    expect(screen.queryByRole('button', { name: 'Senior Backend Engineer' })).toBeNull();
+  });
+
+  it('drops Undo when the job was changed elsewhere meanwhile, saying so', async () => {
+    screenWide(true);
+    const api = await renderList();
+    openJob('Senior Backend Engineer');
+    fireEvent.click(preview().getByRole('link', { name: /^Manual apply/ }));
+    fireEvent.click(preview().getByRole('button', { name: 'I applied' }));
+    const said = await screen.findByText(/^Marked as applied/);
+    // Another tab moves it on (as Applications will): Undo here is refused (409).
+    await api.request('PUT', '/me/jobs/00aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/stage', {
+      stage: 'interviewing',
+      from: 'applied',
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toBe(
+        'Couldn’t undo: this job was changed elsewhere.',
+      ),
+    );
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+    expect(document.activeElement).toBe(said);
+  });
+
+  it('names its section by its own heading', async () => {
+    screenWide(true);
+    await renderList();
+    expect(screen.getByRole('region', { name: 'Your matches' })).toBeTruthy();
   });
 });

@@ -17,7 +17,7 @@ import { LoadFailed } from '@/components/setup/parts.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { QueryRegion } from '@/components/ui/query-region.tsx';
 import { copy, fill } from '@/copy/index.ts';
-import { useApi } from '@/lib/api/index.ts';
+import { ApiError, useApi } from '@/lib/api/index.ts';
 import {
   companyName,
   fitOf,
@@ -40,7 +40,13 @@ const applyText = copy.matchesPage.apply;
  * crawl closed its posting).
  */
 type Notice =
-  | { kind: 'applied'; job: JobSummary; undoing: boolean; undoFailed: number }
+  | {
+      kind: 'applied';
+      job: JobSummary;
+      /** Undo: offered, on its way, failed (`tries` times), or refused (changed elsewhere). */
+      undo: 'ready' | 'undoing' | 'failed' | 'changed';
+      tries: number;
+    }
   | { kind: 'undone'; job: JobSummary }
   | { kind: 'left' };
 
@@ -52,7 +58,8 @@ type Notice =
  * says so with Undo. `version` is what the list reflects (useMatches).
  *
  * Focus is never dropped: closing the pane hands it back to the job's row; a job that left
- * hands it to the line saying so; a list read again that leaves out what had it, to the heading.
+ * hands it to the line saying so (never taken from another job opened meanwhile); a list read
+ * again that leaves out what had it, to the heading.
  */
 export function MatchesList({
   version,
@@ -86,34 +93,43 @@ export function MatchesList({
   const wide = useWide();
   const [openId, setOpenId] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+  // As they are now, for a save that ends after the person moved on.
+  const openNow = useRef(openId);
+  openNow.current = openId;
+  const noticeNow = useRef(notice);
+  noticeNow.current = notice;
   const rows = matches.data?.jobs;
   const open = (openId !== null && rows?.find((job) => job.jobId === openId)) || null;
-  // The job open left the list without this page's doing: the pane closes and says why. Only
-  // on the list as it is now (not the one shown while a new version is read).
-  const left = openId !== null && rows !== undefined && !matches.isPlaceholderData && !open;
-  useEffect(() => {
-    if (!left) return;
-    setOpenId(null);
-    setNotice({ kind: 'left' });
-  }, [left]);
+  // The job open left the list without this page's doing (another tab, a crawl): the pane
+  // closes and says why.
+  const left = openId !== null && rows !== undefined && !open;
   const section = useRef<HTMLElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const noticeLine = useRef<HTMLParagraphElement>(null);
-  // A new notice takes the focus (the pane that had it is gone, or Undo went with it).
-  const noticeKind = notice?.kind;
+  // Whether the next notice takes the focus: not from another job opened meanwhile.
+  const noticeTakesFocus = useRef(false);
   useEffect(() => {
-    if (noticeKind) noticeLine.current?.focus();
-  }, [noticeKind]);
-  // What had the focus in the list: if a list read again leaves it out, the heading takes it.
+    if (!left) return;
+    noticeTakesFocus.current = true;
+    setOpenId(null);
+    setNotice({ kind: 'left' });
+  }, [left]);
+  useEffect(() => {
+    if (!notice || !noticeTakesFocus.current) return;
+    noticeTakesFocus.current = false;
+    noticeLine.current?.focus();
+  }, [notice]);
+  // What had the focus in the list: if a list read again leaves it out, the heading takes it
+  // (unless a job that left is about to say so: that line takes it).
   const lastFocused = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    if (!rows) return;
+    if (!rows || left) return;
     const was = lastFocused.current;
     if (was && !was.isConnected && document.activeElement === document.body) {
       lastFocused.current = null;
       heading.current?.focus();
     }
-  }, [rows]);
+  }, [rows, left]);
   // A screen that narrows with a job open hides the table: focus in it goes to the job's title.
   const tablePart = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -139,40 +155,64 @@ export function MatchesList({
       setOpenId(job.jobId);
     }
   }
-  /** Out of the table at once, then read again (a read on its way could bring it back). */
-  function applied(job: JobSummary) {
+  /**
+   * A job out of Matches: marked applied here, or found applied elsewhere (or gone) when this
+   * page tried. Out of the table at once, then read again (a read on its way could bring it
+   * back). Its pane closes, and the line saying so takes the focus, unless another job was
+   * opened meanwhile (that one stays, and keeps it).
+   */
+  function leave(job: JobSummary, said: Notice) {
     queries.setQueriesData<Matches>({ queryKey: matchesKey }, (was) =>
       was ? { ...was, jobs: was.jobs.filter((each) => each.jobId !== job.jobId) } : was,
     );
-    setOpenId(null);
-    setNotice({ kind: 'applied', job, undoing: false, undoFailed: 0 });
+    const elsewhere = openNow.current !== null && openNow.current !== job.jobId;
+    if (!elsewhere) setOpenId(null);
+    noticeTakesFocus.current = !elsewhere;
+    setNotice(said);
     void queries.invalidateQueries({ queryKey: matchesKey });
   }
+  /** Whether the line still offers this job's Undo (the person may have moved on). */
+  function offersUndo(job: JobSummary) {
+    const now = noticeNow.current;
+    return now?.kind === 'applied' && now.job.jobId === job.jobId;
+  }
   async function undo(job: JobSummary) {
-    setNotice((was) => (was?.kind === 'applied' ? { ...was, undoing: true } : was));
+    setNotice((was) => (was?.kind === 'applied' ? { ...was, undo: 'undoing' } : was));
     try {
       await setStage(api, job.jobId, 'new', 'applied');
       // Back in its place once the list is read again.
       await queries.invalidateQueries({ queryKey: matchesKey });
+      if (!offersUndo(job)) return;
+      // Undo went with its line's change: the line takes the focus.
+      noticeTakesFocus.current = true;
       setNotice({ kind: 'undone', job });
-    } catch {
+    } catch (error) {
+      // Whatever happened, Matches as it is now (an undo done elsewhere brings the job back).
+      void queries.invalidateQueries({ queryKey: matchesKey });
+      if (!offersUndo(job)) return;
+      const changed =
+        error instanceof ApiError && (error.kind === 'conflict' || error.kind === 'not-found');
+      // Refused for good: Undo goes, and its line takes the focus.
+      noticeTakesFocus.current = changed;
       setNotice((was) =>
-        was?.kind === 'applied' ? { ...was, undoing: false, undoFailed: was.undoFailed + 1 } : was,
+        was?.kind === 'applied'
+          ? { ...was, undo: changed ? 'changed' : 'failed', tries: was.tries + 1 }
+          : was,
       );
     }
   }
-  const columns = useColumns(openId, toggle);
+  const columns = columnsFor(openId, toggle);
   return (
     <section
       ref={section}
-      aria-labelledby="matches-title"
+      aria-labelledby="matches-list-title"
       className="grid gap-5"
       onFocus={(event) => {
         lastFocused.current = event.target;
       }}
     >
       <h2
-        id="matches-title"
+        id="matches-list-title"
         ref={heading}
         tabIndex={-1}
         className={cn(SECTION_TITLE_CLASS, 'outline-none')}
@@ -258,7 +298,10 @@ export function MatchesList({
             actions={
               <ApplyActions
                 job={open}
-                onApplied={() => applied(open)}
+                onApplied={() =>
+                  leave(open, { kind: 'applied', job: open, undo: 'ready', tries: 0 })
+                }
+                onGone={() => leave(open, { kind: 'left' })}
                 onFailed={() => void refetch()}
               />
             }
@@ -270,7 +313,7 @@ export function MatchesList({
 }
 
 /** Matches' columns: the job (it opens the pane), its company, where, its fit, and when posted. */
-function useColumns(openId: string | null, onOpen: (job: JobSummary) => void) {
+function columnsFor(openId: string | null, onOpen: (job: JobSummary) => void) {
   const columns: JobsColumn<JobSummary>[] = [
     {
       key: 'job',
@@ -301,7 +344,7 @@ function useColumns(openId: string | null, onOpen: (job: JobSummary) => void) {
       label: text.columns.where,
       sortValue: (job) => whereText(job) || undefined,
       cell: (job) =>
-        whereText(job) || <span className="text-muted-foreground">{text.postedNone}</span>,
+        whereText(job) || <span className="text-muted-foreground">{text.whereNone}</span>,
     },
     {
       key: 'fit',
@@ -355,10 +398,10 @@ function NoticeLine({
       >
         {words}
       </p>
-      {notice.kind === 'applied' && (
+      {notice.kind === 'applied' && notice.undo !== 'changed' && (
         <Button
           variant="outline"
-          pending={notice.undoing}
+          pending={notice.undo === 'undoing'}
           pendingLabel={applyText.undoing}
           onClick={() => onUndo(notice.job)}
         >
@@ -368,13 +411,15 @@ function NoticeLine({
       {notice.kind === 'applied' && (
         // Always there while Undo is, so a failed Undo is read out when it comes.
         <p
-          key={notice.undoFailed}
+          key={notice.tries}
           role="alert"
-          className={
-            notice.undoFailed > 0 ? 'm-0 w-full text-sm font-[650] text-danger-ink' : 'sr-only'
-          }
+          className={notice.tries > 0 ? 'm-0 w-full text-sm font-[650] text-danger-ink' : 'sr-only'}
         >
-          {notice.undoFailed > 0 ? applyText.undoFailed : ''}
+          {notice.undo === 'changed'
+            ? applyText.undoChanged
+            : notice.undo === 'failed'
+              ? applyText.undoFailed
+              : ''}
         </p>
       )}
     </div>

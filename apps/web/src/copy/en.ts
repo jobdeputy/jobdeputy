@@ -456,6 +456,8 @@ export const en = {
       },
       /** The board gave no date. */
       postedNone: 'Not given',
+      /** The board gave no place. */
+      whereNone: 'Not given',
       /** The job open left Matches without this page's doing (another tab, or a crawl). */
       left: 'The job you had open is no longer in Matches: it was marked as applied elsewhere, or its posting closed.',
     },
@@ -480,6 +482,8 @@ export const en = {
       undoing: 'Undoing…',
       undone: '{title} at {company} is back in Matches.',
       undoFailed: 'Couldn’t undo that. Try again.',
+      /** The job moved on elsewhere (another tab): Undo goes. */
+      undoChanged: 'Couldn’t undo: this job was changed elsewhere.',
     },
   },
   /** Find jobs, its progress and outcome, and the companies (#49), shared by the jobs tabs. */

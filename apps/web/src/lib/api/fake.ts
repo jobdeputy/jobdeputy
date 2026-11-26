@@ -425,9 +425,11 @@ export function createFakeApi({
         const job = myJobs().find((each) => each.jobId === stageOf);
         if (!job) throw new ApiError('not-found', { status: 404 });
         const { stage, from } = (body ?? {}) as { stage?: string; from?: string };
-        // The API's rules (packages/shared `jobStageBody`): new ⇄ applied, onward from applied.
+        // The API's rules (packages/shared `jobStageBody`): from new only to applied (or new);
+        // back to new only from applied.
         const allowed =
-          from === 'new' ? stage === 'applied' : stage !== 'new' || from === 'applied';
+          (from !== 'new' || stage === 'new' || stage === 'applied') &&
+          (stage !== 'new' || from === 'new' || from === 'applied');
         if (!stage || !from || !allowed) throw new ApiError('invalid', { status: 400 });
         // Changed meanwhile (another tab): refused, never overwritten.
         if (job.status !== from) {
