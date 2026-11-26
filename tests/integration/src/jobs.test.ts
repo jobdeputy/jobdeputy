@@ -25,12 +25,15 @@ let user: TestUser;
 let other: TestUser;
 /** T08c: a user with target roles and their own jobs-per-company limit. */
 let picky: TestUser;
+/** #52: a user who applies to a job and moves it through its stages. */
+let applicant: TestUser;
 
 beforeAll(async () => {
   const outputs = await stackOutputs();
   api = outputs.ApiUrl ?? '';
   testSite = outputs.TestSiteUrl ?? '';
-  [user, other, picky] = await Promise.all([
+  [user, other, picky, applicant] = await Promise.all([
+    createTestUser(outputs),
     createTestUser(outputs),
     createTestUser(outputs),
     createTestUser(outputs),
@@ -38,7 +41,7 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
-  await Promise.all([user?.delete(), other?.delete(), picky?.delete()]);
+  await Promise.all([user?.delete(), other?.delete(), picky?.delete(), applicant?.delete()]);
 });
 
 const site = (page: string) => new URL(`test-site/${page}`, testSite).href;
@@ -268,5 +271,83 @@ describe('jobs (deployed)', () => {
       companies.body.companies.map((c: any) => c.jobs.map((j: any) => j.title)),
     ).toEqual([['Data Engineer']]);
     expect(companies.body).not.toHaveProperty('nextCursor');
+  });
+
+  it('#52: a job applied to moves from Matches to Applications, through its stages, and back', async () => {
+    const token = applicant.accessToken;
+    await crawl(site('jobs-schema-org'), token);
+    // biome-ignore lint/suspicious/noExplicitAny: tests read arbitrary JSON responses.
+    const titlesOf = (body: any) => body.jobs.map((j: any) => j.title).sort();
+    const matches = await callApi(api, 'GET', 'me/matches', token);
+    expect(matches.status, JSON.stringify(matches.body)).toBe(200);
+    expect(titlesOf(matches.body)).toEqual(['Backend Engineer', 'Data Engineer']);
+    expect(matches.body.truncated).toBe(false);
+    // biome-ignore lint/suspicious/noExplicitAny: tests read arbitrary JSON responses.
+    const backend = matches.body.jobs.find((j: any) => j.title === 'Backend Engineer');
+    const stage = (stage: string, from: string, as = token) =>
+      callApi(api, 'PUT', `me/jobs/${backend.jobId}/stage`, as, { stage, from });
+    // The index is eventually consistent: wait for it to show what was just written.
+    const applications = (count: number) =>
+      waitFor(
+        async () => {
+          const res = await callApi(api, 'GET', 'me/applications', token);
+          return res.body.jobs?.length === count ? res.body : undefined;
+        },
+        { timeoutMs: 30_000, intervalMs: 1_000 },
+      );
+
+    const applied = await stage('applied', 'new');
+    expect(applied.status, JSON.stringify(applied.body)).toBe(200);
+    expect(applied.body).toMatchObject({ status: 'applied' });
+    expect(applied.body.appliedAt).toBe(applied.body.stageAt);
+    expect(titlesOf((await callApi(api, 'GET', 'me/matches', token)).body)).toEqual([
+      'Data Engineer',
+    ]);
+    expect((await applications(1)).jobs[0]).toMatchObject({
+      jobId: backend.jobId,
+      status: 'applied',
+      appliedAt: applied.body.appliedAt,
+    });
+
+    // A change from a stage the job has left (another tab) is refused, not overwritten, and
+    // the answer says where the job is now.
+    const stale = await stage('applied', 'new');
+    expect(stale.status).toBe(409);
+    expect(stale.body.code).toBe('stage-changed');
+    expect(stale.body.job).toMatchObject({ jobId: backend.jobId, status: 'applied' });
+    // Someone else's job does not exist for them.
+    expect((await stage('offer', 'applied', other.accessToken)).status).toBe(404);
+
+    const interviewing = await stage('interviewing', 'applied');
+    expect(interviewing.body).toMatchObject({
+      status: 'interviewing',
+      appliedAt: applied.body.appliedAt,
+    });
+    await waitFor(
+      async () => {
+        const res = await callApi(api, 'GET', 'me/applications', token);
+        return res.body.jobs?.[0]?.status === 'interviewing' ? true : undefined;
+      },
+      { timeoutMs: 30_000, intervalMs: 1_000 },
+    );
+
+    // A later stage is history: it cannot be undone. Back to applied first, then undo ("Yes"
+    // by mistake): back to Matches, out of Applications.
+    expect((await stage('new', 'interviewing')).status).toBe(400);
+    expect((await stage('applied', 'interviewing')).status).toBe(200);
+    const undone = await stage('new', 'applied');
+    expect(undone.body.status).toBe('new');
+    expect(undone.body).not.toHaveProperty('appliedAt');
+    expect(titlesOf((await callApi(api, 'GET', 'me/matches', token)).body)).toEqual([
+      'Backend Engineer',
+      'Data Engineer',
+    ]);
+    await applications(0);
+
+    const audit = await callApi(api, 'GET', 'me/audit', token);
+    expect(
+      // biome-ignore lint/suspicious/noExplicitAny: tests read arbitrary JSON responses.
+      audit.body.entries.filter((e: any) => e.name === 'job.stage_changed').length,
+    ).toBe(4);
   });
 });

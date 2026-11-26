@@ -1,4 +1,6 @@
 import {
+  AccountRepository,
+  type AppliedCursor,
   CompanyLimitRepository,
   CrawlSettingsRepository,
   documentClient,
@@ -9,6 +11,8 @@ import {
   ssmCrawlLimits,
 } from '@jobdeputy/db';
 import {
+  applicationsCursor,
+  applicationsPageQuery,
   type CrawlLimitsConfig,
   callerFromEvent,
   companiesPageQuery,
@@ -16,8 +20,12 @@ import {
   createLogger,
   type HttpResponse,
   jobId as jobIdSchema,
+  jobStageBody,
   jobsPageQuery,
   json,
+  MATCHES_MAX,
+  MATCHES_WINDOW_DAYS,
+  parseJsonBody,
   problem,
   type RankedJob,
   rankedJobSchema,
@@ -26,29 +34,54 @@ import {
   validationProblem,
 } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, Context } from 'aws-lambda';
+import { ulid } from 'ulid';
+import { refuseWritesWhileDeleting } from './account-guard.js';
+import { type UserAudit, userAudit } from './audited.js';
 import { companyJobsLimit } from './company-jobs-limit.js';
+import { concurrentUpdateProblem } from './errors.js';
 
 const logger = createLogger('api-jobs');
 
 export interface JobsDeps {
-  repo: Pick<JobRepository, 'list' | 'get' | 'getSummaries'>;
+  repo: Pick<JobRepository, 'list' | 'get' | 'getSummaries' | 'setStage' | 'listApplied'>;
   /** #49: each company's shown jobs (`usage` `COMPANY#` items), read-only. */
   companies: Pick<CompanyLimitRepository, 'listShown'>;
   /** #49: the admin's limits (jobs shown per company), and the user's own choice. */
   limits: () => Promise<CrawlLimitsConfig>;
   settings: Pick<CrawlSettingsRepository, 'get'>;
+  /** #52: a stage change is the user's write: refused while their account is being deleted. */
+  isBeingDeleted: (userId: string) => Promise<boolean>;
+  audit: UserAudit;
+  now: () => Date;
 }
 
 function defaultDeps(): JobsDeps {
-  const { JOBS_TABLE_NAME, USAGE_TABLE_NAME, PREFERENCES_TABLE_NAME, CRAWL_LIMITS_PARAMETER } =
-    process.env;
-  if (!JOBS_TABLE_NAME || !USAGE_TABLE_NAME || !PREFERENCES_TABLE_NAME || !CRAWL_LIMITS_PARAMETER) {
+  const {
+    JOBS_TABLE_NAME,
+    USAGE_TABLE_NAME,
+    PREFERENCES_TABLE_NAME,
+    CRAWL_LIMITS_PARAMETER,
+    USERS_TABLE_NAME,
+    AUDIT_TABLE_NAME,
+  } = process.env;
+  if (
+    !JOBS_TABLE_NAME ||
+    !USAGE_TABLE_NAME ||
+    !PREFERENCES_TABLE_NAME ||
+    !CRAWL_LIMITS_PARAMETER ||
+    !USERS_TABLE_NAME ||
+    !AUDIT_TABLE_NAME
+  ) {
     throw new Error(
-      'JOBS_TABLE_NAME, USAGE_TABLE_NAME, PREFERENCES_TABLE_NAME and CRAWL_LIMITS_PARAMETER must be set',
+      'JOBS_TABLE_NAME, USAGE_TABLE_NAME, PREFERENCES_TABLE_NAME, CRAWL_LIMITS_PARAMETER, USERS_TABLE_NAME and AUDIT_TABLE_NAME must be set',
     );
   }
   const client = documentClient();
+  const account = new AccountRepository(client, USERS_TABLE_NAME);
   return {
+    isBeingDeleted: (userId) => account.isBeingDeleted(userId),
+    audit: userAudit(AUDIT_TABLE_NAME, ulid),
+    now: () => new Date(),
     repo: new JobRepository(client, JOBS_TABLE_NAME),
     companies: new CompanyLimitRepository(client, USAGE_TABLE_NAME),
     limits: ssmCrawlLimits(CRAWL_LIMITS_PARAMETER),
@@ -76,6 +109,9 @@ export function jobSummary(j: JobSummaryItem) {
     lastSeenAt: j.lastSeenAt,
     ...(j.closedAt ? { closedAt: j.closedAt } : {}),
     status: j.status,
+    ...(j.appliedAt ? { appliedAt: j.appliedAt } : {}),
+    ...(j.stageAt ? { stageAt: j.stageAt } : {}),
+    ...(j.appliedResumeId ? { appliedResumeId: j.appliedResumeId } : {}),
     starred: j.starred,
     // T08c: whether it is shown, and why it was kept or dropped (absent before its first filter).
     ...(j.filter
@@ -119,8 +155,8 @@ export function jobView(j: Job) {
   };
 }
 
-const encodeCursor = (best: RankedJob): string =>
-  Buffer.from(JSON.stringify(best)).toString('base64url');
+const encodeCursor = (value: RankedJob | AppliedCursor): string =>
+  Buffer.from(JSON.stringify(value)).toString('base64url');
 
 function decodeCursor(cursor: string): unknown {
   try {
@@ -197,6 +233,69 @@ async function companiesPage(
   };
 }
 
+/** #52: when a job the user stops acting on (an undone apply) expires, if closed or hidden. */
+async function expiresAt(deps: JobsDeps): Promise<number> {
+  const { jobExpiryDays } = await deps.limits();
+  return Math.floor(deps.now().getTime() / 1000) + jobExpiryDays * 86_400;
+}
+
+/** Job summaries read per batch while filling Matches (DynamoDB's BatchGetItem limit)… */
+const MATCHES_READ = 100;
+/** …and batches read at once. */
+const MATCHES_PARALLEL = 4;
+
+/**
+ * #52: Matches, every job not applied to yet that is shown now and was seen in the last
+ * `MATCHES_WINDOW_DAYS` days, best first (the crawl's rank: score, then role priority, then
+ * newest), at most `MATCHES_MAX`. All rows come at once, so the browser can sort any column
+ * over all of them. Each company's places are counted as `GET /me/companies` counts them
+ * (open, shown jobs, at most the user's jobs per company), and a job applied to keeps its
+ * place while its posting is open: it leaves a gap rather than letting the next job in. `truncated` says
+ * more than `MATCHES_MAX` jobs qualified.
+ */
+async function matches(userId: string, deps: JobsDeps) {
+  const [shown, perCompany] = await Promise.all([
+    deps.companies.listShown(userId),
+    companyJobsLimitFor(userId, deps),
+  ]);
+  const companies = shown.map((c) => rankShown(c.shown));
+  const ids = companies.flat().map((r) => r.jobId);
+  const batches: string[][] = [];
+  for (let i = 0; i < ids.length; i += MATCHES_READ) batches.push(ids.slice(i, i + MATCHES_READ));
+  const found = new Map<string, JobSummaryItem>();
+  for (let i = 0; i < batches.length; i += MATCHES_PARALLEL) {
+    const read = await Promise.all(
+      batches.slice(i, i + MATCHES_PARALLEL).map((b) => deps.repo.getSummaries(userId, b)),
+    );
+    for (const j of read.flat()) found.set(j.jobId, j);
+  }
+  const since = deps.now().getTime() - MATCHES_WINDOW_DAYS * 86_400_000;
+  const rows: { rank: RankedJob; view: ReturnType<typeof jobSummary> }[] = [];
+  for (const ranked of companies) {
+    const places = ranked
+      .map((rank) => ({ rank, job: found.get(rank.jobId) }))
+      // A job applied to keeps its place while its posting is open, even if a later crawl hid
+      // it (no refill). Once closed, the crawl frees its place (T08c), as for any job.
+      .filter(
+        (p): p is { rank: RankedJob; job: JobSummaryItem } =>
+          p.job !== undefined &&
+          p.job.closedAt === undefined &&
+          (p.job.status !== 'new' || !isHidden(p.job)),
+      )
+      .slice(0, perCompany);
+    for (const { rank, job } of places) {
+      if (job.status === 'new' && Date.parse(job.lastSeenAt) >= since) {
+        rows.push({ rank, view: jobSummary(job) });
+      }
+    }
+  }
+  rows.sort((a, b) => compareRank(a.rank, b.rank));
+  return {
+    jobs: rows.slice(0, MATCHES_MAX).map((r) => r.view),
+    truncated: rows.length > MATCHES_MAX,
+  };
+}
+
 type CompanyView = {
   companyKey: string;
   companyName?: string;
@@ -209,14 +308,21 @@ const companyJobsLimitFor = (userId: string, deps: JobsDeps) => companyJobsLimit
 type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
 
 /**
- * The caller's jobs (T07b). Read-only for now: the user's own changes come with the
- * interface (T09). T08c: the list shows only jobs not hidden by the filter or the
+ * The caller's jobs (T07b). T08c: the list shows only jobs not hidden by the filter or the
  * company limit, unless `view=all`; a page can then be short and still have a next one.
+ * #52: Matches, Applications, and the one change the user makes to a job: its stage.
  */
 export async function route(event: Event, deps: JobsDeps): Promise<HttpResponse> {
   const requestId = event.requestContext.requestId;
   const caller = callerFromEvent(event);
   if (!caller) return problem(401, 'Unauthorized', { requestId });
+  const blocked = await refuseWritesWhileDeleting(
+    event.routeKey,
+    caller.userId,
+    deps.isBeingDeleted,
+    requestId,
+  );
+  if (blocked) return blocked;
 
   switch (event.routeKey) {
     case 'GET /me/jobs': {
@@ -247,6 +353,69 @@ export async function route(event: Event, deps: JobsDeps): Promise<HttpResponse>
       const job = await deps.repo.get(caller.userId, id.data);
       if (!job) return problem(404, 'Not found', { requestId });
       return json(200, jobView(job));
+    }
+    case 'GET /me/matches': {
+      if (Object.keys(event.queryStringParameters ?? {}).length > 0) {
+        return problem(400, 'Invalid request', { detail: 'No query parameters', requestId });
+      }
+      return json(200, await matches(caller.userId, deps));
+    }
+    case 'GET /me/applications': {
+      const query = applicationsPageQuery.safeParse(event.queryStringParameters ?? {});
+      if (!query.success) return validationProblem(query.error, requestId);
+      const { limit, cursor } = query.data;
+      let after: AppliedCursor | undefined;
+      if (cursor !== undefined) {
+        const decoded = applicationsCursor.safeParse(decodeCursor(cursor));
+        if (!decoded.success) return validationProblem(decoded.error, requestId);
+        after = decoded.data;
+      }
+      const page = await deps.repo.listApplied(caller.userId, limit, after);
+      return json(200, {
+        jobs: page.items.map(jobSummary),
+        ...(page.next !== undefined ? { nextCursor: encodeCursor(page.next) } : {}),
+      });
+    }
+    case 'PUT /me/jobs/{jobId}/stage': {
+      const id = jobIdSchema.safeParse(event.pathParameters?.jobId);
+      if (!id.success) return validationProblem(id.error, requestId);
+      const raw = parseJsonBody(event.body, event.isBase64Encoded);
+      if (raw === undefined) return problem(400, 'Invalid JSON', { requestId });
+      const body = jobStageBody.safeParse(raw);
+      if (!body.success) return validationProblem(body.error, requestId);
+      const { stage, from } = body.data;
+      try {
+        const result = await deps.repo.setStage(
+          caller.userId,
+          id.data,
+          { stage, from },
+          deps.audit(
+            'job.stage_changed',
+            { type: 'job', id: id.data },
+            `Stage ${from} → ${stage}`,
+            {
+              from,
+              stage,
+            },
+          ),
+          () => expiresAt(deps),
+        );
+        if (result.kind === 'not-found') return problem(404, 'Not found', { requestId });
+        if (result.kind === 'conflict') {
+          // With the job as it is now, so the app can show its real stage without asking again.
+          return problem(409, 'Conflict', {
+            detail: 'This job was changed elsewhere. Reload, then try again.',
+            code: 'stage-changed',
+            requestId,
+            job: jobView(result.job),
+          });
+        }
+        return json(200, jobView(result.job));
+      } catch (error) {
+        const busy = concurrentUpdateProblem(error, requestId);
+        if (busy) return busy;
+        throw error;
+      }
     }
     default:
       return problem(404, 'Not found', { requestId });

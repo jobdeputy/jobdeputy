@@ -9,7 +9,7 @@ Short records of choices that shape the project. Agents and contributors treat a
 | [0003](0003-serverless-aws-stack.md) | Serverless AWS stack, async backbone, and CI/CD | Accepted |
 | [0004](0004-regional-cells-and-data-residency.md) | Regional cells and data residency (US, India, UK) | Accepted |
 | [0005](0005-pre-launch-cost-guardrails.md) | Pre-launch cost guardrails ($20 hard stop) | Accepted (amended by 0009, 0010) |
-| [0006](0006-data-model.md) | Data model: tables, keys, and schemas | Accepted (amended by 0007, 0008, 0009, 0015) |
+| [0006](0006-data-model.md) | Data model: tables, keys, and schemas | Accepted (amended by 0007, 0008, 0009, 0015, 0016) |
 | [0007](0007-crawler.md) | Crawler: plain fetch, SSRF-safe, polite, and limited | Accepted |
 | [0008](0008-job-extraction.md) | Job extraction: job-board feeds and schema.org first, LLM later | Accepted |
 | [0009](0009-llm-architecture-and-own-keys.md) | LLM architecture: Strands agents, the user's own keys, and token usage | Accepted (amended by 0015) |
@@ -19,6 +19,7 @@ Short records of choices that shape the project. Agents and contributors treat a
 | [0013](0013-apply-flow-rules.md) | Apply flow: one résumé per company, an 80% match score, a per-company cooldown, and the user submits | Accepted (amended by 0015) |
 | [0014](0014-browser-extension-in-monorepo.md) | The browser extension lives in the monorepo (`apps/extension`) | Accepted |
 | [0015](0015-ats-match-score-and-tailored-resumes.md) | ATS match score (LLM keywords, code score), honesty checks, and tailored résumés in `documents` | Accepted |
+| [0016](0016-applications-are-job-stages.md) | Applications are job stages: one jobs table, a sparse `applied` index | Accepted |
 
 ## Template
 

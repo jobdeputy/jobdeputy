@@ -93,7 +93,7 @@ describe('inputsHash', () => {
     expect(inputsHash(job, modelProfile(user, 'new cv').hash, 'relevance@v1')).not.toBe(hash);
     expect(inputsHash(job, base, 'relevance@v2')).not.toBe(hash);
     // What the user does with the job is not an input.
-    expect(inputsHash({ ...job, status: 'shortlisted', starred: true }, base, 'relevance@v1')).toBe(
+    expect(inputsHash({ ...job, status: 'applied', starred: true }, base, 'relevance@v1')).toBe(
       hash,
     );
   });

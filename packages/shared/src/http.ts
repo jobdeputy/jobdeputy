@@ -22,7 +22,11 @@ export function problem(
   status: number,
   title: string,
   /** `code` is a stable, machine-readable reason the UI can act on. */
-  extra: { detail?: string; requestId?: string; errors?: unknown; code?: string } = {},
+  /** Other members (for example the resource as it is now) are added to the body as they are. */
+  extra: { detail?: string; requestId?: string; errors?: unknown; code?: string } & Record<
+    string,
+    unknown
+  > = {},
 ): HttpResponse {
   return {
     statusCode: status,

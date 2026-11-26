@@ -1,7 +1,10 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { BatchGetCommand, GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { APPLIED_INDEX, JOB_SUMMARY_FIELDS, type JobStage } from '@jobdeputy/shared';
+import { type AuditWrite, auditPut } from './audit-repository.js';
 import { isConditionFailure } from './client.js';
 import type { JobKeywordsCache } from './tailoring-repository.js';
+import { cancellationCodes, transactWrite } from './transact.js';
 
 /**
  * `jobs` (docs/data-model.md §8, decision 0008): jobs found for the user. Keys: `userId`,
@@ -91,7 +94,10 @@ export interface RelevanceDecision {
 export const isHidden = (fit: { filter?: { state: string }; limitState?: LimitState }) =>
   fit.filter?.state === 'not_relevant' || fit.limitState === 'over_limit';
 
-export type JobStatus = 'new' | 'shortlisted' | 'dismissed' | 'applying' | 'applied' | 'archived';
+/** #52: the job's stage (`JOB_STAGES` in packages/shared). */
+export type JobStatus = JobStage;
+
+export { APPLIED_INDEX };
 
 /** #51: a tailored version's score for this job (decision 0015). */
 export interface JobMatch {
@@ -127,6 +133,12 @@ export interface Job extends JobPosting {
   /** Epoch seconds: DynamoDB deletes the job after this (T08c, hidden or closed and untouched). */
   ttl?: number;
   status: JobStatus;
+  /** #52: when the user said they applied (kept through later stages; removed on undo). */
+  appliedAt?: string;
+  /** #52: when the stage last changed. */
+  stageAt?: string;
+  /** #52: the tailored résumé the job had when the user applied (`materials.resumeDocumentId`). */
+  appliedResumeId?: string;
   starred: boolean;
   notes?: string;
   createdAt: string;
@@ -175,33 +187,22 @@ export interface SaveStats {
   updated: number;
 }
 
+/** #52: the result of a stage change; `conflict` carries the job as it is now. */
+export type StageResult =
+  | { kind: 'ok'; job: Job }
+  | { kind: 'not-found' }
+  | { kind: 'conflict'; job: Job };
+
+/** #52: where a page of the applications index ends. */
+export interface AppliedCursor {
+  jobId: string;
+  appliedAt: string;
+}
+
 /** Writes at the same time while saving one crawl's jobs: fast, and gentle on the table. */
 export const SAVE_CONCURRENCY = 10;
-/** #49: the fields a list of jobs shows (`descriptionHash` stands for "has a description"). */
-export const SUMMARY_FIELDS = [
-  'jobId',
-  'title',
-  'companyName',
-  'companyKey',
-  'locations',
-  'workplace',
-  'employmentType',
-  'salary',
-  'jobUrl',
-  'applyUrl',
-  'ats',
-  'postedAt',
-  'descriptionHash',
-  'firstSeenAt',
-  'lastSeenAt',
-  'closedAt',
-  'status',
-  'starred',
-  'filter',
-  'limitState',
-  'relevance',
-  'ttl',
-] as const satisfies readonly (keyof Job)[];
+/** #49: the fields a list of jobs shows (`JOB_SUMMARY_FIELDS` in packages/shared). */
+export const SUMMARY_FIELDS = JOB_SUMMARY_FIELDS satisfies readonly (keyof Job)[];
 
 export type JobSummaryItem = Pick<Job, (typeof SUMMARY_FIELDS)[number]> &
   Partial<Pick<Job, 'description'>>;
@@ -388,22 +389,38 @@ export class JobRepository {
       const job = res.Attributes;
       if (job?.sourceIds !== undefined || job?.closedAt !== undefined) return undefined;
       // Untouched by the user: expires (kept sooner if it was already hidden). Else kept.
+      // #52: the user can apply between the two writes, so the expiry also needs `new` now;
+      // if that is what failed, it is closed without one.
+      const close = (expires: boolean) =>
+        this.client.send(
+          new UpdateCommand({
+            TableName: this.table,
+            Key: { userId, jobId },
+            UpdateExpression: `SET #closedAt = :now, updatedAt = :now${expires ? ', #ttl = if_not_exists(#ttl, :ttl)' : ''}`,
+            ConditionExpression: `attribute_not_exists(#sourceIds) AND attribute_not_exists(#closedAt)${expires ? ' AND #status = :new' : ''}`,
+            ...(expires ? { ReturnValuesOnConditionCheckFailure: 'ALL_OLD' as const } : {}),
+            ExpressionAttributeNames: {
+              '#sourceIds': 'sourceIds',
+              '#closedAt': 'closedAt',
+              ...(expires ? { '#ttl': 'ttl', '#status': 'status' } : {}),
+            },
+            ExpressionAttributeValues: {
+              ':now': now,
+              ...(expires ? { ':ttl': expiresAt, ':new': 'new' } : {}),
+            },
+          }),
+        );
       const expires = expiresAt !== undefined && job?.status === 'new';
-      await this.client.send(
-        new UpdateCommand({
-          TableName: this.table,
-          Key: { userId, jobId },
-          UpdateExpression: `SET #closedAt = :now, updatedAt = :now${expires ? ', #ttl = if_not_exists(#ttl, :ttl)' : ''}`,
-          ConditionExpression:
-            'attribute_not_exists(#sourceIds) AND attribute_not_exists(#closedAt)',
-          ExpressionAttributeNames: {
-            '#sourceIds': 'sourceIds',
-            '#closedAt': 'closedAt',
-            ...(expires ? { '#ttl': 'ttl' } : {}),
-          },
-          ExpressionAttributeValues: { ':now': now, ...(expires ? { ':ttl': expiresAt } : {}) },
-        }),
-      );
+      try {
+        await close(expires);
+      } catch (error) {
+        if (!expires || !isConditionFailure(error)) throw error;
+        // Close it without an expiry only if the stage is what failed: a job listed again or
+        // closed meanwhile would fail again (its item comes back raw, not unmarshalled).
+        const old = (error as { Item?: Record<string, unknown> }).Item;
+        if (!old || 'sourceIds' in old || 'closedAt' in old) return undefined;
+        await close(false);
+      }
       return { jobId, companyKey: String(job?.companyKey ?? '') };
     } catch (error) {
       // The job is gone, was listed again meanwhile, or is already closed.
@@ -669,6 +686,153 @@ export class JobRepository {
     return {
       items: (res.Items ?? []) as Job[],
       ...(typeof last === 'string' ? { next: last } : {}),
+    };
+  }
+
+  /**
+   * #52: moves a job to `stage`, if it is still at `from` (the stage the user saw), with its
+   * audit entry in the same transaction. Leaving `new` records `appliedAt` and the tailored
+   * résumé the job has now; back to `new` (an undone apply) removes them. A job the user
+   * applied to never expires (`ttl` removed), whatever the filter said; undone, a closed or
+   * hidden job expires at `expiresAt` again, as one never acted on (T08c).
+   */
+  async setStage(
+    userId: string,
+    jobId: string,
+    change: { stage: JobStage; from: JobStage },
+    audit: AuditWrite,
+    /** Read only when needed: an undone apply on a closed or hidden job. */
+    expiresAt: () => Promise<number>,
+  ): Promise<StageResult> {
+    const job = await this.getConsistent(userId, jobId);
+    if (!job) return { kind: 'not-found' };
+    if (job.status !== change.from) return { kind: 'conflict', job };
+    if (change.stage === change.from) return { kind: 'ok', job };
+    const now = this.now().toISOString();
+    const set = ['#status = :stage', 'stageAt = :now', 'updatedAt = :now'];
+    const remove: string[] = [];
+    const values: Record<string, unknown> = {
+      ':stage': change.stage,
+      ':from': change.from,
+      ':now': now,
+    };
+    const saved: Job = { ...job, status: change.stage, stageAt: now, updatedAt: now };
+    const names: Record<string, string> = { '#status': 'status' };
+    const conditions = ['attribute_exists(userId)', '#status = :from'];
+    if (change.stage === 'new') {
+      remove.push('appliedAt', 'appliedResumeId');
+      delete saved.appliedAt;
+      delete saved.appliedResumeId;
+      // Whether it expires follows from whether it is closed or hidden, as read: a crawl that
+      // changes either meanwhile fails the write (409), never leaving the wrong expiry.
+      Object.assign(names, {
+        '#closedAt': 'closedAt',
+        '#filter': 'filter',
+        '#state': 'state',
+        '#limitState': 'limitState',
+      });
+      conditions.push(
+        job.closedAt !== undefined
+          ? 'attribute_exists(#closedAt)'
+          : 'attribute_not_exists(#closedAt)',
+      );
+      if (job.filter?.state !== undefined) {
+        conditions.push('#filter.#state = :filterState');
+        values[':filterState'] = job.filter.state;
+      } else conditions.push('attribute_not_exists(#filter.#state)');
+      if (job.limitState !== undefined) {
+        conditions.push('#limitState = :limitState');
+        values[':limitState'] = job.limitState;
+      } else conditions.push('attribute_not_exists(#limitState)');
+      if (job.closedAt !== undefined || isHidden(job)) {
+        const expires = await expiresAt();
+        set.push('#ttl = if_not_exists(#ttl, :expires)');
+        values[':expires'] = expires;
+        saved.ttl = job.ttl ?? expires;
+      }
+    } else {
+      remove.push('#ttl');
+      delete saved.ttl;
+      if (change.from === 'new') {
+        set.push('appliedAt = :now');
+        saved.appliedAt = now;
+        const resume = job.materials?.resumeDocumentId;
+        if (resume !== undefined) {
+          set.push('appliedResumeId = :resume');
+          values[':resume'] = resume;
+          saved.appliedResumeId = resume;
+        }
+      }
+    }
+    if (set.some((e) => e.includes('#ttl')) || remove.includes('#ttl')) names['#ttl'] = 'ttl';
+    try {
+      await transactWrite(this.client, {
+        TransactItems: [
+          {
+            Update: {
+              TableName: this.table,
+              Key: { userId, jobId },
+              UpdateExpression: `SET ${set.join(', ')}${remove.length ? ` REMOVE ${remove.join(', ')}` : ''}`,
+              ConditionExpression: conditions.join(' AND '),
+              ExpressionAttributeNames: names,
+              ExpressionAttributeValues: values,
+            },
+          },
+          auditPut(audit, userId, this.now()),
+        ],
+      });
+    } catch (error) {
+      // Only the job's own condition is a conflict; anything else (the audit entry's) is thrown.
+      if (cancellationCodes(error)?.[0] !== 'ConditionalCheckFailed') throw error;
+      // Changed or deleted (expired) between the read and the write: say what it is now.
+      const current = await this.getConsistent(userId, jobId);
+      return current ? { kind: 'conflict', job: current } : { kind: 'not-found' };
+    }
+    // Written exactly as read plus this change (the condition held): no read back needed.
+    return { kind: 'ok', job: saved };
+  }
+
+  private async getConsistent(userId: string, jobId: string): Promise<Job | undefined> {
+    const res = await this.client.send(
+      new GetCommand({ TableName: this.table, Key: { userId, jobId }, ConsistentRead: true }),
+    );
+    return res.Item as Job | undefined;
+  }
+
+  /**
+   * #52: one page of the jobs the user applied to, newest applied first. The sparse `applied`
+   * index holds only jobs with `appliedAt`, keys only (DynamoDB lets an index copy at most 20
+   * attributes; a list shows more), so hidden jobs are never read; the page's jobs are then
+   * read in one consistent batch, as they are now. The index is eventually consistent: a job
+   * undone a moment ago (back to `new`) is dropped here; one applied a moment ago can be
+   * missing for a moment.
+   */
+  async listApplied(
+    userId: string,
+    limit: number,
+    after?: AppliedCursor,
+  ): Promise<{ items: JobSummaryItem[]; next?: AppliedCursor }> {
+    const res = await this.client.send(
+      new QueryCommand({
+        TableName: this.table,
+        IndexName: APPLIED_INDEX,
+        KeyConditionExpression: 'userId = :u',
+        ExpressionAttributeValues: { ':u': userId },
+        ScanIndexForward: false,
+        Limit: limit,
+        ...(after !== undefined ? { ExclusiveStartKey: { userId, ...after } } : {}),
+      }),
+    );
+    const ids = (res.Items ?? []).map((k) => String(k.jobId));
+    const found = new Map((await this.getSummaries(userId, ids)).map((j) => [j.jobId, j]));
+    const last = res.LastEvaluatedKey;
+    return {
+      items: ids
+        .map((id) => found.get(id))
+        .filter((j): j is JobSummaryItem => j !== undefined && j.status !== 'new'),
+      ...(typeof last?.jobId === 'string' && typeof last.appliedAt === 'string'
+        ? { next: { jobId: last.jobId, appliedAt: last.appliedAt } }
+        : {}),
     };
   }
 }

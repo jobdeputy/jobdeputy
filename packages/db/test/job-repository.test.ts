@@ -1,5 +1,5 @@
 import type { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, QueryCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import { describe, expect, it, vi } from 'vitest';
 import { type JobPosting, JobRepository, SAVE_CONCURRENCY, SUMMARY_FIELDS } from '../src/index.js';
 
@@ -281,7 +281,7 @@ describe('JobRepository.closeMissing (T07c)', () => {
     const { c, send } = client((cmd) => {
       const input = (cmd as UpdateCommand).input;
       if (input.UpdateExpression?.startsWith('DELETE')) {
-        const status = input.Key?.jobId === 'untouched' ? 'new' : 'shortlisted';
+        const status = input.Key?.jobId === 'untouched' ? 'new' : 'applied';
         return { Attributes: { companyKey: 'greenhouse:acme', status } };
       }
       return {};
@@ -297,8 +297,55 @@ describe('JobRepository.closeMissing (T07c)', () => {
       ExpressionAttributeNames: { '#ttl': 'ttl' },
       ExpressionAttributeValues: { ':ttl': 1_800_000_000 },
     });
+    expect(byJob.untouched?.ConditionExpression).toBe(
+      'attribute_not_exists(#sourceIds) AND attribute_not_exists(#closedAt) AND #status = :new',
+    );
     expect(byJob.acted?.UpdateExpression).toBe('SET #closedAt = :now, updatedAt = :now');
     expect(byJob.acted?.ExpressionAttributeNames).not.toHaveProperty('#ttl');
+  });
+  it('#52: listed again or closed meanwhile: no second try', async () => {
+    for (const old of [{ sourceIds: { SS: ['S2'] } }, { closedAt: { S: 'x' } }, undefined]) {
+      const { c, send } = client((cmd) => {
+        const input = (cmd as UpdateCommand).input;
+        if (input.UpdateExpression?.startsWith('DELETE')) {
+          return { Attributes: { companyKey: 'greenhouse:acme', status: 'new' } };
+        }
+        throw Object.assign(new Error('c'), {
+          name: 'ConditionalCheckFailedException',
+          ...(old ? { Item: old } : {}),
+        });
+      });
+      expect(await repo(c).closeMissing(USER, 'S1', ['j1'], 1_800_000_000)).toEqual([]);
+      expect(send).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it('#52: applied between the two writes, it is closed without an expiry', async () => {
+    const { c, send } = client((cmd) => {
+      const input = (cmd as UpdateCommand).input;
+      if (input.UpdateExpression?.startsWith('DELETE')) {
+        return { Attributes: { companyKey: 'greenhouse:acme', status: 'new' } };
+      }
+      // The user applied meanwhile: the close with an expiry fails on `#status = :new`.
+      if (input.ExpressionAttributeValues?.[':new'] === 'new') {
+        expect(input.ReturnValuesOnConditionCheckFailure).toBe('ALL_OLD');
+        throw Object.assign(new Error('c'), {
+          name: 'ConditionalCheckFailedException',
+          Item: { status: { S: 'applied' } },
+        });
+      }
+      return {};
+    });
+    expect(await repo(c).closeMissing(USER, 'S1', ['j1'], 1_800_000_000)).toEqual([
+      { jobId: 'j1', companyKey: 'greenhouse:acme' },
+    ]);
+    const closes = send.mock.calls
+      .map(([cmd]) => (cmd as UpdateCommand).input)
+      .filter((i) => i.UpdateExpression?.startsWith('SET #closedAt'));
+    expect(closes.map((i) => i.UpdateExpression)).toEqual([
+      'SET #closedAt = :now, updatedAt = :now, #ttl = if_not_exists(#ttl, :ttl)',
+      'SET #closedAt = :now, updatedAt = :now',
+    ]);
   });
 });
 
@@ -548,5 +595,346 @@ describe('JobRepository.closeGone (T08d3)', () => {
       throw new Error('throttled');
     });
     await expect(repo(c).closeGone(USER, ['a'], 123)).rejects.toThrow('throttled');
+  });
+});
+
+describe('JobRepository.setStage (#52)', () => {
+  const J = 'a'.repeat(32);
+  const audit = {
+    table: 'Audit',
+    entry: {
+      auditId: 'A1',
+      name: 'job.stage_changed',
+      entity: { type: 'job', id: J },
+      actor: 'user' as const,
+      summary: 's',
+    },
+  };
+  const cancelled = (code: string) =>
+    Object.assign(new Error('cancelled'), {
+      name: 'TransactionCanceledException',
+      CancellationReasons: [{ Code: code }, { Code: 'None' }],
+    });
+  /** Answers reads from `items` in turn; the transaction with `write`. */
+  function store(
+    items: (Record<string, unknown> | undefined)[],
+    write: () => unknown = () => ({}),
+  ) {
+    let read = 0;
+    return client((cmd) => {
+      if (cmd instanceof GetCommand) {
+        expect(cmd.input.ConsistentRead).toBe(true);
+        return { Item: items[Math.min(read++, items.length - 1)] };
+      }
+      if (cmd instanceof TransactWriteCommand) return write();
+      throw new Error('unexpected command');
+    });
+  }
+  const update = (send: ReturnType<typeof client>['send']) => {
+    const tx = send.mock.calls.map((c) => c[0]).find((c) => c instanceof TransactWriteCommand) as
+      | TransactWriteCommand
+      | undefined;
+    return tx?.input.TransactItems?.[0]?.Update;
+  };
+
+  it('applying records when, the tailored résumé it had, and never expires the job', async () => {
+    const { c, send } = store([
+      { jobId: J, status: 'new', ttl: 5, materials: { resumeDocumentId: 'R1' } },
+    ]);
+    const r = await repo(c).setStage(
+      USER,
+      J,
+      { stage: 'applied', from: 'new' },
+      audit,
+      async () => 999,
+    );
+    // The saved job is the one read plus this change: no read back.
+    const at = NOW.toISOString();
+    expect(r).toEqual({
+      kind: 'ok',
+      job: {
+        jobId: J,
+        status: 'applied',
+        materials: { resumeDocumentId: 'R1' },
+        stageAt: at,
+        updatedAt: at,
+        appliedAt: at,
+        appliedResumeId: 'R1',
+      },
+    });
+    expect(send.mock.calls.filter((c) => c[0] instanceof GetCommand)).toHaveLength(1);
+    const u = update(send);
+    expect(u?.UpdateExpression).toBe(
+      'SET #status = :stage, stageAt = :now, updatedAt = :now, appliedAt = :now, appliedResumeId = :resume REMOVE #ttl',
+    );
+    expect(u?.ConditionExpression).toBe('attribute_exists(userId) AND #status = :from');
+    expect(u?.ExpressionAttributeValues).toEqual({
+      ':stage': 'applied',
+      ':from': 'new',
+      ':now': NOW.toISOString(),
+      ':resume': 'R1',
+    });
+    const tx = send.mock.calls
+      .map((c) => c[0])
+      .find((c) => c instanceof TransactWriteCommand) as TransactWriteCommand;
+    expect(tx.input.TransactItems?.[1]?.Put?.Item).toMatchObject({
+      userId: USER,
+      name: 'job.stage_changed',
+    });
+  });
+
+  it('a later stage keeps appliedAt; back to new removes it and the résumé', async () => {
+    const later = store([
+      { jobId: J, status: 'applied' },
+      { jobId: J, status: 'offer' },
+    ]);
+    await repo(later.c).setStage(
+      USER,
+      J,
+      { stage: 'offer', from: 'applied' },
+      audit,
+      async () => 999,
+    );
+    expect(update(later.send)?.UpdateExpression).toBe(
+      'SET #status = :stage, stageAt = :now, updatedAt = :now REMOVE #ttl',
+    );
+    const undo = store([
+      { jobId: J, status: 'applied' },
+      { jobId: J, status: 'new' },
+    ]);
+    await repo(undo.c).setStage(USER, J, { stage: 'new', from: 'applied' }, audit, async () => 999);
+    const u = update(undo.send);
+    expect(u?.UpdateExpression).toBe(
+      'SET #status = :stage, stageAt = :now, updatedAt = :now REMOVE appliedAt, appliedResumeId',
+    );
+    // An undo is refused if a crawl closed, opened, hid, or showed the job since the read.
+    expect(u?.ConditionExpression).toBe(
+      'attribute_exists(userId) AND #status = :from AND attribute_not_exists(#closedAt) AND attribute_not_exists(#filter.#state) AND attribute_not_exists(#limitState)',
+    );
+    expect(u?.ExpressionAttributeNames).not.toHaveProperty('#ttl');
+  });
+
+  it('an undone apply on a closed or hidden job expires again, as one never acted on', async () => {
+    for (const job of [
+      { jobId: J, status: 'applied', closedAt: '2026-09-01T00:00:00.000Z' },
+      { jobId: J, status: 'applied', limitState: 'over_limit' },
+      { jobId: J, status: 'applied', filter: { state: 'not_relevant' } },
+    ]) {
+      const undo = store([job]);
+      const r = await repo(undo.c).setStage(
+        USER,
+        J,
+        { stage: 'new', from: 'applied' },
+        audit,
+        async () => 999,
+      );
+      const u = update(undo.send);
+      expect(u?.UpdateExpression).toBe(
+        'SET #status = :stage, stageAt = :now, updatedAt = :now, #ttl = if_not_exists(#ttl, :expires) REMOVE appliedAt, appliedResumeId',
+      );
+      expect(u?.ExpressionAttributeNames).toMatchObject({ '#status': 'status', '#ttl': 'ttl' });
+      expect(u?.ConditionExpression).toMatch(
+        /attribute_exists\(#closedAt\)|#filter\.#state = :filterState|#limitState = :limitState/,
+      );
+      expect(u?.ExpressionAttributeValues?.[':expires']).toBe(999);
+      expect(r.kind === 'ok' && r.job.ttl).toBe(999);
+    }
+  });
+
+  it('not found, a stale `from`, or the same stage: no write', async () => {
+    const gone = store([undefined]);
+    expect(
+      await repo(gone.c).setStage(
+        USER,
+        J,
+        { stage: 'applied', from: 'new' },
+        audit,
+        async () => 999,
+      ),
+    ).toEqual({
+      kind: 'not-found',
+    });
+    const stale = store([{ jobId: J, status: 'applied' }]);
+    expect(
+      await repo(stale.c).setStage(
+        USER,
+        J,
+        { stage: 'applied', from: 'new' },
+        audit,
+        async () => 999,
+      ),
+    ).toEqual({
+      kind: 'conflict',
+      job: { jobId: J, status: 'applied' },
+    });
+    const same = store([{ jobId: J, status: 'offer' }]);
+    expect(
+      (
+        await repo(same.c).setStage(
+          USER,
+          J,
+          { stage: 'offer', from: 'offer' },
+          audit,
+          async () => 999,
+        )
+      ).kind,
+    ).toBe('ok');
+    for (const s of [gone, stale, same]) expect(update(s.send)).toBeUndefined();
+  });
+
+  it('a change between the read and the write is a conflict (or not-found if it expired)', async () => {
+    const moved = store(
+      [
+        { jobId: J, status: 'new' },
+        { jobId: J, status: 'withdrawn' },
+      ],
+      () => {
+        throw cancelled('ConditionalCheckFailed');
+      },
+    );
+    expect(
+      await repo(moved.c).setStage(
+        USER,
+        J,
+        { stage: 'applied', from: 'new' },
+        audit,
+        async () => 999,
+      ),
+    ).toEqual({
+      kind: 'conflict',
+      job: { jobId: J, status: 'withdrawn' },
+    });
+    const expired = store([{ jobId: J, status: 'new' }, undefined], () => {
+      throw cancelled('ConditionalCheckFailed');
+    });
+    expect(
+      (
+        await repo(expired.c).setStage(
+          USER,
+          J,
+          { stage: 'applied', from: 'new' },
+          audit,
+          async () => 999,
+        )
+      ).kind,
+    ).toBe('not-found');
+  });
+
+  it("the audit entry's own failed condition is thrown, not called a conflict", async () => {
+    const auditFailed = store([{ jobId: J, status: 'new' }], () => {
+      throw Object.assign(new Error('cancelled'), {
+        name: 'TransactionCanceledException',
+        CancellationReasons: [{ Code: 'None' }, { Code: 'ConditionalCheckFailed' }],
+      });
+    });
+    await expect(
+      repo(auditFailed.c).setStage(
+        USER,
+        J,
+        { stage: 'applied', from: 'new' },
+        audit,
+        async () => 999,
+      ),
+    ).rejects.toThrow('cancelled');
+  });
+
+  it('reads the expiry only for an undone apply on a closed or hidden job', async () => {
+    const expiry = vi.fn(async () => 999);
+    await repo(store([{ jobId: J, status: 'new' }]).c).setStage(
+      USER,
+      J,
+      { stage: 'applied', from: 'new' },
+      audit,
+      expiry,
+    );
+    await repo(store([{ jobId: J, status: 'applied' }]).c).setStage(
+      USER,
+      J,
+      { stage: 'new', from: 'applied' },
+      audit,
+      expiry,
+    );
+    expect(expiry).not.toHaveBeenCalled();
+  });
+
+  it('other errors are thrown', async () => {
+    const broken = store([{ jobId: J, status: 'new' }], () => {
+      throw new Error('boom');
+    });
+    await expect(
+      repo(broken.c).setStage(USER, J, { stage: 'applied', from: 'new' }, audit, async () => 999),
+    ).rejects.toThrow('boom');
+  });
+});
+
+describe('JobRepository.listApplied (#52)', () => {
+  const [A, B, C] = ['a'.repeat(32), 'b'.repeat(32), 'c'.repeat(32)] as const;
+  /** The index answers keys; the batch read answers the jobs as they are now. */
+  function applied(keys: string[], now: Record<string, unknown>[], last?: Record<string, unknown>) {
+    return client((cmd) =>
+      cmd instanceof QueryCommand
+        ? {
+            Items: keys.map((jobId) => ({ userId: USER, jobId, appliedAt: 'x' })),
+            ...(last ? { LastEvaluatedKey: last } : {}),
+          }
+        : { Responses: { Jobs: now } },
+    );
+  }
+
+  it('reads the keys-only index newest first, then the page in one consistent batch, in order', async () => {
+    const last = { userId: USER, jobId: B, appliedAt: '2026-10-01T00:00:00.000Z' };
+    const { c, send } = applied(
+      [A, B],
+      [
+        { jobId: B, status: 'offer' },
+        { jobId: A, status: 'applied' },
+      ],
+      last,
+    );
+    const page = await repo(c).listApplied(USER, 50, {
+      jobId: C,
+      appliedAt: '2026-10-02T00:00:00.000Z',
+    });
+    expect(page).toEqual({
+      items: [
+        { jobId: A, status: 'applied' },
+        { jobId: B, status: 'offer' },
+      ],
+      next: { jobId: B, appliedAt: last.appliedAt },
+    });
+    const q = send.mock.calls[0]?.[0] as QueryCommand;
+    expect(q.input).toMatchObject({
+      IndexName: 'applied',
+      ScanIndexForward: false,
+      Limit: 50,
+      ExclusiveStartKey: { userId: USER, jobId: C, appliedAt: '2026-10-02T00:00:00.000Z' },
+    });
+    const batch = send.mock.calls[1]?.[0] as {
+      input: { RequestItems: Record<string, Record<string, unknown>> };
+    };
+    expect(batch.input.RequestItems.Jobs).toMatchObject({
+      ConsistentRead: true,
+      Keys: [
+        { userId: USER, jobId: A },
+        { userId: USER, jobId: B },
+      ],
+    });
+  });
+
+  it('drops a job undone meanwhile (back at new) or gone, which the index still lists', async () => {
+    const { c } = applied(
+      [A, B, C],
+      [
+        { jobId: A, status: 'new' },
+        { jobId: C, status: 'rejected' },
+      ],
+    );
+    expect((await repo(c).listApplied(USER, 50)).items).toEqual([{ jobId: C, status: 'rejected' }]);
+  });
+
+  it('an empty page reads nothing more and has no next', async () => {
+    const { c, send } = applied([], []);
+    expect(await repo(c).listApplied(USER, 50)).toEqual({ items: [] });
+    expect(send).toHaveBeenCalledTimes(1);
   });
 });
