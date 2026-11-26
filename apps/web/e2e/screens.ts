@@ -19,8 +19,6 @@ export interface Screen {
   ready?: string | string[];
   /** Block the app's script, so the boot loader stays up. */
   blockScript?: boolean;
-  /** Wait for the boot loader's logo story to end. */
-  storyEnd?: boolean;
   /**
    * Run the page on its own clock, held, and move it on in short steps only until every `ready`
    * selector is on the page, and never past this many ms: the frame comes from the page's state,
@@ -174,14 +172,24 @@ export const SCREENS: Screen[] = [
     ],
     clockUpTo: 3000,
   },
-  // The boot loader at the end of its story, held up by an app script that never arrives.
-  { name: 'boot-loader', path: '/', ready: '#boot-loader', blockScript: true, storyEnd: true },
+  // The boot loader, held up by an app script that never arrives. Under reduced motion, so the
+  // logo shows its settled frame (the story's last) and every run captures the same pixels.
+  // Shot once its reveal (300 ms in) has finished, so never blank or half faded in.
+  {
+    name: 'boot-loader',
+    path: '/',
+    ready: '#boot-loader',
+    blockScript: true,
+    still: true,
+    steps: revealed,
+  },
   // The same boot, stalled past the 8 s long wait: the reload offer.
   {
     name: 'boot-loader-slow',
     path: '/',
     ready: '#boot-loader [role="status"] a',
     blockScript: true,
+    still: true,
   },
 ];
 
@@ -234,16 +242,19 @@ export async function showScreen(page: Page, screen: Screen) {
   for (const ready of [screen.ready ?? []].flat()) {
     await page.locator(ready).first().waitFor();
   }
-  if (screen.storyEnd) {
-    // The logo's 2.605 s story runs from when its image arrives, so wait for that, not a clock.
-    await page.waitForFunction(() => {
-      const logo = (performance.getEntriesByType('resource') as PerformanceResourceTiming[]).find(
-        (entry) => entry.name.endsWith('/jobdeputy-animated.svg'),
-      );
-      return logo !== undefined && performance.now() > logo.responseEnd + 2705;
-    });
-  }
   await page.evaluate(() => document.fonts.ready);
+}
+
+/** The boot loader's reveal has run to its end (its other, later animations aside). */
+async function revealed(page: Page) {
+  await page
+    .locator('#boot-loader > div')
+    .first()
+    .evaluate((reveal) =>
+      Promise.all(reveal.getAnimations().map((animation) => animation.finished)).then(
+        () => undefined,
+      ),
+    );
 }
 
 async function wrongSignUp(page: Page) {
