@@ -657,4 +657,41 @@ describe('applying from the job’s pane (#52 PR C)', () => {
     expect(await screen.findByText(/^Marked as applied: Senior Backend Engineer/)).toBeTruthy();
     expect(document.activeElement).toBe(elsewhere);
   });
+
+  it('says it on the line when the pane was closed before the save ended, and the focus went back to the row', async () => {
+    screenWide(true);
+    const api = await renderList();
+    const request = api.request.bind(api);
+    let release = () => {};
+    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) => {
+      if (method === 'PUT') await new Promise<void>((resolve) => (release = resolve));
+      return request(method, path, body);
+    });
+    openJob('Senior Backend Engineer');
+    fireEvent.click(preview().getByRole('link', { name: /^Manual apply/ }));
+    fireEvent.click(preview().getByRole('button', { name: 'I applied' }));
+    fireEvent.click(preview().getByRole('button', { name: 'Close' }));
+    const row = screen.getByRole('button', { name: 'Senior Backend Engineer' });
+    await waitFor(() => expect(document.activeElement).toBe(row));
+    release();
+    const said = await screen.findByText(/^Marked as applied: Senior Backend Engineer/);
+    expect(document.activeElement).toBe(said);
+  });
+
+  it('puts the job back at once on Undo, before the list is read again', async () => {
+    screenWide(true);
+    const api = await renderList();
+    openJob('Senior Backend Engineer');
+    fireEvent.click(preview().getByRole('link', { name: /^Manual apply/ }));
+    fireEvent.click(preview().getByRole('button', { name: 'I applied' }));
+    await screen.findByText(/^Marked as applied/);
+    const request = api.request.bind(api);
+    // From now on the list's reads never answer.
+    vi.spyOn(api, 'request').mockImplementation(async (method, path, body) =>
+      path === '/me/matches' ? new Promise(() => {}) : request(method, path, body),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await screen.findByText('Senior Backend Engineer at Acme is back in Matches.');
+    expect(screen.getByRole('button', { name: 'Senior Backend Engineer' })).toBeTruthy();
+  });
 });

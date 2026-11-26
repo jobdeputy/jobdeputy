@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { type RefObject, useEffect, useRef, useState } from 'react';
+import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ApplyActions } from '@/components/jobs/apply-actions.tsx';
 import { FitLabel } from '@/components/jobs/fit-label.tsx';
 import { JobPreview } from '@/components/jobs/job-preview.tsx';
@@ -99,7 +99,8 @@ export function MatchesList({
   // As they are now, for a save that ends after the person moved on.
   const openNow = useRef(openId);
   const noticeNow = useRef(notice);
-  useEffect(() => {
+  // Before any save that ends can read them (a passive effect could run after it).
+  useLayoutEffect(() => {
     openNow.current = openId;
     noticeNow.current = notice;
   });
@@ -170,12 +171,15 @@ export function MatchesList({
    * focus was in that pane, or lost.
    */
   function leave(job: JobSummary, said: Notice) {
-    queries.setQueriesData<Matches>({ queryKey: matchesKey }, (was) =>
-      was ? { ...was, jobs: was.jobs.filter((each) => each.jobId !== job.jobId) } : was,
-    );
     const stillOpen = openNow.current === job.jobId;
+    // Before its row goes: the focus may be there (the pane closed, and handed it back).
+    const row = section.current?.querySelector(`[data-job-id="${job.jobId}"]`)?.closest('tr');
     noticeTakesFocus.current = focusFreed(
       stillOpen ? document.getElementById('job-preview') : null,
+      row ?? null,
+    );
+    queries.setQueriesData<Matches>({ queryKey: matchesKey }, (was) =>
+      was ? { ...was, jobs: was.jobs.filter((each) => each.jobId !== job.jobId) } : was,
     );
     if (stillOpen) setOpened(null);
     setNotice(said);
@@ -190,7 +194,12 @@ export function MatchesList({
     setNotice((was) => (was?.kind === 'applied' ? { ...was, undo: 'undoing' } : was));
     try {
       await setStage(api, job.jobId, 'new', 'applied');
-      // Saved: said now; the job is back in its place once the list is read again.
+      // Saved: back in the table at once (it sorts itself in), then the list read again.
+      queries.setQueriesData<Matches>({ queryKey: matchesKey }, (was) =>
+        was && !was.jobs.some((each) => each.jobId === job.jobId)
+          ? { ...was, jobs: [...was.jobs, job] }
+          : was,
+      );
       void queries.invalidateQueries({ queryKey: matchesKey });
       if (!offersUndo(job)) return;
       // Undo goes with the line's change: the line takes the focus if Undo had it.
@@ -441,10 +450,10 @@ function NoticeLine({
 }
 
 /**
- * Whether a line replacing what just went (`gone`: a job's pane, Undo's line) may take the
+ * Whether a line replacing what just went (`gone`: a job's pane and row, Undo's line) may take the
  * focus: only if the focus was in it, or is lost. Never from where the person has moved on to.
  */
-function focusFreed(gone: Element | null): boolean {
+function focusFreed(...gone: (Element | null)[]): boolean {
   const at = document.activeElement;
-  return at === null || at === document.body || (gone?.contains(at) ?? false);
+  return at === null || at === document.body || gone.some((each) => each?.contains(at));
 }
