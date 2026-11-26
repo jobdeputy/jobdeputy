@@ -73,6 +73,9 @@ export function TailorSection({
   const wasWorking = useRef(working);
   const [justReady, setJustReady] = useState<{ score: number | null } | null>(null);
   useEffect(() => {
+    // A refusal is about the run it met (another tab's): once a run at work ends, it no longer
+    // holds. Not when a run is first seen: that is the run the refusal is about.
+    if (wasWorking.current && !working) setRefusal(null);
     if (wasWorking.current && !working && newest?.status === 'ready') {
       const score = newest.scores?.find((s) => s.jobId === job.jobId)?.tailored;
       setJustReady({ score: score ?? null });
@@ -80,12 +83,6 @@ export function TailorSection({
     if (working) setJustReady(null);
     wasWorking.current = working;
   }, [working, newest, job.jobId]);
-  // A refusal is about the run it met: once a run starts or ends, it no longer holds.
-  const newestId = newest?.documentId;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: cleared on each change of these.
-  useEffect(() => {
-    setRefusal(null);
-  }, [newestId, working]);
 
   async function start() {
     setStarting(true);
@@ -165,7 +162,7 @@ export function TailorSection({
         )}
       </div>
       {/* Keyed by version: a new one starts with nothing said about the one before. */}
-      {ready && <ReadyVersion key={ready.documentId} version={ready} job={job} />}
+      {ready && <ReadyVersion key={ready.documentId} version={ready} job={job} working={working} />}
       <div className="grid justify-items-start gap-2">
         <Button
           variant={ready ? 'outline' : 'default'}
@@ -261,7 +258,16 @@ function refusalOf(
 }
 
 /** The newest ready version, as it reads for this job. */
-function ReadyVersion({ version, job }: { version: Tailoring; job: JobSummary }) {
+function ReadyVersion({
+  version,
+  job,
+  working,
+}: {
+  version: Tailoring;
+  job: JobSummary;
+  /** A new run is at work: "Re-tailor to use it" is being done. */
+  working: boolean;
+}) {
   const score = version.scores?.find((s) => s.jobId === job.jobId);
   return (
     <div className="grid gap-4">
@@ -286,7 +292,7 @@ function ReadyVersion({ version, job }: { version: Tailoring; job: JobSummary })
         </div>
       )}
       {score && score.missingUnproven.length > 0 && (
-        <MissingSkills keywords={score.missingUnproven} />
+        <MissingSkills keywords={score.missingUnproven} working={working} />
       )}
       <Downloads version={version} />
     </div>
@@ -333,7 +339,7 @@ function ScoreBox({ base, tailored }: { base: number | null; tailored: number | 
  * The keywords the résumé doesn't show, each with I have this: it saves the skill to the profile
  * (`POST /me/profile/skills`), so the next run may use it; once added, the chip says so.
  */
-function MissingSkills({ keywords }: { keywords: string[] }) {
+function MissingSkills({ keywords, working }: { keywords: string[]; working: boolean }) {
   const api = useApi();
   const queries = useQueryClient();
   const profile = useProfile();
@@ -393,8 +399,8 @@ function MissingSkills({ keywords }: { keywords: string[] }) {
         ))}
       </ul>
       {/* One element, its words changed: a status region mounted with its words is often not read. */}
-      <p role="status" className={done ? 'm-0 text-sm text-green-ink' : 'sr-only'}>
-        {done ?? ''}
+      <p role="status" className={done && !working ? 'm-0 text-sm text-green-ink' : 'sr-only'}>
+        {working ? '' : (done ?? '')}
       </p>
       <Alert said={said} />
     </div>
@@ -480,13 +486,14 @@ export function RunWatcher({
   const stopped = isFinal(list.error);
   useEffect(() => {
     // Signed out (or the account closed): the run can't be read any more, so it isn't followed.
-    if (stopped) {
+    // Signed out, or the first read failed (nothing to poll from): not followed any more.
+    if (stopped || (list.isError && !list.data)) {
       onDone(companyKey);
       return;
     }
     if (!list.data || working) return;
     void queries.invalidateQueries({ queryKey: matchesKey });
     onDone(companyKey);
-  }, [list.data, working, stopped, queries, onDone, companyKey]);
+  }, [list.data, list.isError, working, stopped, queries, onDone, companyKey]);
   return null;
 }

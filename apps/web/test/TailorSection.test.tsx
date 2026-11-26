@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MatchesList } from '../src/components/jobs/matches-list.tsx';
+import { RunWatcher } from '../src/components/jobs/tailor-section.tsx';
 import { ApiError } from '../src/lib/api/client.ts';
 import { createFakeApi } from '../src/lib/api/fake.ts';
 import { type ApiClient, ApiContext, type ApiMethod } from '../src/lib/api/index.ts';
@@ -400,6 +401,8 @@ describe('tailoring in the job pane (#51 PR C)', () => {
     fireEvent.click(section.getByRole('button', { name: 'Re-tailor' }));
     await section.findByText('Tailoring your résumé for Acme…');
     expect(status()).toBeUndefined();
+    // Being done now: "Re-tailor to use it" is no longer said.
+    expect(section.queryByText('Kafka was added to your profile. Re-tailor to use it.')).toBeNull();
     clock.now += 2000;
     await act(() => vi.advanceTimersByTimeAsync(5000));
     expect(await section.findByText('78%')).toBeTruthy();
@@ -407,16 +410,16 @@ describe('tailoring in the job pane (#51 PR C)', () => {
     expect(section.queryByText('Kafka was added to your profile. Re-tailor to use it.')).toBeNull();
   });
 
-  it('clears a refused start once the run it met ends (review round 2)', async () => {
+  it('keeps a refused start said while the run it met works, and clears it once that run ends', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     let busy = true;
-    const { clock, fake } = await setUp({
+    const { clock } = await setUp({
       crawlMs: 1000,
       wrap: (api) => ({
         ...api,
         async request<T>(m: ApiMethod, p: `/${string}`, body?: unknown): Promise<T> {
           if (busy && m === 'POST' && p === '/me/tailorings') {
-            // Another tab's run: started, then this click refused.
+            // Another tab's run: started there, so this click is refused.
             await api.request(m, p, body);
             busy = false;
             throw new ApiError('conflict', { status: 409, code: 'tailoring_busy' });
@@ -425,15 +428,41 @@ describe('tailoring in the job pane (#51 PR C)', () => {
         },
       }),
     });
-    void fake;
     const section = await openSection(BACKEND);
+    const refusal = 'A tailoring for this company is already running.';
     fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
-    expect(
-      await section.findByText('A tailoring for this company is already running.'),
-    ).toBeTruthy();
+    // The list read after the refusal shows the other tab's run: the refusal stays said.
+    expect(await section.findByText('Tailoring your résumé for Acme…')).toBeTruthy();
+    expect(section.getByText(refusal)).toBeTruthy();
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    expect(section.getByText('Tailoring your résumé for Acme…')).toBeTruthy();
+    expect(section.getByText(refusal)).toBeTruthy();
+    // That run ends: the refusal no longer holds.
     clock.now += 2000;
     await act(() => vi.advanceTimersByTimeAsync(5000));
     expect(await section.findByText('86%')).toBeTruthy();
-    expect(section.queryByText('A tailoring for this company is already running.')).toBeNull();
+    expect(section.queryByText(refusal)).toBeNull();
+  });
+
+  it('a watcher whose first read fails stops following (review round 3)', async () => {
+    const offline: ApiClient = {
+      ...createFakeApi({ delay: 0 }),
+      async request() {
+        throw new ApiError('offline');
+      },
+    };
+    const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const onDone = vi.fn();
+    render(
+      <QueryClientProvider client={queries}>
+        <ApiContext.Provider value={offline}>
+          <RunWatcher companyKey="greenhouse:acme" onDone={onDone} />
+        </ApiContext.Provider>
+      </QueryClientProvider>,
+    );
+    // Offline is tried once more (after about 1 s) before the read fails.
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith('greenhouse:acme'), {
+      timeout: 5000,
+    });
   });
 });
