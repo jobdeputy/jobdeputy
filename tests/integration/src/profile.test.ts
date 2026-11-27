@@ -1,14 +1,5 @@
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import {
-  callApi,
-  createTestUser,
-  region,
-  stackName,
-  stackOutputs,
-  type TestUser,
-} from './stack.js';
+import { callApi, createTestUser, stackOutputs, type TestUser } from './stack.js';
 
 /**
  * Deployed wiring of T05b: real tables, conditional writes, Cognito email, and
@@ -17,10 +8,6 @@ import {
 let api: string;
 let alice: TestUser;
 let bob: TestUser;
-
-/** The token's `sub`, the userId the API stores under. */
-const userIdOf = (token: string): string =>
-  JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString()).sub;
 
 beforeAll(async () => {
   const outputs = await stackOutputs();
@@ -126,7 +113,7 @@ describe('application answers (#53, deployed)', () => {
     expect((await callApi(api, 'GET', 'me/applicant', bob.accessToken)).body.version).toBe(0);
   });
 
-  it('stores voluntary answers only encrypted, and decrypts them only for their user', async () => {
+  it('saves voluntary answers through KMS and reads them back only for their user', async () => {
     expect((await callApi(api, 'GET', 'me/voluntary', alice.accessToken)).body).toEqual({
       version: 0,
       gender: 'decline',
@@ -157,29 +144,7 @@ describe('application answers (#53, deployed)', () => {
         .status,
     ).toBe(409);
     expect((await callApi(api, 'GET', 'me/voluntary', bob.accessToken)).body.version).toBe(0);
-
-    // At rest: only ciphertext, none of the answers in the clear.
-    const db = DynamoDBDocumentClient.from(new DynamoDBClient({ region }));
-    const item = (
-      await db.send(
-        new GetCommand({
-          TableName: `${stackName()}-users`,
-          Key: { userId: userIdOf(alice.accessToken), sk: 'VOLUNTARY' },
-          ConsistentRead: true,
-        }),
-      )
-    ).Item;
-    expect(Object.keys(item ?? {}).sort()).toEqual([
-      'ciphertext',
-      'createdAt',
-      'schemaVersion',
-      'sk',
-      'type',
-      'updatedAt',
-      'userId',
-      'version',
-    ]);
-    const raw = Buffer.from(item?.ciphertext as Uint8Array).toString('latin1');
-    expect(raw).not.toMatch(/non_binary|native_hawaiian|not_protected/);
+    // That only ciphertext is stored is unit-tested (repository + store): the CI role may not
+    // read `users`, by design (cicd-stack testDataStatement).
   });
 });
