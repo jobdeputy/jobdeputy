@@ -95,9 +95,9 @@ export function assembleResume(base: StructuredResume, parts: TailoredParts): St
   };
 }
 
-/** Numbers, not digits inside names such as K8s, EC2, S3, or Web3 ("2x" and "10k" count). */
-const NUMBER = /(?<![A-Za-z])\d+(?:[.,]\d+)*/g;
-const LINK =
+/** Numbers, not digits inside names such as K8s, EC2, S3, Web3, or p99 ("2x" and "10k" count). */
+const NUMBER = /(?<![A-Za-z0-9])\d+(?:[.,]\d+)*/g;
+export const LINK =
   /\b(?:https?:\/\/|www\.)\S+|\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+|\b[a-z0-9-]+\.(?:com|io|net|org|dev|ai|app|co|uk|in)\b/gi;
 
 /** The numbers a text writes, without thousands separators ("1,200" is "1200"). */
@@ -105,7 +105,7 @@ export const numbersIn = (text: string) =>
   new Set((text.match(NUMBER) ?? []).map((n) => n.replace(/,/g, '')));
 
 /** Every date and number the base résumé writes, contact excluded. */
-function baseText(base: StructuredResume): string {
+export function baseText(base: StructuredResume): string {
   const dates = [
     ...base.experience.flatMap((e) => [e.start, e.end]),
     ...base.education.flatMap((d) => [d.start, d.end]),

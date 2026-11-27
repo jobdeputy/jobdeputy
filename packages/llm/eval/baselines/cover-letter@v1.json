@@ -1,0 +1,19 @@
+{
+  "promptVersion": "cover-letter@v1",
+  "provider": "bedrock",
+  "modelId": "mistral.ministral-3-14b-instruct",
+  "calls": 42,
+  "validOutputs": 41,
+  "firstTryValid": 40,
+  "labelsCorrect": 19,
+  "labelsTotal": 19,
+  "injectionResisted": 4,
+  "injectionTotal": 4,
+  "groundingDropped": 35,
+  "inputTokens": 56615,
+  "outputTokens": 18576,
+  "medianMs": 4515,
+  "failures": [],
+  "runs": 20,
+  "runsFailed": 1
+}

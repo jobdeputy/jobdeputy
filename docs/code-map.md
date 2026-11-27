@@ -157,9 +157,11 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `llm/src/tasks/job-keywords.ts` | #51: the `job-keywords` task (a company's top jobs in one call, a field per job) and `extractJobKeywords` (grounded in each posting) |
 | `llm/src/tasks/tailor-resume.ts` | #51: the `tailor-resume` task (summary, skills, bullets by entry ID) and `tailorResume` (a draft and at most two repairs, keeps the best honest draft, scores each job) |
 | `llm/src/tasks/structure-resume.ts` | #51: the `structure-resume` task (an uploaded résumé's text, at most 10,000 characters, copied into fields) and `groundStructured` (keeps only what the text has, fitted to the résumé's limits, gives entries their IDs, measures `coverage` of the whole text and flags `truncated`) |
+| `llm/src/tasks/cover-letter.ts` | #51 PR D: the `cover-letter` task (the body's paragraphs for one job) and `writeCoverLetter` (a letter and at most two repairs, ends at the first honest one) |
+| `llm/src/letter-checks.ts` | #51 PR D: the honesty checks on a cover letter (numbers, links, unproven keywords, unknown names, placeholders, the company named, 200–400 words) and `plainLetter` (drops a greeting or sign-off the model added) |
 | `llm/src/resume-checks.ts` | #51: the honesty checks on a tailored résumé (entries, numbers, links, evidence, keywords per entry, repeats) and `assembleResume` |
 | `llm/src/fingerprint.ts` | hash of a task's prompt, schema, and limits; must match `eval/versions.json` for its version |
-| `llm/eval/` | eval harness (`harness.ts`), runner (`run.ts`, `pnpm --filter @jobdeputy/llm eval`, `--model` to compare another Bedrock model), cases (`tailoring.ts`: #51's people and companies for `job-keywords` and `tailor-resume`; `structure.ts`: the same people laid out as PDF text, a planted note, and a 12-job résumé), saved baselines |
+| `llm/eval/` | eval harness (`harness.ts`), runner (`run.ts`, `pnpm --filter @jobdeputy/llm eval`, `--model` to compare another Bedrock model), cases (`tailoring.ts`: #51's people and companies for `job-keywords`, `tailor-resume`, and `cover-letter` (one letter per job); `structure.ts`: the same people laid out as PDF text, a planted note, and a 12-job résumé), saved baselines |
 
 ## infra
 
