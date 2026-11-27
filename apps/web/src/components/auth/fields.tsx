@@ -1,4 +1,5 @@
 import { type ComponentProps, useId, useState } from 'react';
+import { ChevronDownIcon } from '@/components/icons.tsx';
 import { copy } from '@/copy/index.ts';
 import { cn } from '@/lib/utils.ts';
 
@@ -137,5 +138,135 @@ export function TextAreaField({
         />
       )}
     </FieldFrame>
+  );
+}
+
+/**
+ * A choice from a list (#53), as `Field` is: its label, the box (drawn by us: every browser the
+ * same box, with our chevron), then its hint or its error, tied to it. The first option is
+ * usually "Not answered" (value ''). `readOnly` (while saving) keeps the choice as it is.
+ */
+export function SelectField({
+  label,
+  hint,
+  error,
+  className,
+  options,
+  readOnly,
+  onChange,
+  ...select
+}: Omit<ComponentProps<'select'>, 'children'> & {
+  label: string;
+  hint?: string;
+  error?: string | null;
+  options: readonly { value: string; label: string }[];
+  readOnly?: boolean;
+}) {
+  return (
+    <FieldFrame label={label} hint={hint} error={error} className={className}>
+      {(tie) => (
+        <span className="relative grid">
+          <select
+            {...tie}
+            aria-readonly={readOnly || undefined}
+            onChange={readOnly ? undefined : onChange}
+            className={cn(
+              BOX,
+              'cursor-pointer appearance-none pe-[44px]',
+              readOnly && 'opacity-60',
+            )}
+            {...select}
+          >
+            {options.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <ChevronDownIcon className="pointer-events-none absolute end-[15px] top-1/2 size-4 -translate-y-1/2 text-ink-soft" />
+        </span>
+      )}
+    </FieldFrame>
+  );
+}
+
+/**
+ * Several choices that may all be picked (#53: work setups), as a group: its legend, a checkbox
+ * per choice (44px rows), then its hint or its error. `value` is the picked values joined by
+ * commas, and `onChange` gets them the same way, so a form keeps it as one field.
+ */
+export function ChoicesField({
+  label,
+  hint,
+  error,
+  className,
+  options,
+  value,
+  name,
+  readOnly,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  error?: string | null;
+  className?: string;
+  options: readonly { value: string; label: string }[];
+  value: string;
+  name: string;
+  readOnly?: boolean;
+  onChange: (event: { target: { value: string } }) => void;
+}) {
+  const id = useId();
+  const picked = new Set(value.split(',').filter(Boolean));
+  const described = [hint && !error && `${id}-hint`, error && `${id}-error`]
+    .filter(Boolean)
+    .join(' ');
+  return (
+    <fieldset
+      className={cn('m-0 grid min-w-0 gap-1.5 border-0 p-0', className)}
+      aria-describedby={described || undefined}
+    >
+      <legend className="mb-1.5 p-0 text-[0.8125rem] font-[680] tracking-[0.01em]">{label}</legend>
+      <div className="flex flex-wrap gap-x-[21px] gap-y-1">
+        {options.map((option) => (
+          <label
+            key={option.value}
+            className="inline-flex min-h-11 cursor-pointer items-center gap-2.5 text-[0.9375rem]"
+          >
+            <input
+              type="checkbox"
+              name={name}
+              value={option.value}
+              checked={picked.has(option.value)}
+              aria-readonly={readOnly || undefined}
+              onChange={(event) => {
+                if (readOnly) return;
+                const next = new Set(picked);
+                if (event.target.checked) next.add(option.value);
+                else next.delete(option.value);
+                // In the options' order, so the same choices always read the same.
+                const joined = options
+                  .map((o) => o.value)
+                  .filter((v) => next.has(v))
+                  .join(',');
+                onChange({ target: { value: joined } });
+              }}
+              className="size-[18px] cursor-pointer accent-green"
+            />
+            {option.label}
+          </label>
+        ))}
+      </div>
+      {hint && !error && (
+        <p id={`${id}-hint`} className="m-0 text-[0.8125rem] text-muted-foreground">
+          {hint}
+        </p>
+      )}
+      {error && (
+        <p id={`${id}-error`} className="m-0 text-[0.8125rem] font-[650] text-danger-ink">
+          {error}
+        </p>
+      )}
+    </fieldset>
   );
 }

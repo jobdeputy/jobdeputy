@@ -10,8 +10,26 @@ import { LIVE_REGION_BEAT_MS } from '@/lib/live-region.ts';
 import { useDelayedPending } from '@/lib/use-delayed-pending.ts';
 import { cn } from '@/lib/utils.ts';
 
-/** What a save may carry: the API's schema is strict and refuses anything else it is sent. */
-const INPUT_KEYS: readonly string[] = profileInput.keyof().options;
+/**
+ * What a form saves: one saved item, read and replaced whole (`GET` and `PUT` on its path), and
+ * the API's schema for it, which is strict and refuses anything else it is sent. The profile by
+ * default; #53's application answers and voluntary answers too.
+ */
+export type Resource = {
+  path: `/${string}`;
+  queryKey: readonly unknown[];
+  schema: { safeParse: (body: unknown) => { success: boolean; error?: { issues: Issue[] } } };
+  /** The keys a save may carry. */
+  inputKeys: readonly string[];
+};
+type Issue = { path: PropertyKey[]; code: string; origin?: string; maximum?: unknown };
+
+export const PROFILE_RESOURCE: Resource = {
+  path: '/me/profile',
+  queryKey: ['profile'],
+  schema: profileInput as unknown as Resource['schema'],
+  inputKeys: profileInput.keyof().options,
+};
 
 /** How long words stay in the status line after being said (they are read when they arrive). */
 const SPOKEN_FOR_MS = 5000;
@@ -48,6 +66,8 @@ export type FormSpec<N extends string> = {
   /** Said when the save was refused as out of date, or this form's fields changed elsewhere. */
   savedMeanwhile: string;
   changedElsewhere: string;
+  /** What the form saves: the profile unless given. */
+  resource?: Resource;
 };
 
 type Values<N extends string> = Record<N, string>;
@@ -74,6 +94,7 @@ export function useProfileForm<N extends string>({
 }) {
   const api = useApi();
   const queries = useQueryClient();
+  const resource = spec.resource ?? PROFILE_RESOURCE;
   const names = Object.keys(spec.fields) as N[];
   const form = useRef<HTMLFormElement>(null);
   const [values, setValues] = useState<Values<N>>(() => valuesOf(spec, profile));
@@ -114,7 +135,11 @@ export function useProfileForm<N extends string>({
     // Locked while saving, so a reload can't overwrite anything typed meanwhile (the form dims
     // its inputs at once, so the lock shows).
     readOnly: pending,
-    onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    onChange: (
+      event:
+        | ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+        | { target: { value: string } },
+    ) => {
       setValues((current) => ({ ...current, [name]: event.target.value }));
       // A field's reason, about to be said or just said, no longer applies once a field changes;
       // the note about a saved field this form doesn't show still does, so it is still said, on
@@ -194,8 +219,8 @@ export function useProfileForm<N extends string>({
   /** Reads the saved profile again; shows it here and returns it (null if it can't be read). */
   async function reload(): Promise<Profile | null> {
     try {
-      const fresh = await api.request<Profile>('GET', '/me/profile');
-      if (here.current) queries.setQueryData(['profile'], fresh);
+      const fresh = await api.request<Profile>('GET', resource.path);
+      if (here.current) queries.setQueryData(resource.queryKey, fresh);
       return fresh;
     } catch {
       return null;
@@ -247,9 +272,9 @@ export function useProfileForm<N extends string>({
     }
     setPending(true);
     try {
-      const next = await api.request<Profile>('PUT', '/me/profile', body);
+      const next = await api.request<Profile>('PUT', resource.path, body);
       if (!here.current) return;
-      queries.setQueryData(['profile'], next);
+      queries.setQueryData(resource.queryKey, next);
       onSaved(next);
     } catch (error) {
       if (!here.current) return;
@@ -370,8 +395,9 @@ function bodyOf<N extends string>(
   profile: Profile,
   answers: Values<N>,
 ): SaveBody {
+  const keys = (spec.resource ?? PROFILE_RESOURCE).inputKeys;
   const saved = Object.fromEntries(
-    Object.entries(profile).filter(([key]) => INPUT_KEYS.includes(key) && key !== 'version'),
+    Object.entries(profile).filter(([key]) => keys.includes(key) && key !== 'version'),
   );
   // A copy: `apply` changes nested objects (location, links) in place.
   const body: SaveBody = { ...structuredClone(saved), version: profile.version };
@@ -403,11 +429,11 @@ function check<N extends string>(
   body: unknown,
   answers: Values<N>,
 ): { fields: Errors<N>; other: boolean } {
-  const result = profileInput.safeParse(body);
+  const result = (spec.resource ?? PROFILE_RESOURCE).schema.safeParse(body);
   const fields: Errors<N> = {};
   let other = false;
   if (result.success) return { fields, other };
-  for (const issue of result.error.issues) {
+  for (const issue of result.error?.issues ?? []) {
     const name = fieldOf(spec, issue.path.join('.'));
     if (!name) {
       other = true;
@@ -419,7 +445,7 @@ function check<N extends string>(
     fields[name] =
       issue.code === 'too_big' && issue.origin === 'array' && field.tooMany
         ? fill(field.tooMany, { max })
-        : issue.code === 'too_big'
+        : issue.code === 'too_big' && issue.origin === 'string'
           ? fill(copy.setUp.errors.tooLong, { max })
           : field.missing && (issue.code === 'too_small' || answers[name] === '')
             ? field.missing

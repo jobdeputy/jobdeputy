@@ -1023,6 +1023,137 @@ export const en = {
           'Your roles changed somewhere else. They show here now: check them, then save.',
       },
     },
+    /** #53: the answers application forms ask for, and the voluntary self-identification. */
+    answers: {
+      title: 'Application answers',
+      line: 'What forms ask every time. Your deputy fills these in; anything you leave blank is left for you.',
+      /** A yes/no or list answer with nothing chosen (its first option). */
+      notAnswered: 'Not answered',
+      loading: 'Loading your answers',
+      loadFailed: 'Your answers couldn’t load.',
+      retry: 'Try again',
+      yes: 'Yes',
+      no: 'No',
+      /** Below the section: what is never filled in for the person. */
+      neverGuessed:
+        'Your deputy never answers these for you: legal statements and signatures, consent to background checks, criminal history, whether you worked somewhere before, and questions that need your own words.',
+      work: {
+        title: 'Work authorization',
+        authorized: 'Can you legally work in the United States?',
+        sponsorship: 'Will you need visa sponsorship, now or in the future?',
+        /** The same questions, short, beside the saved answers. */
+        authorizedFact: 'Allowed to work in the US',
+        sponsorshipFact: 'Needs visa sponsorship',
+      },
+      availability: {
+        title: 'Availability',
+        notice: 'Notice period, in days',
+        noticeFact: 'Notice period',
+        noticeHint: '0 if you can start right away.',
+        start: 'Earliest start date',
+        /** As the facts show a notice period. */
+        days: '{days} days',
+        oneDay: '1 day',
+      },
+      pay: {
+        title: 'Pay',
+        min: 'Expected pay, from (USD)',
+        max: 'Up to (USD)',
+        maxHint: 'Optional.',
+        period: 'Per',
+        periods: { year: 'Year', hour: 'Hour' } as Record<string, string>,
+        /** The facts' line for the range: "$150,000–$180,000 a year". */
+        expected: 'Expected pay',
+        range: '{from}–{to} a {period}',
+        from: '{from} a {period}',
+        /** Why current pay is not asked. */
+        note: 'Your current pay is never stored. Many US states ban asking for it.',
+      },
+      setup: {
+        title: 'Work setup',
+        setups: 'Open to',
+        setupNames: { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' } as Record<
+          string,
+          string
+        >,
+        relocate: 'Willing to relocate?',
+        relocateFact: 'Willing to relocate',
+      },
+      other: {
+        title: 'Other questions',
+        over18: 'Are you 18 or older?',
+        over18Fact: '18 or older',
+        clearance: 'Security clearance',
+        clearances: {
+          none: 'None',
+          public_trust: 'Public Trust',
+          confidential: 'Confidential',
+          secret: 'Secret',
+          top_secret: 'Top Secret',
+          ts_sci: 'TS/SCI',
+        } as Record<string, string>,
+        pronouns: 'Pronouns',
+        pronounsHint: 'Optional, for example she/her.',
+        heard: 'How did you hear about us?',
+        heardFact: 'How you heard about the job',
+        heardHint: 'Your answer on every form that asks.',
+        heardNames: {
+          company_website: 'Company website',
+          job_board: 'Job board',
+          linkedin: 'LinkedIn',
+          referral: 'Referral',
+          recruiter: 'Recruiter',
+          social_media: 'Social media',
+          other: 'Other',
+        } as Record<string, string>,
+      },
+      voluntary: {
+        title: 'Voluntary self-identification',
+        /** While every answer is declined. */
+        off: 'Not shared: forms get “I don’t wish to answer”.',
+        why: 'US employers ask these to report on equal opportunity. Answering is up to you, and it never changes how your deputy finds or scores jobs. Stored encrypted and never sent to AI.',
+        decline: 'I don’t wish to answer',
+        gender: 'Gender',
+        genders: { female: 'Female', male: 'Male', non_binary: 'Non-binary' } as Record<
+          string,
+          string
+        >,
+        hispanicLatino: 'Are you Hispanic or Latino?',
+        hispanicLatinoFact: 'Hispanic or Latino',
+        race: 'Race',
+        races: {
+          american_indian_alaska_native: 'American Indian or Alaska Native',
+          asian: 'Asian',
+          black_african_american: 'Black or African American',
+          native_hawaiian_pacific_islander: 'Native Hawaiian or Other Pacific Islander',
+          white: 'White',
+          two_or_more: 'Two or more races',
+        } as Record<string, string>,
+        veteran: 'Veteran status',
+        veterans: {
+          protected: 'I am a protected veteran',
+          not_protected: 'I am not a protected veteran',
+        } as Record<string, string>,
+        disability: 'Disability',
+        disabilities: {
+          yes: 'Yes, I have a disability (or had one)',
+          no: 'No, I don’t have a disability',
+        } as Record<string, string>,
+      },
+      errors: {
+        bothWork: 'Answer both questions, or neither.',
+        noticeInvalid: 'Use whole days, from 0 to 365.',
+        startInvalid: 'Use a real date.',
+        minInvalid: 'Use a whole number of dollars.',
+        minMissing: 'Enter where the range starts, or clear it.',
+        maxInvalid: 'Use a whole number, at least where the range starts.',
+        pronounsInvalid: 'Use up to 40 characters.',
+        choiceInvalid: 'Choose one of the answers.',
+        savedMeanwhile: 'Other answers were saved meanwhile. Press Save to save this too.',
+        changedElsewhere:
+          'Your answers changed somewhere else. They show here now: check them, then save.',
+      },
+    },
     /** Country codes as shown (the US-only launch). */
     countries: { US: 'United States' } as Record<string, string>,
   },

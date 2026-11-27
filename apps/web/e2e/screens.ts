@@ -183,6 +183,14 @@ export const SCREENS: Screen[] = [
     still: true,
     steps: toProfileRoles,
   },
+  // #53: Application answers, work authorization saved, the voluntary questions' form open.
+  {
+    name: 'profile-answers',
+    path: '/',
+    open: 'Get started free',
+    still: true,
+    steps: toProfileAnswers,
+  },
   // The Résumés page (#33) with the set-up's résumé, ready and the default; then its Delete question.
   { name: 'resumes', path: '/', open: 'Get started free', still: true, steps: toResumes },
   {
@@ -412,6 +420,17 @@ async function toProfileRoles(page: Page) {
   await page.getByRole('button', { name: 'Edit Target roles' }).click();
   await page.getByLabel('Job title').fill('Data engineer');
   await page.getByRole('button', { name: 'Add', exact: true }).click();
+}
+
+async function toProfileAnswers(page: Page) {
+  await toSignedIn(page);
+  await page.getByRole('button', { name: 'Edit Work authorization' }).click();
+  await page.getByLabel('Can you legally work in the United States?').selectOption('yes');
+  await page.getByLabel('Will you need visa sponsorship, now or in the future?').selectOption('no');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByText('Work authorization saved.').waitFor();
+  await page.getByRole('button', { name: 'Edit Voluntary self-identification' }).click();
+  await page.getByLabel('Race').waitFor();
 }
 
 async function toProfileEdit(page: Page) {

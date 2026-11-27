@@ -72,6 +72,17 @@ export function DocumentIcon({ className = 'size-5' }: { className?: string }) {
   );
 }
 
+/** A clipboard with a tick: the Profile page's Application answers (#53). */
+export function ClipboardIcon({ className = 'size-5' }: { className?: string }) {
+  return (
+    <LineIcon className={className}>
+      <path d="M9 4.5H7.5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-12a2 2 0 0 0-2-2H15" />
+      <rect x="9" y="3" width="6" height="3" rx="1" />
+      <path d="m9 13 2 2 4-4" />
+    </LineIcon>
+  );
+}
+
 /** A briefcase: the Job matches page, in the sidebar (the round 7 prototype's nav icon). */
 export function BriefcaseIcon({ className = 'size-5' }: { className?: string }) {
   return (
