@@ -195,7 +195,7 @@ const HEAD_CLASS =
  * in forced colours); stacked, a grid with a line between rows. Relative, for a stretched button.
  */
 const ROW_CLASS =
-  'group/row relative data-open:forced-colors:outline-2 data-open:forced-colors:-outline-offset-2 data-open:forced-colors:outline-solid @max-[694px]:grid @max-[694px]:gap-y-1 @max-[694px]:p-[13px] @max-[694px]:not-first:border-t @max-[694px]:not-first:border-line @max-[694px]:hover:bg-surface-strong @max-[694px]:data-open:bg-green-wash @max-[694px]:data-open:shadow-[inset_3px_0_0_var(--color-green)]';
+  'group/row relative [&[data-open]_.text-muted-foreground]:text-ink-soft data-open:forced-colors:outline-2 data-open:forced-colors:-outline-offset-2 data-open:forced-colors:outline-solid @max-[694px]:grid @max-[694px]:gap-y-1 @max-[694px]:p-[13px] @max-[694px]:not-first:border-t @max-[694px]:not-first:border-line @max-[694px]:hover:bg-surface-strong @max-[694px]:data-open:bg-green-wash @max-[694px]:data-open:shadow-[inset_3px_0_0_var(--color-green)]';
 
 const CELL_CLASS =
   'h-[52px] border-t border-line p-[13px] align-middle transition-colors duration-180 group-hover/row:bg-surface-strong group-data-open/row:bg-green-wash group-data-open/row:first:shadow-[inset_3px_0_0_var(--color-green)] @max-[694px]:h-auto @max-[694px]:border-t-0 @max-[694px]:px-0 @max-[694px]:py-1 @max-[694px]:group-hover/row:bg-transparent @max-[694px]:group-data-open/row:bg-transparent @max-[694px]:group-data-open/row:first:shadow-none';

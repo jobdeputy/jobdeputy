@@ -316,13 +316,14 @@ function ScoreBox({ base, tailored }: { base: number | null; tailored: number | 
             : 'border-orange-soft bg-paper',
       )}
     >
-      <p className="m-0 text-xs font-[750] tracking-[0.12em] text-muted-foreground uppercase">
+      {/* Ink-soft, not muted: muted text is below 4.5:1 on the green wash. */}
+      <p className="m-0 text-xs font-[750] tracking-[0.12em] text-ink-soft uppercase">
         {text.scoreLabel}
       </p>
       <p className="m-0 font-display text-[2rem] leading-none font-medium tracking-[-0.03em]">
         {tailored === null ? text.scoreNone : fill(text.score, { score: String(tailored) })}
       </p>
-      <p className="m-0 text-sm text-muted-foreground">
+      <p className="m-0 text-sm text-ink-soft">
         {base === null ? text.baseNone : fill(text.base, { score: String(base) })}
       </p>
       {/* Nothing to measure: neither ready nor short of it. */}

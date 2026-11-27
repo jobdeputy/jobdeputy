@@ -139,7 +139,7 @@ describe('tailoring in the job pane (#51 PR C)', () => {
     expect(section.getByText(/Below 80%\. You can still apply\./)).toBeTruthy();
     expect(section.getByText('GraphQL')).toBeTruthy();
     // No profile saved yet: the skill can't be added, and the way there is given.
-    fireEvent.click(section.getByRole('button', { name: 'I have Kafka' }));
+    fireEvent.click(section.getByRole('button', { name: 'I have this: Kafka' }));
     expect(
       await section.findByText('Save your profile first, then add skills to it.'),
     ).toBeTruthy();
@@ -147,11 +147,11 @@ describe('tailoring in the job pane (#51 PR C)', () => {
       '/profile',
     );
     await fake.request('PUT', '/me/profile', { version: 0, firstName: 'Sam', lastName: 'Example' });
-    fireEvent.click(section.getByRole('button', { name: 'I have Kafka' }));
+    fireEvent.click(section.getByRole('button', { name: 'I have this: Kafka' }));
     expect(
       await section.findByText('Kafka was added to your profile. Re-tailor to use it.'),
     ).toBeTruthy();
-    expect(section.queryByRole('button', { name: 'I have Kafka' })).toBeNull();
+    expect(section.queryByRole('button', { name: 'I have this: Kafka' })).toBeNull();
     expect(section.getByText('Added to your profile')).toBeTruthy();
     expect(section.queryByText('Save your profile first, then add skills to it.')).toBeNull();
     const profile = await fake.request<{ skills: string[] }>('GET', '/me/profile');
@@ -160,8 +160,8 @@ describe('tailoring in the job pane (#51 PR C)', () => {
     fireEvent.click(section.getByRole('button', { name: 'Re-tailor' }));
     section = within(screen.getByRole('region', { name: 'Your résumé for Acme' }));
     expect(await section.findByText('78%')).toBeTruthy();
-    expect(section.queryByRole('button', { name: 'I have Kafka' })).toBeNull();
-    expect(section.getByRole('button', { name: 'I have Terraform' })).toBeTruthy();
+    expect(section.queryByRole('button', { name: 'I have this: Kafka' })).toBeNull();
+    expect(section.getByRole('button', { name: 'I have this: Terraform' })).toBeTruthy();
   });
 
   it('downloads the PDF or DOCX from fresh links read on the click', async () => {
@@ -320,15 +320,17 @@ describe('tailoring in the job pane (#51 PR C)', () => {
     await fake.request('PUT', '/me/profile', { version: 0, firstName: 'Sam', lastName: 'Example' });
     let section = await openSection(PLATFORM);
     fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
-    fireEvent.click(await section.findByRole('button', { name: 'I have Kafka' }));
+    fireEvent.click(await section.findByRole('button', { name: 'I have this: Kafka' }));
     expect(
       await section.findByText('Kafka was added to your profile. Re-tailor to use it.'),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     section = await openSection(PLATFORM);
-    await waitFor(() => expect(section.queryByRole('button', { name: 'I have Kafka' })).toBeNull());
+    await waitFor(() =>
+      expect(section.queryByRole('button', { name: 'I have this: Kafka' })).toBeNull(),
+    );
     expect(section.getByText('Added to your profile')).toBeTruthy();
-    expect(section.getByRole('button', { name: 'I have Terraform' })).toBeTruthy();
+    expect(section.getByRole('button', { name: 'I have this: Terraform' })).toBeTruthy();
   });
 
   it('says a job tailored with no keyword to count has nothing to score, in the table and the pane', async () => {
@@ -396,7 +398,7 @@ describe('tailoring in the job pane (#51 PR C)', () => {
     await waitFor(() =>
       expect(status()?.textContent).toBe('Your résumé for Acme is ready: 72% match for this job.'),
     );
-    fireEvent.click(section.getByRole('button', { name: 'I have Kafka' }));
+    fireEvent.click(section.getByRole('button', { name: 'I have this: Kafka' }));
     await section.findByText('Kafka was added to your profile. Re-tailor to use it.');
     fireEvent.click(section.getByRole('button', { name: 'Re-tailor' }));
     await section.findByText('Tailoring your résumé for Acme…');

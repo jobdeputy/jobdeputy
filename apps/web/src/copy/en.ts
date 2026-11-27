@@ -507,7 +507,8 @@ export const en = {
       missingUnproven: 'Not in your résumé',
       missingUnprovenLine: 'Only add a skill you really have. It’s saved to your profile.',
       have: 'I have this',
-      haveName: 'I have {skill}',
+      /** The button's name: its visible words first (WCAG label in name), then the skill. */
+      haveName: 'I have this: {skill}',
       adding: 'Adding…',
       addedShort: 'Added to your profile',
       added: '{skill} was added to your profile. Re-tailor to use it.',
