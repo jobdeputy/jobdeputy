@@ -159,7 +159,9 @@ export function MatchesList({
     noticeLine.current?.focus();
   }, [notice]);
   // What had the focus in the list: if a list read again leaves it out, the heading takes it
-  // (unless a job that left is about to say so: that line takes it).
+  // (unless a job that left is about to say so: that line takes it). Only focus in the table:
+  // focus in the pane is `close`'s to place, after the pane goes (a read landing in between
+  // must not move it to the heading first).
   const lastFocused = useRef<HTMLElement | null>(null);
   useEffect(() => {
     if (!rows || left) return;
@@ -259,7 +261,7 @@ export function MatchesList({
       aria-labelledby="matches-list-title"
       className="grid gap-5"
       onFocus={(event) => {
-        lastFocused.current = event.target;
+        lastFocused.current = tablePart.current?.contains(event.target) ? event.target : null;
       }}
     >
       {[...watching].map((companyKey) => (
