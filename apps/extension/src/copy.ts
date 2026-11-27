@@ -1,4 +1,8 @@
-/** The extension's words (as the web app's live in its copy/en.ts). */
+import { fill } from '@jobdeputy/shared/text';
+
+export { fill };
+
+/** The extension's words (decision 0020; the web app's live in its copy/en.ts). */
 export const copy = {
   popup: {
     title: 'JobDeputy',
@@ -7,7 +11,3 @@ export const copy = {
     version: 'Version {version}',
   },
 };
-
-export function fill(template: string, values: Record<string, string>): string {
-  return template.replace(/\{(\w+)\}/g, (match, key: string) => values[key] ?? match);
-}

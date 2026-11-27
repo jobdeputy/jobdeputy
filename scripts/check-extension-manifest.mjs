@@ -7,15 +7,18 @@ const built = JSON.parse(
 );
 const { manifest } = await import('../apps/extension/src/manifest.ts');
 const same = (a = [], b = []) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
-const keys = ['permissions', 'host_permissions', 'optional_host_permissions'];
+const keys = [
+  'permissions',
+  'host_permissions',
+  'optional_permissions',
+  'optional_host_permissions',
+];
 const wrong = keys.filter((key) => !same(built[key], manifest[key]));
-// Content scripts reach pages through their own match lists: they must stay within the hosts.
-const hosts = new Set([
-  ...(manifest.host_permissions ?? []),
-  ...(manifest.optional_host_permissions ?? []),
-]);
+// A static content script's matches are granted at install: they must be hosts granted at
+// install too. Content scripts for optional hosts are registered at runtime, once granted.
+const granted = new Set(manifest.host_permissions ?? []);
 const strays = (built.content_scripts ?? []).flatMap((script) =>
-  script.matches.filter((match) => !hosts.has(match)),
+  script.matches.filter((match) => !granted.has(match)),
 );
 if (wrong.length > 0 || strays.length > 0) {
   console.error('Built manifest differs from src/manifest.ts:', { wrong, strays });

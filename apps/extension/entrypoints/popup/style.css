@@ -2,10 +2,3 @@
    extension. Only these colours and fonts exist here too. */
 @import "tailwindcss";
 @import "../../../web/src/styles/tokens.css";
-
-body {
-  margin: 0;
-  background: var(--color-paper);
-  color: var(--color-ink);
-  font-family: var(--font-text);
-}

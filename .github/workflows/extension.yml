@@ -54,6 +54,10 @@ jobs:
         run: pnpm --filter @jobdeputy/extension build
       - name: The built manifest asks only for what src/manifest.ts lists
         run: node --experimental-strip-types scripts/check-extension-manifest.mjs
+      - name: Chromium for the browser tests
+        run: pnpm --filter @jobdeputy/extension exec playwright install --with-deps chromium
+      - name: Browser tests (the built extension in Chromium), with the popup's screenshot
+        run: pnpm --filter @jobdeputy/extension test:e2e
       - name: Zip
         run: pnpm --filter @jobdeputy/extension zip
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -61,3 +65,11 @@ jobs:
           name: extension-chrome
           path: apps/extension/.output/*-chrome.zip
           retention-days: 14
+      - name: Screenshots (the PR's proof for the extension's screens)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: extension-screenshots
+          path: apps/extension/screenshots/
+          retention-days: 14
+          if-no-files-found: ignore

@@ -18,9 +18,9 @@ The extension ([0014](0014-browser-extension-in-monorepo.md)) fills application 
 ## Decision
 
 - Sign-in as option 1. The access token is kept in session storage, the refresh token in local storage (30 days, as the web app), both cleared on sign-out.
-- **Least privilege:** the manifest (`apps/extension/src/manifest.ts`) asks only for what a shipped feature uses: `storage` and `identity` with sign-in, the API's origin, then `https://boards.greenhouse.io/*` and `https://job-boards.greenhouse.io/*` with the Greenhouse filler (Greenhouse forms embedded on company sites load from those hosts). Never `<all_urls>`, `tabs`, `history`, `cookies` or `webRequest`. Each later job site (Lever, then Ashby, then Workday) is an optional host permission, asked for when first needed. A unit test holds the lists; CI checks the built manifest against them.
+- **Least privilege:** the manifest (`apps/extension/src/manifest.ts`) asks only for what a shipped feature uses: `storage` and `identity` with sign-in, the API's origin, then `https://boards.greenhouse.io/*` and `https://job-boards.greenhouse.io/*` with the Greenhouse filler (Greenhouse forms embedded on company sites load from those hosts). Never `<all_urls>`, `tabs`, `history`, `cookies` or `webRequest`. Each later job site (Lever, then Ashby, then Workday) is an optional host permission, asked for when first needed. Optional permissions are held to the same rules. A static content script may match only hosts granted at install; scripts for optional hosts are registered at runtime once granted. A unit test holds the lists; CI checks the built manifest against them.
 - It reads only through the API with the user's own token. It never submits and never guesses (0019); it records an application only after the user confirms on the employer's confirmation page.
-- Built with WXT. A Chrome Web Store listing (unlisted first) needs a privacy policy page, added in #54 before the listing.
+- Built with WXT, styled with the web app's tokens and Tailwind; its words live in `apps/extension/src/copy.ts` (the web app's stay in `apps/web/src/copy/en.ts`), and both fill templates with the shared `fill`. A Chrome Web Store listing (unlisted first) needs a privacy policy page, added in #54 before the listing.
 
 ## Why
 

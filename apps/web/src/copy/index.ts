@@ -1,3 +1,4 @@
+import { fill } from '@jobdeputy/shared/text';
 import { type Copy, en } from './en.ts';
 
 export type { Copy };
@@ -16,16 +17,8 @@ export const copy: Copy = en;
  */
 export type OnePer<T, V> = { readonly [K in keyof T]: V };
 
-/**
- * Fills a copy template's `{name}` slots, such as `fill(copy.loading.progressMilestone, { label,
- * percent })`. Templates keep a whole sentence in one entry, so each language orders its own words.
- * A slot with no value stays as written, so a missing value shows up instead of vanishing.
- */
-export function fill(template: string, values: Record<string, string>): string {
-  // A Map, so a slot such as {constructor} cannot find a property every object inherits.
-  const byName = new Map(Object.entries(values));
-  return template.replace(/\{(\w+)\}/g, (slot, name: string) => byName.get(name) ?? slot);
-}
+// `fill` is shared with the extension (packages/shared/src/text.ts).
+export { fill };
 
 /**
  * The form of a counted phrase for `count`, by the copy's own language rules (one, few, many…),
