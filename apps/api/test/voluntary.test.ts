@@ -1,4 +1,5 @@
-import { DecryptCommand, EncryptCommand } from '@aws-sdk/client-kms';
+import { type DecryptCommand, EncryptCommand } from '@aws-sdk/client-kms';
+import { VersionConflictError } from '@jobdeputy/db';
 import { DECLINED_VOLUNTARY } from '@jobdeputy/shared';
 import { describe, expect, it, vi } from 'vitest';
 import { kmsVoluntaryStore } from '../src/voluntary.js';
@@ -77,6 +78,29 @@ describe('kmsVoluntaryStore (#53)', () => {
     await store.save('u1', answers, 0, audit);
     r.items.set('u2', r.items.get('u1') as never);
     await expect(store.get('u2')).rejects.toThrow('InvalidCiphertext');
+  });
+
+  it('reads an answer no longer in the schema as decline, keeping the version', async () => {
+    const kms = fakeKms();
+    const r = repo();
+    const store = kmsVoluntaryStore(r, kms as never, KEY);
+    await store.save('u1', answers, 0, audit);
+    const enc = kms.send.mock.calls[0]?.[0] as EncryptCommand;
+    const old = JSON.stringify({ ...answers, gender: 'retired_value', extra: 'x' });
+    r.items.set('u1', {
+      version: 1,
+      ciphertext: new TextEncoder().encode(`${JSON.stringify(enc.input.EncryptionContext)}|${old}`),
+    });
+    expect(await store.get('u1')).toEqual({ version: 1, ...answers, gender: 'decline' });
+  });
+
+  it('refuses a stale save before asking KMS', async () => {
+    const kms = fakeKms();
+    const store = kmsVoluntaryStore(repo(), kms as never, KEY);
+    await store.save('u1', answers, 0, audit);
+    kms.send.mockClear();
+    await expect(store.save('u1', answers, 0, audit)).rejects.toBeInstanceOf(VersionConflictError);
+    expect(kms.send).not.toHaveBeenCalled();
   });
 
   it('refuses to encrypt answers outside the schema', async () => {

@@ -1,5 +1,5 @@
 import { DecryptCommand, EncryptCommand, type KMSClient } from '@aws-sdk/client-kms';
-import type { AuditWrite, VoluntaryRepository } from '@jobdeputy/db';
+import { type AuditWrite, VersionConflictError, type VoluntaryRepository } from '@jobdeputy/db';
 import {
   DECLINED_VOLUNTARY,
   type VoluntaryAnswers,
@@ -46,10 +46,15 @@ export function kmsVoluntaryStore(
         }),
       );
       if (!res.Plaintext) throw new Error('KMS returned no plaintext');
-      const answers = voluntaryAnswers.parse(JSON.parse(new TextDecoder().decode(res.Plaintext)));
-      return { version: item.version, ...answers };
+      return {
+        version: item.version,
+        ...readable(JSON.parse(new TextDecoder().decode(res.Plaintext))),
+      };
     },
     async save(userId, answers, expectedVersion, audit) {
+      // A stale save is refused before KMS is asked (the write checks again).
+      const current = (await repo.get(userId))?.version ?? 0;
+      if (current !== expectedVersion) throw new VersionConflictError(current);
       const res = await kms.send(
         new EncryptCommand({
           KeyId: keyArn,
@@ -62,4 +67,22 @@ export function kmsVoluntaryStore(
       return { version: saved.version, ...answers };
     },
   };
+}
+
+/**
+ * Stored answers as today's schema allows: one no longer allowed (a value renamed or dropped
+ * since it was saved) reads as `decline`, so the user still gets a version to save over
+ * instead of an error.
+ */
+function readable(stored: unknown): VoluntaryAnswers {
+  const fields = (typeof stored === 'object' && stored !== null ? stored : {}) as Record<
+    string,
+    unknown
+  >;
+  const answers = { ...DECLINED_VOLUNTARY };
+  for (const key of Object.keys(answers) as (keyof VoluntaryAnswers)[]) {
+    const ok = voluntaryAnswers.shape[key].safeParse(fields[key]);
+    if (ok.success) (answers as Record<string, string>)[key] = ok.data;
+  }
+  return answers;
 }
