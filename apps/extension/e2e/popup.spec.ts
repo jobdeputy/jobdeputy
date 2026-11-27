@@ -3,7 +3,7 @@ import { withExtension } from './extension.ts';
 
 // #54: the toolbar popup as Chrome shows it, and its screenshot (the PR's proof, an artifact).
 test('the popup says what the extension is for', async () => {
-  const { context, id } = await withExtension();
+  const { context, id, close } = await withExtension();
   try {
     const page = await context.newPage();
     await page.setViewportSize({ width: 340, height: 200 });
@@ -12,6 +12,6 @@ test('the popup says what the extension is for', async () => {
     await expect(page.getByText(/You review and click Submit/)).toBeVisible();
     await page.screenshot({ path: 'screenshots/popup.png' });
   } finally {
-    await context.close();
+    await close();
   }
 });

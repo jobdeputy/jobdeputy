@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, realpathSync } from 'node:fs';
+import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,14 +14,27 @@ export function unpackedId(path: string): string {
   return [...hex].map((digit) => String.fromCharCode(97 + Number.parseInt(digit, 16))).join('');
 }
 
-/** Chromium with only this extension loaded, in a profile of its own. */
-export async function withExtension(): Promise<{ context: BrowserContext; id: string }> {
+/**
+ * Chromium with only this extension loaded, in a profile of its own; `close` ends it and deletes
+ * the profile. Tests the build in `.output` (`pnpm test:e2e` builds first; CI tests the build it
+ * zips).
+ */
+export async function withExtension(): Promise<{
+  context: BrowserContext;
+  id: string;
+  close: () => Promise<void>;
+}> {
   if (!existsSync(BUILT)) throw new Error(`No built extension at ${BUILT}: run \`pnpm build\``);
   const built = realpathSync(BUILT);
-  const context = await chromium.launchPersistentContext(mkdtempSync(join(tmpdir(), 'jd-ext-')), {
+  const profile = mkdtempSync(join(tmpdir(), 'jd-ext-'));
+  const context = await chromium.launchPersistentContext(profile, {
     channel: 'chromium',
     headless: true,
     args: [`--disable-extensions-except=${built}`, `--load-extension=${built}`],
   });
-  return { context, id: unpackedId(built) };
+  const close = async () => {
+    await context.close();
+    rmSync(profile, { recursive: true, force: true });
+  };
+  return { context, id: unpackedId(built), close };
 }

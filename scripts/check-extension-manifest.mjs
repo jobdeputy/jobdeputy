@@ -35,8 +35,11 @@ const KNOWN = new Set([
   ...keys,
 ]);
 const unknown = Object.keys(built).filter((key) => !KNOWN.has(key));
-const globs = (built.content_scripts ?? []).filter(
-  (script) => script.include_globs || script.exclude_globs || script.match_about_blank,
+// Each content script only says where (matches), what (js, css) and when (run_at): no globs,
+// frames beyond the top one, page world, or about:/blob: fallbacks until a decision allows them.
+const SCRIPT_KEYS = new Set(['matches', 'js', 'css', 'run_at']);
+const globs = (built.content_scripts ?? []).filter((script) =>
+  Object.keys(script).some((key) => !SCRIPT_KEYS.has(key)),
 );
 if (wrong.length > 0 || strays.length > 0 || unknown.length > 0 || globs.length > 0) {
   console.error('Built manifest differs from src/manifest.ts:', { wrong, strays, unknown, globs });

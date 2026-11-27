@@ -50,16 +50,15 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Build (Chrome, Manifest V3)
-        run: pnpm --filter @jobdeputy/extension build
+      # One build, checked, tested and zipped: `wxt zip` builds, then everything uses that build.
+      - name: Build and zip (Chrome, Manifest V3)
+        run: pnpm --filter @jobdeputy/extension zip
       - name: The built manifest asks only for what src/manifest.ts lists
         run: node --experimental-strip-types scripts/check-extension-manifest.mjs
       - name: Chromium for the browser tests
         run: pnpm --filter @jobdeputy/extension exec playwright install --with-deps chromium
       - name: Browser tests (the built extension in Chromium), with the popup's screenshot
-        run: pnpm --filter @jobdeputy/extension test:e2e
-      - name: Zip
-        run: pnpm --filter @jobdeputy/extension zip
+        run: pnpm --filter @jobdeputy/extension exec playwright test
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: extension-chrome
