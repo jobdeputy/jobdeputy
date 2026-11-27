@@ -120,7 +120,11 @@ describe('TailoringRepository.request', () => {
     const [doc, lock] = send.mock.calls[0]?.[0]?.input.TransactItems ?? [];
     expect(doc.Update.UpdateExpression).not.toContain('scores');
     expect(doc.Update.ExpressionAttributeNames).toEqual({ '#status': 'status' });
-    expect(lock.Update.Key).toEqual({ userId: USER, sk: 'LETTER#j9' });
+    // A job's letter lock is deleted, not kept (one per job would pile up).
+    expect(lock.Delete).toMatchObject({
+      Key: { userId: USER, sk: 'LETTER#j9' },
+      ConditionExpression: 'activeId = :id',
+    });
   });
 
   it('maps a full month to TailoringAllowanceError and a held lock to TailoringBusyError', async () => {

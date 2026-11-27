@@ -91,4 +91,25 @@ describe('stubTailoringSource', () => {
     );
     expect(letter.best?.paragraphs?.join(' ')).toContain('Built REST APIs in TypeScript.');
   });
+
+  it('writes a letter within 200–400 words even from a résumé with no bullets or skills', async () => {
+    const letter = await writeCoverLetter(
+      {
+        company: 'Example Test Co',
+        resume: {
+          contact: { name: 'Sam Example', links: [] },
+          skills: [],
+          experience: [{ id: 'e1', title: 'Engineer', employer: 'Example Logistics', bullets: [] }],
+          education: [],
+          certifications: [],
+          projects: [],
+        },
+        evidence: [],
+        job: { title: 'Backend Engineer', description: '', keywords: [] },
+      },
+      stubTailoringSource('stub-model'),
+    );
+    expect(letter.attempts.map((a) => a.issues)).toEqual([[]]);
+    expect(letter.status).toBe('ok');
+  });
 });

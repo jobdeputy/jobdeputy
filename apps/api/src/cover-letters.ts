@@ -83,6 +83,15 @@ async function request(
       requestId,
     });
   }
+  // The letter names the company: never by its key (a crawl that found no name).
+  const companyName = job.companyName?.trim() || undefined;
+  if (!companyName) {
+    return problem(422, 'No company name', {
+      detail: COVER_LETTER_ERRORS.no_company,
+      code: 'no_company',
+      requestId,
+    });
+  }
   const source = await sourceFor(
     userId,
     input.data.aiSource as AiSource | undefined,
@@ -115,16 +124,15 @@ async function request(
   );
   const perMonth = limits.platformTailoringsPerMonth;
   const documentId = deps.newId();
-  const company = job.companyName ?? job.companyKey;
   try {
     const doc = await deps.runs.request(
       {
         userId,
         documentId,
         kind: 'cover_letter',
-        title: `Cover letter for ${job.title} at ${company}`,
+        title: `Cover letter for ${job.title} at ${companyName}`,
         companyKey: job.companyKey,
-        ...(job.companyName ? { companyName: job.companyName } : {}),
+        companyName,
         jobIds: [jobId],
         baseDocumentId: base.documentId,
         ...(from ? { resumeDocumentId: from.documentId } : {}),
@@ -134,7 +142,7 @@ async function request(
       deps.audit(
         'cover_letter.requested',
         { type: 'document', id: documentId },
-        `Cover letter asked for ${job.title} at ${company}`,
+        `Cover letter asked for ${job.title} at ${companyName}`,
       ),
       { perMonth, staleMs: TAILORING_STALE_MS },
     );

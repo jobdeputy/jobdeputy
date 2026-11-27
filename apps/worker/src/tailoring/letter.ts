@@ -1,4 +1,4 @@
-import type { Document, LetterDraft } from '@jobdeputy/db';
+import { type Document, isHidden, type LetterDraft } from '@jobdeputy/db';
 import { coverLetterTask, promptVersion, writeCoverLetter } from '@jobdeputy/llm';
 import {
   COVER_LETTER_VERSIONS_KEPT,
@@ -69,7 +69,11 @@ export async function writeLetter(run: Run, deps: TailoringWorkerDeps): Promise<
   // A message back after the run went stale: it ends here, without another model call.
   if (isTailoringStale(doc.createdAt, deps.now())) return fail(run, deps, 'stopped');
 
-  const [job] = (await deps.jobs.getMany(userId, [jobId])).filter((j) => j.closedAt === undefined);
+  // Open and shown: a job hidden since the request (a later crawl's filter or company limit)
+  // gets no letter, as the API would refuse it now.
+  const [job] = (await deps.jobs.getMany(userId, [jobId])).filter(
+    (j) => j.closedAt === undefined && !isHidden(j),
+  );
 
   // A retry after the letter was kept: render exactly it, with no model call. One that no longer
   // reads cannot be kept again (a second letter is refused), so the run ends here.
@@ -79,10 +83,13 @@ export async function writeLetter(run: Run, deps: TailoringWorkerDeps): Promise<
   }
   if (run.calls >= TAILORING_MAX_CALLS) return fail(run, deps, 'stopped');
   if (!job) return fail(run, deps, 'no_jobs');
-  const companyName = doc.companyName ?? job.companyName;
+  // The letter names the company: never by its key (the API refuses a job without a name).
+  const companyName = doc.companyName?.trim() || job.companyName?.trim() || undefined;
+  if (!companyName) return fail(run, deps, 'no_company');
   // Within the letter's own limits before any call, so a kept letter always reads.
-  const company = cutAtWord(companyName ?? doc.companyKey, LETTER_NAME_CHARS);
-  const jobTitle = cutAtWord(job.title, LETTER_TITLE_CHARS);
+  const company = cutAtWord(companyName, LETTER_NAME_CHARS);
+  const jobTitle = cutAtWord(job.title.trim(), LETTER_TITLE_CHARS);
+  if (!coverLetter.shape.jobTitle.safeParse(jobTitle).success) return fail(run, deps, 'no_jobs');
 
   const model = await deps.model(userId, doc.aiSource);
   if (typeof model === 'string') return fail(run, deps, model);

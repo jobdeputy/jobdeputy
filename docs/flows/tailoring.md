@@ -162,7 +162,9 @@ sequenceDiagram
 - **Calls:** at most 5, as tailoring (structure 1, keywords 1, letter 3). Written from a tailored résumé, a letter usually makes 1 (the keywords were cached by the résumé run).
 - **Which résumé:** the company's newest **ready** tailored résumé made from today's default **as its file is now** (`tailoring.baseETag` equal to the upload's `eTag`: a re-upload keeps the document's ID), chosen when asked and checked again in the worker; otherwise the base. `from` (`tailored` or `base`) says which.
 - **The letter file:** the name and contact line from that résumé, "Dear Hiring Manager,", the body, "Sincerely,", the name (`letterBlocks`, shared with the preview). No date: the worker cannot know the user's day, and the DOCX can be edited. Copy gives the same text without the header (`letterText`).
-- **Failures** use tailoring's codes, worded for a letter (`COVER_LETTER_ERRORS`): a closed job is `no_jobs`; only dishonest drafts, `no_honest_draft`.
+- **Failures** use tailoring's codes, worded for a letter (`COVER_LETTER_ERRORS`): a closed or since-hidden job is `no_jobs`; only dishonest drafts, `no_honest_draft`; a job whose crawl found no company name, `no_company` (the API refuses it first: a letter never names a company by its key).
+- **The lock** `LETTER#<jobId>` is deleted when the run ends (one per job would pile up); a company's `TAILOR#` item stays, its run fields removed.
+- **Known cost:** a letter and its company's résumé run may start together on a new upload, before either has cached the structured copy; both then structure it (one extra call, the same result, each within its own 5). Rare, so not worth a wait between them.
 
 ## In the app (PR C)
 

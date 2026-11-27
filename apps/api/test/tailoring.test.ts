@@ -520,6 +520,26 @@ describe('cover letters (#51 PR D)', () => {
       expect(body(res)).toMatchObject({ code: 'no_jobs', detail: COVER_LETTER_ERRORS.no_jobs });
       expect(runs.request).not.toHaveBeenCalled();
     }
+    // A letter names the company: never by its key.
+    for (const companyName of [undefined, ' ']) {
+      const { deps, runs } = setup({
+        jobs: {
+          getSummaries: vi.fn(async () => [
+            {
+              ...summary(job(1)),
+              ...(companyName === undefined ? { companyName: '' } : { companyName }),
+            },
+          ]),
+        },
+      });
+      const res = await route(ask({ jobId: job(1) }), deps);
+      expect(res.statusCode).toBe(422);
+      expect(body(res)).toMatchObject({
+        code: 'no_company',
+        detail: COVER_LETTER_ERRORS.no_company,
+      });
+      expect(runs.request).not.toHaveBeenCalled();
+    }
     const noResume = setup({ documents: { list: vi.fn(async () => []) } });
     const res = await route(ask({ jobId: job(1) }), noResume.deps);
     expect(res.statusCode).toBe(422);

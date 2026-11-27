@@ -858,33 +858,30 @@ describe('tailoring worker: cover letters (#51 PR D)', () => {
     expect(finished(ctx.runs).outcome.error).toBe('stopped');
   });
 
-  it('never names a company by its key, and cuts a long one to fit the header', async () => {
-    const unnamed = setup(
-      { jobs: { getMany: vi.fn(async () => [unnamedJob()]) } },
-      nameless(letterDoc()),
-    );
-    expect(await processRecord(record({ userId: USER, documentId: LETTER }), unnamed.deps)).toBe(
-      'ready',
-    );
-    const [, , kept, companyName] = unnamed.runs.saveLetterDraft.mock.calls[0] as unknown as [
-      string,
-      string,
-      { company: string },
-      string | undefined,
-    ];
-    // The letter says the key (nothing better is known), but the item keeps no name.
-    expect(kept.company).toBe('schema:example-test-co');
-    expect(companyName).toBeUndefined();
+  it('never names a company by its key: no name, no letter (and no call)', async () => {
+    for (const over of [{}, { companyName: '  ' }]) {
+      const ctx = setup(
+        { jobs: { getMany: vi.fn(async () => [unnamedJob(over)]) } },
+        nameless(letterDoc()),
+      );
+      expect(await processRecord(record({ userId: USER, documentId: LETTER }), ctx.deps)).toBe(
+        'failed',
+      );
+      expect(ctx.deps.model).not.toHaveBeenCalled();
+      expect(finished(ctx.runs).outcome).toMatchObject({ error: 'no_company' });
+    }
+  });
 
-    const longKey = `schema:${'x'.repeat(290)}`;
+  it('cuts a long company name to fit the header, before any call', async () => {
+    const longName = `Example ${'Very Long '.repeat(30)}Company`;
     const prompts: string[] = [];
     const long = setup(
       {
         jobs: {
           // Keywords cached: the first call is the letter's.
           getMany: vi.fn(async () => [
-            unnamedJob({
-              companyKey: longKey,
+            job({
+              companyName: longName,
               keywords: {
                 descriptionHash: 'dh-1',
                 promptVersion: promptVersion(jobKeywordsTask),
@@ -901,7 +898,7 @@ describe('tailoring worker: cover letters (#51 PR D)', () => {
           }),
         ),
       },
-      nameless(letterDoc({ companyKey: longKey, resumeDocumentId: TAILORED })),
+      nameless(letterDoc({ resumeDocumentId: TAILORED })),
     );
     long.runs.get.mockResolvedValue(tailoredVersion());
     await long.deps.files.put(
@@ -912,7 +909,18 @@ describe('tailoring worker: cover letters (#51 PR D)', () => {
     await processRecord(record({ userId: USER, documentId: LETTER }), long.deps);
     const letterPrompt = prompts.find((p) => p.includes('Write the cover letter body')) ?? '';
     const company = /<data name="company">\n([\s\S]*?)\n<\/data>/.exec(letterPrompt)?.[1] ?? '';
-    expect(company.length).toBeGreaterThan(0);
+    expect(company.startsWith('Example Very Long')).toBe(true);
     expect(company.length).toBeLessThanOrEqual(200);
+  });
+
+  it('writes no letter for a job hidden since the request', async () => {
+    const ctx = setup(
+      { jobs: { getMany: vi.fn(async () => [job({ limitState: 'over_limit' })]) } },
+      letterDoc(),
+    );
+    expect(await processRecord(record({ userId: USER, documentId: LETTER }), ctx.deps)).toBe(
+      'failed',
+    );
+    expect(finished(ctx.runs).outcome).toMatchObject({ error: 'no_jobs' });
   });
 });

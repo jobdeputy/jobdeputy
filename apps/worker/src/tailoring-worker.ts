@@ -12,6 +12,7 @@ import {
   AiKeyRepository,
   DocumentRepository,
   documentClient,
+  isHidden,
   JobRepository,
   ProfileRepository,
   TailoringConflictError,
@@ -188,8 +189,9 @@ async function tailor(run: Run, deps: TailoringWorkerDeps): Promise<TailoringOut
   const base = usableBase(await deps.documents.get(userId, doc.baseDocumentId));
   if (!base) return fail(run, deps, 'no_resume');
   const order = new Map(doc.jobIds.map((id, i) => [id, i]));
+  // Open and shown: a job hidden since the request is left out, as the API would now.
   const jobs = (await deps.jobs.getMany(userId, doc.jobIds))
-    .filter((j) => j.closedAt === undefined)
+    .filter((j) => j.closedAt === undefined && !isHidden(j))
     .sort((a, b) => (order.get(a.jobId) ?? 0) - (order.get(b.jobId) ?? 0));
   if (jobs.length === 0) return fail(run, deps, 'no_jobs');
   const companyName = doc.companyName ?? jobs.find((j) => j.companyName)?.companyName;

@@ -191,12 +191,14 @@ describe('tailored résumés (deployed)', () => {
       resumeDocumentId: documentId,
     });
     const letterId = letterAsked.body.coverLetter.documentId as string;
+    // A second click while it runs waits for it (409); if the stub was already done, it starts
+    // another (202): both are right, so the test never depends on the run's speed.
     const letterAgain = await callApi(api, 'POST', 'me/cover-letters', token, {
       jobId,
       aiSource: 'stub',
     });
-    expect(letterAgain.status).toBe(409);
-    expect(letterAgain.body.code).toBe('cover_letter_busy');
+    expect([202, 409]).toContain(letterAgain.status);
+    if (letterAgain.status === 409) expect(letterAgain.body.code).toBe('cover_letter_busy');
     const letter = await waitFor(
       async () => {
         const res = await callApi(api, 'GET', `me/cover-letters/${letterId}`, token);
@@ -222,9 +224,9 @@ describe('tailored résumés (deployed)', () => {
 
     // Listed for its job only: never with the company's résumés or the uploads.
     const letters = await callApi(api, 'GET', `me/cover-letters?jobId=${jobId}`, token);
-    expect(letters.body.coverLetters.map((l: { documentId: string }) => l.documentId)).toEqual([
-      letterId,
-    ]);
+    const listed = letters.body.coverLetters.map((l: { documentId: string }) => l.documentId);
+    expect(listed).toContain(letterId);
+    expect(listed.length).toBe(letterAgain.status === 202 ? 2 : 1);
     const resumes = await callApi(
       api,
       'GET',

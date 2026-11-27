@@ -172,8 +172,12 @@ export class TailoringConflictError extends Error {
  * per job (`LETTER#<jobId>`), so a letter can run beside its company's résumé.
  */
 export function runLock(doc: Pick<GeneratedDocument, 'kind' | 'companyKey' | 'jobIds'>): string {
-  return doc.kind === 'cover_letter' ? `LETTER#${doc.jobIds[0]}` : `TAILOR#${doc.companyKey}`;
+  return doc.kind === 'cover_letter'
+    ? `${LETTER_LOCK}${doc.jobIds[0]}`
+    : `TAILOR#${doc.companyKey}`;
 }
+
+const LETTER_LOCK = 'LETTER#';
 const DOC_ITEM = 0;
 const MONTH_ITEM = 2;
 const LOCK_ITEM = 3;
@@ -525,15 +529,26 @@ export class TailoringRepository {
         },
         ...(freeLock
           ? [
-              {
-                Update: {
-                  TableName: this.tables.usage,
-                  Key: { userId, sk: input.lock },
-                  UpdateExpression: 'REMOVE activeId, activeSince SET updatedAt = :now',
-                  ConditionExpression: 'activeId = :id',
-                  ExpressionAttributeValues: { ':id': documentId, ':now': now },
-                },
-              },
+              // A job's letter lock is deleted (there is one per job a letter was asked for, so
+              // they would pile up); a company's lock item stays, its run fields removed.
+              input.lock.startsWith(LETTER_LOCK)
+                ? {
+                    Delete: {
+                      TableName: this.tables.usage,
+                      Key: { userId, sk: input.lock },
+                      ConditionExpression: 'activeId = :id',
+                      ExpressionAttributeValues: { ':id': documentId },
+                    },
+                  }
+                : {
+                    Update: {
+                      TableName: this.tables.usage,
+                      Key: { userId, sk: input.lock },
+                      UpdateExpression: 'REMOVE activeId, activeSince SET updatedAt = :now',
+                      ConditionExpression: 'activeId = :id',
+                      ExpressionAttributeValues: { ':id': documentId, ':now': now },
+                    },
+                  },
             ]
           : []),
         auditPut(input.audit, userId, at),

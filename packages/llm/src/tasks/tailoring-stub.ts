@@ -145,8 +145,9 @@ export function stubLetter(prompt: string): CoverLetterOutput {
   ];
   const words = (texts: string[]) => texts.join(' ').split(/\s+/).filter(Boolean).length;
   const close = `Thank you for reading my letter. I would be glad to talk about how I could help ${company} in this role.`;
+  // Filler until 230 words (within 200–400 whatever the résumé gave), each line at most twice.
   const filler: string[] = [];
-  for (const line of LETTER_FILLER) {
+  for (const line of [...LETTER_FILLER, ...LETTER_FILLER]) {
     if (words([...paragraphs, ...filler, close]) >= 230) break;
     filler.push(line);
   }
