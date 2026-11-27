@@ -48,8 +48,8 @@ Rules:
 - Write in the first person, plainly and specifically: why this role at this company, then the 2 or 3 things in the résumé most relevant to the job, with the résumé's own numbers, then a short close.
 - Name the company at least once. Never name a hiring manager or any other person.
 - Use the job's "use where true" keywords in their exact wording where the résumé supports them, the required ones first.
-- Never write a "never claim" keyword at all, not even as something to learn. Never invent employers, schools, titles, tools, achievements, or numbers. Use only numbers the résumé already has.
-- Name only employers, schools, titles, and tools that the résumé, the confirmed skills, or the job name.
+- Never write a "never claim" keyword at all, not even as something to learn. Never invent employers, schools, titles, tools, achievements, or numbers. Use only numbers the résumé already has, not the job description's.
+- Name only employers, schools, titles, and tools that the résumé or the confirmed skills name, plus the company and the job's title and keywords. Never name a tool or person only the description mentions.
 - Never add qualities, impact, or scale the résumé does not state (for example "expert", "scalable", "robust", "high-performance").
 - Say a confirmed skill only as a skill the person has: never invent where, when, or how they used it.
 - Say about the company only what the job's description says; never praise it with claims of your own.

@@ -129,7 +129,7 @@ const BOUNDARY = /[\n,;:|•()[\]]/;
  * unless it ends an abbreviation ("Sr. Software Engineer").
  */
 const SENTENCE_END = /\b([A-Za-z][\w.]*)\.(?=\s+[A-Z])/g;
-const ABBREVIATIONS = new Set(
+export const ABBREVIATIONS: ReadonlySet<string> = new Set(
   [
     'sr',
     'jr',

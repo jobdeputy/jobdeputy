@@ -4,6 +4,7 @@ import {
   checkLetter,
   claimable,
   companyName,
+  companyNames,
   LETTER_WORDS,
   type LetterContext,
   PUFFERY,
@@ -188,6 +189,64 @@ describe('checkLetter', () => {
     expect(kinds(letter)).toEqual([]);
   });
 
+  it('lets a company named like a domain be named', () => {
+    const ctx = { ...context, company: 'Booking.com' };
+    const letter = honest().map((p) => p.replaceAll('Example Payments', 'Booking.com'));
+    expect(kinds(letter, ctx)).toEqual([]);
+  });
+
+  it('reads résumé words after a line break, and names after an abbreviation', () => {
+    const ctx = { ...context, resume: { ...resume, summary: 'Built pipelines\nFlink and SQL.' } };
+    const letter = honest();
+    letter[1] = `${letter[1]} I run tools, e.g. Flink, and compare it vs. Pulsar and Kafka.`;
+    expect(checkLetter(ctx, letter).map((i) => i.message)).toEqual([
+      '"Kafka" is not shown to be true: remove every mention of it, even as something to learn',
+      '"Pulsar" is not in the résumé or the job: remove it',
+    ]);
+  });
+
+  it('refuses a person or tool only the description names', () => {
+    const ctx = {
+      ...context,
+      job: {
+        ...context.job,
+        description: `${context.job.description} Report to Jane Doe; we use Pulsar.`,
+      },
+    };
+    const letter = honest();
+    letter[1] = `${letter[1]} I look forward to meeting Jane Doe and using Pulsar.`;
+    expect(checkLetter(ctx, letter).map((i) => i.message)).toEqual([
+      '"Jane" is not in the résumé or the job: remove it',
+      '"Doe" is not in the résumé or the job: remove it',
+      '"Pulsar" is not in the résumé or the job: remove it',
+    ]);
+  });
+
+  it('names the company as a whole word, with or without "Company"', () => {
+    expect(companyNames('The Coca-Cola Company')).toEqual([
+      'The Coca-Cola Company',
+      'The Coca-Cola',
+    ]);
+    expect(companyNames('Bain & Company')).toEqual(['Bain & Company', 'Bain']);
+    const meta = { ...context, company: 'Meta' };
+    const letter = honest().map((p) => p.replaceAll('Example Payments', 'your metadata team'));
+    expect(kinds(letter, meta)).toEqual(['company-missing']);
+  });
+
+  it('reads a hype word with or without its hyphen, in the letter and the résumé', () => {
+    const stated = {
+      ...context,
+      resume: { ...resume, summary: 'Built a high performance engine.' },
+    };
+    const letter = honest();
+    letter[1] = `${letter[1]} I like high-performance work.`;
+    expect(kinds(letter, stated)).toEqual([]);
+    letter[1] = `${honest()[1]} I like world class work.`;
+    expect(checkLetter(context, letter).map((i) => i.message)).toEqual([
+      'remove "world class": the résumé does not say so',
+    ]);
+  });
+
   it('refuses links and emails, even the résumé’s own email (the header has it)', () => {
     const letter = honest();
     letter[3] = 'Reach me at sam@example.com or see www.example-recruit.io for more.';
@@ -282,6 +341,21 @@ describe('plainLetter', () => {
       'Body.',
       'Thank you for your time.',
     ]);
+  });
+
+  it('never cuts the opening words with a greeting', () => {
+    expect(
+      plainLetter(['Dear Hiring Manager\nI am excited to apply at Acme, because it fits.'], 'Sam'),
+    ).toEqual(['I am excited to apply at Acme, because it fits.']);
+    expect(plainLetter(['Hi-tech teams like Acme, need people.'], 'Sam')).toEqual([
+      'Hi-tech teams like Acme, need people.',
+    ]);
+    expect(
+      plainLetter(
+        ['Body.', 'Thank you.\nAll the best,\nSam Example, Senior Engineer'],
+        'Sam Example',
+      ),
+    ).toEqual(['Body.']);
   });
 
   it('keeps a short last paragraph that is not a sign-off', () => {

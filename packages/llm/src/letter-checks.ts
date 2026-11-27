@@ -1,4 +1,9 @@
-import { type JobKeyword, type StructuredResume, TermIndex } from '@jobdeputy/shared';
+import {
+  ABBREVIATIONS,
+  type JobKeyword,
+  type StructuredResume,
+  TermIndex,
+} from '@jobdeputy/shared';
 import { baseText, evidenceText, LINK, numbersIn, plainText } from './resume-checks.js';
 
 // #51 PR D (decision 0015): the honesty checks on a cover letter, in code. A letter may only
@@ -33,10 +38,36 @@ export interface LetterContext {
   job: { title: string; description: string; keywords: readonly JobKeyword[] };
 }
 
-/** A greeting at the start of the letter, alone or before its first sentence. */
-const GREETING = /^(?:dear|hello|hi|to whom it may concern)\b[^,.!?:\n]{0,60}[,:!]\s*/i;
-const CLOSINGS =
-  'sincerely|best wishes|best regards|kind regards|warm regards|regards|best|yours sincerely|yours truly|yours|thank you|thanks|respectfully';
+/**
+ * A greeting at the start of the letter (read before line breaks collapse): the greeting word as
+ * a word ("Hi-tech" is not one), a short address, then a comma, colon, "!", or line break.
+ */
+const GREETING =
+  /^\s*(?:dear|hello|hi|to whom it may concern)(?=[\s,:!])[^,:!.?\n]{0,40}(?:[,:!]|\n)\s*/i;
+const CLOSINGS = [
+  'sincerely',
+  'yours sincerely',
+  'yours truly',
+  'yours',
+  'best wishes',
+  'with best wishes',
+  'best regards',
+  'with best regards',
+  'kind regards',
+  'warm regards',
+  'warmest regards',
+  'regards',
+  'all the best',
+  'best',
+  'warmly',
+  'cheers',
+  'many thanks',
+  'with thanks',
+  'with gratitude',
+  'thank you',
+  'thanks',
+  'respectfully',
+].join('|');
 
 const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -46,13 +77,15 @@ const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  * what the reader will.
  */
 export function plainLetter(paragraphs: readonly string[], name: string): string[] {
-  const list = paragraphs.map(plainText).filter((p) => p !== '');
-  if (list[0] !== undefined) list[0] = list[0].replace(GREETING, '');
+  const raw = [...paragraphs];
+  if (raw[0] !== undefined) raw[0] = raw[0].replace(GREETING, '');
+  const list = raw.map(plainText).filter((p) => p !== '');
   const own = escaped(name.trim());
-  // A sign-off ("Best regards,", "Sincerely, Sam Example", or the name alone) after the last
-  // sentence; "Thank you for your time." is a sentence and stays.
+  // A sign-off ("Best regards,", "Sincerely, Sam Example, Senior Engineer", or the name alone)
+  // after the last sentence; "Thank you for your time." is a sentence and stays.
+  const signed = own ? `(?:\\s*${own}(?:,[^.!?]{0,60})?)?` : '';
   const signOff = new RegExp(
-    `(^|[.!?])\\s*(?:(?:${CLOSINGS})[,.!]?${own ? `(?:\\s*${own})?` : ''}${own ? `|${own}` : ''})\\.?\\s*$`,
+    `(^|[.!?])\\s*(?:(?:${CLOSINGS})[,.!]?${signed}${own ? `|${own}(?:,[^.!?]{0,60})?` : ''})\\.?\\s*$`,
     'i',
   );
   for (;;) {
@@ -66,19 +99,35 @@ export function plainLetter(paragraphs: readonly string[], name: string): string
   return list.filter((p) => p !== '');
 }
 
-/** Legal endings a company's stored name has but a letter leaves out ("Acme Inc." is "Acme"). */
-const LEGAL =
-  /[,\s]+(?:inc|llc|ltd|limited|corp|corporation|co|company|gmbh|plc|ag|sa|bv|pty)\.?$/i;
+/** Legal endings a company's stored name has but a letter leaves out ("Acme, Inc." is "Acme"). */
+const LEGAL = /[,\s]+(?:inc|llc|ltd|limited|corp|corporation|gmbh|plc|ag|sa|bv|pty)\.?$/i;
+/** "Company" and "Co." may be legal or part of the brand ("Bain & Company"): either form counts. */
+const COMPANY_WORD = /[,\s&]+(?:company|co)\.?$/i;
 
-/** The name a letter uses for the company. */
-export function companyName(company: string): string {
-  let name = company.trim();
-  for (let before = ''; before !== name; ) {
-    before = name;
-    name = name.replace(LEGAL, '').trim();
+const stripped = (name: string, ending: RegExp) => {
+  let now = name.trim();
+  for (let before = ''; before !== now; ) {
+    before = now;
+    now = now.replace(ending, '').trim();
   }
-  return name || company.trim();
+  return now;
+};
+
+/** The name a letter is asked to use for the company: without its legal ending. */
+export function companyName(company: string): string {
+  return stripped(company, LEGAL) || company.trim();
 }
+
+/** The forms of the company's name that count as naming it. */
+export function companyNames(company: string): string[] {
+  const name = companyName(company);
+  const short = stripped(name, COMPANY_WORD);
+  return [...new Set([company.trim(), name, ...(short ? [short] : [])])];
+}
+
+/** The text names `term` as a whole phrase ("Meta" is not in "metadata"). */
+const namesPhrase = (text: string, term: string) =>
+  new RegExp(`(?<![\\p{L}\\p{N}])${escaped(term)}(?![\\p{L}\\p{N}])`, 'iu').test(text);
 
 /**
  * The job's keywords a letter may not name without evidence: not its title or soft skills, and
@@ -188,7 +237,27 @@ export const PUFFERY = [
   'ninja',
   'guru',
 ] as const;
-const PUFF = new RegExp(`\\b(?:${PUFFERY.join('|')})\\b`, 'gi');
+const puffPattern = (word: string) => word.replace(/-/g, '[- ]?');
+const PUFF = new RegExp(`\\b(?:${PUFFERY.map(puffPattern).join('|')})\\b`, 'gi');
+
+/** Every string a résumé holds (names, places, entries), for the names check. */
+function strings(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap(strings);
+  if (value && typeof value === 'object') return Object.values(value).flatMap(strings);
+  return [];
+}
+
+/** Abbreviations a full stop ends inside a sentence ("e.g. Flink", "Acme Inc. Pulsar"). */
+const MID_SENTENCE = new Set([...ABBREVIATIONS, 'u.s', 'u.k', 'e.u', 'approx', 'incl']);
+
+/** The text before a word ends a sentence: "!", "?", or a full stop not ending an abbreviation. */
+function sentenceEnds(before: string): boolean {
+  if (/[!?]["”’)]?$/.test(before)) return true;
+  const stop = /([\p{L}][\p{L}.]*)\.["”’)]?$/u.exec(before);
+  if (!stop) return /\.["”’)]?$/.test(before);
+  return !MID_SENTENCE.has((stop[1] ?? '').toLowerCase());
+}
 
 const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
 
@@ -227,7 +296,7 @@ export function checkLetter(context: LetterContext, paragraphs: readonly string[
 
   // Links, emails, and domains: none but those the user wrote (the job may plant them); the
   // file's header has the contact details.
-  const allowed = `${original}\n${evidence.join('\n')}`.toLowerCase();
+  const allowed = `${original}\n${evidence.join('\n')}\n${company}`.toLowerCase();
   for (const link of text.match(LINK) ?? []) {
     if (!allowed.includes(link.toLowerCase()))
       add('link', `remove "${link}": no links or contact details`);
@@ -250,8 +319,10 @@ export function checkLetter(context: LetterContext, paragraphs: readonly string[
   // Names: a capitalised word (an employer, school, tool, or person) must come from the résumé,
   // the confirmed skills, the job, or the company; after a colon too. A sentence's first word
   // is capitalised anyway, so there only a name-shaped word is checked (NAME_SHAPED).
+  // Not the job's description: a person or tool it names is not the person's to claim (its
+  // grounded keywords are, and are checked above).
   const sources = new Set(
-    [JSON.stringify(resume), ...evidence, job.title, job.description, company]
+    [...strings(resume), ...evidence, job.title, company, ...job.keywords.map((k) => k.term)]
       .join('\n')
       .match(TOKEN)
       ?.map(tokenKey) ?? [],
@@ -263,7 +334,7 @@ export function checkLetter(context: LetterContext, paragraphs: readonly string[
     if (!/^\p{Lu}/u.test(token)) continue;
     const before = named.slice(0, match.index).trimEnd();
     const key = tokenKey(token);
-    const first = before === '' || /[.!?]["”’)]?$/.test(before);
+    const first = before === '' || sentenceEnds(before);
     if (first && !NAME_SHAPED.test(token)) continue;
     // Plurals fold: "API" is in a résumé that says "APIs", and "APIs" in one that says "API".
     const known = (k: string) =>
@@ -275,13 +346,13 @@ export function checkLetter(context: LetterContext, paragraphs: readonly string[
   // Qualities and scale: only those the résumé states.
   const stated = `${original}\n${evidence.join('\n')}`.toLowerCase();
   for (const match of text.match(PUFF) ?? []) {
-    if (!new RegExp(`\\b${match.toLowerCase()}\\b`).test(stated))
+    const word = match.toLowerCase().replace(/[- ]/g, '-');
+    if (!new RegExp(`\\b${puffPattern(word)}\\b`).test(stated))
       add('puffery', `remove "${match}": the résumé does not say so`);
   }
 
-  const name = companyName(company);
-  if (!letterIndex.has(name) && !text.toLowerCase().includes(name.toLowerCase()))
-    add('company-missing', `name the company, ${name}, at least once`);
+  if (!companyNames(company).some((name) => namesPhrase(text, name)))
+    add('company-missing', `name the company, ${companyName(company)}, at least once`);
   return issues;
 }
 
