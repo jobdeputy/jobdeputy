@@ -1,4 +1,5 @@
 import type { Task } from '../task.js';
+import { coverLetterTask } from './cover-letter.js';
 import { jobKeywordsTask } from './job-keywords.js';
 import { relevanceTask } from './relevance.js';
 import { smokeTask } from './smoke.js';
@@ -97,5 +98,37 @@ export const TASKS: TaskEntry[] = [
   }),
   entry(structureResumeTask, {
     text: 'Sample Person\nSample headline\nExperience\nSample title, Sample employer, 2020 – Present\n• Sample bullet.',
+  }),
+  entry(coverLetterTask, {
+    company: 'Sample company',
+    resume: {
+      contact: { name: 'Sample Person', headline: 'Sample headline', links: [] },
+      summary: 'Sample summary.',
+      skills: [{ group: 'Sample group', items: ['Sample skill'] }],
+      experience: [
+        {
+          id: 'e1',
+          employer: 'Sample employer',
+          title: 'Sample title',
+          start: '2020',
+          end: 'Present',
+          bullets: ['Sample bullet with Sample skill.'],
+        },
+      ],
+      education: [{ id: 'd1', school: 'Sample school', degree: 'Sample degree', details: [] }],
+      certifications: [],
+      projects: [],
+    },
+    evidence: ['Sample confirmed skill'],
+    job: {
+      title: 'Sample title',
+      description: 'Sample description with Sample skill.',
+      keywords: [
+        { term: 'Sample title', kind: 'title', required: true },
+        { term: 'Sample skill', kind: 'hard_skill', required: true },
+        { term: 'Sample missing skill', kind: 'hard_skill', required: false },
+      ],
+    },
+    repair: { draft: ['Sample draft.'], fixes: ['Sample fix.'] },
   }),
 ];

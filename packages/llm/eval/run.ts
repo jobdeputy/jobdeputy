@@ -11,6 +11,7 @@ import { tailoringCases } from './cases/tailoring.js';
 import {
   compare,
   type EvalReport,
+  evalCoverLetter,
   evalJobKeywords,
   evalRelevance,
   evalSmoke,
@@ -22,7 +23,7 @@ import {
 
 // Runs the eval against the real platform model (costs money; about $0.01 for every task with
 // 2 runs). Used by PRs that change a prompt, schema, or model, and by Nightly.
-//   pnpm --filter @jobdeputy/llm eval [--task smoke|relevance|job-keywords|tailor-resume|structure-resume|all]
+//   pnpm --filter @jobdeputy/llm eval [--task smoke|relevance|job-keywords|tailor-resume|structure-resume|cover-letter|all]
 //     [--runs 2] [--summary out.md] [--summary-text out.txt] [--update-baseline]
 //     [--model <Bedrock model ID>]
 // --model compares another Bedrock model with the platform model's baseline (decision 0015:
@@ -72,6 +73,7 @@ const suites: Record<string, () => Promise<EvalReport>> = {
   'job-keywords': () => evalJobKeywords(tailoringCases, source, runs),
   'tailor-resume': () => evalTailoring(tailoringCases, source, runs),
   'structure-resume': () => evalStructure(structureCases, source, runs),
+  'cover-letter': () => evalCoverLetter(tailoringCases, source, runs),
 };
 const chosen = values.task === 'all' ? Object.keys(suites) : [values.task as string];
 for (const name of chosen) if (!suites[name]) throw new Error(`unknown task: ${name}`);

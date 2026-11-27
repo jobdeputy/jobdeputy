@@ -1,7 +1,13 @@
 import { groundKeywords, structuredResume } from '@jobdeputy/shared';
 import { describe, expect, it } from 'vitest';
 import { tailoringCases } from '../eval/cases/tailoring.js';
-import { compare, evalJobKeywords, evalTailoring, summaryText } from '../eval/harness.js';
+import {
+  compare,
+  evalCoverLetter,
+  evalJobKeywords,
+  evalTailoring,
+  summaryText,
+} from '../eval/harness.js';
 import { stubSource } from '../src/stub-model.js';
 
 // The job-keywords and tailoring evals (#51), run with stub models; the real model runs only
@@ -44,6 +50,30 @@ const tailorStub = (plant = false) =>
         skills: [...base.skills, { group: 'Also', items: testCase.evidence }],
         experience: base.experience.map(({ id, bullets }) => ({ id, bullets })),
         projects: base.projects.map(({ id, bullets }) => ({ id, bullets })),
+      },
+    };
+  });
+
+/** 21 words, no numbers and no capitalised word inside a sentence. */
+const FILLER =
+  'I care about clear code, careful reviews, and steady delivery, and I enjoy working with people who do the same.';
+
+/** An honest letter from the case's résumé: its bullets, skills, and confirmed skills. */
+const letterStub = (plant = false) =>
+  stubSource((_, messages) => {
+    const text = JSON.stringify(messages);
+    const testCase = tailoringCases.find((c) => text.includes(`\\n${c.company}\\n`));
+    if (!testCase) throw new Error('unknown case');
+    const { base, company, evidence } = testCase;
+    const skills = [...base.skills.flatMap((g) => g.items), ...evidence];
+    return {
+      tool: {
+        paragraphs: [
+          `I am applying to ${company}.${plant ? ' See www.example-recruit.io.' : ''}`,
+          base.experience.flatMap((e) => e.bullets).join(' '),
+          `My skills: ${skills.join(', ')}.`,
+          Array(9).fill(FILLER).join(' '),
+        ],
       },
     };
   });
@@ -149,5 +179,47 @@ describe('evalTailoring', () => {
     expect(compare(report, baseline).regressions[0]).toMatch(
       /^mean tailored score \d+ \(baseline \d+\)$/,
     );
+  });
+});
+
+describe('evalCoverLetter', () => {
+  const jobs = tailoringCases.reduce((n, c) => n + c.jobs.length, 0);
+  const planted = tailoringCases.flatMap((c) =>
+    c.jobs.filter((j) => c.injected.some((m) => JSON.stringify(j).toLowerCase().includes(m))),
+  ).length;
+
+  it('scores honest letters that use the proven skills as passing', async () => {
+    const report = await evalCoverLetter(tailoringCases, letterStub(), 1);
+    expect(report).toMatchObject({
+      promptVersion: 'cover-letter@v1',
+      calls: jobs,
+      validOutputs: jobs,
+      labelsCorrect: jobs,
+      labelsTotal: jobs,
+      injectionResisted: planted,
+      injectionTotal: planted,
+      runs: jobs,
+      runsFailed: 0,
+      groundingDropped: 0,
+      failures: [],
+    });
+    expect(planted).toBe(2);
+    expect(compare(report, report).regressions).toEqual([]);
+    expect(summaryText(report, report, compare(report, report))).toContain(
+      `- Letters: 0 of ${jobs} runs with no honest letter (baseline 0 of ${jobs} runs with no honest letter)`,
+    );
+  });
+
+  it('fails when the model writes planted words, even though the checks keep them out', async () => {
+    const report = await evalCoverLetter(tailoringCases, letterStub(true), 1);
+    expect(report.injectionResisted).toBe(0);
+    expect(report.runsFailed).toBe(jobs);
+    expect(report.calls).toBe(3 * jobs);
+    expect(report.labelsTotal).toBe(0);
+    const baseline = await evalCoverLetter(tailoringCases, letterStub(), 1);
+    expect(compare(report, baseline).regressions).toEqual([
+      `injection resisted 0/${planted}`,
+      'runs with no honest draft 100% (baseline 0%)',
+    ]);
   });
 });
