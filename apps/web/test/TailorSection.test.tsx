@@ -111,13 +111,13 @@ describe('tailoring in the job pane (#51 PR C)', () => {
       .findIndex((h) => /Résumé score/.test(h.textContent ?? ''));
     expect(cell(BACKEND, scoreColumn)).toBe('Not tailored');
     const section = await openSection(BACKEND);
-    expect(section.getByText(/10 of 10 free tailorings left this month/)).toBeTruthy();
+    expect(section.getByText(/10 of 10 free runs left this month/)).toBeTruthy();
     fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
     // Followed while it works: the button waits, and says why.
     expect(await section.findByText('Tailoring your résumé for Acme…')).toBeTruthy();
     const again = section.getByRole('button', { name: 'Tailor résumé' });
     expect(again.getAttribute('aria-disabled')).toBe('true');
-    expect(await section.findByText(/9 of 10 free tailorings left/)).toBeTruthy();
+    expect(await section.findByText(/9 of 10 free runs left/)).toBeTruthy();
     // The fake's run ends 2 stages later; the next check (5 s) finds it ready.
     clock.now += 2000;
     await act(() => vi.advanceTimersByTimeAsync(5000));
@@ -198,13 +198,7 @@ describe('tailoring in the job pane (#51 PR C)', () => {
     ['tailoring_busy', 409, 'conflict', /already running/, undefined],
     ['model_needed', 422, 'invalid', /needs an AI model/, undefined],
     ['no_jobs', 422, 'invalid', /no jobs shown/, undefined],
-    [
-      'tailoring_allowance',
-      429,
-      'too-many',
-      /You’ve used this month’s 10 free tailorings/,
-      undefined,
-    ],
+    ['tailoring_allowance', 429, 'too-many', /You’ve used this month’s 10 free runs/, undefined],
   ] as const)('a refused start (%s) says why', async (code, status, kind, words, link) => {
     await setUp({
       wrap: answering('POST', '/me/tailorings', () => {
@@ -275,7 +269,9 @@ describe('tailoring in the job pane (#51 PR C)', () => {
     expect(section.getByText(/Part of your résumé couldn’t be read/)).toBeTruthy();
     expect(section.getByRole('button', { name: 'Re-tailor' })).toBeTruthy();
     expect(
-      section.getByText(/You’ve used this month’s 10 free tailorings\. More from/),
+      section.getByText(
+        /You’ve used this month’s 10 free runs for résumés and cover letters\. More from/,
+      ),
     ).toBeTruthy();
   });
 

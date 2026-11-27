@@ -480,9 +480,9 @@ export const en = {
       starting: 'Starting…',
       /** The free model's runs (own-key runs are not counted). */
       allowance:
-        '{left} of {perMonth} free tailorings left this month. Runs with your own AI key don’t count.',
+        '{left} of {perMonth} free runs left this month, shared with cover letters. Runs with your own AI key don’t count.',
       allowanceNone:
-        'You’ve used this month’s {perMonth} free tailorings. More from {date}, or use your own AI key.',
+        'You’ve used this month’s {perMonth} free runs for résumés and cover letters. More from {date}, or use your own AI key.',
       working: 'Tailoring your résumé for {company}…',
       workingLine: 'This takes a minute or two. You can keep browsing.',
       /** Read out (not shown) when a run followed in the pane ends ready. */
@@ -548,6 +548,54 @@ export const en = {
       startFailed: 'That didn’t start. Try again.',
       offline: 'You’re offline, so that didn’t start. Try again once you’re back online.',
       loadFailed: 'Your tailored résumés didn’t load.',
+      retry: 'Try again',
+    },
+    /** #51 PR D: the job pane's cover letter, below the résumé (1 letter = 1 free run). */
+    letter: {
+      title: 'Cover letter for this job',
+      intro:
+        'Your deputy writes a letter for this job from your résumé and profile, saying only what they show. It uses your newest résumé tailored for {company}, if you have one.',
+      start: 'Write cover letter',
+      again: 'Rewrite',
+      starting: 'Starting…',
+      /** The count itself is said once, in the résumé section above (the runs are shared). */
+      allowance: 'Each letter uses 1 free run. Runs with your own AI key don’t count.',
+      allowanceNone: 'No free runs left this month. More from {date}, or use your own AI key.',
+      /** A refused Write (429): said in full, as the résumé section's line. */
+      allowanceRefused:
+        'You’ve used this month’s {perMonth} free runs for résumés and cover letters. More from {date}, or use your own AI key.',
+      working: 'Writing your cover letter…',
+      workingLine: 'This takes about a minute. You can keep browsing.',
+      /** Read out (not shown) when a run followed in the pane ends ready. */
+      readyNow: 'Your cover letter is ready.',
+      fromTailored: 'Written {date}, from your résumé tailored for {company}.',
+      fromBase: 'Written {date}, from your base résumé.',
+      copyText: 'Copy text',
+      copied: 'Copied. Paste it into the application’s cover letter box.',
+      copyFailed: 'Couldn’t copy the letter. Open Preview and copy it from there.',
+      /** A letter's file name when it has none (never expected). */
+      fileNameFallback: 'Cover letter.pdf',
+      preview: {
+        open: 'Preview',
+        title: 'Your cover letter for {company}',
+        line: 'What the PDF and DOCX hold, laid out the same way. Copy text leaves out the contact lines.',
+        close: 'Close',
+        label: 'Cover letter preview',
+        loading: 'Loading your cover letter',
+        loadFailed: 'Your cover letter didn’t load.',
+        retry: 'Try again',
+        unavailable: 'This letter isn’t available. Rewrite to make a new one.',
+        /** A rewrite ended while the preview was open: it shows the new letter now. */
+        newer: 'Your rewritten letter is ready. This preview switches to it.',
+      },
+      failedTitle: 'This cover letter wasn’t written.',
+      /** POST refusals (apps/api/src/cover-letters.ts codes). */
+      busy: 'A cover letter for this job is already being written.',
+      modelNeeded:
+        'Cover letters need an AI model. Choose the free one, or a key you saved, in your AI settings.',
+      noJobs: 'This job has closed or is no longer shown, so no letter can be written for it.',
+      noCompany: 'We couldn’t find this company’s name, so a letter can’t be written for it.',
+      loadFailed: 'Your cover letters didn’t load.',
       retry: 'Try again',
     },
     /** In the job pane: applying (#52 PR C; the prototype's "Did you apply?" check). */

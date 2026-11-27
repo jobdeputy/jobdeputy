@@ -112,6 +112,21 @@ export const SCREENS: Screen[] = [
     still: true,
     steps: toResumePreview,
   },
+  // #51 PR D3: the job's cover letter in the pane (ready, after tailoring), and its preview.
+  {
+    name: 'matches-cover-letter',
+    path: '/',
+    open: 'Get started free',
+    still: true,
+    steps: toCoverLetter,
+  },
+  {
+    name: 'matches-letter-preview',
+    path: '/',
+    open: 'Get started free',
+    still: true,
+    steps: toLetterPreview,
+  },
   // #52 PR E: a company cooling down: the table says until when, and Manual apply is off.
   {
     name: 'matches-cooling',
@@ -499,10 +514,35 @@ async function toMatchesTailored(page: Page, title: string, score: string) {
 /** #51 PR C2: the ready version's Preview opened: the résumé laid out as its files. */
 async function toResumePreview(page: Page) {
   await toMatchesTailored(page, 'Senior Backend Engineer', '86%');
-  await page.getByRole('button', { name: 'Preview' }).click();
+  await page
+    .getByRole('region', { name: 'Your résumé for Acme' })
+    .getByRole('button', { name: 'Preview' })
+    .click();
   await page
     .getByRole('dialog', { name: 'Your résumé for Acme' })
     .getByRole('heading', { name: 'Sam Example' })
+    .waitFor();
+}
+
+/** #51 PR D3: a cover letter written after tailoring: ready, from the tailored résumé. */
+async function toCoverLetter(page: Page) {
+  await toMatchesTailored(page, 'Senior Backend Engineer', '86%');
+  const section = page.getByRole('region', { name: 'Cover letter for this job' });
+  await section.getByRole('button', { name: 'Write cover letter' }).click();
+  await section.getByText(/from your résumé tailored for Acme\.$/).waitFor({ timeout: 15_000 });
+  await section.getByRole('button', { name: 'Rewrite' }).waitFor();
+}
+
+/** #51 PR D3: the ready letter's Preview opened: the letter laid out as its files. */
+async function toLetterPreview(page: Page) {
+  await toCoverLetter(page);
+  await page
+    .getByRole('region', { name: 'Cover letter for this job' })
+    .getByRole('button', { name: 'Preview' })
+    .click();
+  await page
+    .getByRole('dialog', { name: 'Your cover letter for Acme' })
+    .getByText('Dear Hiring Manager,')
     .waitFor();
 }
 

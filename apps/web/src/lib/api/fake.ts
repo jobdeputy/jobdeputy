@@ -3,6 +3,12 @@ import {
   DEFAULT_APPLY_COMPANY_LIMIT,
   DEFAULT_APPLY_COOLDOWN_DAYS,
 } from '@jobdeputy/shared/applications';
+import {
+  COVER_LETTER_ERRORS,
+  createCoverLetterInput,
+  type CoverLetter as LetterContent,
+  letterText,
+} from '@jobdeputy/shared/cover-letter';
 import { CRAWL_ERRORS, parseCrawlUrl } from '@jobdeputy/shared/crawl';
 import {
   createDocumentInput,
@@ -99,6 +105,8 @@ export function createFakeApi({
   const stages = new Map<string, Map<string, FakeStage>>();
   /** #51 PR C: each person's tailored résumés, newest first. */
   const tailorings = new Map<string, FakeTailoring[]>();
+  /** #51 PR D3: each person's cover letters, newest first. */
+  const letters = new Map<string, FakeLetter[]>();
   /** The order jobs were applied to in, to keep same-moment ones newest first. */
   let stageOrder = 0;
   let lastRole = 0;
@@ -265,11 +273,56 @@ export function createFakeApi({
     };
   }
 
-  /** The free runs asked for this month (the fake's are all on the free model). */
-  function platformRunsThisMonth(mine: FakeTailoring[]) {
+  /**
+   * #51 PR D3: a cover letter as the API shows it now, one `crawlMs` a stage: queued,
+   * processing, then ready. A job whose title has "letter-fails" in it ends failed.
+   */
+  function letterView(l: FakeLetter) {
+    const stage = Math.floor((now() - l.startedAt) / crawlMs);
+    const base = {
+      documentId: l.documentId,
+      jobId: l.jobId,
+      companyKey: l.companyKey,
+      companyName: l.letter.company,
+      baseDocumentId: '0'.repeat(26),
+      aiSource: 'platform',
+      createdAt: new Date(l.startedAt).toISOString(),
+    };
+    if (stage < 1) return { ...base, status: 'queued' };
+    if (stage < 2) return { ...base, status: 'processing' };
+    if (/letter-fails/i.test(l.letter.jobTitle)) {
+      return {
+        ...base,
+        status: 'failed',
+        error: 'no_honest_draft',
+        message: COVER_LETTER_ERRORS.no_honest_draft,
+      };
+    }
+    return {
+      ...base,
+      status: 'ready',
+      from: l.from,
+      fileName: `Sam Example – Cover letter – ${l.letter.company}.pdf`,
+      finishedAt: new Date(l.startedAt + 2 * crawlMs).toISOString(),
+    };
+  }
+
+  /** The free runs asked for this month, résumés and letters alike (the fake's are all free). */
+  function platformRunsThisMonth(me: string) {
     const at = new Date(now());
     const start = Date.UTC(at.getUTCFullYear(), at.getUTCMonth());
-    return mine.filter((t) => t.startedAt >= start).length;
+    return [...(tailorings.get(me) ?? []), ...(letters.get(me) ?? [])].filter(
+      (t) => t.startedAt >= start,
+    ).length;
+  }
+
+  function allowanceNow(me: string) {
+    const start = new Date(now());
+    return {
+      used: platformRunsThisMonth(me),
+      perMonth: FAKE_TAILORINGS_PER_MONTH,
+      nextAt: new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1)).toISOString(),
+    };
   }
 
   return {
@@ -539,7 +592,7 @@ export function createFakeApi({
           throw new ApiError('invalid', { status: 422, code: 'no_jobs' });
         }
         // As the API: the allowance is checked first.
-        if (platformRunsThisMonth(myTailorings) >= FAKE_TAILORINGS_PER_MONTH) {
+        if (platformRunsThisMonth(me) >= FAKE_TAILORINGS_PER_MONTH) {
           throw new ApiError('too-many', { status: 429, code: 'tailoring_allowance' });
         }
         if (
@@ -571,16 +624,9 @@ export function createFakeApi({
       if (path.startsWith('/me/tailorings?') && method === 'GET') {
         const companyKey = new URLSearchParams(path.slice(path.indexOf('?') + 1)).get('companyKey');
         if (!companyKey) throw new ApiError('invalid', { status: 400 });
-        const start = new Date(now());
         return {
           tailorings: myTailorings.filter((t) => t.companyKey === companyKey).map(tailoringView),
-          allowance: {
-            used: platformRunsThisMonth(myTailorings),
-            perMonth: FAKE_TAILORINGS_PER_MONTH,
-            nextAt: new Date(
-              Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1),
-            ).toISOString(),
-          },
+          allowance: allowanceNow(me),
         } as T;
       }
       if (path.startsWith('/me/tailorings/') && method === 'GET') {
@@ -593,6 +639,68 @@ export function createFakeApi({
         return {
           ...view,
           resume: found.resume,
+          downloads: {
+            pdf: `data:application/pdf;base64,${btoa('%PDF-1.4 fake')}`,
+            docx: `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${btoa('fake')}`,
+          },
+        } as T;
+      }
+      const myLetters = letters.get(me) ?? [];
+      letters.set(me, myLetters);
+      if (path === '/me/cover-letters' && method === 'POST') {
+        // As the API, but from any résumé: the fake doesn't ask for one (the API: 422 no_resume).
+        const checked = createCoverLetterInput(false).safeParse(body);
+        if (!checked.success) throw refused(checked.error.issues);
+        const job = myJobs().find((each) => each.jobId === checked.data.jobId);
+        if (!job) throw new ApiError('not-found', { status: 404 });
+        if (job.status !== 'new') throw new ApiError('invalid', { status: 422, code: 'no_jobs' });
+        const company = typeof job.companyName === 'string' ? job.companyName.trim() : '';
+        if (!company) throw new ApiError('invalid', { status: 422, code: 'no_company' });
+        if (platformRunsThisMonth(me) >= FAKE_TAILORINGS_PER_MONTH) {
+          throw new ApiError('too-many', { status: 429, code: 'tailoring_allowance' });
+        }
+        if (
+          myLetters.some(
+            (l) => l.jobId === job.jobId && ['queued', 'processing'].includes(letterView(l).status),
+          )
+        ) {
+          throw new ApiError('conflict', { status: 409, code: 'cover_letter_busy' });
+        }
+        // From the company's newest ready tailored résumé, else the base one (as the API).
+        const tailored = myTailorings.find(
+          (t) => t.companyKey === job.companyKey && tailoringView(t).status === 'ready',
+        );
+        lastDocument += 1;
+        const letter: FakeLetter = {
+          documentId: String(lastDocument).padStart(26, '0'),
+          jobId: String(job.jobId),
+          companyKey: String(job.companyKey),
+          from: tailored ? 'tailored' : 'base',
+          letter: fakeLetter(company, String(job.title)),
+          startedAt: now(),
+        };
+        myLetters.unshift(letter);
+        return { coverLetter: letterView(letter) } as T;
+      }
+      if (path.startsWith('/me/cover-letters?') && method === 'GET') {
+        const jobId = new URLSearchParams(path.slice(path.indexOf('?') + 1)).get('jobId');
+        if (!jobId) throw new ApiError('invalid', { status: 400 });
+        return {
+          coverLetters: myLetters.filter((l) => l.jobId === jobId).map(letterView),
+          allowance: allowanceNow(me),
+        } as T;
+      }
+      if (path.startsWith('/me/cover-letters/') && method === 'GET') {
+        const found = myLetters.find(
+          (l) => l.documentId === path.slice('/me/cover-letters/'.length),
+        );
+        if (!found) throw new ApiError('not-found', { status: 404 });
+        const view = letterView(found);
+        if (view.status !== 'ready') return view as T;
+        return {
+          ...view,
+          letter: found.letter,
+          text: letterText(found.letter),
           downloads: {
             pdf: `data:application/pdf;base64,${btoa('%PDF-1.4 fake')}`,
             docx: `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${btoa('fake')}`,
@@ -888,6 +996,36 @@ interface FakeTailoring {
   /** #51 PR C2: the résumé, as `resume.json` holds it. */
   resume: StructuredResume;
   startedAt: number;
+}
+
+interface FakeLetter {
+  documentId: string;
+  jobId: string;
+  companyKey: string;
+  from: 'tailored' | 'base';
+  /** #51 PR D3: the letter, as `letter.json` holds it. */
+  letter: LetterContent;
+  startedAt: number;
+}
+
+/** #51 PR D3: the fake's cover letter (the fake résumé's made-up person), naming the job. */
+function fakeLetter(company: string, jobTitle: string): LetterContent {
+  return {
+    contact: {
+      name: 'Sam Example',
+      headline: 'Senior Backend Engineer',
+      email: 'sam@example.com',
+      location: 'New York, NY',
+      links: ['https://github.com/sam-example'],
+    },
+    company,
+    jobTitle,
+    paragraphs: [
+      `I am applying for the ${jobTitle} role at ${company}. For the last 7 years I have built TypeScript services on AWS, most recently as a Senior Software Engineer at Example Logistics.`,
+      'There I led the move of our order pipeline to AWS Lambda and DynamoDB, and kept it running through our busiest seasons. I also built the GraphQL layer our partner apps use every day.',
+      `I would bring the same care for reliable, well-tested services to ${company}, and I would welcome the chance to talk about the role.`,
+    ],
+  };
 }
 
 /** A job's AI score, or below any score when not scored yet. */

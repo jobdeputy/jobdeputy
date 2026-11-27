@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button.tsx';
 import { Skeleton } from '@/components/ui/skeleton.tsx';
 import { Spinner } from '@/components/ui/spinner.tsx';
 import { copy, fill } from '@/copy/index.ts';
+import { coverLetterListsKey } from '@/lib/api/cover-letters.ts';
 import { ApiError, isFinal, useApi } from '@/lib/api/index.ts';
 import { companyName, type JobSummary, matchesKey } from '@/lib/api/jobs.ts';
 import { useProfile } from '@/lib/api/profile.ts';
@@ -29,7 +30,7 @@ import { cn } from '@/lib/utils.ts';
 const text = copy.matchesPage.tailor;
 
 /** A message the section says, with a link to fix it where there is one. */
-interface Said {
+export interface Said {
   words: string;
   link?: { label: string; path: string };
   /** A new failure is a new alert, read out again. */
@@ -94,6 +95,8 @@ export function TailorSection({
       queries.setQueryData<Tailorings>(tailoringsKey(job.companyKey), (was) =>
         was ? { ...was, tailorings: [tailoring, ...was.tailorings] } : was,
       );
+      // Cover letters use the same free runs: their sections read the count again.
+      void queries.invalidateQueries({ queryKey: coverLetterListsKey });
     } catch (error) {
       setRefusal((was) => ({
         ...refusalOf(error, list.data?.allowance),
@@ -207,7 +210,7 @@ function Heading({ id, company }: { id: string; company: string }) {
 }
 
 /** Always there, so a failure is read out when it comes. */
-function Alert({ said }: { said: Said | null }) {
+export function Alert({ said }: { said: Said | null }) {
   return (
     <div
       key={said?.count ?? 0}
