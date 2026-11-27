@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ApplicantRepository,
   PreferencesRepository,
   ProfileRepository,
   RoleLimitError,
   VersionConflictError,
+  VoluntaryRepository,
 } from '../src/index.js';
 import { fakeTable } from './fake-ddb.js';
 
@@ -95,6 +97,52 @@ describe('ProfileRepository', () => {
     const t = fakeTable();
     const repo = new ProfileRepository(t.client, 'users');
     await repo.save('u1', fields, 0, audit('profile.saved'));
+    expect(await repo.get('u2')).toBeUndefined();
+  });
+});
+
+describe('ApplicantRepository (#53)', () => {
+  const answers = {
+    workAuthorization: [{ country: 'US', authorized: true, needsSponsorship: false }],
+    workSetups: ['remote' as const],
+    noticePeriodDays: 14,
+  };
+  it('stores APPLICANT beside PROFILE with its own version, and rejects a stale save', async () => {
+    const t = fakeTable();
+    const profiles = new ProfileRepository(t.client, 'users', () => NOW);
+    const repo = new ApplicantRepository(t.client, 'users', () => NOW);
+    await profiles.save('u1', fields, 0, audit('profile.saved'));
+    const saved = await repo.save('u1', answers, 0, audit('applicant.saved'));
+    expect(saved).toMatchObject({ userId: 'u1', sk: 'APPLICANT', type: 'applicant', version: 1 });
+    expect(await repo.get('u1')).toMatchObject(answers);
+    expect((await profiles.get('u1'))?.version).toBe(1);
+    await expect(repo.save('u1', answers, 0, audit('applicant.saved'))).rejects.toBeInstanceOf(
+      VersionConflictError,
+    );
+    expect(await repo.get('u2')).toBeUndefined();
+  });
+});
+
+describe('VoluntaryRepository (#53)', () => {
+  it('stores only the ciphertext under VOLUNTARY, versioned', async () => {
+    const t = fakeTable();
+    const repo = new VoluntaryRepository(t.client, 'users', () => NOW);
+    const ciphertext = new Uint8Array([1, 2, 3]);
+    const saved = await repo.save('u1', ciphertext, 0, audit('voluntary.saved'));
+    expect(saved).toMatchObject({ sk: 'VOLUNTARY', type: 'voluntary', version: 1, ciphertext });
+    expect(Object.keys(saved).sort()).toEqual([
+      'ciphertext',
+      'createdAt',
+      'schemaVersion',
+      'sk',
+      'type',
+      'updatedAt',
+      'userId',
+      'version',
+    ]);
+    await expect(repo.save('u1', ciphertext, 0, audit('voluntary.saved'))).rejects.toBeInstanceOf(
+      VersionConflictError,
+    );
     expect(await repo.get('u2')).toBeUndefined();
   });
 });

@@ -218,6 +218,9 @@ describe('least privilege (T04)', () => {
       'dynamodb:Query',
       // Only on usage: the role counter (exact cap under concurrent creates).
       'dynamodb:UpdateItem',
+      // #53: only for voluntary answers (condition tested in ai-keys.test.ts).
+      'kms:Decrypt',
+      'kms:Encrypt',
     ]);
     const updates = Object.entries(t.findResources('AWS::IAM::Policy'))
       .filter(([id]) => id.startsWith('ProfileApiFn'))
@@ -287,6 +290,7 @@ describe('HTTP API (T04)', () => {
       'GET /me/ai-keys',
       'GET /me/ai-settings',
       'GET /me/ai-usage',
+      'GET /me/applicant',
       'GET /me/applications',
       'GET /me/audit',
       'GET /me/companies',
@@ -305,6 +309,7 @@ describe('HTTP API (T04)', () => {
       'GET /me/roles',
       'GET /me/tailorings',
       'GET /me/tailorings/{documentId}',
+      'GET /me/voluntary',
       'GET /ping-jobs/{id}',
       'POST /me/ai-keys/{provider}/check',
       'POST /me/cover-letters',
@@ -316,12 +321,14 @@ describe('HTTP API (T04)', () => {
       'POST /ping-jobs',
       'PUT /me/ai-keys/{provider}',
       'PUT /me/ai-settings',
+      'PUT /me/applicant',
       'PUT /me/crawl-settings',
       'PUT /me/documents/{documentId}',
       'PUT /me/jobs/{jobId}/stage',
       'PUT /me/preferences/search',
       'PUT /me/profile',
       'PUT /me/roles/{roleId}',
+      'PUT /me/voluntary',
     ]);
     for (const route of Object.values(routes)) {
       const open = route.Properties.RouteKey === 'GET /test-site/{page}';

@@ -46,6 +46,7 @@ Every `TransactWriteItems` goes through `transactWrite` (`packages/db/src/transa
 |---|---|---|---|
 | `users` | `GetItem` (consistent) | `userId`, `sk = PROFILE` | `GET` and `PUT /me/profile` |
 | `users` + `audit` | `TransactWriteItems`: `PutItem` with `attribute_not_exists(userId)` or `version = :expected`, `PutItem` audit entry | `userId`, `sk = PROFILE` | `PUT /me/profile`; `POST /me/profile/skills` (#51 PR C: the saved profile with one skill added, at the version read, up to 3 tries) |
+| `users` (+ `audit` on save) | `GetItem` (consistent); versioned `PutItem` + audit entry, as `PROFILE` | `userId`, `sk = APPLICANT` / `VOLUNTARY` | `GET`/`PUT /me/applicant`, `GET`/`PUT /me/voluntary` (#53, decision 0019; `VOLUNTARY` is KMS-encrypted and decrypted only by the profile API) |
 | `users` | `PutItem` with `attribute_not_exists(userId)` | `userId`, `sk = DELETION` | `DELETE /me` (T12) |
 | `users` | `GetItem` | `userId`, `sk = DELETION` | every write route: refused with 410 while it exists; `GET /me` |
 | every user table | `Query` (keys only) + `BatchWriteItem` deletes, paged | `userId` | deletion worker: erases everything but the `DELETION` item |
@@ -161,7 +162,8 @@ Synthetic data. `version`, `createdAt`, `updatedAt`, and `schemaVersion` are on 
 | `sk` | Attributes |
 |---|---|
 | `PROFILE` | `version` (optimistic concurrency: a save must send the version it read), `firstName`, `lastName`, `preferredName?`, `email`, `phone? {countryCode, number}`, `location {city, region, country, postalCode?}`, `address? {line1, line2?, city, region, postalCode, country}` (accepted from product Phase 2), `headline?`, `summary?`, `yearsExperience?`, `skills L<S>`, `languages L<{name, level}>`, `links {linkedin?, github?, portfolio?, website?, other L}`, `homeCell` (`iad`, `bom`, or `lhr`), `timezone` |
-| `APPLICANT` | Details that application forms ask for: `workAuthorization L<{country, status, visaType?, expiresOn?}>` (status: `citizen`, `permanent_resident`, `visa`, or `none`), `needsSponsorship M<country, B>`, `noticePeriodDays?`, `earliestStartDate?`, `currentCompensation?` (money), `expectedCompensation?` (money), `willingToRelocate B`, `relocationCountries L`, `maxTravelPercent?`, `securityClearance?`, `over18 B`, `formerEmployers L<companyId>` |
+| `APPLICANT` | #53 ([0019](decisions/0019-application-answers-and-voluntary-self-id.md)): `version`, the answers application forms ask for; every one optional (absent = unanswered, the extension never guesses it): `workAuthorization L<{country, authorized B, needsSponsorship B}>` (each country once, at most 5; US only at launch), `noticePeriodDays?` (0–365), `earliestStartDate?` (yyyy-mm-dd), `expectedSalary? {min, max?, currency, period: year\|hour}`, `willingToRelocate? B`, `workSetups L` (`remote`, `hybrid`, `onsite`), `over18? B`, `securityClearance?` (`none`, `public_trust`, `confidential`, `secret`, `top_secret`, `ts_sci`), `pronouns?`, `heardAbout?` (`company_website`, `job_board`, `linkedin`, `referral`, `recruiter`, `social_media`, `other`). Current salary is never stored. Links stay in `PROFILE`. |
+| `VOLUNTARY` | #53 (0019): `version`, `ciphertext` (binary) only: the US voluntary self-identification answers `{gender, hispanicLatino, race, veteran, disability}` (each also `decline`, the default before any save) as JSON, encrypted with the cell's KMS key, encryption context `{userId, purpose: voluntary-self-id}`. Only the profile API may encrypt or decrypt with that context; never sent to AI, logged, or audited with values. |
 | `EXPERIENCE#<id>` | `company`, `companyId?`, `title`, `employmentType?`, `location?`, `startDate` (yyyy-mm), `endDate?` (absent while current), `description?`, `highlights L`, `skills L` |
 | `EDUCATION#<id>` | `school`, `degree`, `field?`, `startDate?`, `endDate?`, `grade?`, `highlights L` |
 | `CERTIFICATION#<id>` | `name`, `issuer`, `issuedOn?`, `expiresOn?`, `credentialUrl?` |
@@ -229,7 +231,7 @@ Key: `userId`, `auditId` (ULID, so entries are ordered by time). Written in the 
 
 `name`: every change to the user's data (T06d), written in the same transaction as the change; a failed change writes none:
 
-- by the user: `profile.saved`, `search.saved`, `role.created`, `role.updated`, `role.deleted`, `document.upload_started`, `document.renamed`, `document.default_changed`, `document.deleted`, `crawl.requested`, `crawl_limit.changed`;
+- by the user: `profile.saved`, `profile.skillAdded`, `applicant.saved`, `voluntary.saved` (#53: no values, only the new version), `search.saved`, `role.created`, `role.updated`, `role.deleted`, `document.upload_started`, `document.renamed`, `document.default_changed`, `document.deleted`, `crawl.requested`, `crawl_limit.changed`;
 - by the system: `document.ready`, `document.rejected`, `document.failed`, `crawl.succeeded`, `crawl.failed`;
 - not recorded: account deletion (it erases the history too) and internal steps (a document starting processing, a crawl attempt starting).
 
@@ -442,3 +444,4 @@ Everything under `users/<userId>/` and `derived/users/<userId>/` goes with accou
 | 2026-11-26 | `usage` `APPLIED#<companyKey>` (applications per company in the last 365 days, the longest cooldown window: `applied`, `version`, `ttl`) | #52 PR E |
 | 2026-11-26 | No new attribute: `POST /me/profile/skills` writes `users` `PROFILE` (`skills`, audit `profile.skillAdded`); `GET /me/matches` reads `jobs.match` (its `score`, `base`, `resumeDocumentId`, only at today's `MATCH_SCORE_VERSION`) | #51 PR C |
 | 2026-11-27 | `documents`: generated `kind` `cover_letter` (`jobIds` [jobId], `resumeDocumentId`, `tailoring.draftLetter`); résumé queries filter on `kind`. `jobs.materials.coverLetterDocumentId` (each `materials` field written without dropping the other). Résumé versions record `tailoring.baseETag`. `usage` `LETTER#<jobId>` lock. S3 `letter.{json,pdf,docx}` | #51 PR D |
+| 2026-11-27 | `users` `APPLICANT` reshaped (`workAuthorization` `{country, authorized, needsSponsorship}`, `expectedSalary` range, `workSetups`, `pronouns`, `heardAbout`; dropped `currentCompensation`, `visaType`, `relocationCountries`, `maxTravelPercent`, `formerEmployers`) and built; new `VOLUNTARY` (KMS ciphertext); audit `applicant.saved`, `voluntary.saved` | #53 PR A |

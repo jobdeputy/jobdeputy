@@ -4,6 +4,7 @@ import {
   DEFAULT_CRAWL_LIMITS,
   DERIVED_PREFIX,
   SCANNED_PREFIX,
+  VOLUNTARY_KMS_PURPOSE,
 } from '@jobdeputy/shared';
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps, Tags } from 'aws-cdk-lib';
 import { CorsHttpMethod, HttpApi, HttpMethod, HttpStage } from 'aws-cdk-lib/aws-apigatewayv2';
@@ -42,6 +43,7 @@ import { AppFunction } from './constructs/node-function.js';
 import { QueueHealth } from './constructs/queue-health.js';
 import { Relevance } from './constructs/relevance.js';
 import { Tailoring } from './constructs/tailoring.js';
+import { aiKeysKeyParameter } from './keys-stack.js';
 
 export interface CellStackProps extends StackProps {
   readonly stage: StageName;
@@ -398,6 +400,11 @@ export class CellStack extends Stack {
       }
     }
 
+    // The cell's one KMS key (keys stack, decision 0009), also used for #53's voluntary answers.
+    const cellKeyArn = StringParameter.valueForStringParameter(
+      this,
+      aiKeysKeyParameter(props.stage, props.cell),
+    );
     const profile = new AppFunction(this, 'ProfileApi', {
       entry: 'apps/api/src/profile.ts',
       timeout: Duration.seconds(10),
@@ -409,8 +416,24 @@ export class CellStack extends Stack {
         USAGE_TABLE_NAME: usageTable.tableName,
         USER_POOL_ID: auth.userPool.userPoolId,
         CELL: props.cell,
+        VOLUNTARY_KMS_KEY_ARN: cellKeyArn,
       },
     });
+    // #53 (decision 0019): only the profile API encrypts and decrypts the voluntary
+    // self-identification answers, and only with exactly the user + this purpose as encryption
+    // context; so it can't touch AI keys (context user + provider), and the functions allowed
+    // AI keys can't touch these.
+    profile.fn.addToRolePolicy(
+      new PolicyStatement({
+        actions: ['kms:Encrypt', 'kms:Decrypt'],
+        resources: [cellKeyArn],
+        conditions: {
+          'ForAllValues:StringEquals': { 'kms:EncryptionContextKeys': ['userId', 'purpose'] },
+          StringEquals: { 'kms:EncryptionContext:purpose': VOLUNTARY_KMS_PURPOSE },
+          Null: { 'kms:EncryptionContext:userId': 'false' },
+        },
+      }),
+    );
     // T06d: every change is recorded in the user's audit history, in the same transaction.
     auditTable.grant(profile.fn, 'dynamodb:PutItem');
     // The role counter (exact cap under concurrent creates): counted in the transaction,
@@ -771,6 +794,8 @@ export class CellStack extends Stack {
     const profileRoutes: [string, HttpMethod[]][] = [
       ['/me/profile', [HttpMethod.GET, HttpMethod.PUT]],
       ['/me/profile/skills', [HttpMethod.POST]],
+      ['/me/applicant', [HttpMethod.GET, HttpMethod.PUT]],
+      ['/me/voluntary', [HttpMethod.GET, HttpMethod.PUT]],
       ['/me/preferences/search', [HttpMethod.GET, HttpMethod.PUT]],
       ['/me/roles', [HttpMethod.GET, HttpMethod.POST]],
       ['/me/roles/{roleId}', [HttpMethod.PUT, HttpMethod.DELETE]],

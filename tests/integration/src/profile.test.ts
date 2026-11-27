@@ -82,3 +82,69 @@ describe('profile, search settings, and roles (deployed)', () => {
     expect((await callApi(api, 'GET', 'me/roles', alice.accessToken)).body.roles).toEqual([]);
   });
 });
+
+describe('application answers (#53, deployed)', () => {
+  it('saves the answers beside the profile, versioned, and keeps users apart', async () => {
+    expect((await callApi(api, 'GET', 'me/applicant', alice.accessToken)).body).toEqual({
+      version: 0,
+      workAuthorization: [],
+      workSetups: [],
+    });
+    const answers = {
+      workAuthorization: [{ country: 'US', authorized: true, needsSponsorship: false }],
+      noticePeriodDays: 14,
+      expectedSalary: { min: 150000, currency: 'USD', period: 'year' },
+      workSetups: ['remote'],
+      over18: true,
+      heardAbout: 'company_website',
+    };
+    const saved = await callApi(api, 'PUT', 'me/applicant', alice.accessToken, {
+      version: 0,
+      ...answers,
+    });
+    expect(saved.status).toBe(200);
+    expect(saved.body).toMatchObject({ version: 1, ...answers });
+    const stale = await callApi(api, 'PUT', 'me/applicant', alice.accessToken, { version: 0 });
+    expect(stale.status).toBe(409);
+    expect((await callApi(api, 'GET', 'me/applicant', alice.accessToken)).body).toMatchObject({
+      version: 1,
+      ...answers,
+    });
+    expect((await callApi(api, 'GET', 'me/applicant', bob.accessToken)).body.version).toBe(0);
+  });
+
+  it('saves voluntary answers through KMS and reads them back only for their user', async () => {
+    expect((await callApi(api, 'GET', 'me/voluntary', alice.accessToken)).body).toEqual({
+      version: 0,
+      gender: 'decline',
+      hispanicLatino: 'decline',
+      race: 'decline',
+      veteran: 'decline',
+      disability: 'decline',
+    });
+    const answers = {
+      gender: 'non_binary',
+      hispanicLatino: 'no',
+      race: 'native_hawaiian_pacific_islander',
+      veteran: 'not_protected',
+      disability: 'decline',
+    };
+    const saved = await callApi(api, 'PUT', 'me/voluntary', alice.accessToken, {
+      version: 0,
+      ...answers,
+    });
+    expect(saved.status).toBe(200);
+    expect(saved.body).toEqual({ version: 1, ...answers });
+    expect((await callApi(api, 'GET', 'me/voluntary', alice.accessToken)).body).toEqual({
+      version: 1,
+      ...answers,
+    });
+    expect(
+      (await callApi(api, 'PUT', 'me/voluntary', alice.accessToken, { version: 0, ...answers }))
+        .status,
+    ).toBe(409);
+    expect((await callApi(api, 'GET', 'me/voluntary', bob.accessToken)).body.version).toBe(0);
+    // That only ciphertext is stored is unit-tested (repository + store): the CI role may not
+    // read `users`, by design (cicd-stack testDataStatement).
+  });
+});

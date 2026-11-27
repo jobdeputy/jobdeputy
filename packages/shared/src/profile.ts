@@ -59,7 +59,7 @@ const SKILL_MAX = 60;
 export const addSkillInput = z.strictObject({ skill: text(SKILL_MAX) });
 
 /** The version the client last read; 0 for a first save. A mismatch is a 409 conflict. */
-const expectedVersion = z.number().int().nonnegative();
+export const expectedVersion = z.number().int().nonnegative();
 
 export const profileInput = z.strictObject({
   version: expectedVersion,
