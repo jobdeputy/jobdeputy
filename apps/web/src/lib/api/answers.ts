@@ -30,5 +30,8 @@ export function useVoluntary() {
     queryKey: VOLUNTARY_KEY,
     queryFn: () => api.request<SavedAnswers>('GET', '/me/voluntary'),
     retry,
+    // Read once: each read decrypts them (KMS), and a save checks its version anyway.
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnWindowFocus: false,
   });
 }

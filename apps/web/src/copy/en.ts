@@ -1057,8 +1057,8 @@ export const en = {
       },
       pay: {
         title: 'Pay',
-        min: 'Expected pay, from (USD)',
-        max: 'Up to (USD)',
+        min: 'Expected pay, from ({currency})',
+        max: 'Up to ({currency})',
         maxHint: 'Optional.',
         period: 'Per',
         periods: { year: 'Year', hour: 'Hour' } as Record<string, string>,

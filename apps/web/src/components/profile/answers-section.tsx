@@ -218,6 +218,8 @@ const usOf = (saved: SavedAnswers) => workList(saved).find((w) => w.country === 
 
 type Salary = { min?: number; max?: number; currency?: string; period?: string };
 const salaryOf = (saved: SavedAnswers) => (saved.expectedSalary ?? {}) as Salary;
+/** The pay's currency: as saved, or US dollars. */
+const currencyOf = (saved: SavedAnswers) => salaryOf(saved).currency ?? 'USD';
 
 const yesNoOptions = () => {
   const text = copy.profilePage.answers;
@@ -362,14 +364,16 @@ const paySpec = applicantSpec(
     },
   },
   (body, answers) => {
-    // No amounts and the default period: no pay. A period chosen without an amount is sent
-    // without its start, so the person is asked for one rather than it being dropped unseen.
-    if (answers.min === '' && answers.max === '' && answers.period === 'year') {
+    // No amounts: no pay (the period means nothing without one).
+    if (answers.min === '' && answers.max === '') {
       delete body.expectedSalary;
       return;
     }
-    // In US dollars, as the fields say (the US-only launch).
-    const salary: Record<string, unknown> = { currency: 'USD', period: answers.period };
+    // In the currency the fields name: the saved one, else US dollars (the US-only launch).
+    const salary: Record<string, unknown> = {
+      currency: currencyOf(body as SavedAnswers),
+      period: answers.period,
+    };
     const min = wholeOrTyped(answers.min);
     const max = wholeOrTyped(answers.max);
     if (min !== undefined) salary.min = min;
@@ -385,8 +389,17 @@ function PayForm({ saved, ...done }: Done & { saved: SavedAnswers }) {
     <GroupForm spec={paySpec} profile={saved} {...done}>
       {(bind) => (
         <>
-          <Field label={text.min} inputMode="numeric" {...bind('min')} />
-          <Field label={text.max} hint={text.maxHint} inputMode="numeric" {...bind('max')} />
+          <Field
+            label={fill(text.min, { currency: currencyOf(saved) })}
+            inputMode="numeric"
+            {...bind('min')}
+          />
+          <Field
+            label={fill(text.max, { currency: currencyOf(saved) })}
+            hint={text.maxHint}
+            inputMode="numeric"
+            {...bind('max')}
+          />
           <SelectField label={text.period} options={periods} {...bind('period')} />
           <p className="col-span-full m-0 text-[0.8125rem] text-muted-foreground">{text.note}</p>
         </>
@@ -635,9 +648,10 @@ function availabilityFacts(saved: SavedAnswers): FactRow[] {
 
 /** A yyyy-mm-dd date as words ("Jan 4, 2027"), read as the calendar day it names. */
 function dateText(day: string): string {
-  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' }).format(
-    new Date(`${day}T00:00:00Z`),
-  );
+  const date = new Date(`${day}T00:00:00Z`);
+  // Anything but a real yyyy-mm-dd day is shown as saved, never thrown on.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(date.getTime())) return day;
+  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' }).format(date);
 }
 
 function payFacts(saved: SavedAnswers): FactRow[] {
@@ -666,7 +680,10 @@ function payFacts(saved: SavedAnswers): FactRow[] {
 
 function setupFacts(saved: SavedAnswers): FactRow[] {
   const text = copy.profilePage.answers.setup;
-  const setups = Array.isArray(saved.workSetups) ? (saved.workSetups as string[]) : [];
+  // Only the setups the form offers, as it keeps them on a save.
+  const setups = Array.isArray(saved.workSetups)
+    ? (saved.workSetups as string[]).filter((s) => (WORK_SETUPS as readonly string[]).includes(s))
+    : [];
   return [
     [
       text.setups,

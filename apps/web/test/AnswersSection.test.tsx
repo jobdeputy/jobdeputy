@@ -300,14 +300,10 @@ describe('Application answers (#53)', () => {
     expect(sent).not.toHaveProperty('heardAbout');
   });
 
-  it('says an hourly range with “an hour”, and asks for an amount when only the period changed', async () => {
+  it('says an hourly range with “an hour”, and clears the pay when both amounts are emptied', async () => {
     const api = await onProfile();
     let form = await edit('Pay');
     choose(form, 'Per', 'hour');
-    save(form);
-    expect(
-      await within(form).findByText('Enter where the range starts, or clear it.'),
-    ).toBeTruthy();
     choose(form, 'Expected pay, from (USD)', '50');
     choose(form, 'Up to (USD)', '70');
     save(form);
@@ -322,5 +318,21 @@ describe('Application answers (#53)', () => {
     });
     form = await edit('Pay');
     expect((within(form).getByLabelText('Per') as HTMLSelectElement).value).toBe('hour');
+    choose(form, 'Expected pay, from (USD)', '');
+    choose(form, 'Up to (USD)', '');
+    save(form);
+    await waitFor(async () => expect(await facts('Pay')).toEqual(['Expected pay: Not answered']));
+  });
+
+  it('keeps a saved currency, naming it in the fields', async () => {
+    const api = await onProfile({
+      expectedSalary: { min: 50000, currency: 'GBP', period: 'year' },
+    });
+    expect(await facts('Pay')).toEqual(['Expected pay: £50,000 a year']);
+    const form = await edit('Pay');
+    choose(form, 'Expected pay, from (GBP)', '60000');
+    save(form);
+    await waitFor(async () => expect(await facts('Pay')).toEqual(['Expected pay: £60,000 a year']));
+    expect((await applicant(api)).expectedSalary).toMatchObject({ currency: 'GBP', min: 60000 });
   });
 });
