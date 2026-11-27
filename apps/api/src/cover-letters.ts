@@ -49,7 +49,11 @@ export function coverLetterView(v: GeneratedDocument, now: Date) {
     companyKey: v.companyKey,
     ...(v.companyName ? { companyName: v.companyName } : {}),
     baseDocumentId: v.baseDocumentId,
-    ...(v.resumeDocumentId ? { resumeDocumentId: v.resumeDocumentId } : {}),
+    // The tailored version chosen; once the letter is kept, only if it was written from it
+    // (the worker uses the base when that version has gone or its file changed).
+    ...(v.resumeDocumentId && v.tailoring.draftLetter?.from !== 'base'
+      ? { resumeDocumentId: v.resumeDocumentId }
+      : {}),
     aiSource: v.aiSource,
     status,
     ...(error ? { error, message: COVER_LETTER_ERRORS[error] } : {}),
@@ -79,6 +83,13 @@ async function request(
   if (job.closedAt !== undefined || isHidden(job)) {
     return problem(422, 'No job to write for', {
       detail: COVER_LETTER_ERRORS.no_jobs,
+      code: 'no_jobs',
+      requestId,
+    });
+  }
+  if (job.title.trim() === '') {
+    return problem(422, 'No job title', {
+      detail: 'This job has no title, so a letter could not be written for it.',
       code: 'no_jobs',
       requestId,
     });

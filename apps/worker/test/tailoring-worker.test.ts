@@ -923,4 +923,18 @@ describe('tailoring worker: cover letters (#51 PR D)', () => {
     );
     expect(finished(ctx.runs).outcome).toMatchObject({ error: 'no_jobs' });
   });
+  it('links the job to the letter only once this delivery ended it ready', async () => {
+    const ctx = setup({}, letterDoc());
+    ctx.runs.finish.mockResolvedValueOnce(false);
+    expect(await processRecord(record({ userId: USER, documentId: LETTER }), ctx.deps)).toBe(
+      'skipped',
+    );
+    expect(ctx.runs.saveCoverLetter).not.toHaveBeenCalled();
+    // A failed link after the end is logged, not retried: the letter stays ready.
+    const linked = setup({}, letterDoc());
+    linked.runs.saveCoverLetter.mockRejectedValueOnce(new Error('throttled'));
+    expect(await processRecord(record({ userId: USER, documentId: LETTER }), linked.deps)).toBe(
+      'ready',
+    );
+  });
 });

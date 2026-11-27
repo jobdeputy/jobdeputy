@@ -16,6 +16,7 @@ import {
 } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
+import { coverLetterView } from '../src/cover-letters.js';
 import { route, TAILORING_JOBS, type TailoringDeps, tailoringView } from '../src/tailoring.js';
 
 const NOW = new Date('2026-11-22T06:00:00.000Z');
@@ -647,5 +648,29 @@ describe('cover letters (#51 PR D)', () => {
       error: 'stopped',
       message: COVER_LETTER_ERRORS.stopped,
     });
+  });
+  it('says which résumé a kept letter came from: no tailored ID once it used the base', () => {
+    const chosen = letter({ resumeDocumentId: TAILORED });
+    expect(coverLetterView(chosen, NOW).resumeDocumentId).toBe(TAILORED);
+    const usedBase = letter({
+      resumeDocumentId: TAILORED,
+      status: 'ready',
+      tailoring: {
+        calls: 3,
+        attempts: 1,
+        drafted: true,
+        draftLetter: { ...LETTER_JSON, from: 'base' },
+      },
+    });
+    expect(coverLetterView(usedBase, NOW)).not.toHaveProperty('resumeDocumentId');
+  });
+
+  it('refuses a job without a title', async () => {
+    const { deps, runs } = setup({
+      jobs: { getSummaries: vi.fn(async () => [summary(job(1), { title: '  ' })]) },
+    });
+    const res = await route(ask({ jobId: job(1) }), deps);
+    expect(res.statusCode).toBe(422);
+    expect(runs.request).not.toHaveBeenCalled();
   });
 });

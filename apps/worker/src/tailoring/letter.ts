@@ -194,8 +194,6 @@ async function render(
     deps.files.put(keys.pdf, pdf, PDF),
     deps.files.put(keys.docx, docx, DOCX),
   ]);
-  // Before the end, so a failure is retried (idempotent).
-  await deps.runs.saveCoverLetter(userId, jobId, documentId);
   const ended = await finish(
     run,
     deps,
@@ -208,6 +206,17 @@ async function render(
     `Cover letter ready for ${letter.jobTitle} at ${letter.company}`,
   );
   if (!ended) return 'skipped';
+  // Only once this delivery ended the run ready: a job never points at a letter another
+  // delivery ended failed. Best effort, as pruning: the job's letters are listed by their own
+  // query (`GET /me/cover-letters`), so a missed link only leaves it at the older letter.
+  try {
+    await deps.runs.saveCoverLetter(userId, jobId, documentId);
+  } catch (error) {
+    logger.error('Letter ready, but the job was not linked to it', {
+      documentId,
+      error: (error as Error).name,
+    });
+  }
   try {
     await prune(userId, jobId, deps);
   } catch (error) {
