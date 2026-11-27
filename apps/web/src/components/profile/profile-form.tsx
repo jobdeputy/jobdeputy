@@ -259,6 +259,12 @@ export function useProfileForm<N extends string>({
       return;
     }
     const found = check(spec, body, answers);
+    // A field the browser can't read (a date typed in part) reports '' to the page: it is
+    // wrong, not empty, so it is never saved as unanswered.
+    for (const name of names) {
+      const input = form.current?.querySelector<HTMLInputElement>(`input[name="${name}"]`);
+      if (input?.validity?.badInput) found.fields[name] = spec.fields[name].invalid;
+    }
     // Rendered before focus moves, so the field is read with its reason.
     flushSync(() => setErrors(found.fields));
     const first = names.find((name) => found.fields[name]);

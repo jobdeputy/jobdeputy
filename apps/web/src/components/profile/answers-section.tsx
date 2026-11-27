@@ -106,7 +106,7 @@ export function ApplicationAnswers({ say }: { say: (words: string) => void }) {
       title={text.title}
       line={text.line}
     >
-      {groups.map((group) => (
+      {groups.map((group, at) => (
         <Group
           key={group.id}
           id={group.id}
@@ -115,21 +115,27 @@ export function ApplicationAnswers({ say }: { say: (words: string) => void }) {
           // Edited once read (each form starts from what is saved).
           editable={group.query.data !== undefined}
           view={
-            <QueryRegion
-              query={group.query}
-              skeleton={{ kind: 'block', rows: 2 }}
-              label={text.loading}
-              error={
-                <LoadFailed
-                  error={group.query.error}
-                  message={text.loadFailed}
-                  retry={text.retry}
-                  onRetry={() => group.query.refetch()}
-                />
-              }
-            >
-              {(saved) => group.facts(saved)}
-            </QueryRegion>
+            // The applicant groups share one read: only the first says it is loading or failed
+            // (one alert, one Try again); the others wait quietly for it.
+            at > 0 &&
+            groups[at - 1]?.query === group.query &&
+            group.query.data === undefined ? null : (
+              <QueryRegion
+                query={group.query}
+                skeleton={{ kind: 'block', rows: 2 }}
+                label={text.loading}
+                error={
+                  <LoadFailed
+                    error={group.query.error}
+                    message={text.loadFailed}
+                    retry={text.retry}
+                    onRetry={() => group.query.refetch()}
+                  />
+                }
+              >
+                {(saved) => group.facts(saved)}
+              </QueryRegion>
+            )
           }
           editor={(done) => group.query.data && group.form(group.query.data, done)}
         />
@@ -180,6 +186,14 @@ function putYesNo(body: SaveBody, key: string, answer: string) {
 /** A choice from a list, or '' when not answered. */
 function choiceOf(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+/**
+ * A choice the list still offers, or '': a saved value the form doesn't offer (renamed since)
+ * reads as unanswered, so a save never sends back a value the person can't see.
+ */
+function offeredOf(value: unknown, offered: readonly string[]): string {
+  const choice = choiceOf(value);
+  return offered.includes(choice) ? choice : '';
 }
 function putChoice(body: SaveBody, key: string, answer: string) {
   if (answer === '') delete body[key];
@@ -342,7 +356,7 @@ const paySpec = applicantSpec(
       invalid: errors.maxInvalid,
     },
     period: {
-      read: (saved) => salaryOf(saved).period ?? 'year',
+      read: (saved) => offeredOf(salaryOf(saved).period, ['year', 'hour']) || 'year',
       paths: ['expectedSalary.period'],
       invalid: errors.choiceInvalid,
     },
@@ -386,7 +400,10 @@ function PayForm({ saved, ...done }: Done & { saved: SavedAnswers }) {
 const setupSpec = applicantSpec(
   {
     setups: {
-      read: (saved) => (Array.isArray(saved.workSetups) ? saved.workSetups.join(',') : ''),
+      read: (saved) =>
+        Array.isArray(saved.workSetups)
+          ? saved.workSetups.filter((s) => WORK_SETUPS.includes(s)).join(',')
+          : '',
       paths: ['workSetups'],
       invalid: errors.choiceInvalid,
     },
@@ -432,7 +449,7 @@ const otherSpec = applicantSpec(
       invalid: errors.choiceInvalid,
     },
     clearance: {
-      read: (saved) => choiceOf(saved.securityClearance),
+      read: (saved) => offeredOf(saved.securityClearance, SECURITY_CLEARANCES),
       paths: ['securityClearance'],
       invalid: errors.choiceInvalid,
     },
@@ -442,7 +459,7 @@ const otherSpec = applicantSpec(
       invalid: errors.pronounsInvalid,
     },
     heard: {
-      read: (saved) => choiceOf(saved.heardAbout),
+      read: (saved) => offeredOf(saved.heardAbout, HEARD_ABOUT),
       paths: ['heardAbout'],
       invalid: errors.choiceInvalid,
     },
@@ -502,8 +519,16 @@ function voluntaryQuestions() {
   ])[];
 }
 
+const VOLUNTARY_CHOICES: Record<VoluntaryKey, readonly string[]> = {
+  gender: GENDERS,
+  hispanicLatino: HISPANIC_LATINO,
+  race: RACES,
+  veteran: VETERAN_STATUSES,
+  disability: DISABILITY_STATUSES,
+};
+
 const voluntaryField = (key: VoluntaryKey): FieldSpec => ({
-  read: (saved) => choiceOf(saved[key]) || DECLINE,
+  read: (saved) => offeredOf(saved[key], VOLUNTARY_CHOICES[key]) || DECLINE,
   paths: [key],
   invalid: errors.choiceInvalid,
 });

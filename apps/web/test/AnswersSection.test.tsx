@@ -15,7 +15,12 @@ afterEach(() => {
 type Api = ReturnType<typeof createFakeApi>;
 
 /** The app on the Profile page with a saved profile, and `answers` saved first if given. */
-async function onProfile(answers?: Record<string, unknown>, voluntary?: Record<string, unknown>) {
+async function onProfile(
+  answers?: Record<string, unknown>,
+  voluntary?: Record<string, unknown>,
+  /** Changes the API before the app starts (an answer saved under an older schema). */
+  before?: (api: Api) => void,
+) {
   const auth = createFakeAuth({ delay: 0 });
   await auth.signUp('alex@example.com', 'a long enough password');
   await auth.confirmSignUp('alex@example.com', 'a long enough password', '123456');
@@ -23,6 +28,7 @@ async function onProfile(answers?: Record<string, unknown>, voluntary?: Record<s
   await api.request('PUT', '/me/profile', { version: 0, firstName: 'Alex', lastName: 'Morgan' });
   if (answers) await api.request('PUT', '/me/applicant', { version: 0, ...answers });
   if (voluntary) await api.request('PUT', '/me/voluntary', { version: 0, ...voluntary });
+  before?.(api);
   window.history.replaceState(null, '', '/profile');
   await renderApp(auth, {}, api);
   await screen.findByRole('heading', { level: 2, name: 'Application answers' });
@@ -254,5 +260,43 @@ describe('Application answers (#53)', () => {
     expect((within(form).getByLabelText('Are you 18 or older?') as HTMLSelectElement).value).toBe(
       'no',
     );
+  });
+
+  it('refuses a start date typed in part, rather than saving it as unanswered', async () => {
+    const api = await onProfile({ earliestStartDate: '2027-01-04' });
+    const form = await edit('Availability');
+    const start = within(form).getByLabelText('Earliest start date') as HTMLInputElement;
+    // What a browser reports for a date typed in part: no value, and bad input.
+    fireEvent.change(start, { target: { value: '' } });
+    Object.defineProperty(start, 'validity', { value: { badInput: true }, configurable: true });
+    save(form);
+    expect(await within(form).findByText('Use a real date.')).toBeTruthy();
+    expect(document.activeElement).toBe(start);
+    expect((await applicant(api)).earliestStartDate).toBe('2027-01-04');
+  });
+
+  it('reads a saved choice the form no longer offers as unanswered, and never sends it back', async () => {
+    let sent: unknown;
+    await onProfile({ heardAbout: 'referral', over18: true }, undefined, (api) => {
+      const real = api.request.bind(api);
+      api.request = (async (
+        method: Parameters<Api['request']>[0],
+        path: Parameters<Api['request']>[1],
+        body?: unknown,
+      ) => {
+        if (path !== '/me/applicant') return real(method, path, body);
+        if (method === 'PUT') sent = body;
+        const saved = await real<Record<string, unknown>>(method, path, body);
+        // As if saved before a later change dropped the choice.
+        return { ...saved, heardAbout: 'job_fair' };
+      }) as never;
+    });
+    const form = await edit('Other questions');
+    const heard = within(form).getByLabelText('How did you hear about us?') as HTMLSelectElement;
+    expect(heard.value).toBe('');
+    choose(form, 'Pronouns', 'she/her');
+    save(form);
+    await waitFor(() => expect(sent).toBeTruthy());
+    expect(sent).not.toHaveProperty('heardAbout');
   });
 });

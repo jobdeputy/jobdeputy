@@ -239,6 +239,9 @@ export function ChoicesField({
               value={option.value}
               checked={picked.has(option.value)}
               aria-readonly={readOnly || undefined}
+              // Each box carries the group's reason, so focus on one reads why.
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? `${id}-error` : undefined}
               onChange={(event) => {
                 if (readOnly) return;
                 const next = new Set(picked);

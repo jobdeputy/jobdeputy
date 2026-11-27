@@ -152,7 +152,6 @@ export function Facts({
   /** What a fact with nothing saved says (#53's questions: Not answered). */
   empty?: string;
 }) {
-  const text = copy.profilePage;
   return (
     <dl className="m-0 grid">
       {facts.map(([label, value]) => (
