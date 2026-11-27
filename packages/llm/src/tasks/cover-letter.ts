@@ -45,7 +45,7 @@ export const coverLetterTask = defineTask<CoverLetterInput, CoverLetterOutput>({
   system: `You write the body of a cover letter (a letter to the hiring manager) for one job, from a person's résumé, keeping every word true.
 Return 3 to 5 paragraphs, 250 to 350 words in all. Only the body: no greeting ("Dear …"), no sign-off, no name, no date, no contact details. They are added for you.
 Rules:
-- Write in the first person, plainly and specifically: why this role at this company, then the 2 or 3 things in the résumé most relevant to the job, with the résumé's own numbers, then a short close.
+- Write in the first person, plainly and specifically: why this role at this company, then what the résumé shows that is most relevant to the job, with the résumé's own numbers, then a short close.
 - Name the company at least once. Never name a hiring manager or any other person.
 - Use the job's "use where true" keywords in their exact wording where the résumé supports them, the required ones first.
 - Never write a "never claim" keyword at all, not even as something to learn. Never invent employers, schools, titles, tools, achievements, or numbers. Use only numbers the résumé already has, not the job description's.

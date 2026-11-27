@@ -247,6 +247,50 @@ describe('checkLetter', () => {
     ]);
   });
 
+  it('lets the job’s title hold a word shaped like a domain', () => {
+    const ctx = { ...context, job: { ...context.job, title: 'ASP.NET Developer' } };
+    const letter = honest();
+    letter[0] = 'I am applying for the ASP.NET Developer role at Example Payments.';
+    expect(kinds(letter, ctx)).toEqual([]);
+  });
+
+  it('reads a vague count as no claim, and a measured one as a number', () => {
+    const letter = honest();
+    letter[1] = `${letter[1]} Two things stand out. I led three engineers.`;
+    expect(checkLetter(context, letter).map((i) => i.message)).toEqual([
+      'the number 3 is not in the résumé',
+    ]);
+  });
+
+  it('starts a sentence after "etc." or "Inc." when the next word opens one, or a new paragraph', () => {
+    const ctx = { ...context, company: 'Example Payments Inc.' };
+    const letter = honest();
+    letter[1] = `${letter[1]} I use SQL, TypeScript, etc. My work is careful. I want to join Example Payments Inc. In my last role I shipped weekly`;
+    letter[2] = `Reliability ${letter[2]}`;
+    expect(kinds(letter, ctx)).toEqual([]);
+  });
+
+  it('matches a hype word however it is joined', () => {
+    const stated = { ...context, resume: { ...resume, summary: 'Built world-class tooling.' } };
+    const letter = honest();
+    letter[1] = `${letter[1]} I like worldclass and world class work.`;
+    expect(kinds(letter, stated)).toEqual([]);
+  });
+
+  it('never counts a generic leftover as the company’s name', () => {
+    expect(companyNames('The Limited')).toEqual(['The Limited']);
+    expect(companyNames('Box')).toEqual(['Box']);
+  });
+
+  it('asks to drop a greeting it could not strip safely', () => {
+    const letter = honest();
+    letter[0] = `Dear Hiring Manager I am applying for the role at Example Payments.`;
+    expect(checkLetter(context, plainLetter(letter, 'Sam Example'))[0]).toEqual({
+      kind: 'greeting',
+      message: 'start with the first sentence: the greeting is added for you',
+    });
+  });
+
   it('refuses links and emails, even the résumé’s own email (the header has it)', () => {
     const letter = honest();
     letter[3] = 'Reach me at sam@example.com or see www.example-recruit.io for more.';
@@ -356,6 +400,25 @@ describe('plainLetter', () => {
         'Sam Example',
       ),
     ).toEqual(['Body.']);
+  });
+
+  it('drops sign-offs with the first name, "Sincerely yours", or a signed last sentence', () => {
+    const name = 'Sam Example';
+    expect(
+      plainLetter(['I did things.', 'Thanks for reading.\n\nBest regards,\nSam'], name),
+    ).toEqual(['I did things.', 'Thanks for reading.']);
+    expect(plainLetter(['Body.', 'Close. Sincerely yours, Sam Example'], name)).toEqual([
+      'Body.',
+      'Close.',
+    ]);
+    expect(plainLetter(['Body.', 'Thank you for your consideration, Sam Example'], name)).toEqual([
+      'Body.',
+      'Thank you for your consideration.',
+    ]);
+    expect(plainLetter(['Dear Hiring Manager I am writing, about the role.'], name)).toEqual([
+      'Dear Hiring Manager I am writing, about the role.',
+    ]);
+    expect(plainLetter(['Dear Ms. Jane Doe,\nBody.'], name)).toEqual(['Body.']);
   });
 
   it('keeps a short last paragraph that is not a sign-off', () => {

@@ -21,7 +21,8 @@ export type LetterIssueKind =
   | 'placeholder'
   | 'company-missing'
   | 'length'
-  | 'puffery';
+  | 'puffery'
+  | 'greeting';
 
 export interface LetterIssue {
   kind: LetterIssueKind;
@@ -38,13 +39,21 @@ export interface LetterContext {
   job: { title: string; description: string; keywords: readonly JobKeyword[] };
 }
 
+/** The greeting word as a word ("Hi-tech" is not one). */
+const GREETING_WORD = /^\s*(?:dear|hello|hi|to whom it may concern)(?=[\s,:!]|$)/i;
 /**
- * A greeting at the start of the letter (read before line breaks collapse): the greeting word as
- * a word ("Hi-tech" is not one), a short address, then a comma, colon, "!", or line break.
+ * A greeting at the start of the letter (read before line breaks collapse): the greeting word,
+ * an address of at most 4 name-like words ("Hiring Manager", "Ms. Jane Doe", "team"), then a
+ * comma, colon, "!", or line break. Anything else is left for the checks to send back.
  */
-const GREETING =
-  /^\s*(?:dear|hello|hi|to whom it may concern)(?=[\s,:!])[^,:!.?\n]{0,40}(?:[,:!]|\n)\s*/i;
+const GREETING = new RegExp(
+  `${GREETING_WORD.source}(?:[ \\t]+(?!I\\b)(?:\\p{Lu}[\\p{L}.'’-]*|team|there|all|everyone)){0,4}[ \\t]*(?:[,:!]|\\n|$)\\s*`,
+  'iu',
+);
 const CLOSINGS = [
+  'sincerely yours',
+  'respectfully yours',
+  'yours respectfully',
   'sincerely',
   'yours sincerely',
   'yours truly',
@@ -80,18 +89,27 @@ export function plainLetter(paragraphs: readonly string[], name: string): string
   const raw = [...paragraphs];
   if (raw[0] !== undefined) raw[0] = raw[0].replace(GREETING, '');
   const list = raw.map(plainText).filter((p) => p !== '');
-  const own = escaped(name.trim());
+  // The person's name, or its first word ("Best regards, Sam").
+  const full = name.trim();
+  const given = full.split(/\s+/)[0] ?? '';
+  const own = [...new Set([full, given])]
+    .filter((n) => n.length > 1)
+    .map(escaped)
+    .join('|');
+  const named = own ? `(?:${own})(?:,[^.!?]{0,60})?` : '';
   // A sign-off ("Best regards,", "Sincerely, Sam Example, Senior Engineer", or the name alone)
   // after the last sentence; "Thank you for your time." is a sentence and stays.
-  const signed = own ? `(?:\\s*${own}(?:,[^.!?]{0,60})?)?` : '';
   const signOff = new RegExp(
-    `(^|[.!?])\\s*(?:(?:${CLOSINGS})[,.!]?${signed}${own ? `|${own}(?:,[^.!?]{0,60})?` : ''})\\.?\\s*$`,
+    `(^|[.!?])\\s*(?:(?:${CLOSINGS})[,.!]?${named ? `(?:\\s*${named})?|${named}` : ''})\\.?\\s*$`,
     'i',
   );
+  // A sentence signed with a comma ("Thank you for reading, Sam Example") keeps the sentence.
+  const signedSentence = named ? new RegExp(`,\\s*${named}\\.?\\s*$`, 'i') : undefined;
   for (;;) {
     const last = list.at(-1);
     if (last === undefined) break;
-    const cut = last.replace(signOff, '$1').trim();
+    let cut = last.replace(signOff, '$1').trim();
+    if (cut === last && signedSentence) cut = last.replace(signedSentence, '.').trim();
     if (cut === last) break;
     if (cut === '') list.pop();
     else list[list.length - 1] = cut;
@@ -122,8 +140,14 @@ export function companyName(company: string): string {
 export function companyNames(company: string): string[] {
   const name = companyName(company);
   const short = stripped(name, COMPANY_WORD);
-  return [...new Set([company.trim(), name, ...(short ? [short] : [])])];
+  // A leftover too generic to name anything ("The" of "The Limited") does not count.
+  const specific = (form: string) => form.length >= 3 && !GENERIC.has(form.toLowerCase());
+  return [
+    ...new Set([company.trim(), name, short].filter((f) => f === company.trim() || specific(f))),
+  ];
 }
+
+const GENERIC = new Set(['the', 'and', 'for', 'our', 'its', 'new', 'all']);
 
 /** The text names `term` as a whole phrase ("Meta" is not in "metadata"). */
 const namesPhrase = (text: string, term: string) =>
@@ -193,8 +217,10 @@ const UNITS = [
 const TENS = ['twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
 const UNIT_VALUE = new Map(UNITS.map((w, i) => [w, i + 2]));
 const TENS_VALUE = new Map(TENS.map((w, i) => [w, (i + 2) * 10]));
+/** Nouns a count can come before without claiming anything ("two things stand out"). */
+const VAGUE = 'things|ways|reasons|areas|points|examples|aspects|qualities|strengths|ideas';
 const SPELLED = new RegExp(
-  `\\b(?:(${TENS.join('|')})(?:[- ](${UNITS.slice(0, 8).join('|')}|one))?|(${UNITS.join('|')})|dozen)\\b`,
+  `\\b(?:(${TENS.join('|')})(?:[- ](${UNITS.slice(0, 8).join('|')}|one))?|(${UNITS.join('|')})|dozen)\\b(?!\\s+(?:${VAGUE})\\b)`,
   'gi',
 );
 
@@ -251,12 +277,24 @@ function strings(value: unknown): string[] {
 /** Abbreviations a full stop ends inside a sentence ("e.g. Flink", "Acme Inc. Pulsar"). */
 const MID_SENTENCE = new Set([...ABBREVIATIONS, 'u.s', 'u.k', 'e.u', 'approx', 'incl']);
 
-/** The text before a word ends a sentence: "!", "?", or a full stop not ending an abbreviation. */
-function sentenceEnds(before: string): boolean {
-  if (/[!?]["”’)]?$/.test(before)) return true;
-  const stop = /([\p{L}][\p{L}.]*)\.["”’)]?$/u.exec(before);
-  if (!stop) return /\.["”’)]?$/.test(before);
-  return !MID_SENTENCE.has((stop[1] ?? '').toLowerCase());
+/** Words that open a sentence: after "etc." or "Inc.", one of these starts a new one. */
+const OPENERS = new Set(
+  'i my the this that these it its we our in at as with when while over for thank since after before during'.split(
+    ' ',
+  ),
+);
+
+/**
+ * The text before `word` ends a sentence: a paragraph break, "!", "?", or a full stop not ending
+ * an abbreviation (unless the word opens a sentence: "…, etc. My work").
+ */
+function sentenceEnds(before: string, word: string): boolean {
+  if (/\n\s*$/.test(before)) return true;
+  const trimmed = before.trimEnd();
+  if (trimmed === '' || /[!?]["”’)]?$/.test(trimmed)) return true;
+  const stop = /([\p{L}][\p{L}.]*)\.["”’)]?$/u.exec(trimmed);
+  if (!stop) return /\.["”’)]?$/.test(trimmed);
+  return !MID_SENTENCE.has((stop[1] ?? '').toLowerCase()) || OPENERS.has(word.toLowerCase());
 }
 
 const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
@@ -273,6 +311,9 @@ export function checkLetter(context: LetterContext, paragraphs: readonly string[
   };
   const text = paragraphs.join('\n');
   const original = baseText(resume);
+
+  if (GREETING_WORD.test(paragraphs[0] ?? ''))
+    add('greeting', 'start with the first sentence: the greeting is added for you');
 
   const count = words(text);
   if (count < LETTER_WORDS.min || count > LETTER_WORDS.max)
@@ -296,7 +337,9 @@ export function checkLetter(context: LetterContext, paragraphs: readonly string[
 
   // Links, emails, and domains: none but those the user wrote (the job may plant them); the
   // file's header has the contact details.
-  const allowed = `${original}\n${evidence.join('\n')}\n${company}`.toLowerCase();
+  const allowed = [original, ...evidence, company, job.title, ...job.keywords.map((k) => k.term)]
+    .join('\n')
+    .toLowerCase();
   for (const link of text.match(LINK) ?? []) {
     if (!allowed.includes(link.toLowerCase()))
       add('link', `remove "${link}": no links or contact details`);
@@ -332,9 +375,8 @@ export function checkLetter(context: LetterContext, paragraphs: readonly string[
   for (const match of named.matchAll(TOKEN)) {
     const token = match[0];
     if (!/^\p{Lu}/u.test(token)) continue;
-    const before = named.slice(0, match.index).trimEnd();
     const key = tokenKey(token);
-    const first = before === '' || sentenceEnds(before);
+    const first = sentenceEnds(named.slice(0, match.index), key);
     if (first && !NAME_SHAPED.test(token)) continue;
     // Plurals fold: "API" is in a résumé that says "APIs", and "APIs" in one that says "API".
     const known = (k: string) =>
@@ -345,9 +387,10 @@ export function checkLetter(context: LetterContext, paragraphs: readonly string[
 
   // Qualities and scale: only those the résumé states.
   const stated = `${original}\n${evidence.join('\n')}`.toLowerCase();
+  const joined = (w: string) => w.toLowerCase().replace(/[- ]/g, '');
   for (const match of text.match(PUFF) ?? []) {
-    const word = match.toLowerCase().replace(/[- ]/g, '-');
-    if (!new RegExp(`\\b${puffPattern(word)}\\b`).test(stated))
+    const word = PUFFERY.find((p) => joined(p) === joined(match)) ?? match;
+    if (!new RegExp(`\\b${puffPattern(word)}\\b`, 'i').test(stated))
       add('puffery', `remove "${match}": the résumé does not say so`);
   }
 
