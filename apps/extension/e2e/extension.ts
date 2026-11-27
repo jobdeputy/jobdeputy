@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { EXTENSION_DEV_IDS } from '@jobdeputy/shared/extension';
+import { EXTENSION_DEV_KEY } from '@jobdeputy/shared/extension-key';
 import { type BrowserContext, chromium } from '@playwright/test';
 
 /** The built Chrome extension (`pnpm build`). */
@@ -36,5 +38,10 @@ export async function withExtension(): Promise<{
     await context.close();
     rmSync(profile, { recursive: true, force: true });
   };
-  return { context, id: unpackedId(built), close };
+  // A dev build carries the public key that fixes its ID (#54); a store build is unpacked by path.
+  const { key } = JSON.parse(readFileSync(join(built, 'manifest.json'), 'utf8')) as {
+    key?: string;
+  };
+  const id = key === EXTENSION_DEV_KEY ? (EXTENSION_DEV_IDS[0] ?? '') : unpackedId(built);
+  return { context, id, close };
 }

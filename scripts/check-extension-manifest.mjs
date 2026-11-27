@@ -1,11 +1,16 @@
-// #54 (decision 0020): the built extension asks for exactly what src/manifest.ts lists, so the
-// least-privilege test on that file covers what ships. Run after `wxt build`.
+// #54 (decision 0020): the built extension asks for exactly what src/manifest.ts gives for the
+// same build settings, so the least-privilege test on that file covers what ships. Run after
+// `wxt build`, with the build's environment (the CI variables, or apps/extension/.env.local).
 import { readFileSync } from 'node:fs';
 
 const built = JSON.parse(
   readFileSync(new URL('../apps/extension/.output/chrome-mv3/manifest.json', import.meta.url)),
 );
-const { manifest } = await import('../apps/extension/src/manifest.ts');
+const { manifestFor } = await import('../apps/extension/src/manifest.ts');
+const { readSettings } = await import('../apps/extension/src/settings.ts');
+const { buildEnv } = await import('../apps/extension/build-env.ts');
+const env = buildEnv();
+const manifest = manifestFor(readSettings(env), { store: env.JD_STORE_BUILD === '1' });
 const same = (a = [], b = []) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
 const keys = [
   'permissions',
@@ -14,6 +19,8 @@ const keys = [
   'optional_host_permissions',
 ];
 const wrong = keys.filter((key) => !same(built[key], manifest[key]));
+// The fixed ID's public key in a dev build only; a store build has none.
+if (built.key !== manifest.key) wrong.push('key');
 // A static content script's matches are granted at install: they must be hosts granted at
 // install too. Content scripts for optional hosts are registered at runtime, once granted.
 const granted = new Set(manifest.host_permissions ?? []);
@@ -24,6 +31,7 @@ const strays = (built.content_scripts ?? []).flatMap((script) =>
 // content script globs, …) is refused until a decision allows it here.
 const KNOWN = new Set([
   'manifest_version',
+  'key',
   'name',
   'description',
   'version',

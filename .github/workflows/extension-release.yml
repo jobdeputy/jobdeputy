@@ -44,10 +44,16 @@ jobs:
         run: |
           pnpm --filter @jobdeputy/extension typecheck
           pnpm --filter @jobdeputy/extension test
+      # A store build: no manifest `key` (the store gives the item its own ID). Its sign-in
+      # settings come with the store listing (#54); until then it says it can't sign in.
       - name: Build and zip (Chrome, Manifest V3)
         run: pnpm --filter @jobdeputy/extension zip
+        env:
+          JD_STORE_BUILD: '1'
       - name: The built manifest asks only for what src/manifest.ts lists
         run: node --experimental-strip-types scripts/check-extension-manifest.mjs
+        env:
+          JD_STORE_BUILD: '1'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: extension-release
