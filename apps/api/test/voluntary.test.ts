@@ -94,6 +94,18 @@ describe('kmsVoluntaryStore (#53)', () => {
     expect(await store.get('u1')).toEqual({ version: 1, ...answers, gender: 'decline' });
   });
 
+  it('reads unreadable stored answers as decline, never throwing their text', async () => {
+    const kms = fakeKms();
+    const r = repo();
+    const store = kmsVoluntaryStore(r, kms as never, KEY);
+    const ctx = JSON.stringify({ userId: 'u1', purpose: 'voluntary-self-id' });
+    r.items.set('u1', {
+      version: 3,
+      ciphertext: new TextEncoder().encode(`${ctx}|{"gender":"female","race":"as`),
+    });
+    expect(await store.get('u1')).toEqual({ version: 3, ...DECLINED_VOLUNTARY });
+  });
+
   it('refuses a stale save before asking KMS', async () => {
     const kms = fakeKms();
     const store = kmsVoluntaryStore(repo(), kms as never, KEY);

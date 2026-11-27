@@ -1,11 +1,14 @@
 import { DecryptCommand, EncryptCommand, type KMSClient } from '@aws-sdk/client-kms';
 import { type AuditWrite, VersionConflictError, type VoluntaryRepository } from '@jobdeputy/db';
 import {
+  createLogger,
   DECLINED_VOLUNTARY,
   type VoluntaryAnswers,
   voluntaryAnswers,
   voluntaryEncryptionContext,
 } from '@jobdeputy/shared';
+
+const logger = createLogger('api-voluntary');
 
 /** The voluntary answers as the user sees them, with the version a save must send back. */
 export interface VoluntaryView extends VoluntaryAnswers {
@@ -46,10 +49,7 @@ export function kmsVoluntaryStore(
         }),
       );
       if (!res.Plaintext) throw new Error('KMS returned no plaintext');
-      return {
-        version: item.version,
-        ...readable(JSON.parse(new TextDecoder().decode(res.Plaintext))),
-      };
+      return { version: item.version, ...readable(parsed(res.Plaintext)) };
     },
     async save(userId, answers, expectedVersion, audit) {
       // A stale save is refused before KMS is asked (the write checks again).
@@ -70,8 +70,21 @@ export function kmsVoluntaryStore(
 }
 
 /**
+ * The decrypted JSON, or `undefined` when it isn't JSON. Never throws: a parse error quotes
+ * its input, and the answers must never reach a log (decision 0019).
+ */
+function parsed(plaintext: Uint8Array): unknown {
+  try {
+    return JSON.parse(new TextDecoder().decode(plaintext));
+  } catch {
+    logger.warn('Stored voluntary answers are unreadable; reading them as decline');
+    return undefined;
+  }
+}
+
+/**
  * Stored answers as today's schema allows: one no longer allowed (a value renamed or dropped
- * since it was saved) reads as `decline`, so the user still gets a version to save over
+ * since it was saved), or all of them when unreadable, reads as `decline`, so the user still gets a version to save over
  * instead of an error.
  */
 function readable(stored: unknown): VoluntaryAnswers {

@@ -76,7 +76,7 @@ function defaultDeps(): ProfileDeps {
     !VOLUNTARY_KMS_KEY_ARN
   ) {
     throw new Error(
-      'USERS_TABLE_NAME, PREFERENCES_TABLE_NAME, AUDIT_TABLE_NAME, USER_POOL_ID, CELL, and VOLUNTARY_KMS_KEY_ARN must be set',
+      'USERS_TABLE_NAME, PREFERENCES_TABLE_NAME, AUDIT_TABLE_NAME, USAGE_TABLE_NAME, USER_POOL_ID, CELL, and VOLUNTARY_KMS_KEY_ARN must be set',
     );
   }
   const client = documentClient();
