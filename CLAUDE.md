@@ -34,7 +34,7 @@ Do not design ahead of the task that needs it. For example, the crawler's archit
 ## Rules
 
 - Never commit to `main`. Branch `<issue number>-short-slug` (or `fix/…`, `chore/…`) → PR → squash merge.
-- **Agents never merge PRs.** Open or update the PR, get CI green, report the link, and stop. The maintainer reviews and merges.
+- **Agents merge their own PRs only once every check is green** (the maintainer's call, 2026-11-27): open the PR, watch its checks, fix failures, finish the review rounds, then squash merge (bottom of a stack first, then sync the stack) and report the link. Without that, open or update the PR, get CI green, report the link, and stop.
 - Long-running work (crawling, parsing, AI calls) is **asynchronous**: accept the request, return a job ID, and process it in a worker.
 - Never commit secrets, real résumés, or personal data. Use `.env` (git-ignored) and `.env.example`. The repo is intended to be public.
 - **One prod Region, `us-east-1`, serves every country** (US, UK, India) for now; each user has a `country`, not a Region ([0017](docs/decisions/0017-one-prod-region-for-all-countries.md)). The cell code stays: user data never crosses between cells, and no global tables, replication, or cross-Region references are allowed.

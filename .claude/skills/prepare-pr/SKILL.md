@@ -24,4 +24,4 @@ description: Self-review the current branch and open a JobDeputy pull request wi
    - **Security review**: answer every checkbox honestly and list new threats with their mitigations, or write "None".
    Never tick a box that is not true. Write "not applicable" with a reason instead.
 5. Push, then run `gh pr create --base main --body-file <filled template>`. End the body with the project's attribution line if one is configured.
-6. Report the PR URL, its check status, and any sections that still need human input. **Never merge the PR.** The maintainer merges.
+6. Watch the PR's checks and fix any failure. Once every check is green and the review rounds are done, squash merge it (see CLAUDE.md's merge rule), then report the PR URL and anything that still needs human input.
