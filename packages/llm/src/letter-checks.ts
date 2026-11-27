@@ -33,27 +33,63 @@ export interface LetterContext {
   job: { title: string; description: string; keywords: readonly JobKeyword[] };
 }
 
-const GREETING = /^(?:dear|hello|hi|to whom)\b/i;
-const CLOSING =
-  /^(?:sincerely|best|best wishes|best regards|kind regards|warm regards|regards|yours(?: sincerely| truly)?|thank you|thanks|respectfully)[,.!]?$/i;
+/** A greeting at the start of the letter, alone or before its first sentence. */
+const GREETING = /^(?:dear|hello|hi|to whom it may concern)\b[^,.!?:\n]{0,60}[,:!]\s*/i;
+const CLOSINGS =
+  'sincerely|best wishes|best regards|kind regards|warm regards|regards|best|yours sincerely|yours truly|yours|thank you|thanks|respectfully';
+
+const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * The model's paragraphs as plain text, without a greeting or sign-off it added anyway (the
- * file adds its own): what the checks read is what the reader will.
+ * file adds its own), alone or inside the first or last paragraph: what the checks read is
+ * what the reader will.
  */
 export function plainLetter(paragraphs: readonly string[], name: string): string[] {
   const list = paragraphs.map(plainText).filter((p) => p !== '');
-  const first = list[0];
-  if (first !== undefined && first.length <= 80 && GREETING.test(first)) list.shift();
-  const own = name.trim().toLowerCase();
+  if (list[0] !== undefined) list[0] = list[0].replace(GREETING, '');
+  const own = escaped(name.trim());
+  // A sign-off ("Best regards,", "Sincerely, Sam Example", or the name alone) after the last
+  // sentence; "Thank you for your time." is a sentence and stays.
+  const signOff = new RegExp(
+    `(^|[.!?])\\s*(?:(?:${CLOSINGS})[,.!]?${own ? `(?:\\s*${own})?` : ''}${own ? `|${own}` : ''})\\.?\\s*$`,
+    'i',
+  );
   for (;;) {
     const last = list.at(-1);
-    // A sign-off is a few words ("Best regards,"); "Thank you for your time." is a sentence.
-    if (last === undefined || last.length > 30) break;
-    if (!CLOSING.test(last) && last.toLowerCase().replace(/[.,]$/, '') !== own) break;
-    list.pop();
+    if (last === undefined) break;
+    const cut = last.replace(signOff, '$1').trim();
+    if (cut === last) break;
+    if (cut === '') list.pop();
+    else list[list.length - 1] = cut;
   }
-  return list;
+  return list.filter((p) => p !== '');
+}
+
+/** Legal endings a company's stored name has but a letter leaves out ("Acme Inc." is "Acme"). */
+const LEGAL =
+  /[,\s]+(?:inc|llc|ltd|limited|corp|corporation|co|company|gmbh|plc|ag|sa|bv|pty)\.?$/i;
+
+/** The name a letter uses for the company. */
+export function companyName(company: string): string {
+  let name = company.trim();
+  for (let before = ''; before !== name; ) {
+    before = name;
+    name = name.replace(LEGAL, '').trim();
+  }
+  return name || company.trim();
+}
+
+/**
+ * The job's keywords a letter may not name without evidence: not its title or soft skills, and
+ * not one inside the company's name or the job's title ("MongoDB" at MongoDB, "Python" in
+ * "Python Developer"), which the letter must be able to write.
+ */
+export function claimable(context: LetterContext): JobKeyword[] {
+  const names = new TermIndex(`${context.company}\n${context.job.title}`);
+  return context.job.keywords.filter(
+    (k) => k.kind !== 'title' && k.kind !== 'soft_skill' && !names.has(k.term),
+  );
 }
 
 /** A name's pieces: letters and digits, joined by dots, apostrophes, "&", "+", or "#" (Node.js, C#, AT&T). */
@@ -71,8 +107,19 @@ const COMMON = new Set(
     .split(' '),
 );
 
-/** Placeholders a model leaves for the reader to fill: never sent. */
-const PLACEHOLDER = /\[[^\]]{1,60}\]|\{[^}]{1,60}\}|<[^>]{1,60}>|\b(?:XXX+|TBD|lorem ipsum)\b/gi;
+/** Placeholders a model leaves for the reader to fill ("[Company]", "<Your name>"): never sent. */
+const PLACEHOLDER =
+  /\[[^\]]{1,60}\]|\{[^}]{1,60}\}|<[A-Za-z][^<>\n]{0,58}[A-Za-z]>|\b(?:XXX+|TBD|lorem ipsum)\b/gi;
+
+/**
+ * A word shaped like a name whatever its place: capitals after the first letter, digits, or
+ * joining marks (GraphQL, AWS, K8s, Node.js, C#). A plain word starting a sentence ("Reliability")
+ * is not checked: without a dictionary it cannot be told from a name.
+ */
+const NAME_SHAPED = /^.\S*(?:\p{Lu}|\p{N}|[.&+#])/u;
+
+/** Words of scale a letter may write only when the résumé does ("hundreds of", "a million"). */
+const SCALE = /\b(?:hundreds?|thousands?|millions?|billions?|dozens)\b/gi;
 
 const UNITS = [
   'two',
@@ -165,10 +212,17 @@ export function checkLetter(context: LetterContext, paragraphs: readonly string[
   for (const match of text.match(PLACEHOLDER) ?? [])
     add('placeholder', `remove the placeholder "${match}": write the real words or leave it out`);
 
-  // Numbers: only the résumé's (a job title or company may have one: "Engineer 2", "3M").
-  const known = numbersIn(spelledNumbers([original, ...evidence, job.title, company].join('\n')));
+  // Numbers: only the résumé's (a job title or company may have one: "Engineer 2", "3M"),
+  // and words of scale only when the résumé writes them ("2 million requests").
+  const facts = [original, ...evidence, job.title, company].join('\n');
+  const known = numbersIn(spelledNumbers(facts));
   for (const n of numbersIn(spelledNumbers(text))) {
     if (!known.has(n)) add('number', `the number ${n} is not in the résumé`);
+  }
+  const scales = new Set((facts.match(SCALE) ?? []).map((w) => w.toLowerCase().replace(/s$/, '')));
+  for (const word of text.match(SCALE) ?? []) {
+    if (!scales.has(word.toLowerCase().replace(/s$/, '')))
+      add('number', `"${word}" is not in the résumé: use the résumé's own numbers`);
   }
 
   // Links, emails, and domains: none but those the user wrote (the job may plant them); the
@@ -179,15 +233,12 @@ export function checkLetter(context: LetterContext, paragraphs: readonly string[
       add('link', `remove "${link}": no links or contact details`);
   }
 
-  // The job's keywords: never claimed without evidence. The job's title and soft skills may be
-  // named ("the Backend Engineer role", "teamwork"); a term listed twice is checked strictly.
+  // The job's keywords: never claimed without evidence (claimable: the title, soft skills, and
+  // the company's own name may be written).
   const letterIndex = new TermIndex(text);
   const evidenceIndex = new TermIndex(evidenceText(resume, evidence));
   const claims = new Map<string, string>();
-  for (const k of job.keywords) {
-    if (k.kind === 'title' || k.kind === 'soft_skill') continue;
-    claims.set(k.term.toLowerCase(), k.term);
-  }
+  for (const k of claimable(context)) claims.set(k.term.toLowerCase(), k.term);
   for (const term of claims.values()) {
     if (letterIndex.has(term) && !evidenceIndex.has(term))
       add(
@@ -196,9 +247,9 @@ export function checkLetter(context: LetterContext, paragraphs: readonly string[
       );
   }
 
-  // Names: a capitalised word inside a sentence (an employer, school, tool, or person) must come
-  // from the résumé, the confirmed skills, the job, or the company. The first word of a
-  // sentence is skipped: it is capitalised anyway, and the keyword check covers known skills.
+  // Names: a capitalised word (an employer, school, tool, or person) must come from the résumé,
+  // the confirmed skills, the job, or the company; after a colon too. A sentence's first word
+  // is capitalised anyway, so there only a name-shaped word is checked (NAME_SHAPED).
   const sources = new Set(
     [JSON.stringify(resume), ...evidence, job.title, job.description, company]
       .join('\n')
@@ -211,8 +262,9 @@ export function checkLetter(context: LetterContext, paragraphs: readonly string[
     const token = match[0];
     if (!/^\p{Lu}/u.test(token)) continue;
     const before = named.slice(0, match.index).trimEnd();
-    if (before === '' || /[.!?:]["”’)]?$/.test(before)) continue;
     const key = tokenKey(token);
+    const first = before === '' || /[.!?]["”’)]?$/.test(before);
+    if (first && !NAME_SHAPED.test(token)) continue;
     // Plurals fold: "API" is in a résumé that says "APIs", and "APIs" in one that says "API".
     const known = (k: string) =>
       sources.has(k) || sources.has(`${k}s`) || (k.endsWith('s') && sources.has(k.slice(0, -1)));
@@ -227,8 +279,9 @@ export function checkLetter(context: LetterContext, paragraphs: readonly string[
       add('puffery', `remove "${match}": the résumé does not say so`);
   }
 
-  if (!letterIndex.has(company) && !text.toLowerCase().includes(company.toLowerCase()))
-    add('company-missing', `name the company, ${company}, at least once`);
+  const name = companyName(company);
+  if (!letterIndex.has(name) && !text.toLowerCase().includes(name.toLowerCase()))
+    add('company-missing', `name the company, ${name}, at least once`);
   return issues;
 }
 

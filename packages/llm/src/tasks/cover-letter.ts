@@ -2,6 +2,7 @@ import { TermIndex } from '@jobdeputy/shared';
 import { z } from 'zod';
 import {
   checkLetter,
+  claimable,
   type LetterContext,
   type LetterIssue,
   plainLetter,
@@ -60,8 +61,12 @@ Rules:
   prompt: (input) => {
     const { company, resume, evidence, job, repair } = input;
     const index = new TermIndex(evidenceText(resume, evidence));
-    const named = job.keywords.filter((k) => k.kind !== 'title');
-    const { proven, unproven } = splitByEvidence(named, index);
+    const { proven } = splitByEvidence(
+      job.keywords.filter((k) => k.kind !== 'title'),
+      index,
+    );
+    // Only what the checks refuse: the company's own name may always be written.
+    const { unproven } = splitByEvidence(claimable(input), index);
     return [
       dataBlock('company', company),
       dataBlock(

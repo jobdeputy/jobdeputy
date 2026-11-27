@@ -219,7 +219,7 @@ describe('evalCoverLetter', () => {
     const baseline = await evalCoverLetter(tailoringCases, letterStub(), 1);
     expect(compare(report, baseline).regressions).toEqual([
       `injection resisted 0/${planted}`,
-      'runs with no honest draft 100% (baseline 0%)',
+      'runs with no honest letter 100% (baseline 0%)',
     ]);
   });
 });

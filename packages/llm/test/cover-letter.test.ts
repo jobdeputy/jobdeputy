@@ -2,6 +2,8 @@ import type { JobKeyword, StructuredResume } from '@jobdeputy/shared';
 import { describe, expect, it } from 'vitest';
 import {
   checkLetter,
+  claimable,
+  companyName,
   LETTER_WORDS,
   type LetterContext,
   PUFFERY,
@@ -126,6 +128,66 @@ describe('checkLetter', () => {
     expect(kinds(letter, stated)).toEqual([]);
   });
 
+  it('lets the company’s own name and the job’s title be written, even as unproven skills', () => {
+    const ctx: LetterContext = {
+      ...context,
+      company: 'MongoDB',
+      job: {
+        ...context.job,
+        title: 'Python Developer',
+        keywords: [
+          kw('MongoDB', 'hard_skill'),
+          kw('Python', 'hard_skill'),
+          kw('Kafka', 'hard_skill'),
+        ],
+      },
+    };
+    expect(claimable(ctx).map((k) => k.term)).toEqual(['Kafka']);
+    const letter = honest().map((p) => p.replaceAll('Example Payments', 'MongoDB'));
+    letter[0] = 'I am applying for the Python Developer role at MongoDB.';
+    expect(kinds(letter, ctx)).toEqual([]);
+    expect(coverLetterTask.prompt(ctx)).toContain('never claim: Kafka (required)\n');
+  });
+
+  it('accepts the company named without its legal ending', () => {
+    expect(companyName('Acme, Inc.')).toBe('Acme');
+    expect(companyName('Example Payments Ltd')).toBe('Example Payments');
+    expect(companyName('Inc.')).toBe('Inc.');
+    const ctx = { ...context, company: 'Example Payments, Inc.' };
+    expect(kinds(honest(), ctx)).toEqual([]);
+    expect(
+      checkLetter(
+        ctx,
+        honest().map((p) => p.replaceAll('Example Payments', 'you')),
+      ),
+    ).toEqual([
+      { kind: 'company-missing', message: 'name the company, Example Payments, at least once' },
+    ]);
+  });
+
+  it('checks name-shaped words at a sentence’s start and after a colon', () => {
+    const letter = honest();
+    letter[1] = `${letter[1]} GraphQL is what I use. My stack: Terraform and Node.js.`;
+    expect(checkLetter(context, letter).map((i) => i.message)).toEqual([
+      '"GraphQL" is not in the résumé or the job: remove it',
+      '"Terraform" is not in the résumé or the job: remove it',
+    ]);
+  });
+
+  it('refuses words of scale the résumé does not write', () => {
+    const letter = honest();
+    letter[1] = `${letter[1]} I served hundreds of customers and two million requests.`;
+    expect(checkLetter(context, letter).map((i) => i.message)).toEqual([
+      '"hundreds" is not in the résumé: use the résumé\'s own numbers',
+    ]);
+  });
+
+  it('reads no number inside a name, and no comparison as a placeholder', () => {
+    const letter = honest();
+    letter[1] = `${letter[1]} I kept p99 latency < 40 ms and errors > 2 per day low.`;
+    expect(kinds(letter)).toEqual([]);
+  });
+
   it('refuses links and emails, even the résumé’s own email (the header has it)', () => {
     const letter = honest();
     letter[3] = 'Reach me at sam@example.com or see www.example-recruit.io for more.';
@@ -202,6 +264,26 @@ describe('plainLetter', () => {
     ]);
   });
 
+  it('drops a greeting or sign-off written inside the first or last paragraph', () => {
+    expect(
+      plainLetter(
+        [
+          'Dear Hiring Manager, I am applying for the role.',
+          'I hope to talk soon. Best regards, Sam Example',
+        ],
+        'Sam Example',
+      ),
+    ).toEqual(['I am applying for the role.', 'I hope to talk soon.']);
+    expect(plainLetter(['Hello team! Body.', 'Close. Sam Example'], 'Sam Example')).toEqual([
+      'Body.',
+      'Close.',
+    ]);
+    expect(plainLetter(['Body.', 'Thank you for your time.'], '')).toEqual([
+      'Body.',
+      'Thank you for your time.',
+    ]);
+  });
+
   it('keeps a short last paragraph that is not a sign-off', () => {
     expect(plainLetter(['Body.', 'I hope to hear from you.'], 'Sam')).toEqual([
       'Body.',
@@ -222,7 +304,7 @@ describe('coverLetterTask prompt', () => {
     const description = `Build APIs. ${'x'.repeat(LETTER_DESCRIPTION_CHARS)}`;
     const prompt = coverLetterTask.prompt({ ...context, job: { ...context.job, description } });
     expect(prompt).toContain('use where true: Node.js (required); TypeScript (required); Docker');
-    expect(prompt).toContain('never claim: Kafka (required); communication');
+    expect(prompt).toContain('never claim: Kafka (required)\n');
     expect(prompt).not.toContain('Senior Backend Engineer (required)');
     expect(prompt).toContain(`description: ${description.slice(0, LETTER_DESCRIPTION_CHARS)}\n`);
     expect(prompt).toContain('<data name="confirmed_skills">\nDocker\n</data>');

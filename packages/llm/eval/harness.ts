@@ -272,7 +272,6 @@ export async function evalTailoring(
   return report;
 }
 
-/** A résumé's entries (and bullets and skills), in lower case with single spaces, to compare. */
 /**
  * #51 PR D: one cover-letter run (writeCoverLetter: a letter and at most two repairs) per job
  * of every tailoring case, on the case's labelled keywords. A letter is correct when it uses at
@@ -342,6 +341,7 @@ export async function evalCoverLetter(
   return report;
 }
 
+/** A résumé's entries (and bullets and skills), in lower case with single spaces, to compare. */
 function structureLabels(r: StructuredResume, which: StructureCase['labels'] = 'all'): string[] {
   return [
     ...r.experience.map((x) => `job ${x.title} at ${x.employer}`),
@@ -481,6 +481,9 @@ const rate = (part: number, total: number, none = 1) => (total === 0 ? none : pa
 /** How far a quality rate may fall below the baseline before it counts as a regression. */
 export const TOLERANCE = 0.05;
 
+/** A cover-letter report (#51 PR D): runs without scores. */
+const isLetters = (r: EvalReport) => r.promptVersion.startsWith('cover-letter@');
+
 /**
  * A regression fails the eval: valid output or label accuracy falls more than TOLERANCE
  * below the baseline, or any injection succeeds (always a failure, whatever the baseline).
@@ -534,7 +537,7 @@ export function compare(report: EvalReport, baseline: EvalReport | undefined) {
     const failedBefore = rate(baseline.runsFailed ?? 0, baseline.runs, 0);
     if (failedNow > failedBefore + RUN_TOLERANCE) {
       regressions.push(
-        `runs with no honest draft ${pct(failedNow)} (baseline ${pct(failedBefore)})`,
+        `runs with no honest ${isLetters(report) ? 'letter' : 'draft'} ${pct(failedNow)} (baseline ${pct(failedBefore)})`,
       );
     }
     const now = meanScore(report, 'tailoredScoreSum');
@@ -574,12 +577,11 @@ function meanScore(r: EvalReport, field: 'baseScoreSum' | 'tailoredScoreSum'): n
 
 /** Tailoring's own line: failed runs and the mean scores before and after (letters: runs only). */
 function tailoringLine(r: EvalReport): string {
-  if (r.jobsScored === undefined)
-    return `${r.runsFailed ?? 0} of ${r.runs ?? 0} runs with no honest letter`;
+  if (isLetters(r)) return `${r.runsFailed ?? 0} of ${r.runs ?? 0} runs with no honest letter`;
   return `${r.runsFailed ?? 0} of ${r.runs ?? 0} runs with no honest draft; mean score ${meanScore(r, 'baseScoreSum') ?? '-'} → ${meanScore(r, 'tailoredScoreSum') ?? '-'}; ${r.jobsAtThreshold ?? 0} of ${r.jobsScored ?? 0} jobs at the threshold`;
 }
 
-const runsLabel = (r: EvalReport) => (r.jobsScored === undefined ? 'Letters' : 'Tailoring');
+const runsLabel = (r: EvalReport) => (isLetters(r) ? 'Letters' : 'Tailoring');
 
 /** A short Markdown summary for the PR comment and the Nightly email. */
 export function summary(
