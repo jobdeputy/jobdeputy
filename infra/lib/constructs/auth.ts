@@ -1,21 +1,32 @@
 import { PREMIUM_GROUP, TEST_USERS_GROUP } from '@jobdeputy/shared';
-import { Duration, type RemovalPolicy } from 'aws-cdk-lib';
+import { EXTENSION_SCOPES, extensionRedirectUrl } from '@jobdeputy/shared/extension';
+import { Aws, Duration, Fn, type RemovalPolicy } from 'aws-cdk-lib';
 import {
   AccountRecovery,
   CfnUserPoolGroup,
   FeaturePlan,
+  ManagedLoginVersion,
   Mfa,
+  OAuthScope,
   UserPool,
   type UserPoolClient,
+  UserPoolClientIdentityProvider,
+  type UserPoolDomain,
   UserPoolEmail,
 } from 'aws-cdk-lib/aws-cognito';
 import { Construct } from 'constructs';
+import { extensionBranding } from './extension-branding.js';
 
 export interface AuthProps {
   readonly namePrefix: string;
   readonly removalPolicy: RemovalPolicy;
   /** Prod pools cannot be deleted by accident: deleting one deletes every account. */
   readonly deletionProtection: boolean;
+  /**
+   * Chrome extension IDs that may sign in (#54): dev stacks trust the dev ID too, whose key is
+   * public; prod only the store item's. None: no extension client, managed login, or branding.
+   */
+  readonly extensionIds: readonly string[];
   /** Adds an app client for integration tests (admin sign-in, IAM only). Dev only. */
   readonly testsClient: boolean;
 }
@@ -28,6 +39,13 @@ export interface AuthProps {
 export class Auth extends Construct {
   readonly userPool: UserPool;
   readonly webClient: UserPoolClient;
+  /** The browser extension's sign-in (#54), when the stage trusts an extension ID. */
+  readonly extension?: {
+    /** Its client: managed login, code + PKCE. */
+    client: UserPoolClient;
+    /** Managed login's address, `https://jobdeputy-<stack ID part>.auth.<region>.amazoncognito.com`. */
+    domain: UserPoolDomain;
+  };
   readonly testsClient?: UserPoolClient;
 
   constructor(scope: Construct, id: string, props: AuthProps) {
@@ -76,6 +94,46 @@ export class Auth extends Construct {
       disableOAuth: true,
       ...tokenValidity,
     });
+
+    if (props.extensionIds.length > 0) {
+      // #54 (decision 0020): the browser extension signs in through managed login (v2), which
+      // the Essentials plan includes. Prefixes are global to a Region and may not contain `aws`,
+      // `amazon` or `cognito` (an owner such as "dawson" would), so the prefix is not the
+      // stack's name but `jobdeputy-` and the first part of the stack's own ID: no one else can
+      // take it first, and a stack made again gets a fresh one.
+      const stackUuid = Fn.select(2, Fn.split('/', Aws.STACK_ID));
+      const domain = this.userPool.addDomain('Domain', {
+        cognitoDomain: {
+          domainPrefix: Fn.join('', ['jobdeputy-', Fn.select(0, Fn.split('-', stackUuid))]),
+        },
+        managedLoginVersion: ManagedLoginVersion.NEWER_MANAGED_LOGIN,
+      });
+      // Public (no secret: an extension can't keep one), authorization code only (the extension
+      // sends PKCE), back to the extension's own chromiumapp.org address, which only Chrome can
+      // open for that extension. No direct sign-in flow: `authFlows` leaves only refresh. No
+      // sign-out address: "Use a different account" goes through /logout back to sign-in.
+      const client = this.userPool.addClient('ExtensionClient', {
+        userPoolClientName: 'extension',
+        authFlows: { userSrp: false },
+        generateSecret: false,
+        preventUserExistenceErrors: true,
+        enableTokenRevocation: true,
+        supportedIdentityProviders: [UserPoolClientIdentityProvider.COGNITO],
+        oAuth: {
+          flows: { authorizationCodeGrant: true },
+          scopes: EXTENSION_SCOPES.map((scope) => OAuthScope.custom(scope)),
+          callbackUrls: props.extensionIds.map(extensionRedirectUrl),
+        },
+        ...tokenValidity,
+      });
+      // Managed login's look for the extension's client (each client has its own branding).
+      const branding = extensionBranding(this, 'ExtensionBranding', {
+        userPoolId: this.userPool.userPoolId,
+        clientId: client.userPoolClientId,
+      });
+      branding.node.addDependency(domain);
+      this.extension = { client, domain };
+    }
 
     // #74: higher limits for members; an admin adds a user by hand (runbook crawl-limits.md).
     new CfnUserPoolGroup(this, 'PremiumGroup', {
