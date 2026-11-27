@@ -653,7 +653,10 @@ export function createFakeApi({
         if (!checked.success) throw refused(checked.error.issues);
         const job = myJobs().find((each) => each.jobId === checked.data.jobId);
         if (!job) throw new ApiError('not-found', { status: 404 });
-        if (job.status !== 'new') throw new ApiError('invalid', { status: 422, code: 'no_jobs' });
+        // As the API: a job still open and shown (applied ones too), with a title.
+        if (job.closedAt !== undefined || String(job.title ?? '').trim() === '') {
+          throw new ApiError('invalid', { status: 422, code: 'no_jobs' });
+        }
         const company = typeof job.companyName === 'string' ? job.companyName.trim() : '';
         if (!company) throw new ApiError('invalid', { status: 422, code: 'no_company' });
         if (platformRunsThisMonth(me) >= FAKE_TAILORINGS_PER_MONTH) {

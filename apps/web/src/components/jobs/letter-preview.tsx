@@ -49,7 +49,9 @@ export function LetterPreviewButton({
       }}
     >
       <DialogTrigger asChild>
-        <Button variant="outline">{text.open}</Button>
+        <Button variant="outline" aria-label={text.openName}>
+          {text.open}
+        </Button>
       </DialogTrigger>
       <DialogContent>
         <div className="grid gap-5 p-5 sm:p-8">

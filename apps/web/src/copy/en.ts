@@ -571,6 +571,12 @@ export const en = {
       fromTailored: 'Written {date}, from your résumé tailored for {company}.',
       fromBase: 'Written {date}, from your base résumé.',
       copyText: 'Copy text',
+      /** The buttons' names: the visible words first (WCAG label in name), then what they act on. */
+      downloadPdfName: 'Download PDF of the cover letter',
+      downloadDocxName: 'Download DOCX of the cover letter',
+      /** The company's résumé is being tailored now: a letter asked for now won't use it. */
+      tailoringNow:
+        'Your résumé for {company} is being tailored. Wait for it to finish if you want this letter written from it.',
       copied: 'Copied. Paste it into the application’s cover letter box.',
       /** The browser refused the clipboard: the text can still be selected in the preview. */
       copyFailed:
@@ -581,6 +587,7 @@ export const en = {
       fileNameFallback: 'Cover letter.pdf',
       preview: {
         open: 'Preview',
+        openName: 'Preview the cover letter',
         title: 'Your cover letter for {company}',
         line: 'What the PDF and DOCX hold, laid out the same way. Copy text leaves out the contact lines.',
         close: 'Close',

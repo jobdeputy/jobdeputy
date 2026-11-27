@@ -126,7 +126,13 @@ describe('cover letters in the job pane (#51 PR D3)', () => {
     expect(section.getAllByRole('status').map((s) => s.textContent)).toContain(
       'Your cover letter is ready.',
     );
-    for (const name of ['Preview', 'Copy text', 'Download PDF', 'Download DOCX']) {
+    // Named apart from the résumé's Preview and downloads in the same pane.
+    for (const name of [
+      'Preview the cover letter',
+      'Copy text',
+      'Download PDF of the cover letter',
+      'Download DOCX of the cover letter',
+    ]) {
       expect(section.getByRole('button', { name })).toBeTruthy();
     }
     // The intro is for a job with no letter yet.
@@ -159,6 +165,16 @@ describe('cover letters in the job pane (#51 PR D3)', () => {
       await section.findByText('The letter is still loading. Try again in a moment.'),
     ).toBeTruthy();
     expect(writeText).not.toHaveBeenCalled();
+    // Pressed again: a new alert, read out again.
+    const first = section
+      .getAllByRole('alert')
+      .find((a) => /still loading/.test(a.textContent ?? ''));
+    fireEvent.click(copyButton);
+    await waitFor(() =>
+      expect(
+        section.getAllByRole('alert').find((a) => /still loading/.test(a.textContent ?? '')),
+      ).not.toBe(first),
+    );
     // Once read (when the letter shows), the click writes it at once.
     await act(() => gate.release());
     fireEvent.click(copyButton);
@@ -191,31 +207,60 @@ describe('cover letters in the job pane (#51 PR D3)', () => {
 
   it('says when the letter’s text did not load, and reads it again for the next press', async () => {
     let fail = true;
-    await setUp({
-      wrap: (api) => ({
-        ...api,
-        async request<T>(m: ApiMethod, p: `/${string}`, body?: unknown): Promise<T> {
-          if (fail && m === 'GET' && /^\/me\/cover-letters\/\d+$/.test(p)) {
-            throw new ApiError('server', { status: 500 });
-          }
-          return api.request<T>(m, p, body);
-        },
-      }),
+    const reads = letterReads(async (read) => {
+      if (fail) throw new ApiError('server', { status: 500 });
+      return read();
     });
+    await setUp({ wrap: reads.wrap });
     const section = await openSection();
     fireEvent.click(section.getByRole('button', { name: 'Write cover letter' }));
     const copyButton = await section.findByRole('button', { name: 'Copy text' });
-    await waitFor(() => {
-      fireEvent.click(copyButton);
-      expect(
-        section.getByText('The letter didn’t load, so it wasn’t copied. Try again.'),
-      ).toBeTruthy();
-    });
+    await act(() => reads.settled(1));
+    // The read works again from now: the press says it failed, and reads it again.
     fail = false;
-    await waitFor(() => {
-      fireEvent.click(copyButton);
-      expect(writeText).toHaveBeenCalledTimes(1);
+    fireEvent.click(copyButton);
+    expect(
+      await section.findByText('The letter didn’t load, so it wasn’t copied. Try again.'),
+    ).toBeTruthy();
+    expect(writeText).not.toHaveBeenCalled();
+    // So the next press copies it.
+    await act(() => reads.settled(2));
+    fireEvent.click(copyButton);
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+  });
+
+  it('says a ready letter read without its text is unavailable, not loading (round 2)', async () => {
+    const reads = letterReads(async (read) => {
+      const { text: _text, letter: _letter, ...view } = (await read()) as Record<string, unknown>;
+      return view;
     });
+    await setUp({ wrap: reads.wrap });
+    const section = await openSection();
+    fireEvent.click(section.getByRole('button', { name: 'Write cover letter' }));
+    const copyButton = await section.findByRole('button', { name: 'Copy text' });
+    await act(() => reads.settled(1));
+    fireEvent.click(copyButton);
+    expect(
+      await section.findByText('This letter isn’t available. Rewrite to make a new one.'),
+    ).toBeTruthy();
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it('says a letter asked for while the résumé is tailored won’t use it (round 2)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { clock } = await setUp({ crawlMs: 1000 });
+    const section = await openSection();
+    fireEvent.click(resumeSection().getByRole('button', { name: 'Tailor résumé' }));
+    const note = await section.findByText(
+      'Your résumé for Acme is being tailored. Wait for it to finish if you want this letter written from it.',
+    );
+    // Not refused: the button still works, and points to the note.
+    const write = section.getByRole('button', { name: 'Write cover letter' });
+    expect(write.getAttribute('aria-disabled')).toBeNull();
+    expect(write.getAttribute('aria-describedby')).toBe(note.id);
+    clock.now += 2000;
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    await waitFor(() => expect(section.queryByText(/is being tailored\./)).toBeNull());
   });
 
   it('a letter that ended while its pane was closed is not said as just ready', async () => {
@@ -281,9 +326,11 @@ describe('cover letters in the job pane (#51 PR D3)', () => {
     const section = await openSection();
     fireEvent.click(section.getByRole('button', { name: 'Write cover letter' }));
     const read = vi.spyOn(fake, 'request');
-    fireEvent.click(await section.findByRole('button', { name: 'Download PDF' }));
+    fireEvent.click(
+      await section.findByRole('button', { name: 'Download PDF of the cover letter' }),
+    );
     await waitFor(() => expect(pressed).toEqual([expect.stringMatching(/^data:application\/pdf/)]));
-    fireEvent.click(section.getByRole('button', { name: 'Download DOCX' }));
+    fireEvent.click(section.getByRole('button', { name: 'Download DOCX of the cover letter' }));
     await waitFor(() => expect(pressed).toHaveLength(2));
     expect(savedAs).toEqual([
       'Sam Example – Cover letter – Acme.pdf',
@@ -300,7 +347,7 @@ describe('cover letters in the job pane (#51 PR D3)', () => {
     await setUp();
     const section = await openSection();
     fireEvent.click(section.getByRole('button', { name: 'Write cover letter' }));
-    const open = await section.findByRole('button', { name: 'Preview' });
+    const open = await section.findByRole('button', { name: 'Preview the cover letter' });
     fireEvent.click(open);
     const dialog = within(
       await screen.findByRole('dialog', { name: 'Your cover letter for Acme' }),
@@ -317,7 +364,7 @@ describe('cover letters in the job pane (#51 PR D3)', () => {
     expect(page.getByText('Sincerely,')).toBeTruthy();
     fireEvent.click(dialog.getByRole('button', { name: 'Copy text' }));
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
-    fireEvent.click(dialog.getByRole('button', { name: 'Download PDF' }));
+    fireEvent.click(dialog.getByRole('button', { name: 'Download PDF of the cover letter' }));
     await waitFor(() => expect(pressed).toEqual([expect.stringMatching(/^data:application\/pdf/)]));
     fireEvent.click(dialog.getByRole('button', { name: 'Close' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -414,7 +461,7 @@ describe('cover letters in the job pane (#51 PR D3)', () => {
     fireEvent.click(await section.findByRole('button', { name: 'Rewrite' }));
     expect(await section.findByText('Writing your cover letter…')).toBeTruthy();
     // The letter already there stays usable meanwhile.
-    expect(section.getByRole('button', { name: 'Download PDF' })).toBeTruthy();
+    expect(section.getByRole('button', { name: 'Download PDF of the cover letter' })).toBeTruthy();
     clock.now += 2000;
     await act(() => vi.advanceTimersByTimeAsync(5000));
     await waitFor(() => expect(section.queryByText('Writing your cover letter…')).toBeNull());
@@ -423,31 +470,59 @@ describe('cover letters in the job pane (#51 PR D3)', () => {
 });
 
 /**
- * Holds the read of a ready letter's text (`GET /me/cover-letters/{id}`) until `release`, which
- * resolves once the held read has been answered.
+ * Holds the reads of a ready letter's text (`GET /me/cover-letters/{id}`) until `release`, which
+ * resolves once the first read has been answered (whenever it was asked for).
  */
 function heldLetterRead() {
   let open: () => void = () => {};
   const opened = new Promise<void>((resolve) => {
     open = resolve;
   });
-  let answered: Promise<unknown> = Promise.resolve();
+  const reads = letterReads(async (read) => {
+    await opened;
+    return read();
+  });
+  return {
+    wrap: reads.wrap,
+    async release() {
+      open();
+      await reads.settled(1);
+    },
+  };
+}
+
+/**
+ * Answers each read of a ready letter (`GET /me/cover-letters/{id}`) through `answer`;
+ * `settled(n)` resolves once the n-th read has been answered (and the page has drawn it).
+ */
+function letterReads(answer: (read: () => Promise<unknown>) => Promise<unknown>) {
+  const ended: Array<() => void> = [];
+  const done: Promise<void>[] = [];
+  const nth = (n: number) => {
+    while (done.length < n) {
+      done.push(new Promise((resolve) => ended.push(resolve)));
+    }
+    return done[n - 1] as Promise<void>;
+  };
+  let count = 0;
   return {
     wrap: (api: ApiClient): ApiClient => ({
       ...api,
       async request<T>(m: ApiMethod, p: `/${string}`, body?: unknown): Promise<T> {
-        if (m === 'GET' && /^\/me\/cover-letters\/\d+$/.test(p)) {
-          const read = opened.then(() => api.request<T>(m, p, body));
-          answered = read.then(() => new Promise((resolve) => setTimeout(resolve, 0)));
-          return read;
+        if (!(m === 'GET' && /^\/me\/cover-letters\/\d+$/.test(p))) {
+          return api.request<T>(m, p, body);
         }
-        return api.request<T>(m, p, body);
+        count += 1;
+        nth(count);
+        const finish = ended[count - 1] as () => void;
+        try {
+          return (await answer(() => api.request<T>(m, p, body))) as T;
+        } finally {
+          setTimeout(finish, 0);
+        }
       },
     }),
-    async release() {
-      open();
-      await answered;
-    },
+    settled: (n: number) => nth(n),
   };
 }
 

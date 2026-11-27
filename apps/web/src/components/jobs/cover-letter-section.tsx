@@ -20,7 +20,7 @@ import {
 } from '@/lib/api/cover-letters.ts';
 import { ApiError, useApi } from '@/lib/api/index.ts';
 import { companyName, type JobSummary } from '@/lib/api/jobs.ts';
-import { tailoringsKey } from '@/lib/api/tailorings.ts';
+import { isTailoring, tailoringsKey, useTailorings } from '@/lib/api/tailorings.ts';
 import { saveFile } from '@/lib/save-file.ts';
 
 const text = copy.matchesPage.letter;
@@ -37,7 +37,10 @@ export function CoverLetterSection({ job }: { job: JobSummary }) {
   const api = useApi();
   const queries = useQueryClient();
   const list = useCoverLetters(job.jobId);
-  const ids = { title: useId(), status: useId() };
+  const ids = { title: useId(), status: useId(), tailoring: useId() };
+  // The company's résumé being tailored now (the section above's list, shared): a letter asked
+  // for meanwhile is written from the résumé ready before it.
+  const tailoring = isTailoring(useTailorings(job.companyKey).data?.tailorings[0]);
   const company = companyName(job);
   const [starting, setStarting] = useState(false);
   const [refusal, setRefusal] = useState<Said | null>(null);
@@ -158,13 +161,19 @@ export function CoverLetterSection({ job }: { job: JobSummary }) {
           pendingLabel={text.starting}
           aria-disabled={working || undefined}
           data-unavailable={working || undefined}
-          aria-describedby={working ? ids.status : undefined}
+          aria-describedby={working ? ids.status : tailoring ? ids.tailoring : undefined}
           onClick={() => {
             if (!working) void start();
           }}
         >
           {ready ? text.again : text.start}
         </Button>
+        {/* Not refused: a letter from the résumé there now may be what is wanted. */}
+        {tailoring && !working && (
+          <p id={ids.tailoring} className="m-0 text-sm font-[650] text-ink-soft">
+            {fill(text.tailoringNow, { company })}
+          </p>
+        )}
         <p className="m-0 text-sm text-muted-foreground">
           {left > 0
             ? text.allowance
@@ -265,19 +274,29 @@ function useLetterActions(letter: CoverLetter) {
   const fail = (words: string) => setSaid((was) => ({ words, count: (was?.count ?? 0) + 1 }));
 
   async function copyText() {
-    setSaid(null);
+    // What was said stays until something new is (each press that fails is said again: a new
+    // alert, `count` up).
     setCopied(false);
     const body = files.data?.text;
     if (!body) {
-      // Still being read: said, so the next press has it. Read and failed: read again.
+      // Still being read: said, so the next press has it. Read and failed: read again. Read
+      // without its text (not expected): unavailable, as the preview says.
       if (files.isError) void files.refetch();
-      fail(files.isError ? text.copyUnread : text.copyLoading);
+      fail(
+        files.isError
+          ? text.copyUnread
+          : files.isSuccess
+            ? text.preview.unavailable
+            : text.copyLoading,
+      );
       return;
     }
     try {
       if (!navigator.clipboard?.writeText) throw new Error('no clipboard');
       await navigator.clipboard.writeText(body);
-      if (current.current === letter.documentId) setCopied(true);
+      if (current.current !== letter.documentId) return;
+      setSaid(null);
+      setCopied(true);
     } catch {
       if (current.current === letter.documentId) fail(text.copyFailed);
     }
@@ -317,10 +336,12 @@ function Actions({ state, preview }: { state: ActionsState; preview?: ReactNode 
         <Button variant="outline" onClick={() => void copyText()}>
           {text.copyText}
         </Button>
+        {/* Named apart from the résumé's buttons in the same pane (the visible words first). */}
         <Button
           variant="outline"
           pending={getting === 'pdf'}
           pendingLabel={shared.downloading}
+          aria-label={getting === 'pdf' ? undefined : text.downloadPdfName}
           onClick={() => void download('pdf')}
         >
           {shared.downloadPdf}
@@ -329,6 +350,7 @@ function Actions({ state, preview }: { state: ActionsState; preview?: ReactNode 
           variant="outline"
           pending={getting === 'docx'}
           pendingLabel={shared.downloading}
+          aria-label={getting === 'docx' ? undefined : text.downloadDocxName}
           onClick={() => void download('docx')}
         >
           {shared.downloadDocx}
