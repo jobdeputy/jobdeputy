@@ -1,3 +1,4 @@
+import { applicantInput, DECLINED_VOLUNTARY, voluntaryInput } from '@jobdeputy/shared/applicant';
 import {
   cooldownUntil,
   DEFAULT_APPLY_COMPANY_LIMIT,
@@ -98,6 +99,8 @@ export function createFakeApi({
   user?: () => Promise<string | null>;
 } = {}): ApiClient {
   const profiles = new Map<string, Record<string, unknown>>();
+  // #53: each person's application answers and voluntary answers, by path.
+  const answers = new Map<string, Record<string, unknown>>();
   const roles = new Map<string, Record<string, unknown>[]>();
   const documents = new Map<string, FakeDocument[]>();
   const crawls = new Map<string, FakeCrawl[]>();
@@ -382,6 +385,31 @@ export function createFakeApi({
         };
         profiles.set(me, next);
         return next as T;
+      }
+      if (path === '/me/applicant' || path === '/me/voluntary') {
+        // As the API (apps/api/src/profile.ts): one item each, versioned, replaced whole; the
+        // voluntary answers start declined.
+        const schema = path === '/me/applicant' ? applicantInput : voluntaryInput;
+        const key = `${me} ${path}`;
+        const stored = answers.get(key);
+        if (method === 'GET') {
+          return (stored ??
+            (path === '/me/applicant'
+              ? { version: 0, workAuthorization: [], workSetups: [] }
+              : { version: 0, ...DECLINED_VOLUNTARY })) as T;
+        }
+        if (method === 'PUT') {
+          const checked = schema.safeParse(body);
+          if (!checked.success) throw refused(checked.error.issues);
+          const { version, ...fields } = checked.data;
+          const current = typeof stored?.version === 'number' ? stored.version : 0;
+          if (version !== current) {
+            throw new ApiError('conflict', { status: 409, code: 'conflict' });
+          }
+          const next = { ...fields, version: current + 1 };
+          answers.set(key, next);
+          return next as T;
+        }
       }
       if (path === '/me/profile/skills' && method === 'POST') {
         // As the API (apps/api/src/profile.ts `addSkill`): added at the saved version, once.
