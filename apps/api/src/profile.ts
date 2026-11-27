@@ -1,13 +1,17 @@
+import { KMSClient } from '@aws-sdk/client-kms';
 import {
   AccountRepository,
+  ApplicantRepository,
   documentClient,
   PreferencesRepository,
   ProfileRepository,
   RoleLimitError,
   VersionConflictError,
+  VoluntaryRepository,
 } from '@jobdeputy/db';
 import {
   addSkillInput,
+  applicantInput,
   callerFromEvent,
   createLogger,
   createRoleInput,
@@ -22,6 +26,7 @@ import {
   searchInput,
   updateRoleInput,
   validationProblem,
+  voluntaryInput,
 } from '@jobdeputy/shared';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, Context } from 'aws-lambda';
 import { ulid } from 'ulid';
@@ -30,12 +35,17 @@ import { refuseWritesWhileDeleting } from './account-guard.js';
 import { type UserAudit, userAudit } from './audited.js';
 import { cognitoEmailLookup } from './cognito.js';
 import { concurrentUpdateProblem } from './errors.js';
+import { kmsVoluntaryStore, type VoluntaryStore } from './voluntary.js';
 
 const logger = createLogger('api-profile');
 
 export interface ProfileDeps {
   cell: string;
   profiles: Pick<ProfileRepository, 'get' | 'save'>;
+  /** #53: the application answers (`APPLICANT`). */
+  applicants: Pick<ApplicantRepository, 'get' | 'save'>;
+  /** #53: the voluntary self-identification answers (`VOLUNTARY`, KMS-encrypted). */
+  voluntary: VoluntaryStore;
   preferences: Pick<
     PreferencesRepository,
     'getSearch' | 'saveSearch' | 'listRoles' | 'createRole' | 'updateRole' | 'deleteRole'
@@ -54,6 +64,7 @@ function defaultDeps(): ProfileDeps {
     USAGE_TABLE_NAME,
     USER_POOL_ID,
     CELL,
+    VOLUNTARY_KMS_KEY_ARN,
   } = process.env;
   if (
     !USERS_TABLE_NAME ||
@@ -61,10 +72,11 @@ function defaultDeps(): ProfileDeps {
     !AUDIT_TABLE_NAME ||
     !USAGE_TABLE_NAME ||
     !USER_POOL_ID ||
-    !CELL
+    !CELL ||
+    !VOLUNTARY_KMS_KEY_ARN
   ) {
     throw new Error(
-      'USERS_TABLE_NAME, PREFERENCES_TABLE_NAME, AUDIT_TABLE_NAME, USER_POOL_ID, and CELL must be set',
+      'USERS_TABLE_NAME, PREFERENCES_TABLE_NAME, AUDIT_TABLE_NAME, USER_POOL_ID, CELL, and VOLUNTARY_KMS_KEY_ARN must be set',
     );
   }
   const client = documentClient();
@@ -73,6 +85,12 @@ function defaultDeps(): ProfileDeps {
     isBeingDeleted: (userId) => account.isBeingDeleted(userId),
     cell: CELL,
     profiles: new ProfileRepository(client, USERS_TABLE_NAME),
+    applicants: new ApplicantRepository(client, USERS_TABLE_NAME),
+    voluntary: kmsVoluntaryStore(
+      new VoluntaryRepository(client, USERS_TABLE_NAME),
+      new KMSClient({}),
+      VOLUNTARY_KMS_KEY_ARN,
+    ),
     preferences: new PreferencesRepository(
       client,
       PREFERENCES_TABLE_NAME,
@@ -95,7 +113,8 @@ function view<T extends { userId: string; sk: string; type: string; schemaVersio
 type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
 
 /**
- * The caller's own profile, search settings, and target roles (T05b).
+ * The caller's own profile, search settings, and target roles (T05b), and the answers
+ * application forms ask for (#53: `/me/applicant`, `/me/voluntary`).
  * The user is always the token's `sub`; there is no way to name another user.
  */
 export async function route(event: Event, deps: ProfileDeps): Promise<HttpResponse> {
@@ -157,6 +176,50 @@ export async function route(event: Event, deps: ProfileDeps): Promise<HttpRespon
         const input = body(addSkillInput);
         if (!input.ok) return input.res;
         return await addSkill(userId, input.data.skill, deps, requestId);
+      }
+      case 'GET /me/applicant': {
+        const applicant = await deps.applicants.get(userId);
+        return json(
+          200,
+          applicant ? view(applicant) : { version: 0, workAuthorization: [], workSetups: [] },
+        );
+      }
+      case 'PUT /me/applicant': {
+        const input = body(applicantInput);
+        if (!input.ok) return input.res;
+        const { version, ...fields } = input.data;
+        const saved = await deps.applicants.save(
+          userId,
+          fields,
+          version,
+          deps.audit(
+            'applicant.saved',
+            { type: 'applicant', id: 'APPLICANT' },
+            'Application answers saved',
+            { version: version + 1 },
+          ),
+        );
+        return json(200, view(saved));
+      }
+      // Never logged and never audited with their values (decision 0019).
+      case 'GET /me/voluntary':
+        return json(200, await deps.voluntary.get(userId));
+      case 'PUT /me/voluntary': {
+        const input = body(voluntaryInput);
+        if (!input.ok) return input.res;
+        const { version, ...answers } = input.data;
+        const saved = await deps.voluntary.save(
+          userId,
+          answers,
+          version,
+          deps.audit(
+            'voluntary.saved',
+            { type: 'voluntary', id: 'VOLUNTARY' },
+            'Voluntary self-identification saved',
+            { version: version + 1 },
+          ),
+        );
+        return json(200, saved);
       }
       case 'GET /me/preferences/search': {
         const search = await deps.preferences.getSearch(userId);

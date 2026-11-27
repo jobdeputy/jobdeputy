@@ -22,6 +22,7 @@ Short records of choices that shape the project. Agents and contributors treat a
 | [0016](0016-applications-are-job-stages.md) | Applications are job stages: one jobs table, a sparse `applied` index | Accepted (amended by 0018) |
 | [0017](0017-one-prod-region-for-all-countries.md) | One prod Region (`us-east-1`) serves every country, for now; cells added only on a trigger | Accepted |
 | [0018](0018-shared-job-catalog-and-matching.md) | A shared job catalog: scheduled visits, duplicates, job age, matching, free and premium, tailoring on demand | Accepted (design) |
+| [0019](0019-application-answers-and-voluntary-self-id.md) | Application answers in the profile; voluntary self-identification encrypted with the cell's KMS key | Accepted |
 
 ## Template
 

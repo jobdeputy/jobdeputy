@@ -33,7 +33,9 @@ export class KeysStack extends Stack {
       description: 'Encrypts users’ own AI keys (ai-keys table). Decision 0009.',
       enableKeyRotation: true,
       // The key policy only delegates to IAM: the cell stack grants encrypt to the key API
-      // and decrypt to the LLM workers, each with the encryption context required.
+      // and decrypt to the LLM workers, each with the encryption context required. #53
+      // (decision 0019): the profile API also uses it for voluntary self-identification
+      // answers, with its own context (user + purpose), so neither can open the other's.
       removalPolicy: RemovalPolicy.RETAIN,
       pendingWindow: Duration.days(30),
     });

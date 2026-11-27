@@ -41,8 +41,9 @@ describe('ai-keys (T08b2)', () => {
 
   it('gives KMS to exactly four functions: encrypt to the key API, decrypt to the three workers that call providers', () => {
     for (const t of [dev, cell('prod'), cell('dev', 'pr42')]) {
-      const kms = statements(t).filter(([, s]) =>
-        [s.Action].flat().some((a) => a.startsWith('kms:')),
+      const kms = statements(t).filter(
+        ([id, s]) =>
+          [s.Action].flat().some((a) => a.startsWith('kms:')) && !id.startsWith('ProfileApi'),
       );
       expect(kms.map(([id, s]) => [id.replace(/[0-9A-F]{8}$/, ''), s.Action])).toEqual([
         ['AiKeysAiApiFnServiceRoleDefaultPolicy', 'kms:Encrypt'],
@@ -59,6 +60,25 @@ describe('ai-keys (T08b2)', () => {
           },
         });
       }
+    }
+  });
+
+  it('#53: gives the profile API encrypt + decrypt only for voluntary answers (user + purpose context)', () => {
+    for (const t of [dev, cell('prod'), cell('dev', 'pr42')]) {
+      const kms = statements(t).filter(
+        ([id, s]) =>
+          id.startsWith('ProfileApi') && [s.Action].flat().some((a) => a.startsWith('kms:')),
+      );
+      expect(kms).toHaveLength(1);
+      const [, s] = kms[0] as [string, Statement];
+      expect(s.Action).toEqual(['kms:Encrypt', 'kms:Decrypt']);
+      expect(s.Condition).toEqual({
+        'ForAllValues:StringEquals': { 'kms:EncryptionContextKeys': ['userId', 'purpose'] },
+        StringEquals: { 'kms:EncryptionContext:purpose': 'voluntary-self-id' },
+        Null: { 'kms:EncryptionContext:userId': 'false' },
+      });
+      // The functions allowed AI keys require `provider` in the context, which voluntary
+      // ciphertext never has; this grant forbids `provider`. Neither can open the other's.
     }
   });
 

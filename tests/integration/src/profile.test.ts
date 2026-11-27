@@ -1,5 +1,14 @@
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { callApi, createTestUser, stackOutputs, type TestUser } from './stack.js';
+import {
+  callApi,
+  createTestUser,
+  region,
+  stackName,
+  stackOutputs,
+  type TestUser,
+} from './stack.js';
 
 /**
  * Deployed wiring of T05b: real tables, conditional writes, Cognito email, and
@@ -8,6 +17,10 @@ import { callApi, createTestUser, stackOutputs, type TestUser } from './stack.js
 let api: string;
 let alice: TestUser;
 let bob: TestUser;
+
+/** The token's `sub`, the userId the API stores under. */
+const userIdOf = (token: string): string =>
+  JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString()).sub;
 
 beforeAll(async () => {
   const outputs = await stackOutputs();
@@ -80,5 +93,92 @@ describe('profile, search settings, and roles (deployed)', () => {
       204,
     );
     expect((await callApi(api, 'GET', 'me/roles', alice.accessToken)).body.roles).toEqual([]);
+  });
+});
+
+describe('application answers (#53, deployed)', () => {
+  it('saves the answers beside the profile, versioned, and keeps users apart', async () => {
+    expect((await callApi(api, 'GET', 'me/applicant', alice.accessToken)).body).toEqual({
+      version: 0,
+      workAuthorization: [],
+      workSetups: [],
+    });
+    const answers = {
+      workAuthorization: [{ country: 'US', authorized: true, needsSponsorship: false }],
+      noticePeriodDays: 14,
+      expectedSalary: { min: 150000, currency: 'USD', period: 'year' },
+      workSetups: ['remote'],
+      over18: true,
+      heardAbout: 'company_website',
+    };
+    const saved = await callApi(api, 'PUT', 'me/applicant', alice.accessToken, {
+      version: 0,
+      ...answers,
+    });
+    expect(saved.status).toBe(200);
+    expect(saved.body).toMatchObject({ version: 1, ...answers });
+    const stale = await callApi(api, 'PUT', 'me/applicant', alice.accessToken, { version: 0 });
+    expect(stale.status).toBe(409);
+    expect((await callApi(api, 'GET', 'me/applicant', alice.accessToken)).body).toMatchObject({
+      version: 1,
+      ...answers,
+    });
+    expect((await callApi(api, 'GET', 'me/applicant', bob.accessToken)).body.version).toBe(0);
+  });
+
+  it('stores voluntary answers only encrypted, and decrypts them only for their user', async () => {
+    expect((await callApi(api, 'GET', 'me/voluntary', alice.accessToken)).body).toEqual({
+      version: 0,
+      gender: 'decline',
+      hispanicLatino: 'decline',
+      race: 'decline',
+      veteran: 'decline',
+      disability: 'decline',
+    });
+    const answers = {
+      gender: 'non_binary',
+      hispanicLatino: 'no',
+      race: 'native_hawaiian_pacific_islander',
+      veteran: 'not_protected',
+      disability: 'decline',
+    };
+    const saved = await callApi(api, 'PUT', 'me/voluntary', alice.accessToken, {
+      version: 0,
+      ...answers,
+    });
+    expect(saved.status).toBe(200);
+    expect(saved.body).toEqual({ version: 1, ...answers });
+    expect((await callApi(api, 'GET', 'me/voluntary', alice.accessToken)).body).toEqual({
+      version: 1,
+      ...answers,
+    });
+    expect(
+      (await callApi(api, 'PUT', 'me/voluntary', alice.accessToken, { version: 0, ...answers }))
+        .status,
+    ).toBe(409);
+    expect((await callApi(api, 'GET', 'me/voluntary', bob.accessToken)).body.version).toBe(0);
+
+    // At rest: only ciphertext, none of the answers in the clear.
+    const db = DynamoDBDocumentClient.from(new DynamoDBClient({ region }));
+    const item = (
+      await db.send(
+        new GetCommand({
+          TableName: `${stackName()}-users`,
+          Key: { userId: userIdOf(alice.accessToken), sk: 'VOLUNTARY' },
+        }),
+      )
+    ).Item;
+    expect(Object.keys(item ?? {}).sort()).toEqual([
+      'ciphertext',
+      'createdAt',
+      'schemaVersion',
+      'sk',
+      'type',
+      'updatedAt',
+      'userId',
+      'version',
+    ]);
+    const raw = Buffer.from(item?.ciphertext as Uint8Array).toString('latin1');
+    expect(raw).not.toMatch(/non_binary|native_hawaiian|not_protected/);
   });
 });
