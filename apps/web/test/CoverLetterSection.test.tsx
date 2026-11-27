@@ -148,12 +148,19 @@ describe('cover letters in the job pane (#51 PR D3)', () => {
   });
 
   it('copies the letter’s text (no contact lines) in the click, and says so', async () => {
-    await setUp();
+    const gate = heldLetterRead();
+    await setUp({ wrap: gate.wrap });
     const section = await openSection();
     fireEvent.click(section.getByRole('button', { name: 'Write cover letter' }));
     const copyButton = await section.findByRole('button', { name: 'Copy text' });
-    // The text is read when the letter shows, so the click writes it at once.
-    await waitFor(() => expect(copyButton.getAttribute('data-pending')).toBeNull());
+    // Pressed before the text is read: said, and nothing copied.
+    fireEvent.click(copyButton);
+    expect(
+      await section.findByText('The letter is still loading. Try again in a moment.'),
+    ).toBeTruthy();
+    expect(writeText).not.toHaveBeenCalled();
+    // Once read (when the letter shows), the click writes it at once.
+    await act(() => gate.release());
     fireEvent.click(copyButton);
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
     const copied = String(writeText.mock.calls[0]?.[0]);
@@ -167,16 +174,106 @@ describe('cover letters in the job pane (#51 PR D3)', () => {
 
   it('says when the browser refused to copy', async () => {
     writeText.mockRejectedValueOnce(new Error('NotAllowedError'));
-    await setUp();
+    const gate = heldLetterRead();
+    await setUp({ wrap: gate.wrap });
     const section = await openSection();
     fireEvent.click(section.getByRole('button', { name: 'Write cover letter' }));
     const copyButton = await section.findByRole('button', { name: 'Copy text' });
-    await waitFor(() => expect(copyButton.getAttribute('data-pending')).toBeNull());
+    await act(() => gate.release());
     fireEvent.click(copyButton);
     expect(
-      await section.findByText('Couldn’t copy the letter. Open Preview and copy it from there.'),
+      await section.findByText(
+        'Your browser didn’t allow copying. Select the letter’s text in Preview and copy it.',
+      ),
     ).toBeTruthy();
     expect(section.queryByText(/^Copied\./)).toBeNull();
+  });
+
+  it('says when the letter’s text did not load, and reads it again for the next press', async () => {
+    let fail = true;
+    await setUp({
+      wrap: (api) => ({
+        ...api,
+        async request<T>(m: ApiMethod, p: `/${string}`, body?: unknown): Promise<T> {
+          if (fail && m === 'GET' && /^\/me\/cover-letters\/\d+$/.test(p)) {
+            throw new ApiError('server', { status: 500 });
+          }
+          return api.request<T>(m, p, body);
+        },
+      }),
+    });
+    const section = await openSection();
+    fireEvent.click(section.getByRole('button', { name: 'Write cover letter' }));
+    const copyButton = await section.findByRole('button', { name: 'Copy text' });
+    await waitFor(() => {
+      fireEvent.click(copyButton);
+      expect(
+        section.getByText('The letter didn’t load, so it wasn’t copied. Try again.'),
+      ).toBeTruthy();
+    });
+    fail = false;
+    await waitFor(() => {
+      fireEvent.click(copyButton);
+      expect(writeText).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('a letter that ended while its pane was closed is not said as just ready', async () => {
+    const { clock } = await setUp({ crawlMs: 1000 });
+    const section = await openSection();
+    fireEvent.click(section.getByRole('button', { name: 'Write cover letter' }));
+    await section.findByText('Writing your cover letter…');
+    // Closed mid-run (Back to Matches), and opened again once the run has ended.
+    fireEvent.click(screen.getByRole('button', { name: /^Close/ }));
+    clock.now += 2000;
+    const again = await openSection();
+    await again.findByRole('button', { name: 'Rewrite' });
+    expect(again.getAllByRole('status').map((s) => s.textContent)).not.toContain(
+      'Your cover letter is ready.',
+    );
+  });
+
+  it('a run that ends failed reads the shared count again in the résumé section', async () => {
+    let used = 1;
+    let status = 'processing';
+    await setUp({
+      wrap: (api) => ({
+        ...api,
+        async request<T>(m: ApiMethod, p: `/${string}`, body?: unknown): Promise<T> {
+          const answer = await api.request<T>(m, p, body);
+          // The server's count: the run counted while it works, given back when it fails.
+          const allowance = { used, perMonth: 10, nextAt: '2026-12-01T00:00:00.000Z' };
+          if (m === 'GET' && p.startsWith('/me/tailorings?')) return { ...answer, allowance };
+          if (m === 'GET' && p.startsWith('/me/cover-letters?')) {
+            return {
+              coverLetters: [
+                {
+                  documentId: '1'.padStart(26, '0'),
+                  jobId: 'x',
+                  companyKey: 'greenhouse:acme',
+                  status,
+                  ...(status === 'failed'
+                    ? { error: 'no_resume', message: 'Upload a résumé.' }
+                    : {}),
+                  createdAt: '2026-11-25T14:59:00.000Z',
+                },
+              ],
+              allowance,
+            } as T;
+          }
+          return answer;
+        },
+      }),
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const section = await openSection();
+    expect(await section.findByText('Writing your cover letter…')).toBeTruthy();
+    expect(await resumeSection().findByText(/9 of 10 free runs left/)).toBeTruthy();
+    used = 0;
+    status = 'failed';
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    expect(await section.findByText('This cover letter wasn’t written.')).toBeTruthy();
+    expect(await resumeSection().findByText(/10 of 10 free runs left/)).toBeTruthy();
   });
 
   it('downloads the PDF or DOCX from fresh links read on the click', async () => {
@@ -324,6 +421,35 @@ describe('cover letters in the job pane (#51 PR D3)', () => {
     expect(await resumeSection().findByText(/8 of 10 free runs left/)).toBeTruthy();
   });
 });
+
+/**
+ * Holds the read of a ready letter's text (`GET /me/cover-letters/{id}`) until `release`, which
+ * resolves once the held read has been answered.
+ */
+function heldLetterRead() {
+  let open: () => void = () => {};
+  const opened = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  let answered: Promise<unknown> = Promise.resolve();
+  return {
+    wrap: (api: ApiClient): ApiClient => ({
+      ...api,
+      async request<T>(m: ApiMethod, p: `/${string}`, body?: unknown): Promise<T> {
+        if (m === 'GET' && /^\/me\/cover-letters\/\d+$/.test(p)) {
+          const read = opened.then(() => api.request<T>(m, p, body));
+          answered = read.then(() => new Promise((resolve) => setTimeout(resolve, 0)));
+          return read;
+        }
+        return api.request<T>(m, p, body);
+      },
+    }),
+    async release() {
+      open();
+      await answered;
+    },
+  };
+}
 
 /** The letter section after the résumé section changed (the pane stays open). */
 async function openSectionAgain() {

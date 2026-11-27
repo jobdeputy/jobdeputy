@@ -77,14 +77,19 @@ export function TailorSection({
   useEffect(() => {
     // A refusal is about the run it met (another tab's): once a run at work ends, it no longer
     // holds. Not when a run is first seen: that is the run the refusal is about.
-    if (wasWorking.current && !working) setRefusal(null);
+    if (wasWorking.current && !working) {
+      setRefusal(null);
+      // A run that ends failed before any AI call gives its free run back: the letter section,
+      // which counts the same runs, reads the count again.
+      void queries.invalidateQueries({ queryKey: coverLetterListsKey });
+    }
     if (wasWorking.current && !working && newest?.status === 'ready') {
       const score = newest.scores?.find((s) => s.jobId === job.jobId)?.tailored;
       setJustReady({ score: score ?? null });
     }
     if (working) setJustReady(null);
     wasWorking.current = working;
-  }, [working, newest, job.jobId]);
+  }, [working, newest, job.jobId, queries]);
 
   async function start() {
     setStarting(true);
@@ -102,6 +107,8 @@ export function TailorSection({
         ...refusalOf(error, list.data?.allowance),
         count: (was?.count ?? 0) + 1,
       }));
+      // Refused as out of runs (used elsewhere): the letter section's count is out of date too.
+      void queries.invalidateQueries({ queryKey: coverLetterListsKey });
     } finally {
       setStarting(false);
       // The allowance (a run counted), or a run found at work: the list as the API has it.

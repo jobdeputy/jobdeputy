@@ -48,15 +48,30 @@ export function CoverLetterSection({ job }: { job: JobSummary }) {
   const failed = newest?.status === 'failed' ? newest : undefined;
 
   // A run seen at work here that ends ready is said (the letter shows outside the status region).
-  const wasWorking = useRef(working);
+  // Seen only from the first read after the section opens: a cached list from before (the pane
+  // closed mid-run) may still say at work for a run that ended meanwhile, unseen.
+  const wasWorking = useRef(false);
+  const settled = useRef(false);
   const [justReady, setJustReady] = useState(false);
+  const fetching = list.isFetching;
   useEffect(() => {
-    // A refusal is about the run it met (another tab's): once that run ends, it no longer holds.
-    if (wasWorking.current && !working) setRefusal(null);
+    if (!settled.current) {
+      if (fetching) return;
+      settled.current = true;
+      wasWorking.current = working;
+      return;
+    }
+    if (wasWorking.current && !working) {
+      // A refusal is about the run it met (another tab's): once that run ends, it no longer holds.
+      setRefusal(null);
+      // A run that ends failed before any AI call gives its free run back: the résumé section,
+      // which counts the same runs, reads the count again.
+      void queries.invalidateQueries({ queryKey: tailoringsKey(job.companyKey) });
+    }
     if (wasWorking.current && !working && newest?.status === 'ready') setJustReady(true);
     if (working) setJustReady(false);
     wasWorking.current = working;
-  }, [working, newest]);
+  }, [working, newest, fetching, queries, job.companyKey]);
 
   async function start() {
     setStarting(true);
@@ -74,6 +89,8 @@ export function CoverLetterSection({ job }: { job: JobSummary }) {
         ...refusalOf(error, list.data?.allowance),
         count: (was?.count ?? 0) + 1,
       }));
+      // Refused as out of runs (used elsewhere): the résumé section's count is out of date too.
+      void queries.invalidateQueries({ queryKey: tailoringsKey(job.companyKey) });
     } finally {
       setStarting(false);
       // The allowance (a run counted), or a run found at work: the list as the API has it.
@@ -252,9 +269,9 @@ function useLetterActions(letter: CoverLetter) {
     setCopied(false);
     const body = files.data?.text;
     if (!body) {
-      // Not read (it failed): read again, so Preview, or the next click, has it.
-      void files.refetch();
-      fail(text.copyFailed);
+      // Still being read: said, so the next press has it. Read and failed: read again.
+      if (files.isError) void files.refetch();
+      fail(files.isError ? text.copyUnread : text.copyLoading);
       return;
     }
     try {
@@ -285,24 +302,19 @@ function useLetterActions(letter: CoverLetter) {
       if (current.current === asked) setGetting(null);
     }
   }
-  return { getting, said, copied, reading: files.isPending, copyText, download };
+  return { getting, said, copied, copyText, download };
 }
 
 type ActionsState = ReturnType<typeof useLetterActions>;
 
 /** Preview (in the pane only), Copy text, PDF (the default) and DOCX. */
 function Actions({ state, preview }: { state: ActionsState; preview?: ReactNode }) {
-  const { getting, said, copied, reading, copyText, download } = state;
+  const { getting, said, copied, copyText, download } = state;
   return (
     <div className="grid gap-2">
       <div className="flex flex-wrap items-center gap-3">
         {preview}
-        <Button
-          variant="outline"
-          pending={reading}
-          pendingLabel={shared.downloading}
-          onClick={() => void copyText()}
-        >
+        <Button variant="outline" onClick={() => void copyText()}>
           {text.copyText}
         </Button>
         <Button

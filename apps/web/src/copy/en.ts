@@ -572,7 +572,11 @@ export const en = {
       fromBase: 'Written {date}, from your base résumé.',
       copyText: 'Copy text',
       copied: 'Copied. Paste it into the application’s cover letter box.',
-      copyFailed: 'Couldn’t copy the letter. Open Preview and copy it from there.',
+      /** The browser refused the clipboard: the text can still be selected in the preview. */
+      copyFailed:
+        'Your browser didn’t allow copying. Select the letter’s text in Preview and copy it.',
+      copyLoading: 'The letter is still loading. Try again in a moment.',
+      copyUnread: 'The letter didn’t load, so it wasn’t copied. Try again.',
       /** A letter's file name when it has none (never expected). */
       fileNameFallback: 'Cover letter.pdf',
       preview: {
@@ -586,7 +590,7 @@ export const en = {
         retry: 'Try again',
         unavailable: 'This letter isn’t available. Rewrite to make a new one.',
         /** A rewrite ended while the preview was open: it shows the new letter now. */
-        newer: 'Your rewritten letter is ready. This preview switches to it.',
+        newer: 'Your rewritten letter is ready and shown here.',
       },
       failedTitle: 'This cover letter wasn’t written.',
       /** POST refusals (apps/api/src/cover-letters.ts codes). */
