@@ -1064,8 +1064,9 @@ export const en = {
         periods: { year: 'Year', hour: 'Hour' } as Record<string, string>,
         /** The facts' line for the range: "$150,000–$180,000 a year". */
         expected: 'Expected pay',
-        range: '{from}–{to} a {period}',
-        from: '{from} a {period}',
+        range: '{from}–{to} {per}',
+        from: '{from} {per}',
+        per: { year: 'a year', hour: 'an hour' } as Record<string, string>,
         /** Why current pay is not asked. */
         note: 'Your current pay is never stored. Many US states ban asking for it.',
       },

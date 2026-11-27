@@ -362,14 +362,14 @@ const paySpec = applicantSpec(
     },
   },
   (body, answers) => {
-    if (answers.min === '' && answers.max === '') {
+    // No amounts and the default period: no pay. A period chosen without an amount is sent
+    // without its start, so the person is asked for one rather than it being dropped unseen.
+    if (answers.min === '' && answers.max === '' && answers.period === 'year') {
       delete body.expectedSalary;
       return;
     }
-    const salary: Record<string, unknown> = {
-      currency: salaryOf(body as SavedAnswers).currency ?? 'USD',
-      period: answers.period,
-    };
+    // In US dollars, as the fields say (the US-only launch).
+    const salary: Record<string, unknown> = { currency: 'USD', period: answers.period };
     const min = wholeOrTyped(answers.min);
     const max = wholeOrTyped(answers.max);
     if (min !== undefined) salary.min = min;
@@ -575,7 +575,9 @@ function VoluntaryForm({ saved, ...done }: Done & { saved: SavedAnswers }) {
 function VoluntaryFacts({ saved }: { saved: SavedAnswers }) {
   const text = copy.profilePage.answers.voluntary;
   const questions = voluntaryQuestions();
-  const shared = questions.some(([key]) => (choiceOf(saved[key]) || DECLINE) !== DECLINE);
+  const shared = questions.some(
+    ([key]) => (offeredOf(saved[key], VOLUNTARY_CHOICES[key]) || DECLINE) !== DECLINE,
+  );
   if (!shared) {
     return (
       <div className="grid gap-1.5">
@@ -588,7 +590,7 @@ function VoluntaryFacts({ saved }: { saved: SavedAnswers }) {
     <Facts
       facts={questions.map(([key, question, , names]) => {
         const label = key === 'hispanicLatino' ? text.hispanicLatinoFact : question;
-        const answer = choiceOf(saved[key]) || DECLINE;
+        const answer = offeredOf(saved[key], VOLUNTARY_CHOICES[key]) || DECLINE;
         return [
           label,
           answer === DECLINE ? text.decline : (names as Record<string, string>)[answer],
@@ -647,16 +649,16 @@ function payFacts(saved: SavedAnswers): FactRow[] {
     currency: salary.currency ?? 'USD',
     maximumFractionDigits: 0,
   });
-  const period = (text.periods[salary.period ?? 'year'] ?? '').toLowerCase();
+  const per = text.per[salary.period ?? 'year'] ?? '';
   return [
     [
       text.expected,
       salary.max === undefined || salary.max === salary.min
-        ? fill(text.from, { from: money.format(salary.min), period })
+        ? fill(text.from, { from: money.format(salary.min), per })
         : fill(text.range, {
             from: money.format(salary.min),
             to: money.format(salary.max),
-            period,
+            per,
           }),
     ],
   ];

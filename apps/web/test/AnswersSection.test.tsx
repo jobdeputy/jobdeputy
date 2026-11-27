@@ -299,4 +299,28 @@ describe('Application answers (#53)', () => {
     await waitFor(() => expect(sent).toBeTruthy());
     expect(sent).not.toHaveProperty('heardAbout');
   });
+
+  it('says an hourly range with “an hour”, and asks for an amount when only the period changed', async () => {
+    const api = await onProfile();
+    let form = await edit('Pay');
+    choose(form, 'Per', 'hour');
+    save(form);
+    expect(
+      await within(form).findByText('Enter where the range starts, or clear it.'),
+    ).toBeTruthy();
+    choose(form, 'Expected pay, from (USD)', '50');
+    choose(form, 'Up to (USD)', '70');
+    save(form);
+    await waitFor(async () =>
+      expect(await facts('Pay')).toEqual(['Expected pay: $50–$70 an hour']),
+    );
+    expect((await applicant(api)).expectedSalary).toEqual({
+      min: 50,
+      max: 70,
+      currency: 'USD',
+      period: 'hour',
+    });
+    form = await edit('Pay');
+    expect((within(form).getByLabelText('Per') as HTMLSelectElement).value).toBe('hour');
+  });
 });

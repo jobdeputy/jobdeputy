@@ -218,9 +218,8 @@ export function ChoicesField({
 }) {
   const id = useId();
   const picked = new Set(value.split(',').filter(Boolean));
-  const described = [hint && !error && `${id}-hint`, error && `${id}-error`]
-    .filter(Boolean)
-    .join(' ');
+  // The hint describes the group; an error is read with each box instead (once, on focus).
+  const described = hint && !error ? `${id}-hint` : '';
   return (
     <fieldset
       className={cn('m-0 grid min-w-0 gap-1.5 border-0 p-0', className)}
