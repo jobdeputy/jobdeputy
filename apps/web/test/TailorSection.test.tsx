@@ -467,4 +467,206 @@ describe('tailoring in the job pane (#51 PR C)', () => {
       timeout: 5000,
     });
   });
+
+  it('previews the résumé in a dialog, laid out as its files, with the downloads under it (C2)', async () => {
+    const { fake } = await setUp();
+    await fake.request('PUT', '/me/profile', {
+      version: 0,
+      firstName: 'Sam',
+      lastName: 'Example',
+      skills: ['Kafka'],
+    });
+    const section = await openSection(BACKEND);
+    fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
+    const open = await section.findByRole('button', { name: 'Preview' });
+    fireEvent.click(open);
+    const dialog = within(await screen.findByRole('dialog', { name: 'Your résumé for Acme' }));
+    const page = within(await dialog.findByRole('article', { name: 'Résumé preview' }));
+    expect(page.getByRole('heading', { level: 3, name: 'Sam Example' })).toBeTruthy();
+    expect(page.getAllByRole('heading', { level: 4 }).map((h) => h.textContent)).toEqual([
+      'Summary',
+      'Skills',
+      'Experience',
+      'Education',
+      'Certifications',
+    ]);
+    expect(page.getByText(/ready to bring payments and platform experience to Acme/)).toBeTruthy();
+    // A skill the profile added (I have this) is in the tailored skills.
+    expect(page.getByText(/AWS Lambda, DynamoDB, GraphQL, Kafka/)).toBeTruthy();
+    expect(page.getByText('Senior Software Engineer, Example Logistics')).toBeTruthy();
+    expect(page.getByText('New York, NY | Mar 2021 – Present')).toBeTruthy();
+    expect(page.getAllByRole('listitem').map((li) => li.textContent)).toContain(
+      'Led the move of 12 services to AWS Lambda, cutting hosting costs by 40%.',
+    );
+    expect(page.getByText('BSc in Computer Science, State University')).toBeTruthy();
+    fireEvent.click(dialog.getByRole('button', { name: 'Download PDF' }));
+    await waitFor(() => expect(pressed).toEqual([expect.stringMatching(/^data:application\/pdf/)]));
+    fireEvent.click(dialog.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(open));
+  });
+
+  it('says when the preview did not load, and reads it again on Try again (C2)', async () => {
+    let fail = true;
+    await setUp({
+      wrap: (api) => ({
+        ...api,
+        async request<T>(m: ApiMethod, p: `/${string}`, body?: unknown): Promise<T> {
+          if (fail && m === 'GET' && /^\/me\/tailorings\/\d+$/.test(p)) {
+            throw new ApiError('server', { status: 500 });
+          }
+          return api.request<T>(m, p, body);
+        },
+      }),
+    });
+    const section = await openSection(BACKEND);
+    fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
+    fireEvent.click(await section.findByRole('button', { name: 'Preview' }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Your résumé for Acme' }));
+    expect(await dialog.findByText('Your résumé didn’t load.')).toBeTruthy();
+    fail = false;
+    fireEvent.click(dialog.getByRole('button', { name: 'Try again' }));
+    expect(await dialog.findByRole('article', { name: 'Résumé preview' })).toBeTruthy();
+  });
+
+  it('keeps an open preview open when a re-tailor ends, showing the new version (C2 round 1)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { fake, clock } = await setUp({ crawlMs: 1000 });
+    await fake.request('PUT', '/me/profile', { version: 0, firstName: 'Sam', lastName: 'Example' });
+    const section = await openSection(BACKEND);
+    fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
+    await section.findByText('Tailoring your résumé for Acme…');
+    clock.now += 2000;
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    await section.findByText('86%');
+    await fake.request('POST', '/me/profile/skills', { skill: 'Kafka' });
+    fireEvent.click(section.getByRole('button', { name: 'Re-tailor' }));
+    await section.findByText('Tailoring your résumé for Acme…');
+    fireEvent.click(section.getByRole('button', { name: 'Preview' }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Your résumé for Acme' }));
+    expect(await dialog.findByText(/AWS Lambda, DynamoDB, GraphQL$/)).toBeTruthy();
+    clock.now += 2000;
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    // Still open: the new version's résumé (with Kafka) replaces the one before, and says so.
+    expect(await dialog.findByText(/AWS Lambda, DynamoDB, GraphQL, Kafka/)).toBeTruthy();
+    expect(
+      dialog
+        .getAllByRole('status')
+        .some(
+          (s) => s.textContent === 'Your re-tailored résumé is ready. This preview switches to it.',
+        ),
+    ).toBe(true);
+    expect(screen.getByRole('dialog', { name: 'Your résumé for Acme' })).toBeTruthy();
+  });
+
+  it('says a ready version without its résumé is unavailable, with no retry (C2 round 1)', async () => {
+    await setUp({
+      wrap: (api) => ({
+        ...api,
+        async request<T>(m: ApiMethod, p: `/${string}`, body?: unknown): Promise<T> {
+          const answer = await api.request<T>(m, p, body);
+          if (m === 'GET' && /^\/me\/tailorings\/\d+$/.test(p)) {
+            const { resume: _gone, ...rest } = answer as { resume?: unknown };
+            return rest as T;
+          }
+          return answer;
+        },
+      }),
+    });
+    const section = await openSection(BACKEND);
+    fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
+    fireEvent.click(await section.findByRole('button', { name: 'Preview' }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Your résumé for Acme' }));
+    expect(await dialog.findByText(/isn’t available\. Re-tailor to make a new one\./)).toBeTruthy();
+    expect(dialog.queryByRole('button', { name: 'Try again' })).toBeNull();
+  });
+
+  it('says a download asked for in the preview failed, in the pane once the dialog closes (C2 round 2)', async () => {
+    let fail = false;
+    await setUp({
+      wrap: (api) => ({
+        ...api,
+        async request<T>(m: ApiMethod, p: `/${string}`, body?: unknown): Promise<T> {
+          if (fail && m === 'GET' && /^\/me\/tailorings\/\d+$/.test(p)) {
+            throw new ApiError('offline');
+          }
+          return api.request<T>(m, p, body);
+        },
+      }),
+    });
+    const section = await openSection(BACKEND);
+    fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
+    fireEvent.click(await section.findByRole('button', { name: 'Preview' }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Your résumé for Acme' }));
+    await dialog.findByRole('article', { name: 'Résumé preview' });
+    fail = true;
+    fireEvent.click(dialog.getByRole('button', { name: 'Download PDF' }));
+    fireEvent.click(dialog.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await section.findByText('The download didn’t start. Try again.')).toBeTruthy();
+    expect(pressed).toEqual([]);
+  });
+
+  it('hands the focus to the notice when the job leaves Matches with its preview open (C2 round 2)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { fake, clock } = await setUp({ crawlMs: 1000 });
+    const section = await openSection(BACKEND);
+    fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
+    await section.findByText('Tailoring your résumé for Acme…');
+    clock.now += 2000;
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    await section.findByText('86%');
+    fireEvent.click(section.getByRole('button', { name: 'Re-tailor' }));
+    await section.findByText('Tailoring your résumé for Acme…');
+    fireEvent.click(section.getByRole('button', { name: 'Preview' }));
+    await screen.findByRole('dialog', { name: 'Your résumé for Acme' });
+    // Applied in another tab meanwhile: the list read when the run ends leaves it out.
+    const { jobs } = await fake.request<{ jobs: { jobId: string; title: string }[] }>(
+      'GET',
+      '/me/matches',
+    );
+    const jobId = jobs.find((j) => j.title === BACKEND)?.jobId;
+    await fake.request('PUT', `/me/jobs/${jobId}/stage`, { stage: 'applied', from: 'new' });
+    clock.now += 2000;
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const notice = await screen.findByText(/is no longer in Matches/);
+    await waitFor(() => expect(document.activeElement).toBe(notice));
+  });
+
+  it('saves a file asked for just as a re-tailor ends (C2 round 3)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let release: (() => void) | undefined;
+    const { clock, fake } = await setUp({
+      crawlMs: 1000,
+      wrap: (api) => ({
+        ...api,
+        async request<T>(m: ApiMethod, p: `/${string}`, body?: unknown): Promise<T> {
+          if (release === undefined && m === 'GET' && /^\/me\/tailorings\/\d+$/.test(p)) {
+            // The download's links come back only after the re-tailor has ended.
+            await new Promise<void>((resolve) => {
+              release = resolve;
+            });
+          }
+          return api.request<T>(m, p, body);
+        },
+      }),
+    });
+    void fake;
+    const section = await openSection(BACKEND);
+    fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
+    await section.findByText('Tailoring your résumé for Acme…');
+    clock.now += 2000;
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    await section.findByText('86%');
+    fireEvent.click(section.getByRole('button', { name: 'Re-tailor' }));
+    await section.findByText('Tailoring your résumé for Acme…');
+    fireEvent.click(section.getByRole('button', { name: 'Download PDF' }));
+    await waitFor(() => expect(release).toBeDefined());
+    clock.now += 2000;
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    await waitFor(() => expect(section.queryByText('Tailoring your résumé for Acme…')).toBeNull());
+    release?.();
+    await waitFor(() => expect(savedAs).toEqual(['Sam Example – Acme.pdf']));
+  });
 });

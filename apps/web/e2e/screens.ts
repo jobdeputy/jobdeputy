@@ -104,6 +104,14 @@ export const SCREENS: Screen[] = [
     still: true,
     steps: (page) => toMatchesTailored(page, 'Platform Engineer, Developer Experience', '72%'),
   },
+  // #51 PR C2: the tailored résumé's preview, in its dialog.
+  {
+    name: 'matches-resume-preview',
+    path: '/',
+    open: 'Get started free',
+    still: true,
+    steps: toResumePreview,
+  },
   // #52 PR E: a company cooling down: the table says until when, and Manual apply is off.
   {
     name: 'matches-cooling',
@@ -486,6 +494,16 @@ async function toMatchesTailored(page: Page, title: string, score: string) {
   // Beside the table (wide screens), the shot waits for its Score column read again too.
   const table = page.getByRole('table', { name: 'Your matches' });
   if (await table.isVisible()) await table.getByText(score).waitFor();
+}
+
+/** #51 PR C2: the ready version's Preview opened: the résumé laid out as its files. */
+async function toResumePreview(page: Page) {
+  await toMatchesTailored(page, 'Senior Backend Engineer', '86%');
+  await page.getByRole('button', { name: 'Preview' }).click();
+  await page
+    .getByRole('dialog', { name: 'Your résumé for Acme' })
+    .getByRole('heading', { name: 'Sam Example' })
+    .waitFor();
 }
 
 /**

@@ -1,7 +1,8 @@
 import { COVERAGE_WARNING } from '@jobdeputy/shared/tailoring';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useId, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { momentHere } from '@/components/jobs/cooldown.ts';
+import { ResumePreviewButton } from '@/components/jobs/resume-preview.tsx';
 import { LoadFailed } from '@/components/setup/parts.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { Skeleton } from '@/components/ui/skeleton.tsx';
@@ -161,8 +162,11 @@ export function TailorSection({
           </>
         )}
       </div>
-      {/* Keyed by version: a new one starts with nothing said about the one before. */}
-      {ready && <ReadyVersion key={ready.documentId} version={ready} job={job} working={working} />}
+      {/*
+       * Not keyed by version: an open Preview stays open (showing the new version) when a
+       * re-tailor ends. Its parts that say something about a version are keyed by it.
+       */}
+      {ready && <ReadyVersion version={ready} job={job} company={company} working={working} />}
       <div className="grid justify-items-start gap-2">
         <Button
           variant={ready ? 'outline' : 'default'}
@@ -261,14 +265,17 @@ function refusalOf(
 function ReadyVersion({
   version,
   job,
+  company,
   working,
 }: {
   version: Tailoring;
   job: JobSummary;
+  company: string;
   /** A new run is at work: "Re-tailor to use it" is being done. */
   working: boolean;
 }) {
   const score = version.scores?.find((s) => s.jobId === job.jobId);
+  const downloads = useDownloads(version);
   return (
     <div className="grid gap-4">
       {score ? (
@@ -292,9 +299,23 @@ function ReadyVersion({
         </div>
       )}
       {score && score.missingUnproven.length > 0 && (
-        <MissingSkills keywords={score.missingUnproven} working={working} />
+        <MissingSkills
+          key={version.documentId}
+          keywords={score.missingUnproven}
+          working={working}
+        />
       )}
-      <Downloads version={version} />
+      <Downloads
+        version={version}
+        state={downloads}
+        preview={
+          <ResumePreviewButton
+            version={version}
+            company={company}
+            footer={<Downloads version={version} state={downloads} />}
+          />
+        }
+      />
     </div>
   );
 }
@@ -418,30 +439,61 @@ function skillRefusal(error: unknown, skill: string): Omit<Said, 'count'> {
   return { words: fill(text.addFailed, { skill }) };
 }
 
-/** PDF (the default) and DOCX: each click reads fresh 5-minute links, then starts the download. */
-function Downloads({ version }: { version: Tailoring }) {
+/**
+ * The downloads' state, shared by the pane's buttons and the preview's: a download asked for in
+ * the dialog is said in the pane when the dialog has closed. A result for a version that is no
+ * longer the newest (a re-tailor ended meanwhile) is dropped, and a new version starts clean.
+ */
+function useDownloads(version: Tailoring) {
   const api = useApi();
   const [getting, setGetting] = useState<'pdf' | 'docx' | null>(null);
   const [said, setSaid] = useState<Said | null>(null);
+  const current = useRef(version.documentId);
+  useEffect(() => {
+    if (current.current === version.documentId) return;
+    current.current = version.documentId;
+    setGetting(null);
+    setSaid(null);
+  }, [version.documentId]);
   async function download(kind: 'pdf' | 'docx') {
     if (getting !== null) return;
+    const asked = version.documentId;
     setGetting(kind);
     setSaid(null);
     try {
-      const files = await tailoringFiles(api, version.documentId);
+      const files = await tailoringFiles(api, asked);
       const url = files.downloads?.[kind];
       if (!url) throw new Error('no download');
+      // Saved even if a re-tailor ended meanwhile: it is the file that was asked for.
       const pdfName = version.fileName ?? text.fileNameFallback;
       saveFile(url, kind === 'pdf' ? pdfName : pdfName.replace(/\.pdf$/, '.docx'));
     } catch {
+      if (current.current !== asked) return;
       setSaid((was) => ({ words: text.downloadFailed, count: (was?.count ?? 0) + 1 }));
     } finally {
-      setGetting(null);
+      if (current.current === asked) setGetting(null);
     }
   }
+  return { getting, said, download };
+}
+
+type DownloadsState = ReturnType<typeof useDownloads>;
+
+/** PDF (the default) and DOCX: each click reads fresh 5-minute links, then starts the download. */
+function Downloads({
+  version,
+  state,
+  preview,
+}: {
+  version: Tailoring;
+  state: DownloadsState;
+  preview?: ReactNode;
+}) {
+  const { getting, said, download } = state;
   return (
     <div className="grid gap-2">
       <div className="flex flex-wrap items-center gap-3">
+        {preview}
         <Button
           variant="outline"
           pending={getting === 'pdf'}

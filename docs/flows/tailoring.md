@@ -145,6 +145,8 @@ sequenceDiagram
   P->>A: POST /me/profile/skills {skill}
   Note over A: added at the profile version read (3 tries); 409 profile-needed, 422 skills-full
   U->>P: Re-tailor (the next run reads the skill as evidence)
+  U->>P: Preview
+  P->>A: GET /me/tailorings/{id} (the résumé, laid out as its files, in a dialog)
   U->>P: Download PDF / DOCX
   P->>A: GET /me/tailorings/{id} (fresh 5-minute links)
   A-->>P: downloads → the browser saves the file
@@ -153,7 +155,7 @@ sequenceDiagram
 - The score shown is the **newest ready** version's, for this job; while a new run works, it stays. A version made before this job showed says so and offers Re-tailor.
 - `GET /me/matches` gives each job `match` (`score`, `base`, `resumeDocumentId`) only when made by today's `MATCH_SCORE_VERSION`.
 - Below 80% applying is still allowed (decision 0015); Manual apply is unchanged.
-- The résumé preview (a wide dialog) comes in the next PR.
+- **Preview** (PR C2) opens a wide dialog: `GET /me/tailorings/{id}` once, its `resume` laid out from `resumeBlocks` (the PDF and DOCX's own blocks), with the downloads under it.
 
 ## Numbers
 

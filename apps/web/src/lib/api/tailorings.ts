@@ -1,4 +1,5 @@
 import { MATCH_THRESHOLD } from '@jobdeputy/shared/match-score';
+import type { StructuredResume } from '@jobdeputy/shared/resume';
 import { type QueryClient, useQuery } from '@tanstack/react-query';
 import { type ApiClient, ApiError, isFinal, useApi } from './index.ts';
 import type { Profile } from './profile.ts';
@@ -47,8 +48,9 @@ export interface Tailorings {
   allowance: { used: number; perMonth: number; nextAt: string };
 }
 
-/** `GET /me/tailorings/{id}` of a ready version: its files, behind 5-minute links. */
+/** `GET /me/tailorings/{id}` of a ready version: its résumé (to preview) and 5-minute links. */
 export interface TailoringFiles extends Tailoring {
+  resume?: StructuredResume;
   downloads?: { pdf: string; docx: string };
 }
 
