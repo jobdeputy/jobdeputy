@@ -20,8 +20,26 @@ const granted = new Set(manifest.host_permissions ?? []);
 const strays = (built.content_scripts ?? []).flatMap((script) =>
   script.matches.filter((match) => !granted.has(match)),
 );
-if (wrong.length > 0 || strays.length > 0) {
-  console.error('Built manifest differs from src/manifest.ts:', { wrong, strays });
+// Any other way to reach pages or be reached (web_accessible_resources, externally_connectable,
+// content script globs, …) is refused until a decision allows it here.
+const KNOWN = new Set([
+  'manifest_version',
+  'name',
+  'description',
+  'version',
+  'version_name',
+  'icons',
+  'action',
+  'background',
+  'content_scripts',
+  ...keys,
+]);
+const unknown = Object.keys(built).filter((key) => !KNOWN.has(key));
+const globs = (built.content_scripts ?? []).filter(
+  (script) => script.include_globs || script.exclude_globs || script.match_about_blank,
+);
+if (wrong.length > 0 || strays.length > 0 || unknown.length > 0 || globs.length > 0) {
+  console.error('Built manifest differs from src/manifest.ts:', { wrong, strays, unknown, globs });
   process.exit(1);
 }
 console.log(

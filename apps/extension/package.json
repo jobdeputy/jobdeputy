@@ -10,7 +10,8 @@
     "postinstall": "wxt prepare",
     "typecheck": "wxt prepare && tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "pretest:e2e": "wxt build"
   },
   "dependencies": {
     "@jobdeputy/shared": "workspace:*",
