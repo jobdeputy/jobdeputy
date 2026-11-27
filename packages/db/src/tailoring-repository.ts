@@ -178,6 +178,8 @@ export function runLock(doc: Pick<GeneratedDocument, 'kind' | 'companyKey' | 'jo
 }
 
 const LETTER_LOCK = 'LETTER#';
+/** A freed letter lock expires (DynamoDB TTL) this long after its run ends. */
+const LETTER_LOCK_TTL_SECONDS = 24 * 60 * 60;
 const DOC_ITEM = 0;
 const MONTH_ITEM = 2;
 const LOCK_ITEM = 3;
@@ -253,10 +255,11 @@ export class TailoringRepository {
             Update: {
               TableName: this.tables.usage,
               Key: { userId, sk: lock },
+              // REMOVE #ttl: a letter lock freed earlier expires; taken again, it must not.
               UpdateExpression:
-                'SET activeId = :id, activeSince = :now, companyKey = :company, #type = :lock, createdAt = if_not_exists(createdAt, :now), updatedAt = :now, schemaVersion = :one',
+                'SET activeId = :id, activeSince = :now, companyKey = :company, #type = :lock, createdAt = if_not_exists(createdAt, :now), updatedAt = :now, schemaVersion = :one REMOVE #ttl',
               ConditionExpression: 'attribute_not_exists(activeId) OR activeSince < :stale',
-              ExpressionAttributeNames: { '#type': 'type' },
+              ExpressionAttributeNames: { '#type': 'type', '#ttl': 'ttl' },
               ExpressionAttributeValues: {
                 ':id': documentId,
                 ':now': now,
@@ -529,26 +532,29 @@ export class TailoringRepository {
         },
         ...(freeLock
           ? [
-              // A job's letter lock is deleted (there is one per job a letter was asked for, so
-              // they would pile up); a company's lock item stays, its run fields removed.
-              input.lock.startsWith(LETTER_LOCK)
-                ? {
-                    Delete: {
-                      TableName: this.tables.usage,
-                      Key: { userId, sk: input.lock },
-                      ConditionExpression: 'activeId = :id',
-                      ExpressionAttributeValues: { ':id': documentId },
-                    },
-                  }
-                : {
-                    Update: {
-                      TableName: this.tables.usage,
-                      Key: { userId, sk: input.lock },
-                      UpdateExpression: 'REMOVE activeId, activeSince SET updatedAt = :now',
-                      ConditionExpression: 'activeId = :id',
-                      ExpressionAttributeValues: { ':id': documentId, ':now': now },
-                    },
+              // The lock's run fields removed. A job's letter lock also expires a day later
+              // (one per job a letter was asked for would pile up); expiring, not a delete, so
+              // the worker needs no DeleteItem. Taking the lock again removes the expiry.
+              {
+                Update: {
+                  TableName: this.tables.usage,
+                  Key: { userId, sk: input.lock },
+                  UpdateExpression: input.lock.startsWith(LETTER_LOCK)
+                    ? 'REMOVE activeId, activeSince SET updatedAt = :now, #ttl = :ttl'
+                    : 'REMOVE activeId, activeSince SET updatedAt = :now',
+                  ConditionExpression: 'activeId = :id',
+                  ...(input.lock.startsWith(LETTER_LOCK)
+                    ? { ExpressionAttributeNames: { '#ttl': 'ttl' } }
+                    : {}),
+                  ExpressionAttributeValues: {
+                    ':id': documentId,
+                    ':now': now,
+                    ...(input.lock.startsWith(LETTER_LOCK)
+                      ? { ':ttl': Math.floor(at.getTime() / 1000) + LETTER_LOCK_TTL_SECONDS }
+                      : {}),
                   },
+                },
+              },
             ]
           : []),
         auditPut(input.audit, userId, at),

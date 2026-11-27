@@ -103,6 +103,8 @@ describe('TailoringRepository.request', () => {
     expect(doc).toMatchObject({ kind: 'cover_letter', resumeDocumentId: 'R1', status: 'queued' });
     const items = send.mock.calls[0]?.[0].input.TransactItems;
     expect(items[3].Update.Key).toEqual({ userId: USER, sk: 'LETTER#j9' });
+    // Taken again, a freed lock's expiry goes.
+    expect(items[3].Update.UpdateExpression).toContain('REMOVE #ttl');
     // The same free runs as tailoring.
     expect(items[2].Update.UpdateExpression).toContain('ADD tailoringRunIds :id');
     expect(runLock({ kind: 'resume', companyKey: 'c', jobIds: ['j9'] })).toBe('TAILOR#c');
@@ -120,11 +122,15 @@ describe('TailoringRepository.request', () => {
     const [doc, lock] = send.mock.calls[0]?.[0]?.input.TransactItems ?? [];
     expect(doc.Update.UpdateExpression).not.toContain('scores');
     expect(doc.Update.ExpressionAttributeNames).toEqual({ '#status': 'status' });
-    // A job's letter lock is deleted, not kept (one per job would pile up).
-    expect(lock.Delete).toMatchObject({
+    // A job's letter lock expires a day after its run (one per job would pile up): an update
+    // with a TTL, never a delete (the worker has no DeleteItem).
+    expect(lock.Delete).toBeUndefined();
+    expect(lock.Update).toMatchObject({
       Key: { userId: USER, sk: 'LETTER#j9' },
       ConditionExpression: 'activeId = :id',
+      UpdateExpression: 'REMOVE activeId, activeSince SET updatedAt = :now, #ttl = :ttl',
     });
+    expect(lock.Update.ExpressionAttributeValues[':ttl']).toBe(NOW.getTime() / 1000 + 86_400);
   });
 
   it('maps a full month to TailoringAllowanceError and a held lock to TailoringBusyError', async () => {
