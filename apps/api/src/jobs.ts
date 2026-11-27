@@ -25,6 +25,7 @@ import {
   jobStageBody,
   jobsPageQuery,
   json,
+  MATCH_SCORE_VERSION,
   MATCHES_MAX,
   MATCHES_WINDOW_DAYS,
   parseJsonBody,
@@ -137,6 +138,17 @@ export function jobSummary(j: JobSummaryItem) {
             ...(j.relevance.bestRoleId ? { bestRoleId: j.relevance.bestRoleId } : {}),
             reasons: j.relevance.reasons,
             scoredAt: j.relevance.scoredAt,
+          },
+        }
+      : {}),
+    // #51 PR C: the tailored résumé's score and the base one's, when made by today's score code
+    // (scores from other code are never compared, MATCH_SCORE_VERSION).
+    ...(j.match && j.match.version === MATCH_SCORE_VERSION
+      ? {
+          match: {
+            score: j.match.score,
+            base: j.match.base,
+            resumeDocumentId: j.match.resumeDocumentId,
           },
         }
       : {}),

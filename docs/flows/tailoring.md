@@ -2,7 +2,7 @@
 
 One click on **Tailor** for a company makes one version of the user's résumé for that company's top shown jobs (at most 3, and never more than the user's jobs per company), with an ATS match score per job. The model rewrites only the summary, the skills list, and the bullets; code keeps it honest and computes the score. Decision: [0015](../decisions/0015-ats-match-score-and-tailored-resumes.md). Before this: [relevance flow](relevance.md) (which jobs a company shows).
 
-- **Task:** [#51](https://github.com/jobdeputy/jobdeputy/issues/51) (M3 of the apply flow). The web screens come in PR C, cover letters in PR D.
+- **Task:** [#51](https://github.com/jobdeputy/jobdeputy/issues/51) (M3 of the apply flow). The screens (PR C) are in the Matches job pane; cover letters come in PR D.
 - **Keep it true:** a PR that changes this flow updates this file, like [data-model.md](../data-model.md).
 
 ## The big picture
@@ -120,6 +120,40 @@ sequenceDiagram
 | Tokens | `usage` `AI#<month>#…` (`structure-resume`, `job-keywords`, `tailor-resume`) |
 
 Account deletion erases all of it (the `documents`, `jobs`, and `usage` tables, and the `derived/users/<userId>/` prefix). Deleting an uploaded résumé deletes its structured copy; versions made from it stay until their company's limit.
+
+## In the app (PR C)
+
+The **Matches** job pane has **Your résumé for {company}** above Manual apply (plan agreed on #51, 2026-11-26).
+
+```mermaid
+sequenceDiagram
+  actor U as User
+  participant P as Job pane
+  participant M as Matches
+  participant A as API
+  P->>A: GET /me/tailorings?companyKey (versions, free runs left)
+  U->>P: Tailor résumé (or Re-tailor)
+  P->>A: POST /me/tailorings {companyKey}
+  A-->>P: 202 queued (or 429 / 409 / 422: said, with a link to fix)
+  loop every 5 s while the newest version is queued or processing
+    P->>A: GET /me/tailorings?companyKey
+  end
+  Note over P: ready: this job's score (tailored, base), 80% line, missing keywords (and read out)
+  Note over M: follows the run too (RunWatcher), even once the pane closes
+  M->>A: GET /me/matches (read again when it ends: the Résumé score column)
+  U->>P: I have this (a keyword the résumé doesn't show)
+  P->>A: POST /me/profile/skills {skill}
+  Note over A: added at the profile version read (3 tries); 409 profile-needed, 422 skills-full
+  U->>P: Re-tailor (the next run reads the skill as evidence)
+  U->>P: Download PDF / DOCX
+  P->>A: GET /me/tailorings/{id} (fresh 5-minute links)
+  A-->>P: downloads → the browser saves the file
+```
+
+- The score shown is the **newest ready** version's, for this job; while a new run works, it stays. A version made before this job showed says so and offers Re-tailor.
+- `GET /me/matches` gives each job `match` (`score`, `base`, `resumeDocumentId`) only when made by today's `MATCH_SCORE_VERSION`.
+- Below 80% applying is still allowed (decision 0015); Manual apply is unchanged.
+- The résumé preview (a wide dialog) comes in the next PR.
 
 ## Numbers
 

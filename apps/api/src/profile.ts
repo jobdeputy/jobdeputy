@@ -7,12 +7,14 @@ import {
   VersionConflictError,
 } from '@jobdeputy/db';
 import {
+  addSkillInput,
   callerFromEvent,
   createLogger,
   createRoleInput,
   type HttpResponse,
   json,
   MAX_ROLES,
+  MAX_SKILLS,
   parseJsonBody,
   problem,
   profileInput,
@@ -151,6 +153,11 @@ export async function route(event: Event, deps: ProfileDeps): Promise<HttpRespon
         );
         return json(200, view(saved));
       }
+      case 'POST /me/profile/skills': {
+        const input = body(addSkillInput);
+        if (!input.ok) return input.res;
+        return await addSkill(userId, input.data.skill, deps, requestId);
+      }
       case 'GET /me/preferences/search': {
         const search = await deps.preferences.getSearch(userId);
         return json(
@@ -244,6 +251,67 @@ export async function route(event: Event, deps: ProfileDeps): Promise<HttpRespon
       });
     }
     throw error;
+  }
+}
+
+/** Tries of `POST /me/profile/skills` when another save lands between its read and its write. */
+const ADD_SKILL_TRIES = 3;
+
+/**
+ * #51 PR C ("I have this" in the job pane): adds one skill the user confirmed to the profile's
+ * skills, at the version it read (another save meanwhile is read again, up to 3 times), so
+ * nothing else in the profile is sent or overwritten. A skill already there (in any case) changes
+ * nothing. Tailoring treats profile skills as evidence (decision 0015).
+ */
+async function addSkill(userId: string, skill: string, deps: ProfileDeps, requestId: string) {
+  for (let tries = 1; ; tries += 1) {
+    const profile = await deps.profiles.get(userId);
+    if (!profile) {
+      return problem(409, 'No profile yet', {
+        detail: 'Save your profile first, then add skills to it.',
+        code: 'profile-needed',
+        requestId,
+      });
+    }
+    const wanted = skill.toLocaleLowerCase('en');
+    if (profile.skills.some((s) => s.toLocaleLowerCase('en') === wanted)) {
+      return json(200, view(profile));
+    }
+    if (profile.skills.length >= MAX_SKILLS) {
+      return problem(422, 'Skills full', {
+        detail: `A profile holds at most ${MAX_SKILLS} skills. Remove one on your profile first.`,
+        code: 'skills-full',
+        requestId,
+      });
+    }
+    const {
+      userId: _u,
+      sk: _s,
+      type: _t,
+      version,
+      createdAt: _c,
+      updatedAt: _d,
+      schemaVersion: _v,
+      ...fields
+    } = profile;
+    try {
+      const saved = await deps.profiles.save(
+        userId,
+        { ...fields, skills: [...profile.skills, skill] },
+        version,
+        deps.audit(
+          'profile.skillAdded',
+          { type: 'profile', id: 'PROFILE' },
+          `Skill added: ${skill}`,
+          {
+            version: version + 1,
+          },
+        ),
+      );
+      return json(200, view(saved));
+    } catch (error) {
+      if (!(error instanceof VersionConflictError) || tries >= ADD_SKILL_TRIES) throw error;
+    }
   }
 }
 

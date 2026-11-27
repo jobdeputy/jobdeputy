@@ -122,6 +122,109 @@ describe('profile', () => {
   });
 });
 
+describe('POST /me/profile/skills (#51 PR C, "I have this")', () => {
+  const saved = {
+    ...stored,
+    version: 4,
+    createdAt: '2026-11-01T00:00:00.000Z',
+    updatedAt: '2026-11-02T00:00:00.000Z',
+    firstName: 'Ada',
+    lastName: 'L',
+    email: 'a@example.com',
+    homeCell: 'iad',
+    skills: ['TypeScript'],
+    languages: [],
+    links: { other: [] },
+  };
+  const add = (skill: unknown) => event('POST /me/profile/skills', json({ skill }));
+
+  it('adds the skill at the version it read, keeping the rest, and audits it', async () => {
+    const d = deps();
+    d.profiles.get.mockResolvedValue(saved);
+    const res = await route(add('  Terraform '), d);
+    expect(res.statusCode).toBe(200);
+    expect(d.profiles.save).toHaveBeenCalledWith(
+      'user-a',
+      {
+        firstName: 'Ada',
+        lastName: 'L',
+        email: 'a@example.com',
+        homeCell: 'iad',
+        skills: ['TypeScript', 'Terraform'],
+        languages: [],
+        links: { other: [] },
+      },
+      4,
+      {
+        table: 'Audit',
+        entry: expect.objectContaining({
+          name: 'profile.skillAdded',
+          summary: 'Skill added: Terraform',
+        }),
+      },
+    );
+    const body = JSON.parse(res.body);
+    expect(body).toMatchObject({ version: 5, skills: ['TypeScript', 'Terraform'] });
+    for (const k of ['userId', 'sk', 'type', 'schemaVersion']) expect(body).not.toHaveProperty(k);
+  });
+
+  it('changes nothing for a skill already there, in any case', async () => {
+    const d = deps();
+    d.profiles.get.mockResolvedValue(saved);
+    const res = await route(add('typescript'), d);
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toMatchObject({ version: 4, skills: ['TypeScript'] });
+    expect(d.profiles.save).not.toHaveBeenCalled();
+  });
+
+  it('reads again when another save lands first, up to 3 tries, then answers 409', async () => {
+    const d = deps();
+    d.profiles.get.mockResolvedValue(saved);
+    d.profiles.save
+      .mockRejectedValueOnce(new VersionConflictError(-1))
+      .mockRejectedValueOnce(new VersionConflictError(-1));
+    expect((await route(add('Go'), d)).statusCode).toBe(200);
+    expect(d.profiles.get).toHaveBeenCalledTimes(3);
+
+    const busy = deps();
+    busy.profiles.get.mockResolvedValue(saved);
+    busy.profiles.save.mockRejectedValue(new VersionConflictError(-1));
+    expect((await route(add('Go'), busy)).statusCode).toBe(409);
+    expect(busy.profiles.save).toHaveBeenCalledTimes(3);
+  });
+
+  it('answers 409 profile-needed before the first profile save', async () => {
+    const d = deps();
+    const res = await route(add('Go'), d);
+    expect(res.statusCode).toBe(409);
+    expect(JSON.parse(res.body)).toMatchObject({ code: 'profile-needed' });
+    expect(d.profiles.save).not.toHaveBeenCalled();
+  });
+
+  it('answers 422 skills-full at 100 skills', async () => {
+    const d = deps();
+    d.profiles.get.mockResolvedValue({
+      ...saved,
+      skills: Array.from({ length: 100 }, (_, i) => `S${i}`),
+    });
+    const res = await route(add('Go'), d);
+    expect(res.statusCode).toBe(422);
+    expect(JSON.parse(res.body)).toMatchObject({ code: 'skills-full' });
+    expect(d.profiles.save).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['an empty skill', json({ skill: '  ' })],
+    ['a skill over 60 characters', json({ skill: 'x'.repeat(61) })],
+    ['another field', json({ skill: 'Go', version: 1 })],
+  ])('rejects %s without reading or saving', async (_, extra) => {
+    const d = deps();
+    const res = await route(event('POST /me/profile/skills', extra), d);
+    expect(res.statusCode).toBe(400);
+    expect(d.profiles.get).not.toHaveBeenCalled();
+  });
+});
+
 describe('search settings', () => {
   it('returns defaults, then saves with the version', async () => {
     const d = deps();
@@ -243,20 +346,22 @@ describe('roles', () => {
 });
 
 describe('account deletion (T12)', () => {
-  it.each(['PUT /me/profile', 'PUT /me/preferences/search', 'POST /me/roles'])(
-    '%s is refused while the account is being deleted',
-    async (routeKey) => {
-      const d = deps();
-      d.isBeingDeleted.mockResolvedValue(true);
-      const res = await route(
-        event(routeKey, json({ version: 0, firstName: 'A', lastName: 'B', title: 'X' })),
-        d,
-      );
-      expect(res.statusCode).toBe(410);
-      expect(d.profiles.save).not.toHaveBeenCalled();
-      expect(d.preferences.createRole).not.toHaveBeenCalled();
-    },
-  );
+  it.each([
+    'PUT /me/profile',
+    'POST /me/profile/skills',
+    'PUT /me/preferences/search',
+    'POST /me/roles',
+  ])('%s is refused while the account is being deleted', async (routeKey) => {
+    const d = deps();
+    d.isBeingDeleted.mockResolvedValue(true);
+    const res = await route(
+      event(routeKey, json({ version: 0, firstName: 'A', lastName: 'B', title: 'X' })),
+      d,
+    );
+    expect(res.statusCode).toBe(410);
+    expect(d.profiles.save).not.toHaveBeenCalled();
+    expect(d.preferences.createRole).not.toHaveBeenCalled();
+  });
 
   it('does not check on reads', async () => {
     const d = deps();
@@ -266,13 +371,16 @@ describe('account deletion (T12)', () => {
 });
 
 describe('auth', () => {
-  it.each(['GET /me/profile', 'PUT /me/profile', 'GET /me/roles', 'POST /me/roles'])(
-    '%s rejects requests without verified claims',
-    async (routeKey) => {
-      const d = deps();
-      expect((await route(event(routeKey, json({}), null), d)).statusCode).toBe(401);
-      expect(d.profiles.save).not.toHaveBeenCalled();
-      expect(d.preferences.createRole).not.toHaveBeenCalled();
-    },
-  );
+  it.each([
+    'GET /me/profile',
+    'PUT /me/profile',
+    'POST /me/profile/skills',
+    'GET /me/roles',
+    'POST /me/roles',
+  ])('%s rejects requests without verified claims', async (routeKey) => {
+    const d = deps();
+    expect((await route(event(routeKey, json({}), null), d)).statusCode).toBe(401);
+    expect(d.profiles.save).not.toHaveBeenCalled();
+    expect(d.preferences.createRole).not.toHaveBeenCalled();
+  });
 });

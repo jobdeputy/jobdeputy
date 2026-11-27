@@ -64,6 +64,15 @@ async function renderList(
 
 const openJob = (title: string) => fireEvent.click(screen.getByRole('button', { name: title }));
 const preview = () => within(screen.getByRole('region', { name: 'Senior Backend Engineer' }));
+/** Applying's alert in the open pane (not the tailoring section's, #51 PR C). */
+function applyAlert() {
+  const tailor = screen.queryByRole('region', { name: /^Your résumé for/ });
+  const alerts = preview()
+    .getAllByRole('alert')
+    .filter((alert) => !tailor?.contains(alert));
+  expect(alerts).toHaveLength(1);
+  return alerts[0] as HTMLElement;
+}
 
 describe('a job’s pane (#49 PR D, in Matches since #52 PR C)', () => {
   it('opens beside the list on a wide screen: the job, its fit and score, why, and the posting', async () => {
@@ -274,16 +283,24 @@ describe('Matches’ table (#52 PR C)', () => {
           .map((cell) => cell.textContent),
       );
 
-  it('lists each job: title, company, where, fit and posted, best fit first', async () => {
+  it('lists each job: title, company, where, fit, résumé score and posted, best fit first', async () => {
     screenWide(true);
     await renderList();
     expect(rowTexts()).toEqual([
-      ['Senior Backend Engineer', 'Acme', 'New York, NY · Hybrid', 'Strong fit', 'Nov 20, 2026'],
+      [
+        'Senior Backend Engineer',
+        'Acme',
+        'New York, NY · Hybrid',
+        'Strong fit',
+        'Not tailored',
+        'Nov 20, 2026',
+      ],
       [
         'Platform Engineer, Developer Experience',
         'Acme',
         'Remote, United States · Remote',
         'Good fit',
+        'Not tailored',
         'Nov 12, 2026',
       ],
       [
@@ -291,6 +308,7 @@ describe('Matches’ table (#52 PR C)', () => {
         'Acme',
         'San Francisco, CA · On-site',
         'Stretch',
+        'Not tailored',
         'Not given',
       ],
     ]);
@@ -302,13 +320,13 @@ describe('Matches’ table (#52 PR C)', () => {
     screenWide(true);
     await renderList();
     fireEvent.click(screen.getByRole('button', { name: /^Posted/ }));
-    expect(rowTexts().map((cells) => cells[4])).toEqual([
+    expect(rowTexts().map((cells) => cells[5])).toEqual([
       'Nov 20, 2026',
       'Nov 12, 2026',
       'Not given',
     ]);
     fireEvent.click(screen.getByRole('button', { name: /^Posted/ }));
-    expect(rowTexts().map((cells) => cells[4])).toEqual([
+    expect(rowTexts().map((cells) => cells[5])).toEqual([
       'Nov 12, 2026',
       'Nov 20, 2026',
       'Not given',
@@ -500,7 +518,7 @@ describe('applying from the job’s pane (#52 PR C)', () => {
     fireEvent.click(preview().getByRole('link', { name: /^Manual apply/ }));
     fireEvent.click(preview().getByRole('button', { name: 'I applied' }));
     await waitFor(() =>
-      expect(preview().getByRole('alert').textContent).toBe(
+      expect(applyAlert().textContent).toBe(
         'You’re offline, so that didn’t save. Try again once you’re back online.',
       ),
     );
@@ -509,9 +527,7 @@ describe('applying from the job’s pane (#52 PR C)', () => {
       return request(method, path, body);
     });
     fireEvent.click(preview().getByRole('button', { name: 'I applied' }));
-    await waitFor(() =>
-      expect(preview().getByRole('alert').textContent).toBe('That didn’t save. Try again.'),
-    );
+    await waitFor(() => expect(applyAlert().textContent).toBe('That didn’t save. Try again.'));
     spy.mockImplementation(request);
     fireEvent.click(preview().getByRole('button', { name: 'I applied' }));
     expect(await screen.findByText(/^Marked as applied: Senior Backend Engineer/)).toBeTruthy();
@@ -633,9 +649,7 @@ describe('applying from the job’s pane (#52 PR C)', () => {
     openJob('Senior Backend Engineer');
     fireEvent.click(preview().getByRole('link', { name: /^Manual apply/ }));
     fireEvent.click(preview().getByRole('button', { name: 'I applied' }));
-    await waitFor(() =>
-      expect(preview().getByRole('alert').textContent).toBe('That didn’t save. Try again.'),
-    );
+    await waitFor(() => expect(applyAlert().textContent).toBe('That didn’t save. Try again.'));
     expect(screen.queryByText(/is no longer in Matches/)).toBeNull();
   });
 
@@ -794,7 +808,7 @@ describe('the company cooldown (#52 PR E)', () => {
       document.getElementById(manual.getAttribute('aria-describedby') ?? '')?.textContent,
     ).toContain(`You can apply here again from ${momentHere(SOON)}.`);
     // The refusal stays said after the question went.
-    expect(preview().getByRole('alert').textContent).toBe(
+    expect(applyAlert().textContent).toBe(
       'That wasn’t saved: you reached the limit of applications to this company for now.',
     );
     expect(screen.queryByText(/is no longer in Matches/)).toBeNull();
@@ -812,7 +826,7 @@ describe('the company cooldown (#52 PR E)', () => {
     fireEvent.click(preview().getByRole('link', { name: /^Manual apply/ }));
     fireEvent.click(preview().getByRole('button', { name: 'I applied' }));
     await waitFor(() =>
-      expect(preview().getByRole('alert').textContent).toBe(
+      expect(applyAlert().textContent).toBe(
         'That wasn’t saved: you reached the limit of applications to this company for now.',
       ),
     );
@@ -866,9 +880,9 @@ describe('the company cooldown (#52 PR E)', () => {
     openJob('Senior Backend Engineer');
     fireEvent.click(preview().getByRole('link', { name: /^Manual apply/ }));
     fireEvent.click(preview().getByRole('button', { name: 'I applied' }));
-    await waitFor(() => expect(preview().getByRole('alert').textContent).not.toBe(''));
+    await waitFor(() => expect(applyAlert().textContent).not.toBe(''));
     fireEvent.click(preview().getByRole('link', { name: /^Manual apply/ }));
-    expect(preview().getByRole('alert').textContent).toBe('');
+    expect(applyAlert().textContent).toBe('');
   });
 
   it('the refusal goes once the cooldown it was about has ended', async () => {
@@ -902,11 +916,11 @@ describe('the company cooldown (#52 PR E)', () => {
           preview().getByRole('link', { name: 'Manual apply' }).getAttribute('aria-disabled'),
         ).toBe('true'),
       );
-      expect(preview().getByRole('alert').textContent).not.toBe('');
+      expect(applyAlert().textContent).not.toBe('');
       act(() => {
         vi.advanceTimersByTime(60 * 60_000 + 10);
       });
-      await waitFor(() => expect(preview().getByRole('alert').textContent).toBe(''));
+      await waitFor(() => expect(applyAlert().textContent).toBe(''));
     } finally {
       vi.useRealTimers();
     }

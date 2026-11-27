@@ -39,6 +39,11 @@ export interface JobSummary {
    * applying there is refused until this time.
    */
   coolingDownUntil?: string;
+  /**
+   * #51 PR C: the company's tailored résumé's ATS match for this job, and the base résumé's
+   * (null: no keyword that counts); absent until a version has scored it.
+   */
+  match?: { score: number | null; base: number | null; resumeDocumentId: string };
 }
 
 /**

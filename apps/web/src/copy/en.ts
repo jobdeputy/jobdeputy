@@ -453,8 +453,11 @@ export const en = {
         company: 'Company',
         where: 'Where',
         fit: 'Fit',
+        score: 'Résumé score',
         posted: 'Posted',
       },
+      /** #51 PR C: no tailored résumé has scored the job yet. */
+      scoreNone: 'Not tailored',
       /** The board gave no date. */
       postedNone: 'Not given',
       /** The board gave no place. */
@@ -463,6 +466,75 @@ export const en = {
       coolingDown: 'Cooling down until {date}',
       /** A job opened here left Matches without this page's doing (another tab, or a crawl). */
       left: '{title} at {company} is no longer in Matches: it was marked as applied elsewhere, or its posting closed.',
+    },
+    /**
+     * #51 PR C (decision 0015): in the job pane, the company's tailored résumé: one for its top
+     * jobs, with this job's ATS match score (80% is ready), and the keywords it still misses.
+     */
+    tailor: {
+      title: 'Your résumé for {company}',
+      intro:
+        'Your deputy rewrites your default résumé for this company’s top jobs, using only what your résumé and profile show.',
+      start: 'Tailor résumé',
+      again: 'Re-tailor',
+      starting: 'Starting…',
+      /** The free model's runs (own-key runs are not counted). */
+      allowance:
+        '{left} of {perMonth} free tailorings left this month. Runs with your own AI key don’t count.',
+      allowanceNone:
+        'You’ve used this month’s {perMonth} free tailorings. More from {date}, or use your own AI key.',
+      working: 'Tailoring your résumé for {company}…',
+      workingLine: 'This takes a minute or two. You can keep browsing.',
+      /** Read out (not shown) when a run followed in the pane ends ready. */
+      readyNow: 'Your résumé for {company} is ready.',
+      readyNowScore: 'Your résumé for {company} is ready: {score}% match for this job.',
+      /** A version's file name when it has none (never expected). */
+      fileNameFallback: 'Résumé.pdf',
+      /** The score: the base résumé's, then the tailored one's (0015: shown side by side). */
+      scoreLabel: 'ATS match for this job',
+      score: '{score}%',
+      scoreNone: 'No keywords to score',
+      base: 'Your base résumé: {score}%',
+      baseNone: 'Your base résumé: not scored',
+      ready: 'Ready to apply: 80% or more.',
+      below:
+        'Below 80%. You can still apply. Adding the skills you have below, then re-tailoring, can raise it.',
+      /** The job was not among the company's top jobs when this version was made. */
+      notIncluded: 'This version was made before this job showed. Re-tailor to include it.',
+      /** Keywords the résumé proves, that the draft could not fit. */
+      missingProven: 'In your résumé, but not fitted in',
+      /** Keywords the résumé doesn't show: only the user can say they have them. */
+      missingUnproven: 'Not in your résumé',
+      missingUnprovenLine: 'Only add a skill you really have. It’s saved to your profile.',
+      have: 'I have this',
+      /** The button's name: its visible words first (WCAG label in name), then the skill. */
+      haveName: 'I have this: {skill}',
+      adding: 'Adding…',
+      addedShort: 'Added to your profile',
+      added: '{skill} was added to your profile. Re-tailor to use it.',
+      addFailed: 'Couldn’t add {skill}. Try again.',
+      profileNeeded: 'Save your profile first, then add skills to it.',
+      toProfile: 'Go to Profile',
+      skillsFull:
+        'Your profile has 100 skills, the most it holds. Remove one on your profile first.',
+      coverage: 'Part of your résumé couldn’t be read, so this version may leave some of it out.',
+      downloadPdf: 'Download PDF',
+      downloadDocx: 'Download DOCX',
+      downloading: 'Preparing…',
+      downloadFailed: 'The download didn’t start. Try again.',
+      made: 'Made {date}',
+      failedTitle: 'This tailoring didn’t finish.',
+      /** POST refusals (apps/api/src/tailoring.ts codes). */
+      busy: 'A tailoring for this company is already running.',
+      modelNeeded:
+        'Tailoring needs an AI model. Choose the free one, or a key you saved, in your AI settings.',
+      noResume: 'Upload a résumé (PDF or DOCX with text) and make it your default first.',
+      toResumes: 'Go to Résumés',
+      noJobs: 'This company has no jobs shown for you now.',
+      startFailed: 'That didn’t start. Try again.',
+      offline: 'You’re offline, so that didn’t start. Try again once you’re back online.',
+      loadFailed: 'Your tailored résumés didn’t load.',
+      retry: 'Try again',
     },
     /** In the job pane: applying (#52 PR C; the prototype's "Did you apply?" check). */
     apply: {

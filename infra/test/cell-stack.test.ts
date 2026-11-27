@@ -307,6 +307,7 @@ describe('HTTP API (T04)', () => {
       'POST /me/ai-keys/{provider}/check',
       'POST /me/crawls',
       'POST /me/documents',
+      'POST /me/profile/skills',
       'POST /me/roles',
       'POST /me/tailorings',
       'POST /ping-jobs',

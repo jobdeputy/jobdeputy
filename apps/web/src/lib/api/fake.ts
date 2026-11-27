@@ -12,7 +12,15 @@ import {
   updateDocumentInput,
 } from '@jobdeputy/shared/documents';
 import { githubListFromUrl } from '@jobdeputy/shared/lists';
-import { createRoleInput, MAX_ROLES, profileInput } from '@jobdeputy/shared/profile';
+import { MATCH_THRESHOLD } from '@jobdeputy/shared/match-score';
+import {
+  addSkillInput,
+  createRoleInput,
+  MAX_ROLES,
+  MAX_SKILLS,
+  profileInput,
+} from '@jobdeputy/shared/profile';
+import { createTailoringInput } from '@jobdeputy/shared/tailoring';
 import { type ApiClient, ApiError, type UploadForm, type UploadOptions } from './client.ts';
 
 /** Where the fake's upload forms point: nothing is sent anywhere. */
@@ -88,6 +96,8 @@ export function createFakeApi({
   const crawls = new Map<string, FakeCrawl[]>();
   /** #52: each person's jobs that left `new` (applied to, or later), by job ID. */
   const stages = new Map<string, Map<string, FakeStage>>();
+  /** #51 PR C: each person's tailored résumés, newest first. */
+  const tailorings = new Map<string, FakeTailoring[]>();
   /** The order jobs were applied to in, to keep same-moment ones newest first. */
   let stageOrder = 0;
   let lastRole = 0;
@@ -227,6 +237,40 @@ export function createFakeApi({
       : { ...view, status: 'ready' };
   }
 
+  /**
+   * #51 PR C: a tailored résumé as the API shows it now, one `crawlMs` a stage: queued,
+   * processing, then ready (`ok` when every job reaches 80%, else `partial`).
+   */
+  function tailoringView(t: FakeTailoring) {
+    const stage = Math.floor((now() - t.startedAt) / crawlMs);
+    const base = {
+      documentId: t.documentId,
+      companyKey: t.companyKey,
+      companyName: t.companyName,
+      jobIds: t.jobIds,
+      aiSource: 'platform',
+      createdAt: new Date(t.startedAt).toISOString(),
+    };
+    if (stage < 1) return { ...base, status: 'queued' };
+    if (stage < 2) return { ...base, status: 'processing' };
+    return {
+      ...base,
+      status: 'ready',
+      result: t.scores.every((s) => (s.tailored ?? 0) >= MATCH_THRESHOLD) ? 'ok' : 'partial',
+      scores: t.scores,
+      coverage: 1,
+      fileName: `Sam Example – ${t.companyName}.pdf`,
+      finishedAt: new Date(t.startedAt + 2 * crawlMs).toISOString(),
+    };
+  }
+
+  /** The free runs asked for this month (the fake's are all on the free model). */
+  function platformRunsThisMonth(mine: FakeTailoring[]) {
+    const at = new Date(now());
+    const start = Date.UTC(at.getUTCFullYear(), at.getUTCMonth());
+    return mine.filter((t) => t.startedAt >= start).length;
+  }
+
   return {
     async upload(form: UploadForm, file: Blob, { onProgress, signal }: UploadOptions = {}) {
       // Sent in four parts, so the progress is seen moving.
@@ -281,6 +325,26 @@ export function createFakeApi({
           homeCell: 'iad',
           createdAt: (saved?.createdAt as string | undefined) ?? now,
           updatedAt: now,
+        };
+        profiles.set(me, next);
+        return next as T;
+      }
+      if (path === '/me/profile/skills' && method === 'POST') {
+        // As the API (apps/api/src/profile.ts `addSkill`): added at the saved version, once.
+        const checked = addSkillInput.safeParse(body);
+        if (!checked.success) throw refused(checked.error.issues);
+        if (!saved) throw new ApiError('conflict', { status: 409, code: 'profile-needed' });
+        const skills = (saved.skills as string[] | undefined) ?? [];
+        const skill = checked.data.skill;
+        if (skills.some((each) => each.toLowerCase() === skill.toLowerCase())) return saved as T;
+        if (skills.length >= MAX_SKILLS) {
+          throw new ApiError('invalid', { status: 422, code: 'skills-full' });
+        }
+        const next = {
+          ...saved,
+          skills: [...skills, skill],
+          version: Number(saved.version) + 1,
+          updatedAt: new Date().toISOString(),
         };
         profiles.set(me, next);
         return next as T;
@@ -414,10 +478,27 @@ export function createFakeApi({
           .flatMap((company) => company.jobs as Record<string, unknown>[])
           .map((job) => {
             const moved = myStages.get(String(job.jobId));
+            const match = matchOf(String(job.jobId));
+            const scored = match ? { ...job, match } : job;
             return moved
-              ? { ...job, status: moved.stage, appliedAt: moved.appliedAt, stageAt: moved.stageAt }
-              : { ...job, status: 'new' };
+              ? {
+                  ...scored,
+                  status: moved.stage,
+                  appliedAt: moved.appliedAt,
+                  stageAt: moved.stageAt,
+                }
+              : { ...scored, status: 'new' };
           });
+      /** #51 PR C: the newest ready version's score for the job, as the worker stores it. */
+      const matchOf = (jobId: string) => {
+        for (const t of tailorings.get(me) ?? []) {
+          if (tailoringView(t).status !== 'ready') continue;
+          const score = t.scores.find((each) => each.jobId === jobId);
+          if (score)
+            return { score: score.tailored, base: score.base, resumeDocumentId: t.documentId };
+        }
+        return undefined;
+      };
       /**
        * #52 PR E: when applying to a job's company opens again, as the API counts: the other
        * jobs applied to there in the last 30 days (3 at most). A company whose board address says
@@ -442,6 +523,74 @@ export function createFakeApi({
           DEFAULT_APPLY_COOLDOWN_DAYS,
         );
       };
+      const myTailorings = tailorings.get(me) ?? [];
+      tailorings.set(me, myTailorings);
+      if (path === '/me/tailorings' && method === 'POST') {
+        // As the API, but from any résumé: the fake doesn't ask for one (the API: 422 no_resume).
+        const checked = createTailoringInput(false).safeParse(body);
+        if (!checked.success) throw refused(checked.error.issues);
+        const { companyKey } = checked.data;
+        const jobs = myJobs()
+          .filter((job) => job.companyKey === companyKey && job.status === 'new')
+          .sort((a, b) => scoreOf(b) - scoreOf(a))
+          .slice(0, 3);
+        if (jobs.length === 0) {
+          throw new ApiError('invalid', { status: 422, code: 'no_jobs' });
+        }
+        // As the API: the allowance is checked first.
+        if (platformRunsThisMonth(myTailorings) >= FAKE_TAILORINGS_PER_MONTH) {
+          throw new ApiError('too-many', { status: 429, code: 'tailoring_allowance' });
+        }
+        if (
+          myTailorings.some(
+            (t) => t.companyKey === companyKey && tailoringView(t).status !== 'ready',
+          )
+        ) {
+          throw new ApiError('conflict', { status: 409, code: 'tailoring_busy' });
+        }
+        lastDocument += 1;
+        const skills = ((saved?.skills as string[] | undefined) ?? []).map((s) => s.toLowerCase());
+        const tailoring: FakeTailoring = {
+          documentId: String(lastDocument).padStart(26, '0'),
+          companyKey,
+          companyName: String(jobs[0]?.companyName ?? companyKey),
+          jobIds: jobs.map((job) => String(job.jobId)),
+          scores: jobs.map((job, at) => fakeScore(String(job.jobId), at, skills)),
+          startedAt: now(),
+        };
+        myTailorings.unshift(tailoring);
+        return { tailoring: tailoringView(tailoring) } as T;
+      }
+      if (path.startsWith('/me/tailorings?') && method === 'GET') {
+        const companyKey = new URLSearchParams(path.slice(path.indexOf('?') + 1)).get('companyKey');
+        if (!companyKey) throw new ApiError('invalid', { status: 400 });
+        const start = new Date(now());
+        return {
+          tailorings: myTailorings.filter((t) => t.companyKey === companyKey).map(tailoringView),
+          allowance: {
+            used: platformRunsThisMonth(myTailorings),
+            perMonth: FAKE_TAILORINGS_PER_MONTH,
+            nextAt: new Date(
+              Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1),
+            ).toISOString(),
+          },
+        } as T;
+      }
+      if (path.startsWith('/me/tailorings/') && method === 'GET') {
+        const found = myTailorings.find(
+          (t) => t.documentId === path.slice('/me/tailorings/'.length),
+        );
+        if (!found) throw new ApiError('not-found', { status: 404 });
+        const view = tailoringView(found);
+        if (view.status !== 'ready') return view as T;
+        return {
+          ...view,
+          downloads: {
+            pdf: `data:application/pdf;base64,${btoa('%PDF-1.4 fake')}`,
+            docx: `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${btoa('fake')}`,
+          },
+        } as T;
+      }
       if (path === '/me/matches' && method === 'GET') {
         // Not applied to, best first (a job not scored yet after the scored ones).
         const jobs = myJobs()
@@ -709,6 +858,53 @@ const FAKE_LIST_COMPANIES = [
   { name: 'Umbrella', url: 'https://job-boards.greenhouse.io/umbrella' },
   { name: 'Hooli', url: 'https://jobs.ashbyhq.com/hooli' },
 ];
+
+/** #51 PR C: the fake's free tailorings a month, as the API's default. */
+const FAKE_TAILORINGS_PER_MONTH = 10;
+
+interface FakeScore {
+  jobId: string;
+  base: number | null;
+  tailored: number | null;
+  missingProven: string[];
+  missingUnproven: string[];
+}
+
+interface FakeTailoring {
+  documentId: string;
+  companyKey: string;
+  companyName: string;
+  jobIds: string[];
+  /** Made when asked for, from the profile's skills then (as the worker reads them). */
+  scores: FakeScore[];
+  startedAt: number;
+}
+
+/** A job's AI score, or below any score when not scored yet. */
+function scoreOf(job: Record<string, unknown>): number {
+  return (job.relevance as { score?: number } | undefined)?.score ?? -1;
+}
+
+/** Skills the fake's jobs ask for that its résumé doesn't show (only "I have this" adds them). */
+const FAKE_UNPROVEN = ['Kafka', 'Terraform'];
+
+/**
+ * The fake's score for the company's `at`-th job: the best reaches 80%; the others fall short,
+ * missing GraphQL (in the résumé, not fitted in) and the skills above, each one the profile has
+ * adding 6 points.
+ */
+function fakeScore(jobId: string, at: number, skills: string[]): FakeScore {
+  if (at === 0) return { jobId, base: 61, tailored: 86, missingProven: [], missingUnproven: [] };
+  const unproven = FAKE_UNPROVEN.filter((s) => !skills.includes(s.toLowerCase()));
+  const tailored = 76 - 4 * at + 6 * (FAKE_UNPROVEN.length - unproven.length);
+  return {
+    jobId,
+    base: 54 - 3 * at,
+    tailored,
+    missingProven: ['GraphQL'],
+    missingUnproven: unproven,
+  };
+}
 
 /** #52: a job's stage once it left `new`: when applied, when its stage last moved. */
 interface FakeStage {
