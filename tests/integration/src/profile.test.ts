@@ -165,6 +165,7 @@ describe('application answers (#53, deployed)', () => {
         new GetCommand({
           TableName: `${stackName()}-users`,
           Key: { userId: userIdOf(alice.accessToken), sk: 'VOLUNTARY' },
+          ConsistentRead: true,
         }),
       )
     ).Item;

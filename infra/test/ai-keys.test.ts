@@ -39,7 +39,7 @@ describe('ai-keys (T08b2)', () => {
     });
   });
 
-  it('gives KMS to exactly four functions: encrypt to the key API, decrypt to the three workers that call providers', () => {
+  it('gives AI-key KMS use to exactly four functions: encrypt to the key API, decrypt to the three workers that call providers (the profile API has its own, below)', () => {
     for (const t of [dev, cell('prod'), cell('dev', 'pr42')]) {
       const kms = statements(t).filter(
         ([id, s]) =>

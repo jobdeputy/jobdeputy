@@ -106,6 +106,23 @@ describe('kmsVoluntaryStore (#53)', () => {
     expect(await store.get('u1')).toEqual({ version: 3, ...DECLINED_VOLUNTARY });
   });
 
+  it.each([
+    ['InvalidCiphertextException', true],
+    ['IncorrectKeyException', true],
+    ['ThrottlingException', false],
+  ])(
+    'a KMS %s on read: declined (keeping the version) = %s, else thrown',
+    async (name, declined) => {
+      const kms = fakeKms();
+      const r = repo();
+      const store = kmsVoluntaryStore(r, kms as never, KEY);
+      await store.save('u1', answers, 0, audit);
+      kms.send.mockRejectedValueOnce(Object.assign(new Error('kms'), { name }));
+      if (declined) expect(await store.get('u1')).toEqual({ version: 1, ...DECLINED_VOLUNTARY });
+      else await expect(store.get('u1')).rejects.toThrow('kms');
+    },
+  );
+
   it('refuses a stale save before asking KMS', async () => {
     const kms = fakeKms();
     const store = kmsVoluntaryStore(repo(), kms as never, KEY);

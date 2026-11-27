@@ -10,6 +10,9 @@ import {
 
 const logger = createLogger('api-voluntary');
 
+/** KMS errors meaning this ciphertext will never decrypt with this key and context. */
+const UNDECRYPTABLE = new Set(['InvalidCiphertextException', 'IncorrectKeyException']);
+
 /** The voluntary answers as the user sees them, with the version a save must send back. */
 export interface VoluntaryView extends VoluntaryAnswers {
   version: number;
@@ -41,15 +44,29 @@ export function kmsVoluntaryStore(
     async get(userId) {
       const item = await repo.get(userId);
       if (!item) return { version: 0, ...DECLINED_VOLUNTARY };
-      const res = await kms.send(
-        new DecryptCommand({
-          KeyId: keyArn,
-          CiphertextBlob: item.ciphertext,
-          EncryptionContext: voluntaryEncryptionContext(userId),
-        }),
-      );
-      if (!res.Plaintext) throw new Error('KMS returned no plaintext');
-      return { version: item.version, ...readable(parsed(res.Plaintext)) };
+      let plaintext: Uint8Array | undefined;
+      try {
+        plaintext = (
+          await kms.send(
+            new DecryptCommand({
+              KeyId: keyArn,
+              CiphertextBlob: item.ciphertext,
+              EncryptionContext: voluntaryEncryptionContext(userId),
+            }),
+          )
+        ).Plaintext;
+      } catch (error) {
+        // A ciphertext this key can never open (corrupt, or made under another key) must not
+        // lock the user out: it reads as decline, and their next save replaces it. Anything
+        // else (throttling, an outage) is a real error.
+        if (!UNDECRYPTABLE.has((error as Error).name)) throw error;
+        logger.warn('Stored voluntary answers cannot be decrypted; reading them as decline', {
+          reason: (error as Error).name,
+        });
+        return { version: item.version, ...DECLINED_VOLUNTARY };
+      }
+      if (!plaintext) throw new Error('KMS returned no plaintext');
+      return { version: item.version, ...readable(parsed(plaintext)) };
     },
     async save(userId, answers, expectedVersion, audit) {
       // A stale save is refused before KMS is asked (the write checks again).

@@ -29,5 +29,5 @@ Encryption gives the same isolation as a separate table without one, and reuses 
 ## Consequences
 
 - The extension's read API (#54) must decrypt in a function granted the same narrow context, or ask the profile API.
-- The KMS key's description still says "AI keys"; it is updated with the next keys-stack change.
+- The KMS key's description now names both uses. A stored voluntary item KMS can never decrypt (corrupt, or made under another key) also reads as `decline`, so the user can save over it.
 - Other countries' questions (UK diversity monitoring, Indian forms) need their own answers later; the `VOLUNTARY` schema is US-only.

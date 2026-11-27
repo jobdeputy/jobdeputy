@@ -30,7 +30,8 @@ export class KeysStack extends Stack {
     super(scope, id, props);
     this.key = new Key(this, 'AiKeysKey', {
       alias: `alias/jobdeputy-${props.stage}-${props.cell}-ai-keys`,
-      description: 'Encrypts users’ own AI keys (ai-keys table). Decision 0009.',
+      description:
+        'Encrypts users’ own AI keys (ai-keys table, decision 0009) and voluntary self-identification answers (users VOLUNTARY, decision 0019).',
       enableKeyRotation: true,
       // The key policy only delegates to IAM: the cell stack grants encrypt to the key API
       // and decrypt to the LLM workers, each with the encryption context required. #53
