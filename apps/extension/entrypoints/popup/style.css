@@ -1,0 +1,4 @@
+/* The web app's design tokens (round 7), shared as they are: one look in the app and the
+   extension. Only these colours and fonts exist here too. */
+@import "tailwindcss";
+@import "../../../web/src/styles/tokens.css";

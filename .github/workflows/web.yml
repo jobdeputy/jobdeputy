@@ -7,6 +7,7 @@ on:
   pull_request:
     paths:
       - apps/web/**
+      - packages/shared/**
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
       - package.json
@@ -18,6 +19,7 @@ on:
     branches: [main]
     paths:
       - apps/web/**
+      - packages/shared/**
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
       - package.json

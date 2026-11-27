@@ -1,0 +1,51 @@
+// #54 (decision 0020): the built extension asks for exactly what src/manifest.ts lists, so the
+// least-privilege test on that file covers what ships. Run after `wxt build`.
+import { readFileSync } from 'node:fs';
+
+const built = JSON.parse(
+  readFileSync(new URL('../apps/extension/.output/chrome-mv3/manifest.json', import.meta.url)),
+);
+const { manifest } = await import('../apps/extension/src/manifest.ts');
+const same = (a = [], b = []) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+const keys = [
+  'permissions',
+  'host_permissions',
+  'optional_permissions',
+  'optional_host_permissions',
+];
+const wrong = keys.filter((key) => !same(built[key], manifest[key]));
+// A static content script's matches are granted at install: they must be hosts granted at
+// install too. Content scripts for optional hosts are registered at runtime, once granted.
+const granted = new Set(manifest.host_permissions ?? []);
+const strays = (built.content_scripts ?? []).flatMap((script) =>
+  script.matches.filter((match) => !granted.has(match)),
+);
+// Any other way to reach pages or be reached (web_accessible_resources, externally_connectable,
+// content script globs, …) is refused until a decision allows it here.
+const KNOWN = new Set([
+  'manifest_version',
+  'name',
+  'description',
+  'version',
+  'version_name',
+  'icons',
+  'action',
+  'background',
+  'content_scripts',
+  ...keys,
+]);
+const unknown = Object.keys(built).filter((key) => !KNOWN.has(key));
+// Each content script only says where (matches), what (js, css) and when (run_at): no globs,
+// frames beyond the top one, page world, or about:/blob: fallbacks until a decision allows them.
+const SCRIPT_KEYS = new Set(['matches', 'js', 'css', 'run_at']);
+const globs = (built.content_scripts ?? []).filter((script) =>
+  Object.keys(script).some((key) => !SCRIPT_KEYS.has(key)),
+);
+if (wrong.length > 0 || strays.length > 0 || unknown.length > 0 || globs.length > 0) {
+  console.error('Built manifest differs from src/manifest.ts:', { wrong, strays, unknown, globs });
+  process.exit(1);
+}
+console.log(
+  'Built manifest matches src/manifest.ts:',
+  keys.map((k) => `${k}=${JSON.stringify(built[k] ?? [])}`).join(' '),
+);

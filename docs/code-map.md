@@ -73,6 +73,16 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `e2e/compare-screenshots.ts` | global teardown: which shots differ from `main`'s (restored by CI into `UI_BASELINE_DIR`), so the PR comment shows only those; tested by `compare-screenshots.spec.ts` |
 | `e2e/visual.spec.ts`, `e2e/__screenshots__/` | visual baselines: home, sign-in and the gallery compared pixel for pixel (0.1% allowed) on desktop Chrome, iPad and iPhone, on Linux only; made by the `.github/workflows/screenshot-baselines.yml` workflow (run by hand), which pushes them to a new branch for review; skipped while a baseline is missing |
 
+## apps/extension: the Chrome extension (#54, WXT, Manifest V3)
+
+| File | Role |
+|---|---|
+| `src/manifest.ts` | the manifest's permissions and hosts (decision 0020: only what a shipped feature uses); `wxt.config.ts` builds from it |
+| `src/popup.tsx`, `entrypoints/popup/` | the toolbar popup (the shell: what the extension is for, its version); styled with the web app's tokens |
+| `src/copy.ts` | the extension's words |
+| `test/manifest.test.ts`, `test/popup.test.tsx` | least privilege: the allowed permissions and hosts (granted and optional), never broad access; the popup's words |
+| `e2e/extension.ts`, `e2e/popup.spec.ts` | browser tests: the built extension loaded unpacked in Chromium (`withExtension`); the popup and its screenshot (the Extension workflow's artifact) |
+
 ## apps/api/src: one Lambda per feature (API Gateway HTTP API)
 
 | File | Routes and role |
@@ -147,7 +157,7 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `db/src/ai-key-repository.ts` | `ai-keys` (save, check, delete, results; daily check limit) and `preferences` `AI_SETTINGS` |
 | `db/src/usage-counters.ts`, `versioned.ts`, `audit-repository.ts` | exact caps; optimistic versions; audit entries and paging |
 | `db/src/account-repository.ts`, `crawl-settings-repository.ts`, `ping-repository.ts`, `client.ts` | deletion record; user crawl and jobs-per-company limits; ping; DynamoDB client and condition helpers |
-| `shared/src/*.ts` | Zod schemas and constants per feature (`applicant` (#53: `APPLICANT` and `VOLUNTARY` answers, `voluntaryEncryptionContext`), `applications` (#52: `JOB_STAGES`, the stage body, Matches' window and cap, the applications cursor, `JOB_SUMMARY_FIELDS`, `APPLIED_INDEX`), `auth` (#74: `Caller.tier` from the token's `cognito:groups`), `crawl` (#74: `limitsForTier`, premium limits), `documents`, `profile`, `ping`, `lists` (#50: `githubListFromUrl`, `listUrl`, list limits)), `company-rank.ts` (T08c/#49: `compareRank`, `rankShown`, how a company's shown jobs are ranked, shared by the crawl worker and `GET /me/companies`, and the cursor's schema), `ai.ts` (the pinned platform model; own-key providers, schemas, and limits), `match-score.ts` (#51: the ATS match score: keyword weights, normalising and aliases, `groundKeywords`, `matchScore`), `text.ts` (`cutAtWord`: the one word-boundary cut, surrogate-safe; the crawl's `truncate` and the structured résumé's limits), `resume.ts` (#51: the structured résumé, its text, and `resumeBlocks`: the one template the PDF, the DOCX, and the preview lay out, `printable` text only), `cover-letter.ts` (#51 PR D: the letter's inputs, `coverLetter` (as stored and previewed), `COVER_LETTER_ERRORS`, `coverLetterKeys`, `letterBlocks` (header, greeting, body, sign-off) and `letterText` (to copy)), `http.ts` (problem details), `logger.ts` |
+| `shared/src/*.ts` | Zod schemas and constants per feature (`applicant` (#53: `APPLICANT` and `VOLUNTARY` answers, `voluntaryEncryptionContext`), `applications` (#52: `JOB_STAGES`, the stage body, Matches' window and cap, the applications cursor, `JOB_SUMMARY_FIELDS`, `APPLIED_INDEX`), `auth` (#74: `Caller.tier` from the token's `cognito:groups`), `crawl` (#74: `limitsForTier`, premium limits), `documents`, `profile`, `ping`, `lists` (#50: `githubListFromUrl`, `listUrl`, list limits)), `company-rank.ts` (T08c/#49: `compareRank`, `rankShown`, how a company's shown jobs are ranked, shared by the crawl worker and `GET /me/companies`, and the cursor's schema), `ai.ts` (the pinned platform model; own-key providers, schemas, and limits), `match-score.ts` (#51: the ATS match score: keyword weights, normalising and aliases, `groundKeywords`, `matchScore`), `text.ts` (`cutAtWord`: the one word-boundary cut, surrogate-safe; the crawl's `truncate` and the structured résumé's limits; `fill`: the copy templates' `{slots}`, shared by the web app and the extension), `resume.ts` (#51: the structured résumé, its text, and `resumeBlocks`: the one template the PDF, the DOCX, and the preview lay out, `printable` text only), `cover-letter.ts` (#51 PR D: the letter's inputs, `coverLetter` (as stored and previewed), `COVER_LETTER_ERRORS`, `coverLetterKeys`, `letterBlocks` (header, greeting, body, sign-off) and `letterText` (to copy)), `http.ts` (problem details), `logger.ts` |
 | `test-fixtures/src/index.ts` | synthetic PDF, DOCX, zip bomb, EICAR |
 | `llm/src/task.ts` | `defineTask`, `runTask`: 3 turns, token caps, timeout, strict zod output, `partial`, usage (the only Strands caller, 0009) |
 | `llm/src/models.ts` | `resolveModel`: the platform model on Bedrock in the cell Region, or the user's OpenAI or Anthropic key; no client retries |
@@ -189,4 +199,5 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `scripts/request-account-deletion.sh` | the only way to delete an account by hand |
 | `scripts/cleanup-log-groups.sh`, `scripts/cloud-setup.sh` | orphaned log groups; cloud dev environment |
 | `scripts/delete-pr-stack.sh` | deletes a PR stack, retrying AWS internal delete failures (#61) |
+| `scripts/check-extension-manifest.mjs` | #54: the built extension's manifest asks only for what `src/manifest.ts` lists (Extension workflows) |
 | `scripts/publish-ui-screenshots.sh` | posts a PR's UI screenshots as one comment (only screens that differ from `main`'s, when `compare-*.json` covers every shot); images on the `ui-screenshots` branch (one commit: each PR's last 3 pushes, kept 30 days after close; retries when two PRs publish at once) (#14) |
