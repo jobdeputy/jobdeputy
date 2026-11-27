@@ -73,6 +73,15 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `e2e/compare-screenshots.ts` | global teardown: which shots differ from `main`'s (restored by CI into `UI_BASELINE_DIR`), so the PR comment shows only those; tested by `compare-screenshots.spec.ts` |
 | `e2e/visual.spec.ts`, `e2e/__screenshots__/` | visual baselines: home, sign-in and the gallery compared pixel for pixel (0.1% allowed) on desktop Chrome, iPad and iPhone, on Linux only; made by the `.github/workflows/screenshot-baselines.yml` workflow (run by hand), which pushes them to a new branch for review; skipped while a baseline is missing |
 
+## apps/extension: the Chrome extension (#54, WXT, Manifest V3)
+
+| File | Role |
+|---|---|
+| `src/manifest.ts` | the manifest's permissions and hosts (decision 0020: only what a shipped feature uses); `wxt.config.ts` builds from it |
+| `src/popup.tsx`, `entrypoints/popup/` | the toolbar popup (the shell: what the extension is for, its version); styled with the web app's tokens |
+| `src/copy.ts` | the extension's words |
+| `test/manifest.test.ts` | least privilege: the allowed permissions and hosts, and never broad access |
+
 ## apps/api/src: one Lambda per feature (API Gateway HTTP API)
 
 | File | Routes and role |
@@ -189,4 +198,5 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `scripts/request-account-deletion.sh` | the only way to delete an account by hand |
 | `scripts/cleanup-log-groups.sh`, `scripts/cloud-setup.sh` | orphaned log groups; cloud dev environment |
 | `scripts/delete-pr-stack.sh` | deletes a PR stack, retrying AWS internal delete failures (#61) |
+| `scripts/check-extension-manifest.mjs` | #54: the built extension's manifest asks only for what `src/manifest.ts` lists (Extension workflows) |
 | `scripts/publish-ui-screenshots.sh` | posts a PR's UI screenshots as one comment (only screens that differ from `main`'s, when `compare-*.json` covers every shot); images on the `ui-screenshots` branch (one commit: each PR's last 3 pushes, kept 30 days after close; retries when two PRs publish at once) (#14) |

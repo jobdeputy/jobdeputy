@@ -34,3 +34,7 @@ playwright-report/
 test-results/
 apps/web/screenshots/
 apps/web/screenshots-main/
+
+# Browser extension (WXT): build output and generated types
+.output/
+.wxt/
