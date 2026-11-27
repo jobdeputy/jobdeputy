@@ -546,6 +546,8 @@ export const en = {
       toResumes: 'Go to Résumés',
       noJobs: 'This company has no jobs shown for you now.',
       startFailed: 'That didn’t start. Try again.',
+      /** The answer to Tailor was lost: it may have started (and used a free run). */
+      unsure: 'We couldn’t tell whether that started. If it did, it shows here in a moment.',
       offline: 'You’re offline, so that didn’t start. Try again once you’re back online.',
       loadFailed: 'Your tailored résumés didn’t load.',
       retry: 'Try again',
@@ -554,7 +556,7 @@ export const en = {
     letter: {
       title: 'Cover letter for this job',
       intro:
-        'Your deputy writes a letter for this job from your résumé and profile, saying only what they show. It uses your newest résumé tailored for {company}, if you have one.',
+        'Your deputy writes a letter for this job from your résumé and profile, saying only what they show. It uses your newest résumé tailored for {company}, if one was made from your current default résumé.',
       start: 'Write cover letter',
       again: 'Rewrite',
       starting: 'Starting…',
@@ -606,6 +608,8 @@ export const en = {
         'Cover letters need an AI model. Choose the free one, or a key you saved, in your AI settings.',
       noJobs: 'This job has closed or is no longer shown, so no letter can be written for it.',
       noCompany: 'We couldn’t find this company’s name, so a letter can’t be written for it.',
+      /** The answer to Write was lost: it may have started (and used a free run). */
+      unsure: 'We couldn’t tell whether that started. If it did, it shows here in a moment.',
       loadFailed: 'Your cover letters didn’t load.',
       retry: 'Try again',
     },

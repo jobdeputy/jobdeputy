@@ -216,6 +216,21 @@ describe('tailoring in the job pane (#51 PR C)', () => {
     else expect(within(alert).queryByRole('link')).toBeNull();
   });
 
+  it('a Tailor whose answer was lost says it may have started (D3 round 3)', async () => {
+    await setUp({
+      wrap: answering('POST', '/me/tailorings', () => {
+        throw new ApiError('unsure');
+      }),
+    });
+    const section = await openSection(BACKEND);
+    fireEvent.click(section.getByRole('button', { name: 'Tailor résumé' }));
+    expect(
+      await section.findByText(
+        'We couldn’t tell whether that started. If it did, it shows here in a moment.',
+      ),
+    ).toBeTruthy();
+  });
+
   it('a failed run says why, and can be tried again', async () => {
     await setUp({
       wrap: answering('GET', '/me/tailorings?', () => ({

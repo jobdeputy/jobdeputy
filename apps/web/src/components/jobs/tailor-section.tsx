@@ -268,6 +268,8 @@ function refusalOf(
     case 'no_jobs':
       return { words: text.noJobs };
   }
+  // The answer was lost: the run may have started. The list read again after says.
+  if (error.kind === 'unsure') return { words: text.unsure };
   return { words: error.kind === 'offline' ? text.offline : text.startFailed };
 }
 

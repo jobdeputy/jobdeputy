@@ -401,6 +401,31 @@ describe('cover letters in the job pane (#51 PR D3)', () => {
     else expect(within(alert).queryByRole('link')).toBeNull();
   });
 
+  it('a Write whose answer was lost says it may have started, and shows the run if it did (round 3)', async () => {
+    await setUp({
+      wrap: (api) => ({
+        ...api,
+        async request<T>(m: ApiMethod, p: `/${string}`, body?: unknown): Promise<T> {
+          if (m === 'POST' && p === '/me/cover-letters') {
+            // Taken, but its answer lost on the way back.
+            await api.request<T>(m, p, body);
+            throw new ApiError('unsure');
+          }
+          return api.request<T>(m, p, body);
+        },
+      }),
+    });
+    const section = await openSection();
+    fireEvent.click(section.getByRole('button', { name: 'Write cover letter' }));
+    expect(
+      await section.findByText(
+        'We couldn’t tell whether that started. If it did, it shows here in a moment.',
+      ),
+    ).toBeTruthy();
+    // The list read again shows the run that did start.
+    expect(await section.findByRole('button', { name: 'Rewrite' })).toBeTruthy();
+  });
+
   it('a failed run says why, and can be tried again; no free runs left is said briefly', async () => {
     await setUp({
       wrap: answering('GET', '/me/cover-letters?', () => ({
@@ -518,7 +543,9 @@ function letterReads(answer: (read: () => Promise<unknown>) => Promise<unknown>)
         try {
           return (await answer(() => api.request<T>(m, p, body))) as T;
         } finally {
-          setTimeout(finish, 0);
+          // Two timer turns: TanStack Query hands the answer to the page on a timer of its own,
+          // queued after this one is (timers of the same delay run in the order queued).
+          setTimeout(() => setTimeout(finish, 0), 0);
         }
       },
     }),
