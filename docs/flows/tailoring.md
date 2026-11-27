@@ -2,7 +2,7 @@
 
 One click on **Tailor** for a company makes one version of the user's résumé for that company's top shown jobs (at most 3, and never more than the user's jobs per company), with an ATS match score per job. The model rewrites only the summary, the skills list, and the bullets; code keeps it honest and computes the score. Decision: [0015](../decisions/0015-ats-match-score-and-tailored-resumes.md). Before this: [relevance flow](relevance.md) (which jobs a company shows).
 
-- **Task:** [#51](https://github.com/jobdeputy/jobdeputy/issues/51) (M3 of the apply flow). The screens (PR C) are in the Matches job pane; cover letters come in PR D.
+- **Task:** [#51](https://github.com/jobdeputy/jobdeputy/issues/51) (M3 of the apply flow). The screens (PR C) are in the Matches job pane; cover letters (PR D) run the same way, below in [A cover letter for a job](#a-cover-letter-for-a-job-pr-d).
 - **Keep it true:** a PR that changes this flow updates this file, like [data-model.md](../data-model.md).
 
 ## The big picture
@@ -117,9 +117,55 @@ sequenceDiagram
 | A version's files | `derived/users/<userId>/documents/<id>/resume.{json,pdf,docx}` |
 | A job's keywords and score | `jobs.keywords`, `jobs.match`, `jobs.materials` |
 | The free runs, the company lock | `usage` `MONTH#` `tailoringRunIds`, `TAILOR#<companyKey>` |
-| Tokens | `usage` `AI#<month>#…` (`structure-resume`, `job-keywords`, `tailor-resume`) |
+| Tokens | `usage` `AI#<month>#…` (`structure-resume`, `job-keywords`, `tailor-resume`, `cover-letter`) |
+| A cover letter (PR D) | `documents` item, `kind: cover_letter`; files `derived/users/<userId>/documents/<id>/letter.{json,pdf,docx}`; `jobs.materials.coverLetterDocumentId`; lock `usage` `LETTER#<jobId>` |
 
 Account deletion erases all of it (the `documents`, `jobs`, and `usage` tables, and the `derived/users/<userId>/` prefix). Deleting an uploaded résumé deletes its structured copy; versions made from it stay until their company's limit.
+
+## A cover letter for a job (PR D)
+
+**Write cover letter** in the job pane makes one letter for that job (plan agreed on #51, 2026-11-27). It is the same kind of run: a `documents` item (`origin: generated`, `kind: cover_letter`) inserted `queued` starts the same Pipe, queue, and worker, which branches on `kind`. It counts in the same free runs (1 letter = 1 run), and locks the job (`LETTER#<jobId>`), not the company, so it can run beside the company's résumé.
+
+```mermaid
+sequenceDiagram
+  actor U as User
+  participant A as Tailoring API
+  participant DB as DynamoDB
+  participant W as Tailoring worker
+  participant S3
+  participant M as Model
+  U->>A: POST /me/cover-letters {jobId, aiSource?}
+  A->>DB: the job (open and shown, else 404 / 422 no_jobs), AI setting, default résumé
+  A->>DB: the company's versions: the newest ready one made from the default's file as it is now → resumeDocumentId
+  A->>DB: TransactWrite: letter queued + audit + MONTH# tailoringRunIds + LETTER#jobId lock
+  A-->>U: 202 {coverLetter: queued} (or 429 tailoring_allowance / 409 cover_letter_busy / 422)
+  Note over DB,W: documents stream → Pipe → queue (as a résumé)
+  W->>DB: claim; a kept letter → render it (no model call)
+  alt resumeDocumentId still ready
+    W->>S3: its resume.json
+  else
+    W->>M: structure-resume (only when the base has no cached copy)
+  end
+  W->>M: job-keywords (only when not cached for the description)
+  loop at most 3 letter calls
+    W->>M: cover-letter (the body's paragraphs; repairs name what failed)
+    Note over W: honesty checks in code (letter-checks.ts); ends at the first honest letter
+  end
+  W->>DB: the kept letter (tailoring.draftLetter; once per run)
+  W->>S3: letter.json, letter.pdf, letter.docx (greeting, sign-off, and header added by code)
+  W->>DB: ready + lock freed (expires in a day) + audit, then jobs.materials.coverLetterDocumentId (only if this delivery ended it)
+  W->>DB: letters past 3 for the job deleted (and their files)
+  U->>A: GET /me/cover-letters/{id}
+  A-->>U: the letter, its text to copy, 5-minute PDF and DOCX links
+```
+
+- **Calls:** at most 5, as tailoring (structure 1, keywords 1, letter 3). Written from a tailored résumé, a letter usually makes 1 (the keywords were cached by the résumé run).
+- **Which résumé:** the company's newest **ready** tailored résumé made from today's default **as its file is now** (`tailoring.baseETag` equal to the upload's `eTag`: a re-upload keeps the document's ID), chosen when asked and checked again in the worker; otherwise the base. `from` (`tailored` or `base`) says which.
+- **The letter file:** the name and contact line from that résumé, "Dear Hiring Manager,", the body, "Sincerely,", the name (`letterBlocks`, shared with the preview). No date: the worker cannot know the user's day, and the DOCX can be edited. Copy gives the same text without the header (`letterText`).
+- **Failures** use tailoring's codes, worded for a letter (`COVER_LETTER_ERRORS`): a closed or since-hidden job is `no_jobs`; only dishonest drafts, `no_honest_draft`; a job whose crawl found no company name, `no_company` (the API refuses it first: a letter never names a company by its key).
+- **The lock** `LETTER#<jobId>` expires a day after its run ends (DynamoDB TTL: one per job would pile up; not a delete, so the worker keeps no DeleteItem); taking it again removes the expiry. A company's `TAILOR#` item stays, its run fields removed.
+- **Which jobs:** any job open and shown (not hidden by the filter or the company limit), with a title and a company name; unlike a résumé, not only the company's top shown jobs (a button on every job, as agreed).
+- **Known cost:** a letter and its company's résumé run may start together on a new upload, before either has cached the structured copy; both then structure it (one extra call, the same result, each within its own 5). Rare, so not worth a wait between them.
 
 ## In the app (PR C)
 
@@ -165,6 +211,7 @@ sequenceDiagram
 | Task calls per run | at most 5 |
 | Résumé text sent to structure | 10,000 characters |
 | Versions kept per company | 10 |
-| Platform runs (own-key runs are not counted) | 10 a month, premium 100 (#74); the admin sets both (`platformTailoringsPerMonth`, [runbook](../runbooks/crawl-limits.md)) |
+| Letters kept per job (PR D) | 3 |
+| Platform runs (own-key runs are not counted; résumés and letters together) | 10 a month, premium 100 (#74); the admin sets both (`platformTailoringsPerMonth`, [runbook](../runbooks/crawl-limits.md)) |
 | Worker timeout | 12 minutes; retries after 1 and 2 minutes; a run is stale after 60 |
 | Match threshold | 80% (below: `partial`, still usable) |

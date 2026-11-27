@@ -130,7 +130,8 @@ export interface Job extends JobPosting {
   keywords?: JobKeywordsCache;
   /** #51: the score of the tailored résumé made for it, and that version. */
   match?: JobMatch;
-  materials?: { resumeDocumentId?: string };
+  /** #51: the job's newest tailored résumé and (PR D) cover letter. */
+  materials?: { resumeDocumentId?: string; coverLetterDocumentId?: string };
   /** Epoch seconds: DynamoDB deletes the job after this (T08c, hidden or closed and untouched). */
   ttl?: number;
   status: JobStatus;

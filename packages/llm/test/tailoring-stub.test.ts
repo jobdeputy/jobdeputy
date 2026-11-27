@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { writeCoverLetter } from '../src/tasks/cover-letter.js';
 import { extractJobKeywords } from '../src/tasks/job-keywords.js';
 import { structureResume } from '../src/tasks/structure-resume.js';
 import { tailorResume } from '../src/tasks/tailor-resume.js';
@@ -68,5 +69,47 @@ describe('stubTailoringSource', () => {
     expect(run.best?.scores).toEqual([
       expect.objectContaining({ base: 55, tailored: 55, missingProven: [] }),
     ]);
+
+    // PR D: a cover letter that passes every honesty check on its first call.
+    const letter = await writeCoverLetter(
+      {
+        company: 'Example Test Co',
+        resume: base,
+        evidence: [],
+        job: {
+          title: 'Backend Engineer',
+          description: 'Build the APIs of Example Test Co.\nTypeScript\nAWS',
+          keywords: keywords.keywords[0] ?? [],
+        },
+      },
+      source,
+    );
+    expect(letter.attempts.map((a) => a.issues)).toEqual([[]]);
+    expect(letter.status).toBe('ok');
+    expect(letter.best?.paragraphs?.[0]).toBe(
+      'I am writing to apply for the Backend Engineer role at Example Test Co. The role fits the work I have done so far, and I would like to bring that work to your team.',
+    );
+    expect(letter.best?.paragraphs?.join(' ')).toContain('Built REST APIs in TypeScript.');
+  });
+
+  it('writes a letter within 200–400 words even from a résumé with no bullets or skills', async () => {
+    const letter = await writeCoverLetter(
+      {
+        company: 'Example Test Co',
+        resume: {
+          contact: { name: 'Sam Example', links: [] },
+          skills: [],
+          experience: [{ id: 'e1', title: 'Engineer', employer: 'Example Logistics', bullets: [] }],
+          education: [],
+          certifications: [],
+          projects: [],
+        },
+        evidence: [],
+        job: { title: 'Backend Engineer', description: '', keywords: [] },
+      },
+      stubTailoringSource('stub-model'),
+    );
+    expect(letter.attempts.map((a) => a.issues)).toEqual([[]]);
+    expect(letter.status).toBe('ok');
   });
 });

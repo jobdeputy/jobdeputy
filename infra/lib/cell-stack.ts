@@ -872,6 +872,17 @@ export class CellStack extends Stack {
       methods: [HttpMethod.GET],
       integration: tailoringIntegration,
     });
+    // #51 PR D: cover letters, in the tailoring function.
+    httpApi.addRoutes({
+      path: '/me/cover-letters',
+      methods: [HttpMethod.GET, HttpMethod.POST],
+      integration: tailoringIntegration,
+    });
+    httpApi.addRoutes({
+      path: '/me/cover-letters/{documentId}',
+      methods: [HttpMethod.GET],
+      integration: tailoringIntegration,
+    });
 
     if (props.stage === 'dev') {
       // T06b, dev stacks only: fixed public pages for the crawl integration tests, holding

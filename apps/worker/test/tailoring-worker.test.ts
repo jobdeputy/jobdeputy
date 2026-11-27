@@ -4,9 +4,17 @@ import {
   type Job,
   TailoringConflictError,
 } from '@jobdeputy/db';
-import { jobKeywordsTask, promptVersion, stubTailoringSource } from '@jobdeputy/llm';
+import {
+  coverLetterTask,
+  jobKeywordsTask,
+  promptVersion,
+  stubTailoringSource,
+} from '@jobdeputy/llm';
 import { stubSource } from '@jobdeputy/llm/testing';
 import {
+  COVER_LETTER_VERSIONS_KEPT,
+  coverLetterKeys,
+  LETTER_GREETING,
   MATCH_SCORE_VERSION,
   structuredKey,
   TAILORING_STALE_MS,
@@ -122,12 +130,16 @@ function setup(over: Partial<TailoringWorkerDeps> = {}, doc = version()) {
   const files = new Map<string, unknown>([['text-key', RESUME_TEXT]]);
   const runs = {
     claim: vi.fn(async () => doc),
+    get: vi.fn(async (): Promise<GeneratedDocument | undefined> => undefined),
     saveCall: vi.fn(async () => {}),
     saveDraft: vi.fn(async () => true),
+    saveLetterDraft: vi.fn(async () => true),
     finish: vi.fn(async () => true),
     saveKeywords: vi.fn(async () => {}),
     saveMatches: vi.fn(async () => {}),
+    saveCoverLetter: vi.fn(async () => {}),
     list: vi.fn(async (): Promise<GeneratedDocument[]> => []),
+    listLetters: vi.fn(async (): Promise<GeneratedDocument[]> => []),
     deleteVersions: vi.fn(async () => {}),
   };
   const documents = {
@@ -152,6 +164,8 @@ function setup(over: Partial<TailoringWorkerDeps> = {}, doc = version()) {
     render: {
       pdf: vi.fn(async () => Buffer.from('%PDF-fake')),
       docx: vi.fn(async () => Buffer.from('PK-fake')),
+      letterPdf: vi.fn(async () => Buffer.from('%PDF-letter')),
+      letterDocx: vi.fn(async () => Buffer.from('PK-letter')),
     },
     delayRetry: vi.fn(async () => {}),
     recordMetrics: vi.fn(),
@@ -200,7 +214,7 @@ describe('tailoring worker', () => {
     const keys = tailoringKeys(USER, DOC);
     for (const key of [keys.json, keys.pdf, keys.docx]) expect(files.has(key)).toBe(true);
     expect(finished(runs)).toMatchObject({
-      companyKey: 'schema:example-test-co',
+      lock: 'TAILOR#schema:example-test-co',
       outcome: {
         status: 'ready',
         s3Key: keys.pdf,
@@ -374,6 +388,8 @@ describe('tailoring worker', () => {
           throw new Error('S3 blip');
         }),
         docx: vi.fn(async () => Buffer.from('PK')),
+        letterPdf: vi.fn(async () => Buffer.from('%PDF')),
+        letterDocx: vi.fn(async () => Buffer.from('PK')),
       },
     });
     await expect(processRecord(record(), first.deps)).rejects.toThrow('S3 blip');
@@ -381,6 +397,8 @@ describe('tailoring worker', () => {
     const [, , draft, draftResume, company] = first.runs.saveDraft.mock.calls[0] as any[];
     expect(company).toBe('Example Test Co');
     expect(draft).toMatchObject({
+      // The file the draft was made from: a cover letter checks it (PR D).
+      baseETag: 'etag-1',
       result: 'partial',
       scores: [expect.objectContaining({ jobId: 'job-1' })],
     });
@@ -460,6 +478,8 @@ describe('tailoring worker', () => {
           throw new Error('font');
         }),
         docx: vi.fn(async () => Buffer.from('PK')),
+        letterPdf: vi.fn(async () => Buffer.from('%PDF')),
+        letterDocx: vi.fn(async () => Buffer.from('PK')),
       },
     });
     expect(await processRecord(record(undefined, 3), deps)).toBe('failed');
@@ -573,5 +593,348 @@ describe('versionFileName', () => {
     expect(versionFileName('Sam Example', 'Acme')).toBe('Sam Example – Acme.pdf');
     expect(versionFileName('Sam "x"/y', 'A\u0001B')).toBe('Sam _x__y – A_B.pdf');
     expect(versionFileName('n'.repeat(300), 'c').length).toBeLessThanOrEqual(194);
+  });
+});
+
+describe('tailoring worker: a kept draft that no longer reads', () => {
+  it('ends the run stopped, with no model call', async () => {
+    const { deps, runs } = setup(
+      {},
+      version({
+        tailoring: { calls: 3, attempts: 2, drafted: true, draftResume: { bad: 1 } as never },
+      }),
+    );
+    expect(await processRecord(record(undefined, 2), deps)).toBe('failed');
+    expect(deps.model).not.toHaveBeenCalled();
+    expect(finished(runs).outcome.error).toBe('stopped');
+  });
+});
+
+describe('tailoring worker: cover letters (#51 PR D)', () => {
+  const LETTER = '01J8ZQ4Y3N5W6X7Y8Z9A0B1C3A';
+  const TAILORED = '01J8ZQ4Y3N5W6X7Y8Z9A0B1C3B';
+  const letterDoc = (over: Partial<GeneratedDocument> = {}) =>
+    version({
+      documentId: LETTER,
+      kind: 'cover_letter',
+      title: 'Cover letter for Backend Engineer at Example Test Co',
+      ...over,
+    });
+  const tailoredResume = {
+    contact: { name: 'Sam Tailored', email: 'sam@example.com', links: [] },
+    summary: 'Backend developer.',
+    skills: [{ group: 'Skills', items: ['TypeScript', 'Node.js'] }],
+    experience: [
+      {
+        id: 'e1',
+        title: 'Software Engineer',
+        employer: 'Example Logistics',
+        bullets: ['Built REST APIs in TypeScript.'],
+      },
+    ],
+    education: [],
+    certifications: [],
+    projects: [],
+  };
+  /** Without a company name (exactOptionalPropertyTypes: the key is left out, not undefined). */
+  const nameless = <T extends { companyName?: string }>(item: T): T => {
+    const { companyName: _, ...rest } = item;
+    return rest as T;
+  };
+  const unnamedJob = (over: Partial<Job> = {}) => nameless(job(over));
+  const tailoredVersion = (baseETag = 'etag-1') =>
+    version({
+      documentId: TAILORED,
+      status: 'ready',
+      tailoring: { calls: 3, attempts: 1, baseETag },
+    });
+  const calls = (runs: ReturnType<typeof setup>['runs']) =>
+    runs.saveCall.mock.calls.map(
+      (c) => (c as unknown as [{ usage: { task: string } }])[0].usage.task,
+    );
+
+  it('writes from the company’s tailored résumé: keywords, the letter, its files, the job linked', async () => {
+    const ctx = setup({}, letterDoc({ resumeDocumentId: TAILORED }));
+    ctx.runs.get.mockResolvedValue(tailoredVersion());
+    await ctx.deps.files.put(
+      tailoringKeys(USER, TAILORED).json,
+      JSON.stringify(tailoredResume),
+      'application/json',
+    );
+    expect(await processRecord(record({ userId: USER, documentId: LETTER }), ctx.deps)).toBe(
+      'ready',
+    );
+    // No structuring: the tailored résumé is already structured.
+    expect(calls(ctx.runs)).toEqual(['job-keywords', 'cover-letter']);
+    // The base is read only to check the version was made from its file as it is now.
+    expect(ctx.documents.get).toHaveBeenCalledTimes(1);
+    const kept = (ctx.runs.saveLetterDraft.mock.calls[0] as unknown[])[2] as Record<
+      string,
+      unknown
+    >;
+    expect(kept).toMatchObject({
+      from: 'tailored',
+      company: 'Example Test Co',
+      jobTitle: 'Backend Engineer',
+      contact: { name: 'Sam Tailored', email: 'sam@example.com' },
+      promptVersion: promptVersion(coverLetterTask),
+    });
+    const keys = coverLetterKeys(USER, LETTER);
+    for (const key of [keys.json, keys.pdf, keys.docx]) expect(ctx.files.has(key)).toBe(true);
+    expect(JSON.parse(ctx.files.get(keys.json) as string).paragraphs[0]).toContain(
+      'Backend Engineer role at Example Test Co',
+    );
+    expect(ctx.runs.saveCoverLetter).toHaveBeenCalledWith(USER, 'job-1', LETTER);
+    expect(ctx.runs.saveMatches).not.toHaveBeenCalled();
+    expect(finished(ctx.runs)).toMatchObject({
+      lock: 'LETTER#job-1',
+      outcome: {
+        status: 'ready',
+        s3Key: keys.pdf,
+        fileName: 'Sam Tailored – Cover letter – Example Test Co.pdf',
+      },
+      audit: { entry: { name: 'cover_letter.ready', detail: { jobId: 'job-1', calls: 2 } } },
+    });
+    expect(finished(ctx.runs).outcome.tailoring).toBeUndefined();
+  });
+
+  it('writes from the base résumé when there is no tailored one (or it has gone)', async () => {
+    const ctx = setup({}, letterDoc({ resumeDocumentId: TAILORED }));
+    // The tailored version was pruned meanwhile: get finds nothing.
+    expect(await processRecord(record({ userId: USER, documentId: LETTER }), ctx.deps)).toBe(
+      'ready',
+    );
+    expect(calls(ctx.runs)).toEqual(['structure-resume', 'job-keywords', 'cover-letter']);
+    const kept = (ctx.runs.saveLetterDraft.mock.calls[0] as unknown[])[2] as Record<
+      string,
+      unknown
+    >;
+    expect(kept).toMatchObject({ from: 'base', contact: { name: 'Sam Example' } });
+  });
+
+  it('renders a kept letter on a retry, with no model call', async () => {
+    const letter = {
+      contact: { name: 'Sam Example', links: [] },
+      company: 'Example Test Co',
+      jobTitle: 'Backend Engineer',
+      paragraphs: ['A kept paragraph.'],
+    };
+    const ctx = setup(
+      {},
+      letterDoc({
+        tailoring: {
+          calls: 3,
+          attempts: 2,
+          drafted: true,
+          draftLetter: { ...letter, from: 'base' },
+        },
+      }),
+    );
+    expect(await processRecord(record({ userId: USER, documentId: LETTER }, 2), ctx.deps)).toBe(
+      'ready',
+    );
+    expect(ctx.deps.model).not.toHaveBeenCalled();
+    expect(ctx.runs.saveCall).not.toHaveBeenCalled();
+    expect(ctx.deps.render.letterPdf).toHaveBeenCalledWith(letter);
+  });
+
+  it('fails for a closed job, giving a free run back when no call was made', async () => {
+    const ctx = setup(
+      { jobs: { getMany: vi.fn(async () => [job({ closedAt: NOW.toISOString() })]) } },
+      letterDoc({ aiSource: 'platform', platformRun: true }),
+    );
+    expect(await processRecord(record({ userId: USER, documentId: LETTER }), ctx.deps)).toBe(
+      'failed',
+    );
+    expect(finished(ctx.runs)).toMatchObject({
+      lock: 'LETTER#job-1',
+      outcome: { status: 'failed', error: 'no_jobs', giveBack: true },
+      audit: { entry: { name: 'cover_letter.failed' } },
+    });
+  });
+
+  it('keeps no letter when every draft fails its checks (3 letter calls at most)', async () => {
+    const ctx = setup({}, letterDoc({ resumeDocumentId: TAILORED }));
+    ctx.runs.get.mockResolvedValue(tailoredVersion());
+    await ctx.deps.files.put(
+      tailoringKeys(USER, TAILORED).json,
+      JSON.stringify(tailoredResume),
+      'application/json',
+    );
+    // Keywords cached, so only letter calls are made; every draft invents a number.
+    ctx.deps.jobs.getMany = vi.fn(async () => [
+      job({
+        keywords: {
+          descriptionHash: 'dh-1',
+          promptVersion: promptVersion(jobKeywordsTask),
+          terms: [],
+        },
+      }),
+    ]);
+    ctx.deps.model = vi.fn(async () =>
+      stubSource(() => ({
+        tool: {
+          paragraphs: [
+            `I am applying to Example Test Co. I built 900 services. ${'I work with care. '.repeat(70)}`,
+          ],
+        },
+      })),
+    );
+    expect(await processRecord(record({ userId: USER, documentId: LETTER }), ctx.deps)).toBe(
+      'failed',
+    );
+    expect(calls(ctx.runs)).toEqual(['cover-letter', 'cover-letter', 'cover-letter']);
+    expect(ctx.runs.saveLetterDraft).not.toHaveBeenCalled();
+    expect(finished(ctx.runs).outcome).toMatchObject({ error: 'no_honest_draft', giveBack: false });
+  });
+
+  it(`keeps the newest ${COVER_LETTER_VERSIONS_KEPT} ended letters of the job`, async () => {
+    const ctx = setup({}, letterDoc());
+    const ids = ['01E', '01D', '01C', '01B', '01A'];
+    ctx.runs.listLetters.mockResolvedValue([
+      version({ documentId: '01F', status: 'processing', kind: 'cover_letter' }),
+      ...ids.map((documentId) => version({ documentId, status: 'ready', kind: 'cover_letter' })),
+    ]);
+    expect(await processRecord(record({ userId: USER, documentId: LETTER }), ctx.deps)).toBe(
+      'ready',
+    );
+    expect(ctx.runs.listLetters).toHaveBeenCalledWith(USER, 'job-1');
+    expect(ctx.runs.deleteVersions).toHaveBeenCalledWith(USER, ['01B', '01A']);
+    expect(ctx.deps.files.remove).toHaveBeenCalledWith(
+      expect.arrayContaining([coverLetterKeys(USER, '01A').docx]),
+    );
+    expect(ctx.runs.list).not.toHaveBeenCalled();
+  });
+
+  it('starts with the letter greeting only in the files, never in the kept body', async () => {
+    const ctx = setup({}, letterDoc());
+    await processRecord(record({ userId: USER, documentId: LETTER }), ctx.deps);
+    const kept = (ctx.runs.saveLetterDraft.mock.calls[0] as unknown[])[2] as {
+      paragraphs: string[];
+    };
+    expect(kept.paragraphs.join(' ')).not.toContain(LETTER_GREETING);
+  });
+  it('writes from the base when the tailored version was made from an earlier upload', async () => {
+    const ctx = setup({}, letterDoc({ resumeDocumentId: TAILORED }));
+    ctx.runs.get.mockResolvedValue(tailoredVersion('etag-old'));
+    await ctx.deps.files.put(
+      tailoringKeys(USER, TAILORED).json,
+      JSON.stringify(tailoredResume),
+      'application/json',
+    );
+    expect(await processRecord(record({ userId: USER, documentId: LETTER }), ctx.deps)).toBe(
+      'ready',
+    );
+    expect(calls(ctx.runs)[0]).toBe('structure-resume');
+    const kept = (ctx.runs.saveLetterDraft.mock.calls[0] as unknown[])[2] as Record<
+      string,
+      unknown
+    >;
+    expect(kept).toMatchObject({ from: 'base', contact: { name: 'Sam Example' } });
+  });
+
+  it('ends a run whose kept letter no longer reads, with no model call', async () => {
+    const ctx = setup(
+      {},
+      letterDoc({
+        tailoring: {
+          calls: 3,
+          attempts: 2,
+          drafted: true,
+          draftLetter: {
+            contact: { name: 'Sam', links: [] },
+            company: 'Acme',
+            jobTitle: 'Engineer',
+            paragraphs: [],
+            from: 'base',
+          },
+        },
+      }),
+    );
+    expect(await processRecord(record({ userId: USER, documentId: LETTER }, 2), ctx.deps)).toBe(
+      'failed',
+    );
+    expect(ctx.deps.model).not.toHaveBeenCalled();
+    expect(finished(ctx.runs).outcome.error).toBe('stopped');
+  });
+
+  it('never names a company by its key: no name, no letter (and no call)', async () => {
+    for (const over of [{}, { companyName: '  ' }]) {
+      const ctx = setup(
+        { jobs: { getMany: vi.fn(async () => [unnamedJob(over)]) } },
+        nameless(letterDoc()),
+      );
+      expect(await processRecord(record({ userId: USER, documentId: LETTER }), ctx.deps)).toBe(
+        'failed',
+      );
+      expect(ctx.deps.model).not.toHaveBeenCalled();
+      expect(finished(ctx.runs).outcome).toMatchObject({ error: 'no_company' });
+    }
+  });
+
+  it('cuts a long company name to fit the header, before any call', async () => {
+    const longName = `Example ${'Very Long '.repeat(30)}Company`;
+    const prompts: string[] = [];
+    const long = setup(
+      {
+        jobs: {
+          // Keywords cached: the first call is the letter's.
+          getMany: vi.fn(async () => [
+            job({
+              companyName: longName,
+              keywords: {
+                descriptionHash: 'dh-1',
+                promptVersion: promptVersion(jobKeywordsTask),
+                terms: [],
+              },
+            }),
+          ]),
+        },
+        model: vi.fn(async () =>
+          stubSource((_, messages) => {
+            const first = messages[0]?.content[0];
+            prompts.push(first && 'text' in first ? String(first.text) : '');
+            return { text: 'no tool call' };
+          }),
+        ),
+      },
+      nameless(letterDoc({ resumeDocumentId: TAILORED })),
+    );
+    long.runs.get.mockResolvedValue(tailoredVersion());
+    await long.deps.files.put(
+      tailoringKeys(USER, TAILORED).json,
+      JSON.stringify(tailoredResume),
+      'application/json',
+    );
+    await processRecord(record({ userId: USER, documentId: LETTER }), long.deps);
+    const letterPrompt = prompts.find((p) => p.includes('Write the cover letter body')) ?? '';
+    const company = /<data name="company">\n([\s\S]*?)\n<\/data>/.exec(letterPrompt)?.[1] ?? '';
+    expect(company.startsWith('Example Very Long')).toBe(true);
+    expect(company.length).toBeLessThanOrEqual(200);
+  });
+
+  it('writes no letter for a job hidden since the request', async () => {
+    const ctx = setup(
+      { jobs: { getMany: vi.fn(async () => [job({ limitState: 'over_limit' })]) } },
+      letterDoc(),
+    );
+    expect(await processRecord(record({ userId: USER, documentId: LETTER }), ctx.deps)).toBe(
+      'failed',
+    );
+    expect(finished(ctx.runs).outcome).toMatchObject({ error: 'no_jobs' });
+  });
+  it('links the job to the letter only once this delivery ended it ready', async () => {
+    const ctx = setup({}, letterDoc());
+    ctx.runs.finish.mockResolvedValueOnce(false);
+    expect(await processRecord(record({ userId: USER, documentId: LETTER }), ctx.deps)).toBe(
+      'skipped',
+    );
+    expect(ctx.runs.saveCoverLetter).not.toHaveBeenCalled();
+    // A failed link after the end is logged, not retried: the letter stays ready.
+    const linked = setup({}, letterDoc());
+    linked.runs.saveCoverLetter.mockRejectedValueOnce(new Error('throttled'));
+    expect(await processRecord(record({ userId: USER, documentId: LETTER }), linked.deps)).toBe(
+      'ready',
+    );
   });
 });

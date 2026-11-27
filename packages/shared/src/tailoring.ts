@@ -60,6 +60,8 @@ export const TAILORING_ERRORS = {
   no_honest_draft:
     'Every draft added something your résumé does not show, so none was kept. Try again.',
   stopped: 'The run stopped before it finished. Try again.',
+  /** PR D: a letter names the company, and the crawl found no name for it (never its key). */
+  no_company: 'We could not find this company’s name, so a letter could not be written for it.',
 } as const;
 export type TailoringError = keyof typeof TAILORING_ERRORS;
 
