@@ -1,6 +1,7 @@
 import type { Message } from '@strands-agents/sdk';
 import type { ModelSource } from '../models.js';
 import { StubModel } from '../stub-model.js';
+import type { CoverLetterOutput } from './cover-letter.js';
 import type { JobKeywordsOutput } from './job-keywords.js';
 import type { StructureResumeOutput } from './structure-resume.js';
 import type { TailorResumeOutput } from './tailor-resume.js';
@@ -16,6 +17,8 @@ import type { TailorResumeOutput } from './tailor-resume.js';
  *   with a capital after the first letter or all in capitals ("TypeScript", "AWS", "APIs").
  * - tailor-resume: the base résumé's own summary (or headline), skills, and bullets,
  *   unchanged: honest by construction.
+ * - cover-letter (PR D): the job's title and the company, the résumé's own bullets and skills,
+ *   and fixed plain sentences that name nothing: honest by construction, 200–400 words.
  */
 export function stubTailoringSource(modelId: string): ModelSource {
   return {
@@ -28,6 +31,7 @@ export function stubTailoringSource(modelId: string): ModelSource {
         if (prompt.includes('Copy this whole résumé')) return { tool: stubStructure(prompt) };
         if (prompt.includes('List the keywords of all')) return { tool: stubKeywords(prompt) };
         if (prompt.includes('Tailor the résumé for these')) return { tool: stubTailor(prompt) };
+        if (prompt.includes('Write the cover letter body')) return { tool: stubLetter(prompt) };
         return { text: 'The stub provider has no answer for this prompt.' };
       }),
   };
@@ -104,4 +108,42 @@ export function stubTailor(prompt: string): TailorResumeOutput {
     experience: entries('e'),
     projects: entries('p'),
   };
+}
+
+/** Plain sentences that name no tool, person, or number, to bring the stub's letter to length. */
+const LETTER_FILLER = [
+  'I care about clear work that other people can read and change.',
+  'When a problem comes up, I look for its cause before I try a fix.',
+  'I work well with others, and I ask for help when I need it.',
+  'I explain my work in plain words, so the whole team can follow it.',
+  'I plan my work in small steps and finish each one before the next.',
+  'I read the work around a change before I make it.',
+  'I welcome a review of my work and learn from what it shows.',
+  'I keep notes on what I learn, so the next person can start faster.',
+  'I check my own work with care before I share it with the team.',
+  'I like to understand what the people who use my work need from it.',
+];
+
+export function stubLetter(prompt: string): CoverLetterOutput {
+  const company = block(prompt, 'company').trim();
+  const title = /^title: (.+)$/m.exec(block(prompt, 'job'))?.[1] ?? 'open';
+  const resume = block(prompt, 'resume');
+  const bullets = [...resume.matchAll(/^ {2}- (.+)$/gm)].map((m) => (m[1] ?? '').trim());
+  const skills = [...resume.matchAll(/^ {2}[^-\s][^:]*: (.+)$/gm)].flatMap((m) =>
+    (m[1] ?? '').split(', '),
+  );
+  const sentence = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`);
+  const paragraphs = [
+    `I am writing to apply for the ${title} role at ${company}. The role fits the work I have done so far, and I would like to bring that work to your team.`,
+    ...(bullets.length > 0 ? [`In my recent work: ${bullets.map(sentence).join(' ')}`] : []),
+    ...(skills.length > 0 ? [`My skills include ${skills.join(', ')}.`] : []),
+  ];
+  const words = (texts: string[]) => texts.join(' ').split(/\s+/).filter(Boolean).length;
+  const close = `Thank you for reading my letter. I would be glad to talk about how I could help ${company} in this role.`;
+  const filler: string[] = [];
+  for (const line of LETTER_FILLER) {
+    if (words([...paragraphs, ...filler, close]) >= 230) break;
+    filler.push(line);
+  }
+  return { paragraphs: [...paragraphs, filler.join(' '), close].filter(Boolean) };
 }

@@ -6,6 +6,8 @@ import {
   TailoringBusyError,
 } from '@jobdeputy/db';
 import {
+  COVER_LETTER_ERRORS,
+  coverLetterKeys,
   DEFAULT_CRAWL_LIMITS,
   DEFAULT_PREMIUM_LIMITS,
   type StructuredResume,
@@ -79,7 +81,13 @@ const uploaded = (over: Partial<Document> = {}) =>
   }) as Document;
 
 const summary = (id: string, over: Partial<JobSummaryItem> = {}) =>
-  ({ jobId: id, title: 'Engineer', companyName: 'Acme', ...over }) as JobSummaryItem;
+  ({
+    jobId: id,
+    title: 'Engineer',
+    companyName: 'Acme',
+    companyKey: 'greenhouse:acme',
+    ...over,
+  }) as JobSummaryItem;
 
 const RESUME: StructuredResume = {
   contact: { name: 'Sam Example', links: [] },
@@ -96,6 +104,7 @@ function setup(over: Partial<TailoringDeps> = {}) {
       version({ ...doc, status: 'queued' }),
     ),
     list: vi.fn(async (): Promise<GeneratedDocument[]> => []),
+    listLetters: vi.fn(async (): Promise<GeneratedDocument[]> => []),
     get: vi.fn(async (): Promise<GeneratedDocument | undefined> => undefined),
     platformRunsUsed: vi.fn(async () => 2),
   };
@@ -407,6 +416,196 @@ describe('tailoringView', () => {
     expect(tailoringView(version({ status: 'failed', error: 'no_jobs' }), NOW)).toMatchObject({
       error: 'no_jobs',
       message: expect.stringContaining('no jobs'),
+    });
+  });
+});
+
+describe('cover letters (#51 PR D)', () => {
+  const LETTER = '01J8ZQ4Y3N5W6X7Y8Z9A0B1C3A';
+  const TAILORED = '01J8ZQ4Y3N5W6X7Y8Z9A0B1C3B';
+  const ask = (b: unknown) => event('POST /me/cover-letters', { body: JSON.stringify(b) });
+  const letter = (over: Partial<GeneratedDocument> = {}) =>
+    version({
+      documentId: LETTER,
+      kind: 'cover_letter',
+      title: 'Cover letter for Engineer at Acme',
+      ...over,
+    });
+  const LETTER_JSON = {
+    contact: { name: 'Sam Example', email: 'sam@example.com', links: [] },
+    company: 'Acme',
+    jobTitle: 'Engineer',
+    paragraphs: ['First paragraph.', 'Second paragraph.'],
+  };
+
+  it('queues a letter for one job, from the company’s newest tailored résumé of the default', async () => {
+    const { deps, runs } = setup({ newId: () => LETTER });
+    runs.list.mockResolvedValueOnce([
+      version({ documentId: '01J8ZQ4Y3N5W6X7Y8Z9A0B1C3C', status: 'processing' }),
+      version({ documentId: TAILORED, status: 'ready' }),
+      version({ documentId: '01J8ZQ4Y3N5W6X7Y8Z9A0B1C3D', status: 'ready' }),
+    ]);
+    const res = await route(ask({ jobId: job(1) }), deps);
+    expect(res.statusCode).toBe(202);
+    expect(runs.list).toHaveBeenCalledWith('user-a', 'greenhouse:acme');
+    expect(runs.request).toHaveBeenCalledWith(
+      {
+        userId: 'user-a',
+        documentId: LETTER,
+        kind: 'cover_letter',
+        title: 'Cover letter for Engineer at Acme',
+        companyKey: 'greenhouse:acme',
+        companyName: 'Acme',
+        jobIds: [job(1)],
+        baseDocumentId: BASE,
+        resumeDocumentId: TAILORED,
+        aiSource: 'platform',
+        platformRun: true,
+      },
+      expect.objectContaining({
+        entry: expect.objectContaining({ name: 'cover_letter.requested' }),
+      }),
+      { perMonth: DEFAULT_CRAWL_LIMITS.platformTailoringsPerMonth, staleMs: TAILORING_STALE_MS },
+    );
+    expect(body(res).coverLetter).toMatchObject({
+      documentId: LETTER,
+      jobId: job(1),
+      status: 'queued',
+      resumeDocumentId: TAILORED,
+    });
+  });
+
+  it('writes from the base résumé when no ready version was made from the default', async () => {
+    const { deps, runs } = setup();
+    runs.list.mockResolvedValueOnce([version({ status: 'ready', baseDocumentId: 'OTHER' })]);
+    await route(ask({ jobId: job(1) }), deps);
+    expect(runs.request.mock.calls[0]?.[0]).not.toHaveProperty('resumeDocumentId');
+  });
+
+  it('refuses a missing job (404), a closed or hidden one, and no résumé (422)', async () => {
+    const missing = setup({ jobs: { getSummaries: vi.fn(async () => []) } });
+    expect((await route(ask({ jobId: job(1) }), missing.deps)).statusCode).toBe(404);
+    for (const over of [
+      { closedAt: NOW.toISOString() },
+      { limitState: 'over_limit' as const },
+      { filter: { state: 'not_relevant' } },
+    ]) {
+      const { deps, runs } = setup({
+        jobs: {
+          getSummaries: vi.fn(async () => [summary(job(1), over as Partial<JobSummaryItem>)]),
+        },
+      });
+      const res = await route(ask({ jobId: job(1) }), deps);
+      expect(res.statusCode).toBe(422);
+      expect(body(res)).toMatchObject({ code: 'no_jobs', detail: COVER_LETTER_ERRORS.no_jobs });
+      expect(runs.request).not.toHaveBeenCalled();
+    }
+    const noResume = setup({ documents: { list: vi.fn(async () => []) } });
+    const res = await route(ask({ jobId: job(1) }), noResume.deps);
+    expect(res.statusCode).toBe(422);
+    expect(body(res).code).toBe('no_resume');
+  });
+
+  it('shares the tailoring allowance (429), one letter per job at a time (409), needs a model', async () => {
+    const used = setup();
+    used.runs.request.mockRejectedValueOnce(new TailoringAllowanceError());
+    const full = await route(ask({ jobId: job(1) }), used.deps);
+    expect(full.statusCode).toBe(429);
+    expect(body(full).code).toBe('tailoring_allowance');
+    expect(full.headers['retry-after']).toBe(String(8 * 86_400 + 18 * 3_600));
+    const busy = setup();
+    busy.runs.request.mockRejectedValueOnce(new TailoringBusyError(DOC));
+    const conflict = await route(ask({ jobId: job(1) }), busy.deps);
+    expect(conflict.statusCode).toBe(409);
+    expect(body(conflict).code).toBe('cover_letter_busy');
+    const none = await route(ask({ jobId: job(1), aiSource: 'none' }), setup().deps);
+    expect(none.statusCode).toBe(422);
+    expect(body(none).code).toBe('model_needed');
+  });
+
+  it('validates the body', async () => {
+    const { deps } = setup();
+    expect((await route(ask({}), deps)).statusCode).toBe(400);
+    expect((await route(ask({ jobId: 'nope' }), deps)).statusCode).toBe(400);
+    expect((await route(ask({ jobId: job(1), extra: 1 }), deps)).statusCode).toBe(400);
+  });
+
+  it('lists a job’s letters with the shared allowance', async () => {
+    const { deps, runs } = setup();
+    runs.listLetters.mockResolvedValueOnce([letter()]);
+    const res = await route(
+      event('GET /me/cover-letters', { queryStringParameters: { jobId: job(1) } }),
+      deps,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(runs.listLetters).toHaveBeenCalledWith('user-a', job(1));
+    expect(body(res)).toMatchObject({
+      coverLetters: [{ documentId: LETTER, jobId: job(1), status: 'queued' }],
+      allowance: { used: 2, perMonth: DEFAULT_CRAWL_LIMITS.platformTailoringsPerMonth },
+    });
+  });
+
+  it('shows a ready letter with its text, the résumé it came from, and both downloads', async () => {
+    const { deps, runs } = setup({ readFile: vi.fn(async () => JSON.stringify(LETTER_JSON)) });
+    runs.get.mockResolvedValueOnce(
+      letter({
+        status: 'ready',
+        fileName: 'Sam Example – Cover letter – Acme.pdf',
+        tailoring: {
+          calls: 2,
+          attempts: 1,
+          drafted: true,
+          draftLetter: { ...LETTER_JSON, from: 'tailored' },
+        },
+      }),
+    );
+    const res = await route(
+      event('GET /me/cover-letters/{documentId}', { pathParameters: { documentId: LETTER } }),
+      deps,
+    );
+    const view = body(res);
+    const keys = coverLetterKeys('user-a', LETTER);
+    expect(view).toMatchObject({
+      status: 'ready',
+      from: 'tailored',
+      letter: LETTER_JSON,
+      text: 'Dear Hiring Manager,\n\nFirst paragraph.\n\nSecond paragraph.\n\nSincerely,\nSam Example',
+      downloads: {
+        pdf: `https://s3/${keys.pdf}?name=Sam Example – Cover letter – Acme.pdf`,
+        docx: `https://s3/${keys.docx}?name=Sam Example – Cover letter – Acme.docx`,
+      },
+    });
+    expect(deps.readFile).toHaveBeenCalledWith(keys.json);
+    const { downloads: _, ...rest } = view;
+    expect(JSON.stringify(rest)).not.toContain('derived/');
+  });
+
+  it('keeps résumés and letters apart: each route is 404 for the other kind', async () => {
+    const { deps, runs } = setup();
+    runs.get.mockResolvedValueOnce(letter());
+    const asResume = event('GET /me/tailorings/{documentId}', {
+      pathParameters: { documentId: LETTER },
+    });
+    expect((await route(asResume, deps)).statusCode).toBe(404);
+    runs.get.mockResolvedValueOnce(version());
+    const res = await route(
+      event('GET /me/cover-letters/{documentId}', { pathParameters: { documentId: DOC } }),
+      deps,
+    );
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('shows a letter past its time as stopped, with the letter’s own message', async () => {
+    const { deps, runs } = setup({ now: () => new Date(NOW.getTime() + TAILORING_STALE_MS + 1) });
+    runs.listLetters.mockResolvedValueOnce([letter({ status: 'processing' })]);
+    const res = await route(
+      event('GET /me/cover-letters', { queryStringParameters: { jobId: job(1) } }),
+      deps,
+    );
+    expect(body(res).coverLetters[0]).toMatchObject({
+      status: 'failed',
+      error: 'stopped',
+      message: COVER_LETTER_ERRORS.stopped,
     });
   });
 });

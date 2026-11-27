@@ -2,6 +2,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { describe, expect, it, vi } from 'vitest';
 import {
   type GeneratedDocument,
+  runLock,
   TailoringAllowanceError,
   TailoringBusyError,
   TailoringConflictError,
@@ -45,6 +46,7 @@ function setup(handler: (cmd: Cmd) => unknown = () => ({})) {
 const ask = {
   userId: USER,
   documentId: DOC,
+  kind: 'resume' as const,
   title: 'Résumé for Acme',
   companyKey: 'greenhouse:acme',
   companyName: 'Acme',
@@ -89,6 +91,36 @@ describe('TailoringRepository.request', () => {
     const month = send.mock.calls[0]?.[0].input.TransactItems[2].Update;
     expect(month.ConditionExpression).toBeUndefined();
     expect(month.UpdateExpression).not.toContain('tailoringRunIds');
+  });
+
+  it('locks a cover letter per job, so it runs beside its company’s résumé', async () => {
+    const { repo, send } = setup();
+    const doc = await repo.request(
+      { ...ask, kind: 'cover_letter', jobIds: ['j9'], resumeDocumentId: 'R1' },
+      AUDIT,
+      LIMITS,
+    );
+    expect(doc).toMatchObject({ kind: 'cover_letter', resumeDocumentId: 'R1', status: 'queued' });
+    const items = send.mock.calls[0]?.[0].input.TransactItems;
+    expect(items[3].Update.Key).toEqual({ userId: USER, sk: 'LETTER#j9' });
+    // The same free runs as tailoring.
+    expect(items[2].Update.UpdateExpression).toContain('ADD tailoringRunIds :id');
+    expect(runLock({ kind: 'resume', companyKey: 'c', jobIds: ['j9'] })).toBe('TAILOR#c');
+  });
+
+  it('ends a letter ready without scores', async () => {
+    const { repo, send } = setup();
+    await repo.finish({
+      userId: USER,
+      documentId: DOC,
+      lock: 'LETTER#j9',
+      outcome: { status: 'ready', s3Key: 'l.pdf', sizeBytes: 3, fileName: 'Sam.pdf' },
+      audit: AUDIT,
+    });
+    const [doc, lock] = send.mock.calls[0]?.[0]?.input.TransactItems ?? [];
+    expect(doc.Update.UpdateExpression).not.toContain('scores');
+    expect(doc.Update.ExpressionAttributeNames).toEqual({ '#status': 'status' });
+    expect(lock.Update.Key).toEqual({ userId: USER, sk: 'LETTER#j9' });
   });
 
   it('maps a full month to TailoringAllowanceError and a held lock to TailoringBusyError', async () => {
@@ -163,7 +195,7 @@ describe('TailoringRepository runs', () => {
     const ended = await repo.finish({
       userId: USER,
       documentId: DOC,
-      companyKey: 'greenhouse:acme',
+      lock: 'TAILOR#greenhouse:acme',
       outcome: {
         status: 'ready',
         s3Key: 'k.pdf',
@@ -191,7 +223,7 @@ describe('TailoringRepository runs', () => {
     await repo.finish({
       userId: USER,
       documentId: DOC,
-      companyKey: 'greenhouse:acme',
+      lock: 'TAILOR#greenhouse:acme',
       outcome: { status: 'failed', error: 'no_jobs', giveBack: true },
       audit: AUDIT,
     });
@@ -208,7 +240,7 @@ describe('TailoringRepository runs', () => {
       notCounted.repo.finish({
         userId: USER,
         documentId: DOC,
-        companyKey: 'greenhouse:acme',
+        lock: 'TAILOR#greenhouse:acme',
         outcome: { status: 'failed', error: 'no_jobs', giveBack: true },
         audit: AUDIT,
       }),
@@ -271,7 +303,7 @@ describe('TailoringRepository runs', () => {
     const input = {
       userId: USER,
       documentId: DOC,
-      companyKey: 'greenhouse:acme',
+      lock: 'TAILOR#greenhouse:acme',
       outcome: { status: 'failed' as const, error: 'stopped' as const, giveBack: false },
       audit: AUDIT,
     };
@@ -298,9 +330,89 @@ describe('TailoringRepository lists and jobs', () => {
       '01C',
       '01A',
     ]);
-    expect(send.mock.calls[0]?.[0].input.FilterExpression).toBe(
-      'origin = :generated AND companyKey = :company',
+    const input = send.mock.calls[0]?.[0].input;
+    // Résumés only: a company's letters are never listed, counted, or pruned with them.
+    expect(input.FilterExpression).toBe(
+      'origin = :generated AND #kind = :kind AND companyKey = :company',
     );
+    expect(input.ExpressionAttributeValues[':kind']).toBe('resume');
+  });
+
+  it('lists a job’s cover letters only', async () => {
+    const { repo, send } = setup(() => ({ Items: [{ documentId: '01A' }, { documentId: '01B' }] }));
+    const letters = await repo.listLetters(USER, 'j1');
+    expect(letters.map((v) => v.documentId)).toEqual(['01B', '01A']);
+    const input = send.mock.calls[0]?.[0].input;
+    expect(input.FilterExpression).toBe(
+      'origin = :generated AND #kind = :kind AND contains(jobIds, :job)',
+    );
+    expect(input.ExpressionAttributeValues).toMatchObject({
+      ':kind': 'cover_letter',
+      ':job': 'j1',
+    });
+  });
+
+  it('links a job to its letter without touching its résumé link (and the other way)', async () => {
+    // The job has no materials map yet: the first write makes it.
+    const fresh = setup();
+    await fresh.repo.saveCoverLetter(USER, 'j1', DOC);
+    const made = fresh.send.mock.calls[0]?.[0].input;
+    expect(made.ConditionExpression).toBe(
+      'attribute_exists(userId) AND attribute_not_exists(materials)',
+    );
+    expect(made.ExpressionAttributeValues[':materials']).toEqual({ coverLetterDocumentId: DOC });
+    expect(fresh.send).toHaveBeenCalledTimes(1);
+    // It has one: only the field is set.
+    let call = 0;
+    const has = setup(() => {
+      call += 1;
+      if (call === 1) throw conditionFailed();
+      return {};
+    });
+    await has.repo.saveMatches(
+      USER,
+      DOC,
+      [{ jobId: 'j1', base: 50, tailored: 70, missingProven: [], missingUnproven: [] }],
+      1,
+    );
+    const field = has.send.mock.calls[1]?.[0].input;
+    expect(field.UpdateExpression).toBe(
+      'SET #match = :match, materials.#field = :id, updatedAt = :now',
+    );
+    expect(field.ConditionExpression).toBe('attribute_exists(materials)');
+    expect(field.ExpressionAttributeNames).toEqual({
+      '#match': 'match',
+      '#field': 'resumeDocumentId',
+    });
+    expect(field.ExpressionAttributeValues[':id']).toBe(DOC);
+  });
+
+  it('keeps a letter’s draft once, while the run is processing', async () => {
+    const draft = {
+      contact: { name: 'Sam', links: [] },
+      company: 'Acme',
+      jobTitle: 'Engineer',
+      paragraphs: ['One.'],
+      from: 'base' as const,
+      promptVersion: 'cover-letter@v1',
+    };
+    const { repo, send } = setup();
+    expect(await repo.saveLetterDraft(USER, DOC, draft)).toBe(true);
+    const input = send.mock.calls[0]?.[0].input;
+    expect(input.ConditionExpression).toBe(
+      '#status = :processing AND attribute_not_exists(tailoring.drafted)',
+    );
+    expect(input.ExpressionAttributeValues[':letter']).toEqual({
+      contact: draft.contact,
+      company: 'Acme',
+      jobTitle: 'Engineer',
+      paragraphs: ['One.'],
+      from: 'base',
+    });
+    const second = setup(() => {
+      throw conditionFailed();
+    });
+    expect(await second.repo.saveLetterDraft(USER, DOC, draft)).toBe(false);
   });
 
   it('caches keywords and matches only on jobs that still exist', async () => {
@@ -318,7 +430,8 @@ describe('TailoringRepository lists and jobs', () => {
       [{ jobId: 'j1', base: 50, tailored: 70, missingProven: [], missingUnproven: ['AWS'] }],
       1,
     );
-    expect(send).toHaveBeenCalledTimes(2);
+    // Keywords 1; the match tried with a new materials map, then inside the existing one.
+    expect(send).toHaveBeenCalledTimes(3);
     expect(send.mock.calls[1]?.[0].input.ExpressionAttributeValues[':match']).toMatchObject({
       resumeDocumentId: DOC,
       score: 70,

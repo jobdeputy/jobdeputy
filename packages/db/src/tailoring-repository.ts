@@ -2,6 +2,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { BatchWriteCommand, GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import {
   type AiSource,
+  type CoverLetter,
   type JobKeyword,
   type StructuredResume,
   type TailoringError,
@@ -14,15 +15,16 @@ import { cancelledAt, isConditionFailure } from './client.js';
 import { transactWrite } from './transact.js';
 
 /**
- * #51 (decision 0015): a tailored résumé, one version for a company: a `documents` item with
- * `origin: generated` (docs/data-model.md). The API creates it `queued`; the documents stream
- * starts the tailoring worker, which makes the files and ends it `ready` or `failed`.
+ * #51 (decision 0015): a generated version, a `documents` item with `origin: generated`
+ * (docs/data-model.md): a tailored résumé for a company (`kind: resume`), or a cover letter for
+ * one job (`kind: cover_letter`, PR D). The API creates it `queued`; the documents stream starts
+ * the tailoring worker, which makes the files and ends it `ready` or `failed`.
  */
 export interface GeneratedDocument {
   userId: string;
   documentId: string;
   type: 'document';
-  kind: 'resume';
+  kind: GeneratedKind;
   origin: 'generated';
   status: 'queued' | 'processing' | 'ready' | 'failed';
   title: string;
@@ -30,10 +32,18 @@ export interface GeneratedDocument {
   fileName?: string;
   companyKey: string;
   companyName?: string;
-  /** The company's shown jobs when the run was asked for (at most 3), best first. */
+  /**
+   * A résumé: the company's shown jobs when the run was asked for (at most 3), best first.
+   * A letter: its one job.
+   */
   jobIds: string[];
-  /** The uploaded résumé it was made from. */
+  /** The uploaded résumé it was made from (a letter: the default when it was asked for). */
   baseDocumentId: string;
+  /**
+   * A letter only: the company's newest ready tailored résumé (made from `baseDocumentId`) it
+   * is written from; absent, it is written from the base résumé.
+   */
+  resumeDocumentId?: string;
   aiSource: AiSource;
   /** Counted against the free platform allowance (given back when no model call was made). */
   platformRun: boolean;
@@ -66,9 +76,18 @@ export interface TailoringRun {
   drafted?: boolean;
   /** The kept draft itself, with `drafted`: a retry renders exactly this résumé. */
   draftResume?: StructuredResume;
+  /** A letter's kept draft, with `drafted`: a retry renders exactly this letter. */
+  draftLetter?: LetterDraft;
   /** `tailor-resume@v1`, and the score's code version. */
   promptVersion?: string;
   scoreVersion?: number;
+}
+
+export type GeneratedKind = 'resume' | 'cover_letter';
+
+/** A letter as checked (its header, its body), and which résumé it was written from. */
+export interface LetterDraft extends CoverLetter {
+  from: 'tailored' | 'base';
 }
 
 export interface JobScoreRecord {
@@ -99,14 +118,16 @@ export interface JobKeywordsCache {
 export interface FinishInput {
   userId: string;
   documentId: string;
-  companyKey: string;
+  /** The run's lock (`runLock`): freed only while it is still this run's. */
+  lock: string;
   outcome:
     | {
         status: 'ready';
         s3Key: string;
         sizeBytes: number;
         fileName: string;
-        tailoring: Pick<
+        /** A résumé's scores; a letter has none. */
+        tailoring?: Pick<
           TailoringRun,
           'result' | 'scores' | 'coverage' | 'promptVersion' | 'scoreVersion'
         >;
@@ -126,11 +147,11 @@ export interface TailoringTables {
 export class TailoringAllowanceError extends Error {
   override name = 'TailoringAllowanceError';
 }
-/** A run for this company is already queued or running. */
+/** A run for this company (a letter: this job) is already queued or running. */
 export class TailoringBusyError extends Error {
   override name = 'TailoringBusyError';
   constructor(readonly activeId: string) {
-    super('A tailoring run for this company is already in progress');
+    super('A run for this company or job is already in progress');
   }
 }
 /**
@@ -141,7 +162,13 @@ export class TailoringConflictError extends Error {
   override name = 'TailoringConflictError';
 }
 
-const lockSk = (companyKey: string) => `TAILOR#${companyKey}`;
+/**
+ * A run's lock in `usage`: one résumé run per company (`TAILOR#<companyKey>`), one letter run
+ * per job (`LETTER#<jobId>`), so a letter can run beside its company's résumé.
+ */
+export function runLock(doc: Pick<GeneratedDocument, 'kind' | 'companyKey' | 'jobIds'>): string {
+  return doc.kind === 'cover_letter' ? `LETTER#${doc.jobIds[0]}` : `TAILOR#${doc.companyKey}`;
+}
 const DOC_ITEM = 0;
 const MONTH_ITEM = 2;
 const LOCK_ITEM = 3;
@@ -161,14 +188,7 @@ export class TailoringRepository {
   async request(
     doc: Omit<
       GeneratedDocument,
-      | 'type'
-      | 'kind'
-      | 'origin'
-      | 'status'
-      | 'tailoring'
-      | 'createdAt'
-      | 'updatedAt'
-      | 'schemaVersion'
+      'type' | 'origin' | 'status' | 'tailoring' | 'createdAt' | 'updatedAt' | 'schemaVersion'
     >,
     audit: AuditWrite,
     limits: { perMonth: number; staleMs: number },
@@ -178,7 +198,6 @@ export class TailoringRepository {
     const item: GeneratedDocument = {
       ...doc,
       type: 'document',
-      kind: 'resume',
       origin: 'generated',
       status: 'queued',
       tailoring: { calls: 0, attempts: 0 },
@@ -187,6 +206,7 @@ export class TailoringRepository {
       schemaVersion: 1,
     };
     const { userId, documentId } = doc;
+    const lock = runLock(doc);
     try {
       await transactWrite(this.client, {
         TransactItems: [
@@ -223,7 +243,7 @@ export class TailoringRepository {
           {
             Update: {
               TableName: this.tables.usage,
-              Key: { userId, sk: lockSk(doc.companyKey) },
+              Key: { userId, sk: lock },
               UpdateExpression:
                 'SET activeId = :id, activeSince = :now, companyKey = :company, #type = :lock, createdAt = if_not_exists(createdAt, :now), updatedAt = :now, schemaVersion = :one',
               ConditionExpression: 'attribute_not_exists(activeId) OR activeSince < :stale',
@@ -244,20 +264,20 @@ export class TailoringRepository {
     } catch (error) {
       if (cancelledAt(error, MONTH_ITEM)) throw new TailoringAllowanceError();
       if (cancelledAt(error, LOCK_ITEM)) {
-        const lock = await this.lock(userId, doc.companyKey);
-        throw new TailoringBusyError(lock ?? '');
+        const active = await this.lock(userId, lock);
+        throw new TailoringBusyError(active ?? '');
       }
       if (cancelledAt(error, DOC_ITEM)) throw new Error('Document ID already used');
       throw error;
     }
   }
 
-  /** The run holding the company's lock, if any. */
-  async lock(userId: string, companyKey: string): Promise<string | undefined> {
+  /** The run holding a lock (`runLock`), if any. */
+  async lock(userId: string, lock: string): Promise<string | undefined> {
     const res = await this.client.send(
       new GetCommand({
         TableName: this.tables.usage,
-        Key: { userId, sk: lockSk(companyKey) },
+        Key: { userId, sk: lock },
         ConsistentRead: true,
       }),
     );
@@ -289,8 +309,29 @@ export class TailoringRepository {
     return item?.origin === 'generated' ? item : undefined;
   }
 
-  /** The versions for one company (or every company), newest first. */
+  /** The résumé versions for one company (or every company), newest first. */
   async list(userId: string, companyKey?: string): Promise<GeneratedDocument[]> {
+    return this.query(
+      userId,
+      companyKey ? '#kind = :kind AND companyKey = :company' : '#kind = :kind',
+      { ':kind': 'resume', ...(companyKey ? { ':company': companyKey } : {}) },
+    );
+  }
+
+  /** The cover-letter versions for one job, newest first. */
+  async listLetters(userId: string, jobId: string): Promise<GeneratedDocument[]> {
+    return this.query(userId, '#kind = :kind AND contains(jobIds, :job)', {
+      ':kind': 'cover_letter',
+      ':job': jobId,
+    });
+  }
+
+  /** The user's generated versions matching `filter` (besides `origin`), newest first. */
+  private async query(
+    userId: string,
+    filter: string,
+    values: Record<string, unknown>,
+  ): Promise<GeneratedDocument[]> {
     const items: GeneratedDocument[] = [];
     let start: Record<string, unknown> | undefined;
     do {
@@ -298,14 +339,9 @@ export class TailoringRepository {
         new QueryCommand({
           TableName: this.tables.documents,
           KeyConditionExpression: 'userId = :u',
-          FilterExpression: companyKey
-            ? 'origin = :generated AND companyKey = :company'
-            : 'origin = :generated',
-          ExpressionAttributeValues: {
-            ':u': userId,
-            ':generated': 'generated',
-            ...(companyKey ? { ':company': companyKey } : {}),
-          },
+          FilterExpression: `origin = :generated AND ${filter}`,
+          ExpressionAttributeNames: { '#kind': 'kind' },
+          ExpressionAttributeValues: { ':u': userId, ':generated': 'generated', ...values },
           ConsistentRead: true,
           ...(start ? { ExclusiveStartKey: start } : {}),
         }),
@@ -421,6 +457,7 @@ export class TailoringRepository {
     const at = this.now();
     const now = at.toISOString();
     const ready = outcome.status === 'ready';
+    const scores = ready ? outcome.tailoring : undefined;
     const sets = [
       '#status = :status',
       'tailoring.finishedAt = :now',
@@ -430,11 +467,15 @@ export class TailoringRepository {
             's3Key = :s3Key',
             'sizeBytes = :size',
             'fileName = :fileName',
-            'tailoring.#result = :result',
-            'tailoring.scores = :scores',
-            'tailoring.promptVersion = :promptVersion',
-            'tailoring.scoreVersion = :scoreVersion',
-            ...(outcome.tailoring.coverage !== undefined ? ['tailoring.coverage = :coverage'] : []),
+            ...(scores
+              ? [
+                  'tailoring.#result = :result',
+                  'tailoring.scores = :scores',
+                  'tailoring.promptVersion = :promptVersion',
+                  'tailoring.scoreVersion = :scoreVersion',
+                  ...(scores.coverage !== undefined ? ['tailoring.coverage = :coverage'] : []),
+                ]
+              : []),
           ]
         : ['#error = :error']),
     ];
@@ -448,7 +489,8 @@ export class TailoringRepository {
             ConditionExpression: '#status IN (:queued, :processing)',
             ExpressionAttributeNames: {
               '#status': 'status',
-              ...(ready ? { '#result': 'result' } : { '#error': 'error' }),
+              ...(scores ? { '#result': 'result' } : {}),
+              ...(ready ? {} : { '#error': 'error' }),
             },
             ExpressionAttributeValues: {
               ':status': outcome.status,
@@ -460,12 +502,16 @@ export class TailoringRepository {
                     ':s3Key': outcome.s3Key,
                     ':size': outcome.sizeBytes,
                     ':fileName': outcome.fileName,
-                    ':result': outcome.tailoring.result,
-                    ':scores': outcome.tailoring.scores,
-                    ':promptVersion': outcome.tailoring.promptVersion,
-                    ':scoreVersion': outcome.tailoring.scoreVersion,
-                    ...(outcome.tailoring.coverage !== undefined
-                      ? { ':coverage': outcome.tailoring.coverage }
+                    ...(scores
+                      ? {
+                          ':result': scores.result,
+                          ':scores': scores.scores,
+                          ':promptVersion': scores.promptVersion,
+                          ':scoreVersion': scores.scoreVersion,
+                          ...(scores.coverage !== undefined
+                            ? { ':coverage': scores.coverage }
+                            : {}),
+                        }
                       : {}),
                   }
                 : { ':error': outcome.error }),
@@ -477,7 +523,7 @@ export class TailoringRepository {
               {
                 Update: {
                   TableName: this.tables.usage,
-                  Key: { userId, sk: lockSk(input.companyKey) },
+                  Key: { userId, sk: input.lock },
                   UpdateExpression: 'REMOVE activeId, activeSince SET updatedAt = :now',
                   ConditionExpression: 'activeId = :id',
                   ExpressionAttributeValues: { ':id': documentId, ':now': now },
@@ -586,31 +632,124 @@ export class TailoringRepository {
   ): Promise<void> {
     const now = this.now().toISOString();
     for (const s of scores) {
-      try {
-        await this.client.send(
-          new UpdateCommand({
-            TableName: this.tables.jobs,
-            Key: { userId, jobId: s.jobId },
-            UpdateExpression: 'SET #match = :match, materials = :materials, updatedAt = :now',
-            ConditionExpression: 'attribute_exists(userId)',
-            ExpressionAttributeNames: { '#match': 'match' },
-            ExpressionAttributeValues: {
-              ':match': {
-                resumeDocumentId: documentId,
-                score: s.tailored,
-                base: s.base,
-                missing: [...s.missingProven, ...s.missingUnproven],
-                version: scoreVersion,
-                scoredAt: now,
-              },
-              ':materials': { resumeDocumentId: documentId },
-              ':now': now,
+      await this.setMaterial(userId, s.jobId, 'resumeDocumentId', documentId, {
+        set: '#match = :match',
+        names: { '#match': 'match' },
+        values: {
+          ':match': {
+            resumeDocumentId: documentId,
+            score: s.tailored,
+            base: s.base,
+            missing: [...s.missingProven, ...s.missingUnproven],
+            version: scoreVersion,
+            scoredAt: now,
+          },
+        },
+      });
+    }
+  }
+
+  /** #51 PR D: points the job at its newest cover letter; skipped when the job has gone. */
+  async saveCoverLetter(userId: string, jobId: string, documentId: string): Promise<void> {
+    await this.setMaterial(userId, jobId, 'coverLetterDocumentId', documentId);
+  }
+
+  /**
+   * Sets one field of a job's `materials` map, keeping the other (a résumé and a letter are
+   * linked apart). A job without the map gets one; it is never removed, so when the map's own
+   * write loses to another one, the field's write then finds it. A job gone is skipped.
+   */
+  private async setMaterial(
+    userId: string,
+    jobId: string,
+    field: 'resumeDocumentId' | 'coverLetterDocumentId',
+    documentId: string,
+    extra: { set: string; names: Record<string, string>; values: Record<string, unknown> } = {
+      set: '',
+      names: {},
+      values: {},
+    },
+  ): Promise<void> {
+    const sets = (own: string) => [extra.set, own, 'updatedAt = :now'].filter(Boolean).join(', ');
+    const base = {
+      TableName: this.tables.jobs,
+      Key: { userId, jobId },
+      ExpressionAttributeValues: {
+        ...extra.values,
+        ':now': this.now().toISOString(),
+      },
+    };
+    try {
+      await this.client.send(
+        new UpdateCommand({
+          ...base,
+          UpdateExpression: `SET ${sets('materials = :materials')}`,
+          ConditionExpression: 'attribute_exists(userId) AND attribute_not_exists(materials)',
+          ...(Object.keys(extra.names).length > 0 ? { ExpressionAttributeNames: extra.names } : {}),
+          ExpressionAttributeValues: {
+            ...base.ExpressionAttributeValues,
+            ':materials': { [field]: documentId },
+          },
+        }),
+      );
+      return;
+    } catch (error) {
+      if (!isConditionFailure(error)) throw error;
+    }
+    try {
+      await this.client.send(
+        new UpdateCommand({
+          ...base,
+          UpdateExpression: `SET ${sets('materials.#field = :id')}`,
+          ConditionExpression: 'attribute_exists(materials)',
+          ExpressionAttributeNames: { ...extra.names, '#field': field },
+          ExpressionAttributeValues: { ...base.ExpressionAttributeValues, ':id': documentId },
+        }),
+      );
+    } catch (error) {
+      if (!isConditionFailure(error)) throw error;
+    }
+  }
+
+  /**
+   * Keeps a letter's checked draft on the version, once per run and only while it is
+   * processing: a retry renders it rather than writing again. False when the run had ended or
+   * another delivery kept its own draft first.
+   */
+  async saveLetterDraft(
+    userId: string,
+    documentId: string,
+    draft: LetterDraft & { promptVersion: string },
+  ): Promise<boolean> {
+    try {
+      await this.client.send(
+        new UpdateCommand({
+          TableName: this.tables.documents,
+          Key: { userId, documentId },
+          UpdateExpression:
+            'SET tailoring.drafted = :true, tailoring.draftLetter = :letter, tailoring.promptVersion = :promptVersion, companyName = if_not_exists(companyName, :company), updatedAt = :now',
+          ConditionExpression: '#status = :processing AND attribute_not_exists(tailoring.drafted)',
+          ExpressionAttributeNames: { '#status': 'status' },
+          ExpressionAttributeValues: {
+            ':true': true,
+            ':letter': {
+              contact: draft.contact,
+              company: draft.company,
+              jobTitle: draft.jobTitle,
+              paragraphs: draft.paragraphs,
+              from: draft.from,
             },
-          }),
-        );
-      } catch (error) {
-        if (!isConditionFailure(error)) throw error;
-      }
+            ':promptVersion': draft.promptVersion,
+            ':company': draft.company,
+            ':now': this.now().toISOString(),
+            ':processing': 'processing',
+          },
+        }),
+      );
+      return true;
+    } catch (error) {
+      if (isConditionFailure(error)) return false;
+      throw error;
     }
   }
 

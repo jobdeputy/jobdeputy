@@ -11,7 +11,7 @@ import {
 } from './stack.js';
 
 /**
- * Deployed wiring of #51: POST /me/tailorings → a generated version in documents → the documents
+ * Deployed wiring of #51 (and PR D's cover letter): POST /me/tailorings → a generated version in documents → the documents
  * stream → its Pipe → the tailoring worker → the résumé structured, the job's keywords, a tailored
  * draft, the PDF and DOCX in S3 → the version ready, with its scores and downloads. Uses the
  * dev-only `stub` provider (packages/llm tailoring-stub.ts: fixed rules, no call leaves AWS), so
@@ -176,5 +176,68 @@ describe('tailored résumés (deployed)', () => {
       'structure-resume',
       'tailor-resume',
     ]);
+
+    // #51 PR D: a cover letter for the same job, written from the company's tailored résumé;
+    // a second click for the job waits for it.
+    const jobId = company.jobs[0].jobId as string;
+    const letterAsked = await callApi(api, 'POST', 'me/cover-letters', token, {
+      jobId,
+      aiSource: 'stub',
+    });
+    ok(letterAsked, 202);
+    expect(letterAsked.body.coverLetter).toMatchObject({
+      status: 'queued',
+      jobId,
+      resumeDocumentId: documentId,
+    });
+    const letterId = letterAsked.body.coverLetter.documentId as string;
+    const letterAgain = await callApi(api, 'POST', 'me/cover-letters', token, {
+      jobId,
+      aiSource: 'stub',
+    });
+    expect(letterAgain.status).toBe(409);
+    expect(letterAgain.body.code).toBe('cover_letter_busy');
+    const letter = await waitFor(
+      async () => {
+        const res = await callApi(api, 'GET', `me/cover-letters/${letterId}`, token);
+        return res.body.status === 'ready' || res.body.status === 'failed' ? res.body : undefined;
+      },
+      { timeoutMs: 240_000, intervalMs: 3_000 },
+    );
+    expect(letter).toMatchObject({
+      status: 'ready',
+      from: 'tailored',
+      fileName: 'Sam Example – Cover letter – Example Test Co.pdf',
+      letter: { company: 'Example Test Co', jobTitle: 'Backend Engineer' },
+    });
+    expect(letter.text).toMatch(
+      /^Dear Hiring Manager,\n\nI am writing to apply for the Backend Engineer role at Example Test Co\./,
+    );
+    expect(letter.text).toContain('Built REST APIs in TypeScript.');
+    expect(letter.text).toMatch(/Sincerely,\nSam Example$/);
+    const letterPdf = new Uint8Array(await (await fetch(letter.downloads.pdf)).arrayBuffer());
+    expect(new TextDecoder().decode(letterPdf.slice(0, 5))).toBe('%PDF-');
+    const letterDocx = new Uint8Array(await (await fetch(letter.downloads.docx)).arrayBuffer());
+    expect(new TextDecoder().decode(letterDocx.slice(0, 2))).toBe('PK');
+
+    // Listed for its job only: never with the company's résumés or the uploads.
+    const letters = await callApi(api, 'GET', `me/cover-letters?jobId=${jobId}`, token);
+    expect(letters.body.coverLetters.map((l: { documentId: string }) => l.documentId)).toEqual([
+      letterId,
+    ]);
+    const resumes = await callApi(
+      api,
+      'GET',
+      `me/tailorings?companyKey=${encodeURIComponent(company.companyKey)}`,
+      token,
+    );
+    expect(resumes.body.tailorings.map((t: { documentId: string }) => t.documentId)).toEqual([
+      documentId,
+    ]);
+    // Keywords were cached by the résumé run: only the letter's own call was made.
+    const after = await callApi(api, 'GET', 'me/ai-usage', token);
+    const stubAfter = after.body.models.find((m: { provider: string }) => m.provider === 'stub');
+    expect(Object.keys(stubAfter.byTask)).toContain('cover-letter');
+    expect(stubAfter.byTask['job-keywords']).toEqual(stub.byTask['job-keywords']);
   });
 });

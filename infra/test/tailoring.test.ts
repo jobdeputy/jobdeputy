@@ -67,7 +67,7 @@ describe('tailoring (#51)', () => {
     );
   });
 
-  it('the worker touches only résumé text, structured copies, and version files in S3', () => {
+  it('the worker touches only résumé text, structured copies, and version and letter files in S3', () => {
     const files = s3(worker());
     expect(files.map((f) => f.actions)).toEqual([
       ['s3:GetObject'],
@@ -75,8 +75,12 @@ describe('tailoring (#51)', () => {
       ['s3:DeleteObject'],
     ]);
     const [read, write, remove] = files.map((f) => f.resources);
-    expect(read).toMatch(/text\.txt.*structured-\*\.json/);
+    // PR D: a letter reads its company's tailored résumé (resume.json), never another letter.
+    expect(read).toMatch(/text\.txt.*structured-\*\.json.*resume\.json/);
+    expect(read).not.toMatch(/letter|resume\.pdf|resume\.docx/);
     expect(write).toMatch(/structured-\*\.json.*resume\.json.*resume\.pdf.*resume\.docx/);
+    expect(write).toMatch(/letter\.json.*letter\.pdf.*letter\.docx/);
+    expect(remove).toMatch(/letter\.json.*letter\.pdf.*letter\.docx/);
     // Deletes structured copies and version files only: never an upload or its text.
     expect(remove).toMatch(/structured-\*\.json.*resume\.json/);
     expect(remove).not.toMatch(/text\.txt|original/);
@@ -100,7 +104,9 @@ describe('tailoring (#51)', () => {
     expect(s3(api())).toEqual([
       {
         actions: ['s3:GetObject'],
-        resources: expect.stringMatching(/resume\.json.*resume\.pdf.*resume\.docx/),
+        resources: expect.stringMatching(
+          /resume\.json.*resume\.pdf.*resume\.docx.*letter\.json.*letter\.pdf.*letter\.docx/,
+        ),
       },
     ]);
     expect(

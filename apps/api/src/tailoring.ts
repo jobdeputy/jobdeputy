@@ -18,7 +18,6 @@ import {
 } from '@jobdeputy/db';
 import {
   type AiSource,
-  aiProvider,
   type CrawlLimitsConfig,
   callerFromEvent,
   createLogger,
@@ -44,13 +43,17 @@ import { ulid } from 'ulid';
 import { refuseWritesWhileDeleting } from './account-guard.js';
 import { type UserAudit, userAudit } from './audited.js';
 import { companyJobsLimit } from './company-jobs-limit.js';
+import { coverLetterRoute } from './cover-letters.js';
 import { attachment } from './documents.js';
 import { concurrentUpdateProblem } from './errors.js';
+import { allowanceProblem, defaultResume, sourceFor } from './generation.js';
 
 // #51 (decision 0015): tailored résumés, one version per Tailor click.
 //   POST /me/tailorings                  ask for a version for a company's shown jobs (202)
 //   GET  /me/tailorings?companyKey=…     a company's versions, newest first, and the allowance
 //   GET  /me/tailorings/{documentId}     one version: scores, the résumé (to preview), downloads
+// PR D: cover letters, in the same function (cover-letters.ts):
+//   POST /me/cover-letters, GET /me/cover-letters?jobId=…, GET /me/cover-letters/{documentId}
 // The work is asynchronous: the queued version starts the tailoring worker (documents stream).
 
 const logger = createLogger('api-tailoring');
@@ -59,7 +62,7 @@ const logger = createLogger('api-tailoring');
 export const TAILORING_JOBS = 3;
 
 export interface TailoringDeps {
-  runs: Pick<TailoringRepository, 'request' | 'list' | 'get' | 'platformRunsUsed'>;
+  runs: Pick<TailoringRepository, 'request' | 'list' | 'listLetters' | 'get' | 'platformRunsUsed'>;
   documents: Pick<DocumentRepository, 'list'>;
   shown: Pick<CompanyLimitRepository, 'get'>;
   /** The admin limits (#74: the caller's tier's), for the monthly tailoring allowance. */
@@ -108,36 +111,6 @@ export function tailoringView(v: GeneratedDocument, now: Date) {
   };
 }
 
-/** The AI source a run uses, or the problem to answer. Tailoring needs a model. */
-async function sourceFor(
-  userId: string,
-  asked: AiSource | undefined,
-  deps: TailoringDeps,
-  requestId: string,
-): Promise<AiSource | HttpResponse> {
-  const source = asked ?? (await deps.keys.getSettings(userId))?.defaultSource ?? 'platform';
-  if (source === 'none') {
-    return problem(422, 'An AI model is needed', {
-      detail: 'Tailoring writes with an AI model. Choose the free one, or a key you saved.',
-      code: 'model_needed',
-      requestId,
-    });
-  }
-  const provider = aiProvider(source, deps.allowTestProvider);
-  if (source !== 'platform') {
-    const key = provider ? await deps.keys.get(userId, provider) : undefined;
-    if (!key || key.status === 'invalid') {
-      return problem(422, 'Validation failed', {
-        errors: [
-          { path: 'aiSource', message: 'Use platform or a provider you saved a working key for' },
-        ],
-        requestId,
-      });
-    }
-  }
-  return source;
-}
-
 async function request(
   userId: string,
   body: unknown,
@@ -152,13 +125,12 @@ async function request(
     input.data.aiSource as AiSource | undefined,
     deps,
     requestId,
+    'Tailoring writes',
   );
   if (typeof source !== 'string') return source;
 
   // The default résumé: ready, with text.
-  const base = (await deps.documents.list(userId)).find(
-    (d) => d.isDefault && d.status === 'ready' && d.parsed && !d.parsed.noText,
-  );
+  const base = await defaultResume(userId, deps);
   if (!base) {
     return problem(422, 'No résumé to tailor', {
       detail: TAILORING_ERRORS.no_resume,
@@ -197,6 +169,7 @@ async function request(
       {
         userId,
         documentId,
+        kind: 'resume',
         title: `Résumé for ${companyName ?? companyKey}`,
         companyKey,
         ...(companyName ? { companyName } : {}),
@@ -216,14 +189,7 @@ async function request(
     return json(202, { tailoring: tailoringView(doc, deps.now()) });
   } catch (error) {
     if (error instanceof TailoringAllowanceError) {
-      const next = nextUtcMonthStart(deps.now());
-      const res = problem(429, 'Tailoring allowance used up', {
-        code: 'tailoring_allowance',
-        detail: `You've used your tailored résumés (${perMonth} a month). The next one is available at ${next.toISOString()}. Until then, tailor with your own key.`,
-        requestId,
-      });
-      const seconds = Math.max(1, Math.ceil((next.getTime() - deps.now().getTime()) / 1000));
-      return { ...res, headers: { ...res.headers, 'retry-after': String(seconds) } };
+      return allowanceProblem(perMonth, deps.now(), requestId);
     }
     if (error instanceof TailoringBusyError) {
       return problem(409, 'Already tailoring', {
@@ -280,7 +246,7 @@ export async function route(event: Event, base: TailoringDeps): Promise<HttpResp
       const id = tailoringId.safeParse(event.pathParameters?.documentId);
       if (!id.success) return validationProblem(id.error, requestId);
       const v = await deps.runs.get(userId, id.data);
-      if (!v) return notFound();
+      if (v?.kind !== 'resume') return notFound();
       const view = tailoringView(v, deps.now());
       if (v.status !== 'ready' || !v.fileName) return json(200, view);
       const keys = tailoringKeys(userId, v.documentId);
@@ -292,7 +258,7 @@ export async function route(event: Event, base: TailoringDeps): Promise<HttpResp
       return json(200, { ...view, resume, downloads: { pdf, docx } });
     }
     default:
-      return notFound();
+      return (await coverLetterRoute(event, userId, deps, requestId)) ?? notFound();
   }
 }
 

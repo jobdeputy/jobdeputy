@@ -1,10 +1,15 @@
 import { inflateSync } from 'node:zlib';
-import { resumeBlocks, type StructuredResume } from '@jobdeputy/shared';
+import {
+  type CoverLetter,
+  letterBlocks,
+  resumeBlocks,
+  type StructuredResume,
+} from '@jobdeputy/shared';
 import { strFromU8, unzipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import { extractDocumentText } from '../src/extract.js';
-import { renderResumeDocx } from '../src/tailoring/render-docx.js';
-import { renderResumePdf } from '../src/tailoring/render-pdf.js';
+import { renderLetterDocx, renderResumeDocx } from '../src/tailoring/render-docx.js';
+import { renderLetterPdf, renderResumePdf } from '../src/tailoring/render-pdf.js';
 
 const resume: StructuredResume = {
   contact: {
@@ -77,10 +82,10 @@ function streams(pdf: Buffer): string[] {
 const words = (text: string) => text.replace(/\s+/g, ' ').trim();
 
 /** Each expected line appears, after the one before it. */
-function expectInOrder(text: string) {
+function expectInOrder(text: string, lines: string[] = expectedLines) {
   const flat = words(text);
   let from = 0;
-  for (const line of expectedLines) {
+  for (const line of lines) {
     const at = flat.indexOf(words(line), from);
     expect(at, `"${line}" (in order)`).toBeGreaterThanOrEqual(from);
     from = at + words(line).length;
@@ -147,5 +152,53 @@ describe('renderResumeDocx', () => {
     expect(xml).toContain('w:ascii="Arial"');
     expect(xml).not.toMatch(/<w:tbl>|<w:drawing>|<w:txbxContent>/);
     expect(Object.keys(files).some((f) => f.startsWith('word/media/'))).toBe(false);
+  });
+});
+
+// #51 PR D: the cover letter, from the same blocks in both files.
+const letter: CoverLetter = {
+  contact: resume.contact,
+  company: 'Example Cloud',
+  jobTitle: 'Backend Engineer',
+  paragraphs: [
+    'I am applying for the Backend Engineer role at Example Cloud, where the team builds APIs.',
+    'At Example Logistics I built REST APIs in Node.js and TypeScript on AWS Lambda.',
+    'Thank you for reading my letter.',
+  ],
+};
+const letterLines = letterBlocks(letter).map((b) => b.text);
+
+describe('renderLetterPdf and renderLetterDocx', () => {
+  it('lays out the header, greeting, body, sign-off, and name, in order', () => {
+    expect(letterBlocks(letter).map((b) => b.kind)).toEqual([
+      'name',
+      'line',
+      'greeting',
+      'paragraph',
+      'paragraph',
+      'paragraph',
+      'signoff',
+      'signature',
+    ]);
+    expect(letterLines[1]).toBe(
+      'sam@example.com | (555) 010-1234 | Austin, TX | github.com/sam-example',
+    );
+  });
+
+  it('is a PDF whose text reads every line in order, with its title', async () => {
+    const pdf = await renderLetterPdf(letter);
+    const read = await extractDocumentText(new Uint8Array(pdf), 'pdf');
+    expect(read.noText).toBe(false);
+    expectInOrder(read.text, letterLines);
+    expect(pdf.toString('latin1')).not.toContain('/Subtype /Image');
+  });
+
+  it('is a DOCX whose text reads every line in order, in Arial, with no tables', async () => {
+    const docx = await renderLetterDocx(letter);
+    const read = await extractDocumentText(new Uint8Array(docx), 'docx');
+    expectInOrder(read.text, letterLines);
+    const xml = strFromU8(unzipSync(new Uint8Array(docx))['word/document.xml'] as Uint8Array);
+    expect(xml).toContain('w:ascii="Arial"');
+    expect(xml).not.toMatch(/<w:tbl>|<w:drawing>|<w:txbxContent>/);
   });
 });

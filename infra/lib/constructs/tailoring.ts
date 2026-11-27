@@ -40,7 +40,7 @@ export interface TailoringProps {
 export const TAILORING_WORKER_TIMEOUT = Duration.minutes(12);
 
 /**
- * #51 (decision 0015): tailored résumés. POST /me/tailorings puts a generated version
+ * #51 (decision 0015): tailored résumés, and (PR D) cover letters, the same way. POST /me/tailorings puts a generated version
  * `queued` in documents → stream → Pipe (generated `queued` inserts only) → queue →
  * TailoringWorker, which writes its files under derived/ and ends it ready or failed.
  */
@@ -54,6 +54,8 @@ export class Tailoring extends Construct {
     const derived = (file: string) =>
       bucket.arnForObjects(`${DERIVED_PREFIX}*/documents/*/${file}`);
     const versionFiles = ['resume.json', 'resume.pdf', 'resume.docx'].map(derived);
+    // PR D: a cover letter's files.
+    const letterFiles = ['letter.json', 'letter.pdf', 'letter.docx'].map(derived);
 
     this.worker = new AppFunction(this, 'TailoringWorker', {
       entry: 'apps/worker/src/tailoring-worker.ts',
@@ -96,20 +98,21 @@ export class Tailoring extends Construct {
     fn.addToRolePolicy(
       new PolicyStatement({
         actions: ['s3:GetObject'],
-        resources: [derived('text.txt'), derived('structured-*.json')],
+        // A letter is written from the company's tailored résumé (resume.json) when it has one.
+        resources: [derived('text.txt'), derived('structured-*.json'), derived('resume.json')],
       }),
     );
     fn.addToRolePolicy(
       new PolicyStatement({
         actions: ['s3:PutObject'],
-        resources: [derived('structured-*.json'), ...versionFiles],
+        resources: [derived('structured-*.json'), ...versionFiles, ...letterFiles],
       }),
     );
     // A structured copy is deleted when its résumé was replaced or deleted while it was made.
     fn.addToRolePolicy(
       new PolicyStatement({
         actions: ['s3:DeleteObject'],
-        resources: [derived('structured-*.json'), ...versionFiles],
+        resources: [derived('structured-*.json'), ...versionFiles, ...letterFiles],
       }),
     );
     // The user's own key (GetItem), decrypted only with this user and provider as context.
@@ -181,7 +184,10 @@ export class Tailoring extends Construct {
     props.aiKeys.table.grant(api, 'dynamodb:GetItem');
     // A ready version's résumé (to preview) and its two downloads (presigned GET).
     api.addToRolePolicy(
-      new PolicyStatement({ actions: ['s3:GetObject'], resources: versionFiles }),
+      new PolicyStatement({
+        actions: ['s3:GetObject'],
+        resources: [...versionFiles, ...letterFiles],
+      }),
     );
   }
 }

@@ -54,8 +54,8 @@ async function bundle(contents: string, copy: readonly string[]): Promise<string
 }
 
 const entry = `
-import { renderResumeDocx } from './tailoring/render-docx.js';
-import { renderResumePdf } from './tailoring/render-pdf.js';
+import { renderLetterDocx, renderResumeDocx } from './tailoring/render-docx.js';
+import { renderLetterPdf, renderResumePdf } from './tailoring/render-pdf.js';
 const resume = {
   contact: { name: 'Łukasz Example', links: [] },
   skills: [{ group: 'Tools', items: ['Go'] }],
@@ -64,13 +64,21 @@ const resume = {
 };
 const pdf = await renderResumePdf(resume);
 const docx = await renderResumeDocx(resume);
-console.log(JSON.stringify({ pdf: pdf.subarray(0, 5).toString(), pdfBytes: pdf.length, docx: docx.subarray(0, 2).toString() }));
+const letter = { contact: resume.contact, company: 'Acme', jobTitle: 'Engineer', paragraphs: ['Hello.'] };
+const letterPdf = await renderLetterPdf(letter);
+const letterDocx = await renderLetterDocx(letter);
+console.log(JSON.stringify({ pdf: pdf.subarray(0, 5).toString(), pdfBytes: pdf.length, docx: docx.subarray(0, 2).toString(), letterPdf: letterPdf.subarray(0, 5).toString(), letterDocx: letterDocx.subarray(0, 2).toString() }));
 `;
 
 describe('Lambda bundling (#51)', () => {
   it('runs the résumé renderers from the bundle, with the files they read beside it', async () => {
     const result = JSON.parse(await bundle(entry, renderFiles())) as Record<string, unknown>;
-    expect(result).toMatchObject({ pdf: '%PDF-', docx: 'PK' });
+    expect(result).toMatchObject({
+      pdf: '%PDF-',
+      docx: 'PK',
+      letterPdf: '%PDF-',
+      letterDocx: 'PK',
+    });
     expect(result.pdfBytes).toBeGreaterThan(5_000);
   }, 60_000);
 
