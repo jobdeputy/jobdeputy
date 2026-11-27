@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button.tsx';
 import { Skeleton } from '@/components/ui/skeleton.tsx';
 import { Spinner } from '@/components/ui/spinner.tsx';
 import { copy, fill } from '@/copy/index.ts';
+import { coverLetterListsKey } from '@/lib/api/cover-letters.ts';
 import { ApiError, isFinal, useApi } from '@/lib/api/index.ts';
 import { companyName, type JobSummary, matchesKey } from '@/lib/api/jobs.ts';
 import { useProfile } from '@/lib/api/profile.ts';
@@ -29,7 +30,7 @@ import { cn } from '@/lib/utils.ts';
 const text = copy.matchesPage.tailor;
 
 /** A message the section says, with a link to fix it where there is one. */
-interface Said {
+export interface Said {
   words: string;
   link?: { label: string; path: string };
   /** A new failure is a new alert, read out again. */
@@ -76,14 +77,19 @@ export function TailorSection({
   useEffect(() => {
     // A refusal is about the run it met (another tab's): once a run at work ends, it no longer
     // holds. Not when a run is first seen: that is the run the refusal is about.
-    if (wasWorking.current && !working) setRefusal(null);
+    if (wasWorking.current && !working) {
+      setRefusal(null);
+      // A run that ends failed before any AI call gives its free run back: the letter section,
+      // which counts the same runs, reads the count again.
+      void queries.invalidateQueries({ queryKey: coverLetterListsKey });
+    }
     if (wasWorking.current && !working && newest?.status === 'ready') {
       const score = newest.scores?.find((s) => s.jobId === job.jobId)?.tailored;
       setJustReady({ score: score ?? null });
     }
     if (working) setJustReady(null);
     wasWorking.current = working;
-  }, [working, newest, job.jobId]);
+  }, [working, newest, job.jobId, queries]);
 
   async function start() {
     setStarting(true);
@@ -94,11 +100,15 @@ export function TailorSection({
       queries.setQueryData<Tailorings>(tailoringsKey(job.companyKey), (was) =>
         was ? { ...was, tailorings: [tailoring, ...was.tailorings] } : was,
       );
+      // Cover letters use the same free runs: their sections read the count again.
+      void queries.invalidateQueries({ queryKey: coverLetterListsKey });
     } catch (error) {
       setRefusal((was) => ({
         ...refusalOf(error, list.data?.allowance),
         count: (was?.count ?? 0) + 1,
       }));
+      // Refused as out of runs (used elsewhere): the letter section's count is out of date too.
+      void queries.invalidateQueries({ queryKey: coverLetterListsKey });
     } finally {
       setStarting(false);
       // The allowance (a run counted), or a run found at work: the list as the API has it.
@@ -207,7 +217,7 @@ function Heading({ id, company }: { id: string; company: string }) {
 }
 
 /** Always there, so a failure is read out when it comes. */
-function Alert({ said }: { said: Said | null }) {
+export function Alert({ said }: { said: Said | null }) {
   return (
     <div
       key={said?.count ?? 0}
@@ -258,6 +268,8 @@ function refusalOf(
     case 'no_jobs':
       return { words: text.noJobs };
   }
+  // The answer was lost: the run may have started. The list read again after says.
+  if (error.kind === 'unsure') return { words: text.unsure };
   return { words: error.kind === 'offline' ? text.offline : text.startFailed };
 }
 

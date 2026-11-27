@@ -64,12 +64,15 @@ async function renderList(
 
 const openJob = (title: string) => fireEvent.click(screen.getByRole('button', { name: title }));
 const preview = () => within(screen.getByRole('region', { name: 'Senior Backend Engineer' }));
-/** Applying's alert in the open pane (not the tailoring section's, #51 PR C). */
+/** Applying's alert in the open pane (not the résumé's, #51 PR C, or the letter's, PR D3). */
 function applyAlert() {
-  const tailor = screen.queryByRole('region', { name: /^Your résumé for/ });
+  const sections = [
+    screen.queryByRole('region', { name: /^Your résumé for/ }),
+    screen.queryByRole('region', { name: 'Cover letter for this job' }),
+  ];
   const alerts = preview()
     .getAllByRole('alert')
-    .filter((alert) => !tailor?.contains(alert));
+    .filter((alert) => !sections.some((section) => section?.contains(alert)));
   expect(alerts).toHaveLength(1);
   return alerts[0] as HTMLElement;
 }

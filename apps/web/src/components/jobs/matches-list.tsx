@@ -7,6 +7,7 @@ import {
   nextCoolingEnd,
   useRedrawAt,
 } from '@/components/jobs/cooldown.ts';
+import { CoverLetterSection } from '@/components/jobs/cover-letter-section.tsx';
 import { FitLabel } from '@/components/jobs/fit-label.tsx';
 import { JobPreview } from '@/components/jobs/job-preview.tsx';
 import { postedDay, postedTime, whereText } from '@/components/jobs/job-text.ts';
@@ -354,6 +355,7 @@ export function MatchesList({
             actions={
               <>
                 <TailorSection job={open} onWorking={watch} />
+                <CoverLetterSection job={open} />
                 <ApplyActions
                   job={open}
                   {...(matches.data?.cooldown ? { cooldown: matches.data.cooldown } : {})}
