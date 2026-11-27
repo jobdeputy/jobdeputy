@@ -136,7 +136,7 @@ sequenceDiagram
   participant M as Model
   U->>A: POST /me/cover-letters {jobId, aiSource?}
   A->>DB: the job (open and shown, else 404 / 422 no_jobs), AI setting, default résumé
-  A->>DB: the company's versions: the newest ready one made from the default → resumeDocumentId
+  A->>DB: the company's versions: the newest ready one made from the default's file as it is now → resumeDocumentId
   A->>DB: TransactWrite: letter queued + audit + MONTH# tailoringRunIds + LETTER#jobId lock
   A-->>U: 202 {coverLetter: queued} (or 429 tailoring_allowance / 409 cover_letter_busy / 422)
   Note over DB,W: documents stream → Pipe → queue (as a résumé)
@@ -160,7 +160,7 @@ sequenceDiagram
 ```
 
 - **Calls:** at most 5, as tailoring (structure 1, keywords 1, letter 3). Written from a tailored résumé, a letter usually makes 1 (the keywords were cached by the résumé run).
-- **Which résumé:** the company's newest **ready** tailored résumé made from today's default, chosen when asked; if it was pruned meanwhile, the base. `from` (`tailored` or `base`) says which.
+- **Which résumé:** the company's newest **ready** tailored résumé made from today's default **as its file is now** (`tailoring.baseETag` equal to the upload's `eTag`: a re-upload keeps the document's ID), chosen when asked and checked again in the worker; otherwise the base. `from` (`tailored` or `base`) says which.
 - **The letter file:** the name and contact line from that résumé, "Dear Hiring Manager,", the body, "Sincerely,", the name (`letterBlocks`, shared with the preview). No date: the worker cannot know the user's day, and the DOCX can be edited. Copy gives the same text without the header (`letterText`).
 - **Failures** use tailoring's codes, worded for a letter (`COVER_LETTER_ERRORS`): a closed job is `no_jobs`; only dishonest drafts, `no_honest_draft`.
 

@@ -78,6 +78,11 @@ export interface TailoringRun {
   draftResume?: StructuredResume;
   /** A letter's kept draft, with `drafted`: a retry renders exactly this letter. */
   draftLetter?: LetterDraft;
+  /**
+   * The ETag of the base résumé's file the draft was made from: a re-upload keeps the
+   * document's ID, so a cover letter uses this version only while the file is the same.
+   */
+  baseETag?: string;
   /** `tailor-resume@v1`, and the score's code version. */
   promptVersion?: string;
   scoreVersion?: number;
@@ -569,16 +574,20 @@ export class TailoringRepository {
   async saveDraft(
     userId: string,
     documentId: string,
-    draft: Pick<TailoringRun, 'result' | 'scores' | 'coverage' | 'promptVersion' | 'scoreVersion'>,
+    draft: Pick<
+      TailoringRun,
+      'result' | 'scores' | 'coverage' | 'promptVersion' | 'scoreVersion' | 'baseETag'
+    >,
     resume: StructuredResume,
-    companyName: string,
+    /** The jobs' company name; absent, the item keeps none (never its key as a name). */
+    companyName: string | undefined,
   ): Promise<boolean> {
     try {
       await this.client.send(
         new UpdateCommand({
           TableName: this.tables.documents,
           Key: { userId, documentId },
-          UpdateExpression: `SET tailoring.drafted = :true, tailoring.draftResume = :resume, tailoring.#result = :result, tailoring.scores = :scores, tailoring.promptVersion = :promptVersion, tailoring.scoreVersion = :scoreVersion${draft.coverage !== undefined ? ', tailoring.coverage = :coverage' : ''}, companyName = if_not_exists(companyName, :company), updatedAt = :now`,
+          UpdateExpression: `SET tailoring.drafted = :true, tailoring.draftResume = :resume, tailoring.#result = :result, tailoring.scores = :scores, tailoring.promptVersion = :promptVersion, tailoring.scoreVersion = :scoreVersion${draft.coverage !== undefined ? ', tailoring.coverage = :coverage' : ''}${draft.baseETag !== undefined ? ', tailoring.baseETag = :baseETag' : ''}${companyName !== undefined ? ', companyName = if_not_exists(companyName, :company)' : ''}, updatedAt = :now`,
           // One draft per run: a duplicate delivery's later draft is refused.
           ConditionExpression: '#status = :processing AND attribute_not_exists(tailoring.drafted)',
           ExpressionAttributeNames: { '#status': 'status', '#result': 'result' },
@@ -590,7 +599,8 @@ export class TailoringRepository {
             ':promptVersion': draft.promptVersion,
             ':scoreVersion': draft.scoreVersion,
             ...(draft.coverage !== undefined ? { ':coverage': draft.coverage } : {}),
-            ':company': companyName,
+            ...(draft.baseETag !== undefined ? { ':baseETag': draft.baseETag } : {}),
+            ...(companyName !== undefined ? { ':company': companyName } : {}),
             ':now': this.now().toISOString(),
             ':processing': 'processing',
           },
@@ -720,14 +730,15 @@ export class TailoringRepository {
     userId: string,
     documentId: string,
     draft: LetterDraft & { promptVersion: string },
+    /** The job's company name; absent, the item keeps none (never its key as a name). */
+    companyName: string | undefined,
   ): Promise<boolean> {
     try {
       await this.client.send(
         new UpdateCommand({
           TableName: this.tables.documents,
           Key: { userId, documentId },
-          UpdateExpression:
-            'SET tailoring.drafted = :true, tailoring.draftLetter = :letter, tailoring.promptVersion = :promptVersion, companyName = if_not_exists(companyName, :company), updatedAt = :now',
+          UpdateExpression: `SET tailoring.drafted = :true, tailoring.draftLetter = :letter, tailoring.promptVersion = :promptVersion${companyName !== undefined ? ', companyName = if_not_exists(companyName, :company)' : ''}, updatedAt = :now`,
           ConditionExpression: '#status = :processing AND attribute_not_exists(tailoring.drafted)',
           ExpressionAttributeNames: { '#status': 'status' },
           ExpressionAttributeValues: {
@@ -740,7 +751,7 @@ export class TailoringRepository {
               from: draft.from,
             },
             ':promptVersion': draft.promptVersion,
-            ':company': draft.company,
+            ...(companyName !== undefined ? { ':company': companyName } : {}),
             ':now': this.now().toISOString(),
             ':processing': 'processing',
           },

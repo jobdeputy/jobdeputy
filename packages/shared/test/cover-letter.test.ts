@@ -22,6 +22,16 @@ describe('cover letters (#51 PR D)', () => {
     );
   });
 
+  it('joins only the real sign-off to the name, whatever the body says', () => {
+    const text = letterText({
+      ...letter,
+      paragraphs: ['I remain, sincerely,', 'Sincerely,', 'Last.'],
+    });
+    expect(text).toBe(
+      'Dear Hiring Manager,\n\nI remain, sincerely,\n\nSincerely,\n\nLast.\n\nSincerely,\nSam Example',
+    );
+  });
+
   it('leaves out an empty contact line, and falls back to a name', () => {
     const blocks = letterBlocks({ ...letter, contact: { name: ' ', links: [] } });
     expect(blocks.map((b) => b.kind)).toEqual([

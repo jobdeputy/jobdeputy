@@ -167,17 +167,21 @@ async function tailor(run: Run, deps: TailoringWorkerDeps): Promise<TailoringOut
   if (isTailoringStale(doc.createdAt, deps.now())) return fail(run, deps, 'stopped');
 
   // A retry after the draft was kept: render it, with no model call.
-  if (doc.tailoring.drafted && doc.tailoring.scores && doc.tailoring.result) {
+  if (doc.tailoring.drafted) {
     const kept = structuredResume.safeParse(doc.tailoring.draftResume);
-    if (kept.success) {
-      return render(run, deps, kept.data, doc.companyName ?? doc.companyKey, {
-        result: doc.tailoring.result,
-        scores: doc.tailoring.scores,
-        ...(doc.tailoring.coverage !== undefined ? { coverage: doc.tailoring.coverage } : {}),
-        promptVersion: doc.tailoring.promptVersion ?? promptVersion(tailorResumeTask),
-        scoreVersion: doc.tailoring.scoreVersion ?? MATCH_SCORE_VERSION,
-      });
+    // A kept draft that no longer reads (or lost its scores) cannot be written again: a second
+    // draft is refused, so the run ends here rather than calling the model for nothing.
+    if (!kept.success || !doc.tailoring.scores || !doc.tailoring.result) {
+      return fail(run, deps, 'stopped');
     }
+    return render(run, deps, kept.data, doc.companyName ?? doc.companyKey, {
+      result: doc.tailoring.result,
+      scores: doc.tailoring.scores,
+      ...(doc.tailoring.coverage !== undefined ? { coverage: doc.tailoring.coverage } : {}),
+      promptVersion: doc.tailoring.promptVersion ?? promptVersion(tailorResumeTask),
+      scoreVersion: doc.tailoring.scoreVersion ?? MATCH_SCORE_VERSION,
+      ...(doc.tailoring.baseETag !== undefined ? { baseETag: doc.tailoring.baseETag } : {}),
+    });
   }
   if (run.calls >= TAILORING_MAX_CALLS) return fail(run, deps, 'stopped');
 
@@ -188,7 +192,8 @@ async function tailor(run: Run, deps: TailoringWorkerDeps): Promise<TailoringOut
     .filter((j) => j.closedAt === undefined)
     .sort((a, b) => (order.get(a.jobId) ?? 0) - (order.get(b.jobId) ?? 0));
   if (jobs.length === 0) return fail(run, deps, 'no_jobs');
-  const company = doc.companyName ?? jobs.find((j) => j.companyName)?.companyName ?? doc.companyKey;
+  const companyName = doc.companyName ?? jobs.find((j) => j.companyName)?.companyName;
+  const company = companyName ?? doc.companyKey;
   const model = await deps.model(userId, doc.aiSource);
   if (typeof model === 'string') return fail(run, deps, model);
   const profile = await deps.profile(userId);
@@ -252,11 +257,12 @@ async function tailor(run: Run, deps: TailoringWorkerDeps): Promise<TailoringOut
     ...(coverage !== undefined ? { coverage } : {}),
     promptVersion: promptVersion(tailorResumeTask),
     scoreVersion: MATCH_SCORE_VERSION,
+    baseETag: base.eTag as string,
   };
   run.stage = 'files';
   // Kept once: a duplicate delivery whose draft comes second stops here (the run is the
   // other's); a retry of this one renders exactly this draft.
-  if (!(await deps.runs.saveDraft(userId, documentId, draft, best.resume, company))) {
+  if (!(await deps.runs.saveDraft(userId, documentId, draft, best.resume, companyName))) {
     return 'skipped';
   }
   return render(run, deps, best.resume, company, draft);

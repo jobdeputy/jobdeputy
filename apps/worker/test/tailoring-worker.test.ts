@@ -397,6 +397,8 @@ describe('tailoring worker', () => {
     const [, , draft, draftResume, company] = first.runs.saveDraft.mock.calls[0] as any[];
     expect(company).toBe('Example Test Co');
     expect(draft).toMatchObject({
+      // The file the draft was made from: a cover letter checks it (PR D).
+      baseETag: 'etag-1',
       result: 'partial',
       scores: [expect.objectContaining({ jobId: 'job-1' })],
     });
@@ -594,6 +596,20 @@ describe('versionFileName', () => {
   });
 });
 
+describe('tailoring worker: a kept draft that no longer reads', () => {
+  it('ends the run stopped, with no model call', async () => {
+    const { deps, runs } = setup(
+      {},
+      version({
+        tailoring: { calls: 3, attempts: 2, drafted: true, draftResume: { bad: 1 } as never },
+      }),
+    );
+    expect(await processRecord(record(undefined, 2), deps)).toBe('failed');
+    expect(deps.model).not.toHaveBeenCalled();
+    expect(finished(runs).outcome.error).toBe('stopped');
+  });
+});
+
 describe('tailoring worker: cover letters (#51 PR D)', () => {
   const LETTER = '01J8ZQ4Y3N5W6X7Y8Z9A0B1C3A';
   const TAILORED = '01J8ZQ4Y3N5W6X7Y8Z9A0B1C3B';
@@ -620,6 +636,18 @@ describe('tailoring worker: cover letters (#51 PR D)', () => {
     certifications: [],
     projects: [],
   };
+  /** Without a company name (exactOptionalPropertyTypes: the key is left out, not undefined). */
+  const nameless = <T extends { companyName?: string }>(item: T): T => {
+    const { companyName: _, ...rest } = item;
+    return rest as T;
+  };
+  const unnamedJob = (over: Partial<Job> = {}) => nameless(job(over));
+  const tailoredVersion = (baseETag = 'etag-1') =>
+    version({
+      documentId: TAILORED,
+      status: 'ready',
+      tailoring: { calls: 3, attempts: 1, baseETag },
+    });
   const calls = (runs: ReturnType<typeof setup>['runs']) =>
     runs.saveCall.mock.calls.map(
       (c) => (c as unknown as [{ usage: { task: string } }])[0].usage.task,
@@ -627,7 +655,7 @@ describe('tailoring worker: cover letters (#51 PR D)', () => {
 
   it('writes from the company’s tailored résumé: keywords, the letter, its files, the job linked', async () => {
     const ctx = setup({}, letterDoc({ resumeDocumentId: TAILORED }));
-    ctx.runs.get.mockResolvedValue(version({ documentId: TAILORED, status: 'ready' }));
+    ctx.runs.get.mockResolvedValue(tailoredVersion());
     await ctx.deps.files.put(
       tailoringKeys(USER, TAILORED).json,
       JSON.stringify(tailoredResume),
@@ -638,7 +666,8 @@ describe('tailoring worker: cover letters (#51 PR D)', () => {
     );
     // No structuring: the tailored résumé is already structured.
     expect(calls(ctx.runs)).toEqual(['job-keywords', 'cover-letter']);
-    expect(ctx.documents.get).not.toHaveBeenCalled();
+    // The base is read only to check the version was made from its file as it is now.
+    expect(ctx.documents.get).toHaveBeenCalledTimes(1);
     const kept = (ctx.runs.saveLetterDraft.mock.calls[0] as unknown[])[2] as Record<
       string,
       unknown
@@ -726,7 +755,7 @@ describe('tailoring worker: cover letters (#51 PR D)', () => {
 
   it('keeps no letter when every draft fails its checks (3 letter calls at most)', async () => {
     const ctx = setup({}, letterDoc({ resumeDocumentId: TAILORED }));
-    ctx.runs.get.mockResolvedValue(version({ documentId: TAILORED, status: 'ready' }));
+    ctx.runs.get.mockResolvedValue(tailoredVersion());
     await ctx.deps.files.put(
       tailoringKeys(USER, TAILORED).json,
       JSON.stringify(tailoredResume),
@@ -784,5 +813,106 @@ describe('tailoring worker: cover letters (#51 PR D)', () => {
       paragraphs: string[];
     };
     expect(kept.paragraphs.join(' ')).not.toContain(LETTER_GREETING);
+  });
+  it('writes from the base when the tailored version was made from an earlier upload', async () => {
+    const ctx = setup({}, letterDoc({ resumeDocumentId: TAILORED }));
+    ctx.runs.get.mockResolvedValue(tailoredVersion('etag-old'));
+    await ctx.deps.files.put(
+      tailoringKeys(USER, TAILORED).json,
+      JSON.stringify(tailoredResume),
+      'application/json',
+    );
+    expect(await processRecord(record({ userId: USER, documentId: LETTER }), ctx.deps)).toBe(
+      'ready',
+    );
+    expect(calls(ctx.runs)[0]).toBe('structure-resume');
+    const kept = (ctx.runs.saveLetterDraft.mock.calls[0] as unknown[])[2] as Record<
+      string,
+      unknown
+    >;
+    expect(kept).toMatchObject({ from: 'base', contact: { name: 'Sam Example' } });
+  });
+
+  it('ends a run whose kept letter no longer reads, with no model call', async () => {
+    const ctx = setup(
+      {},
+      letterDoc({
+        tailoring: {
+          calls: 3,
+          attempts: 2,
+          drafted: true,
+          draftLetter: {
+            contact: { name: 'Sam', links: [] },
+            company: 'Acme',
+            jobTitle: 'Engineer',
+            paragraphs: [],
+            from: 'base',
+          },
+        },
+      }),
+    );
+    expect(await processRecord(record({ userId: USER, documentId: LETTER }, 2), ctx.deps)).toBe(
+      'failed',
+    );
+    expect(ctx.deps.model).not.toHaveBeenCalled();
+    expect(finished(ctx.runs).outcome.error).toBe('stopped');
+  });
+
+  it('never names a company by its key, and cuts a long one to fit the header', async () => {
+    const unnamed = setup(
+      { jobs: { getMany: vi.fn(async () => [unnamedJob()]) } },
+      nameless(letterDoc()),
+    );
+    expect(await processRecord(record({ userId: USER, documentId: LETTER }), unnamed.deps)).toBe(
+      'ready',
+    );
+    const [, , kept, companyName] = unnamed.runs.saveLetterDraft.mock.calls[0] as unknown as [
+      string,
+      string,
+      { company: string },
+      string | undefined,
+    ];
+    // The letter says the key (nothing better is known), but the item keeps no name.
+    expect(kept.company).toBe('schema:example-test-co');
+    expect(companyName).toBeUndefined();
+
+    const longKey = `schema:${'x'.repeat(290)}`;
+    const prompts: string[] = [];
+    const long = setup(
+      {
+        jobs: {
+          // Keywords cached: the first call is the letter's.
+          getMany: vi.fn(async () => [
+            unnamedJob({
+              companyKey: longKey,
+              keywords: {
+                descriptionHash: 'dh-1',
+                promptVersion: promptVersion(jobKeywordsTask),
+                terms: [],
+              },
+            }),
+          ]),
+        },
+        model: vi.fn(async () =>
+          stubSource((_, messages) => {
+            const first = messages[0]?.content[0];
+            prompts.push(first && 'text' in first ? String(first.text) : '');
+            return { text: 'no tool call' };
+          }),
+        ),
+      },
+      nameless(letterDoc({ companyKey: longKey, resumeDocumentId: TAILORED })),
+    );
+    long.runs.get.mockResolvedValue(tailoredVersion());
+    await long.deps.files.put(
+      tailoringKeys(USER, TAILORED).json,
+      JSON.stringify(tailoredResume),
+      'application/json',
+    );
+    await processRecord(record({ userId: USER, documentId: LETTER }), long.deps);
+    const letterPrompt = prompts.find((p) => p.includes('Write the cover letter body')) ?? '';
+    const company = /<data name="company">\n([\s\S]*?)\n<\/data>/.exec(letterPrompt)?.[1] ?? '';
+    expect(company.length).toBeGreaterThan(0);
+    expect(company.length).toBeLessThanOrEqual(200);
   });
 });

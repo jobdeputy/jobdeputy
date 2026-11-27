@@ -99,13 +99,20 @@ async function request(
       requestId,
     });
   }
-  // Written from the company's newest ready tailored résumé made from today's default; else
-  // from the default itself (tailoring first is not required).
+  // Written from the company's newest ready tailored résumé made from today's default, as its
+  // file is now (a re-upload keeps the document's ID, not its ETag); else from the default
+  // itself (tailoring first is not required).
   const [tailored, limits] = await Promise.all([
     deps.runs.list(userId, job.companyKey),
     deps.limits(),
   ]);
-  const from = tailored.find((v) => v.status === 'ready' && v.baseDocumentId === base.documentId);
+  const from = tailored.find(
+    (v) =>
+      v.status === 'ready' &&
+      v.baseDocumentId === base.documentId &&
+      v.tailoring.baseETag !== undefined &&
+      v.tailoring.baseETag === base.eTag,
+  );
   const perMonth = limits.platformTailoringsPerMonth;
   const documentId = deps.newId();
   const company = job.companyName ?? job.companyKey;

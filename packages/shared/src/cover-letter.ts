@@ -25,6 +25,10 @@ export const createCoverLetterInput = (allowTestProvider: boolean) =>
 
 export const coverLettersQuery = z.strictObject({ jobId });
 
+/** The longest company name and job title a letter's header holds. */
+export const LETTER_NAME_CHARS = 200;
+export const LETTER_TITLE_CHARS = 300;
+
 /**
  * A ready letter, as stored in `letter.json` and shown in the preview: the contact header
  * (from the résumé it was written from), and the body's paragraphs (checked for honesty).
@@ -32,8 +36,8 @@ export const coverLettersQuery = z.strictObject({ jobId });
 export const coverLetter = z
   .object({
     contact: resumeContact,
-    company: z.string().trim().min(1).max(200),
-    jobTitle: z.string().trim().min(1).max(300),
+    company: z.string().trim().min(1).max(LETTER_NAME_CHARS),
+    jobTitle: z.string().trim().min(1).max(LETTER_TITLE_CHARS),
     paragraphs: z.array(z.string().trim().min(1).max(1_500)).min(1).max(6),
   })
   .strict();
@@ -94,9 +98,9 @@ export function letterBlocks(letter: CoverLetter): LetterBlock[] {
  * fields for contact details, so the header is left out).
  */
 export function letterText(letter: CoverLetter): string {
-  return letterBlocks(letter)
-    .filter((b) => b.kind !== 'name' && b.kind !== 'line')
-    .map((b) => b.text)
-    .join('\n\n')
-    .replace(`${LETTER_SIGN_OFF}\n\n`, `${LETTER_SIGN_OFF}\n`);
+  const blocks = letterBlocks(letter).filter((b) => b.kind !== 'name' && b.kind !== 'line');
+  const body = blocks.filter((b) => b.kind === 'greeting' || b.kind === 'paragraph');
+  const close = blocks.filter((b) => b.kind === 'signoff' || b.kind === 'signature');
+  // A blank line between paragraphs; the sign-off and the name on lines of their own.
+  return [...body.map((b) => b.text), close.map((b) => b.text).join('\n')].join('\n\n');
 }

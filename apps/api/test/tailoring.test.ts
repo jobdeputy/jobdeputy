@@ -76,6 +76,7 @@ const uploaded = (over: Partial<Document> = {}) =>
     documentId: BASE,
     isDefault: true,
     status: 'ready',
+    eTag: 'etag-now',
     parsed: { textS3Key: 'k', charCount: 10, noText: false, truncated: false },
     ...over,
   }) as Document;
@@ -440,10 +441,23 @@ describe('cover letters (#51 PR D)', () => {
 
   it('queues a letter for one job, from the company’s newest tailored résumé of the default', async () => {
     const { deps, runs } = setup({ newId: () => LETTER });
+    const made = (baseETag: string) => ({ calls: 3, attempts: 1, baseETag });
     runs.list.mockResolvedValueOnce([
       version({ documentId: '01J8ZQ4Y3N5W6X7Y8Z9A0B1C3C', status: 'processing' }),
-      version({ documentId: TAILORED, status: 'ready' }),
-      version({ documentId: '01J8ZQ4Y3N5W6X7Y8Z9A0B1C3D', status: 'ready' }),
+      // Made from the same document's earlier upload (a re-upload keeps the ID): not used.
+      version({
+        documentId: '01J8ZQ4Y3N5W6X7Y8Z9A0B1C3E',
+        status: 'ready',
+        tailoring: made('etag-old'),
+      }),
+      // Made before versions recorded their file: not used either.
+      version({ documentId: '01J8ZQ4Y3N5W6X7Y8Z9A0B1C3F', status: 'ready' }),
+      version({ documentId: TAILORED, status: 'ready', tailoring: made('etag-now') }),
+      version({
+        documentId: '01J8ZQ4Y3N5W6X7Y8Z9A0B1C3D',
+        status: 'ready',
+        tailoring: made('etag-now'),
+      }),
     ]);
     const res = await route(ask({ jobId: job(1) }), deps);
     expect(res.statusCode).toBe(202);
@@ -477,7 +491,13 @@ describe('cover letters (#51 PR D)', () => {
 
   it('writes from the base résumé when no ready version was made from the default', async () => {
     const { deps, runs } = setup();
-    runs.list.mockResolvedValueOnce([version({ status: 'ready', baseDocumentId: 'OTHER' })]);
+    runs.list.mockResolvedValueOnce([
+      version({
+        status: 'ready',
+        baseDocumentId: 'OTHER',
+        tailoring: { calls: 3, attempts: 1, baseETag: 'etag-now' },
+      }),
+    ]);
     await route(ask({ jobId: job(1) }), deps);
     expect(runs.request.mock.calls[0]?.[0]).not.toHaveProperty('resumeDocumentId');
   });

@@ -397,7 +397,7 @@ describe('TailoringRepository lists and jobs', () => {
       promptVersion: 'cover-letter@v1',
     };
     const { repo, send } = setup();
-    expect(await repo.saveLetterDraft(USER, DOC, draft)).toBe(true);
+    expect(await repo.saveLetterDraft(USER, DOC, draft, 'Acme')).toBe(true);
     const input = send.mock.calls[0]?.[0].input;
     expect(input.ConditionExpression).toBe(
       '#status = :processing AND attribute_not_exists(tailoring.drafted)',
@@ -412,7 +412,13 @@ describe('TailoringRepository lists and jobs', () => {
     const second = setup(() => {
       throw conditionFailed();
     });
-    expect(await second.repo.saveLetterDraft(USER, DOC, draft)).toBe(false);
+    expect(await second.repo.saveLetterDraft(USER, DOC, draft, 'Acme')).toBe(false);
+    // Without the job's company name, the item keeps none: never its key as a name.
+    const unnamed = setup();
+    await unnamed.repo.saveLetterDraft(USER, DOC, draft, undefined);
+    const noName = unnamed.send.mock.calls[0]?.[0].input;
+    expect(noName.UpdateExpression).not.toContain('companyName');
+    expect(noName.ExpressionAttributeValues).not.toHaveProperty(':company');
   });
 
   it('caches keywords and matches only on jobs that still exist', async () => {

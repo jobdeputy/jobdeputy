@@ -128,10 +128,15 @@ export function stubLetter(prompt: string): CoverLetterOutput {
   const company = block(prompt, 'company').trim();
   const title = /^title: (.+)$/m.exec(block(prompt, 'job'))?.[1] ?? 'open';
   const resume = block(prompt, 'resume');
-  const bullets = [...resume.matchAll(/^ {2}- (.+)$/gm)].map((m) => (m[1] ?? '').trim());
-  const skills = [...resume.matchAll(/^ {2}[^-\s][^:]*: (.+)$/gm)].flatMap((m) =>
-    (m[1] ?? '').split(', '),
-  );
+  // A few of each, so the letter stays within its limits (1,500 characters a paragraph,
+  // 200–400 words) however long the résumé is.
+  const bullets = [...resume.matchAll(/^ {2}- (.+)$/gm)]
+    .map((m) => (m[1] ?? '').trim())
+    .filter((b) => b.length <= 300)
+    .slice(0, 3);
+  const skills = [...resume.matchAll(/^ {2}[^-\s][^:]*: (.+)$/gm)]
+    .flatMap((m) => (m[1] ?? '').split(', '))
+    .slice(0, 8);
   const sentence = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`);
   const paragraphs = [
     `I am writing to apply for the ${title} role at ${company}. The role fits the work I have done so far, and I would like to bring that work to your team.`,

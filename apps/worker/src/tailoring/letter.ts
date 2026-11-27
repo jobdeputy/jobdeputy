@@ -1,12 +1,15 @@
-import type { LetterDraft } from '@jobdeputy/db';
+import type { Document, LetterDraft } from '@jobdeputy/db';
 import { coverLetterTask, promptVersion, writeCoverLetter } from '@jobdeputy/llm';
 import {
   COVER_LETTER_VERSIONS_KEPT,
   type CoverLetter,
   coverLetter,
   coverLetterKeys,
+  cutAtWord,
   FALLBACK_RESUME_NAME,
   isTailoringStale,
+  LETTER_NAME_CHARS,
+  LETTER_TITLE_CHARS,
   type StructuredResume,
   structuredResume,
   tailoringKeys,
@@ -34,16 +37,24 @@ import {
 // the letter: a draft and at most two repairs, the first honest one kept (writeCoverLetter).
 // At most TAILORING_MAX_CALLS task calls, as tailoring: structure 1, keywords 1, letter 3.
 
-/** The résumé a letter is written from: the tailored version's, else the base's. */
+/**
+ * The résumé a letter is written from: the tailored version's, while it is ready and made from
+ * the base's file as it is now (a re-upload keeps the document's ID, not its ETag); else none,
+ * and the base is used.
+ */
 async function letterResume(
   run: Run,
   deps: TailoringWorkerDeps,
+  base: Document | undefined,
 ): Promise<{ resume: StructuredResume; from: LetterDraft['from'] } | undefined> {
   const { userId, resumeDocumentId } = run.doc;
   if (!resumeDocumentId) return undefined;
   const version = await deps.runs.get(userId, resumeDocumentId);
-  // Pruned or replaced meanwhile: the base résumé, which it was made from, is used instead.
   if (version?.kind !== 'resume' || version.status !== 'ready') return undefined;
+  const made = version.tailoring.baseETag;
+  if (made === undefined || base?.eTag !== made || version.baseDocumentId !== base.documentId) {
+    return undefined;
+  }
   const read = structuredResume.safeParse(
     await deps.files.readJson(tailoringKeys(userId, resumeDocumentId).json).catch(() => undefined),
   );
@@ -60,12 +71,18 @@ export async function writeLetter(run: Run, deps: TailoringWorkerDeps): Promise<
 
   const [job] = (await deps.jobs.getMany(userId, [jobId])).filter((j) => j.closedAt === undefined);
 
-  // A retry after the letter was kept: render exactly it, with no model call.
-  const kept = coverLetter.safeParse(stripFrom(doc.tailoring.draftLetter));
-  if (doc.tailoring.drafted && kept.success) return render(run, deps, kept.data);
+  // A retry after the letter was kept: render exactly it, with no model call. One that no longer
+  // reads cannot be kept again (a second letter is refused), so the run ends here.
+  if (doc.tailoring.drafted) {
+    const kept = coverLetter.safeParse(stripFrom(doc.tailoring.draftLetter));
+    return kept.success ? render(run, deps, kept.data) : fail(run, deps, 'stopped');
+  }
   if (run.calls >= TAILORING_MAX_CALLS) return fail(run, deps, 'stopped');
   if (!job) return fail(run, deps, 'no_jobs');
-  const company = doc.companyName ?? job.companyName ?? doc.companyKey;
+  const companyName = doc.companyName ?? job.companyName;
+  // Within the letter's own limits before any call, so a kept letter always reads.
+  const company = cutAtWord(companyName ?? doc.companyKey, LETTER_NAME_CHARS);
+  const jobTitle = cutAtWord(job.title, LETTER_TITLE_CHARS);
 
   const model = await deps.model(userId, doc.aiSource);
   if (typeof model === 'string') return fail(run, deps, model);
@@ -73,9 +90,9 @@ export async function writeLetter(run: Run, deps: TailoringWorkerDeps): Promise<
   const calls = modelCalls(run, deps, model);
 
   // 1. The résumé: the tailored version's, else the base structured (cached per file).
-  let source = await letterResume(run, deps);
+  const base = usableBase(await deps.documents.get(userId, doc.baseDocumentId));
+  let source = await letterResume(run, deps, base);
   if (!source) {
-    const base = usableBase(await deps.documents.get(userId, doc.baseDocumentId));
     if (!base) return fail(run, deps, 'no_resume');
     const structuring = await structuredBase(run, deps, base, profile.name, model, calls);
     if (typeof structuring === 'string') return fail(run, deps, structuring);
@@ -95,7 +112,7 @@ export async function writeLetter(run: Run, deps: TailoringWorkerDeps): Promise<
         resume,
         evidence: profile.skills,
         job: {
-          title: job.title,
+          title: jobTitle,
           description: job.description ?? '',
           keywords: keywords.get(jobId) ?? [],
         },
@@ -121,14 +138,20 @@ export async function writeLetter(run: Run, deps: TailoringWorkerDeps): Promise<
   // 4. Keep the letter before rendering: a retry from here makes no model call. Kept once: a
   // duplicate delivery whose letter comes second stops here (the run is the other's).
   run.stage = 'files';
-  const letter = coverLetter.parse({
+  const read = coverLetter.safeParse({
     contact: contactOf(resume),
     company,
-    jobTitle: job.title,
+    jobTitle,
     paragraphs,
   });
+  // The header is within its limits and the body is the task's checked output: this never
+  // fails, and if it did, a retry could only spend the calls left on the same letter.
+  if (!read.success) return fail(run, deps, 'stopped');
+  const letter = read.data;
   const draft = { ...letter, from: source.from, promptVersion: promptVersion(coverLetterTask) };
-  if (!(await deps.runs.saveLetterDraft(userId, doc.documentId, draft))) return 'skipped';
+  if (!(await deps.runs.saveLetterDraft(userId, doc.documentId, draft, companyName))) {
+    return 'skipped';
+  }
   return render(run, deps, letter);
 }
 
