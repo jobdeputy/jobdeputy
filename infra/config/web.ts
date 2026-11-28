@@ -12,7 +12,8 @@ export interface WebSite {
   /**
    * #111: the site's cell also serves managed login at `signInDomainName` (decision 0021). Set it
    * only once the site's own address resolves (its web stack is deployed): Cognito refuses a custom
-   * domain whose parent has no record, so a stage's first deploy leaves it out.
+   * domain whose parent has no record, so a stage's first deploy (or a rebuild) passes
+   * `-c signInDomain=off`.
    */
   readonly signInDomain?: boolean;
 }

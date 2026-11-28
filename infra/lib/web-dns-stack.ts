@@ -1,6 +1,15 @@
 import { RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
 import { PublicHostedZone } from 'aws-cdk-lib/aws-route53';
+import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import type { Construct } from 'constructs';
+
+/**
+ * The SSM parameter holding the zone's ID (#111): the site's cell reads it at deploy time, so no
+ * stack export ties the cell to this stack (an export in use can't be removed).
+ */
+export function webZoneIdParameter(domain: string): string {
+  return `/jobdeputy/web-zone/${domain}/id`;
+}
 
 export interface WebDnsStackProps extends StackProps {
   /** The delegated zone's name, for example dev.jobdeputy.com. */
@@ -25,5 +34,10 @@ export class WebDnsStack extends Stack {
       comment: 'JobDeputy web app (decision 0011). Delegated from jobdeputy.com.',
     });
     this.zone.applyRemovalPolicy(RemovalPolicy.RETAIN);
+    new StringParameter(this, 'ZoneId', {
+      parameterName: webZoneIdParameter(props.domain),
+      description: 'The web zone’s ID (read by the site’s cell for auth.<site>, #111).',
+      stringValue: this.zone.hostedZoneId,
+    });
   }
 }

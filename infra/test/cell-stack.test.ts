@@ -272,8 +272,13 @@ describe('Cognito (T05)', () => {
       ManagedLoginVersion: 2,
     });
     t.resourceCountIs('AWS::Cognito::UserPoolDomain', 2);
-    // Checked in the site's zone, made first in its own stack (the cell imports the zone's ID).
-    const zone = { 'Fn::ImportValue': Match.stringLikeRegexp('^jobdeputy-dev-web-dns:') };
+    // Checked in the site's zone, made first in its own stack; the cell reads the zone's ID from
+    // SSM at deploy time, never through an export (one in use can't be removed).
+    const zone = { Ref: Match.stringLikeRegexp('^SsmParameterValuejobdeputywebzone') };
+    expect(Object.values(t.findParameters('*')).map((p) => p.Default)).toContain(
+      '/jobdeputy/web-zone/dev.jobdeputy.com/id',
+    );
+    expect(JSON.stringify(t.toJSON())).not.toContain('jobdeputy-dev-web-dns:');
     t.hasResourceProperties('AWS::CertificateManager::Certificate', {
       DomainName: 'auth.dev.jobdeputy.com',
       ValidationMethod: 'DNS',
@@ -320,7 +325,34 @@ describe('Cognito (T05)', () => {
         'Fn::Join': ['', ['https://', { Ref: Match.stringLikeRegexp('AuthUserPoolSignInDomain') }]],
       },
     });
-    t.hasOutput('SiteOrigin', { Value: 'https://dev.jobdeputy.com' });
+    t.hasOutput('SignInDomain', { Value: 'auth.dev.jobdeputy.com' });
+    t.hasOutput('WebCallbackUrls', {
+      Value: `https://dev.jobdeputy.com${WEB_SIGN_IN_CALLBACK_PATH},${LOCAL_WEB_ORIGIN}${WEB_SIGN_IN_CALLBACK_PATH}`,
+    });
+  });
+
+  it('leaves the custom domain out with -c signInDomain=off, for a first deploy (#111)', () => {
+    const first = Template.fromStack(
+      buildApp({ stage: 'dev', env: {}, signInDomain: false }).node.findChild(
+        'jobdeputy-dev-iad',
+      ) as never,
+    );
+    first.resourceCountIs('AWS::Cognito::UserPoolDomain', 1);
+    first.resourceCountIs('AWS::CertificateManager::Certificate', 0);
+    expect(first.findOutputs('SignInDomain')).toEqual({});
+  });
+
+  it("has the site's zone stack write the zone ID the cell reads (#111)", () => {
+    const app = buildApp({ stage: 'dev', env: {} });
+    const dns = Template.fromStack(app.node.findChild('jobdeputy-dev-web-dns') as never);
+    dns.hasResourceProperties('AWS::SSM::Parameter', {
+      Name: '/jobdeputy/web-zone/dev.jobdeputy.com/id',
+      Value: { Ref: Match.stringLikeRegexp('^Zone') },
+    });
+    const cell = app.node.findChild('jobdeputy-dev-iad') as unknown as {
+      dependencies: { stackName: string }[];
+    };
+    expect(cell.dependencies.map((d) => d.stackName)).toContain('jobdeputy-dev-web-dns');
   });
 
   it('keeps managed login on the prefix domain for personal stacks (#111)', () => {
@@ -328,7 +360,10 @@ describe('Cognito (T05)', () => {
     personal.resourceCountIs('AWS::CertificateManager::Certificate', 0);
     const authDomain = JSON.stringify(personal.findOutputs('AuthDomain'));
     expect(authDomain).toMatch(/https:\/\/.*AuthUserPoolDomain.*\.amazoncognito\.com/);
-    expect(personal.findOutputs('SiteOrigin')).toEqual({});
+    expect(personal.findOutputs('SignInDomain')).toEqual({});
+    personal.hasOutput('WebCallbackUrls', {
+      Value: `${LOCAL_WEB_ORIGIN}${WEB_SIGN_IN_CALLBACK_PATH}`,
+    });
   });
 
   it('lets the API accept tokens from the web, extension and (dev) tests clients only', () => {

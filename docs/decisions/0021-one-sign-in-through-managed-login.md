@@ -29,7 +29,7 @@ One page and one session give one sign-in without widening what the extension ca
 
 ## Consequences
 
-- Cognito serves a custom domain through CloudFront, so its certificate must be in us-east-1 (the site's cell is), and the parent name must already resolve: the site's own alias record (the web stack). So the custom domain is opt-in per site (`signInDomain` in `infra/config/web.ts`): a stage's first deploy leaves it out, and a second deploy, once the web stack has made the site's record, turns it on. Dev has it on. Prod gets `auth.<prod site>` when its address is chosen at launch.
+- Cognito serves a custom domain through CloudFront, so its certificate must be in us-east-1 (the site's cell is), and the parent name must already resolve: the site's own alias record (the web stack). So the custom domain is opt-in per site (`signInDomain` in `infra/config/web.ts`, on for dev), and a stage's first deploy (or a rebuild) leaves it out with `cdk deploy --all -c signInDomain=off`; the next deploy, once the web stack has made the site's record, adds it. The cell reads the zone's ID from SSM, not a stack export, so the domain can also be turned off later. Prod gets `auth.<prod site>` when its address is chosen at launch.
 - A custom domain takes several minutes to create, and changing it replaces the pool's domain and record.
 - Managed login's session lasts about an hour; after that, either client asks for the password again.
 - Sign-up, email confirmation and forgotten passwords move to managed login with PR B, so their words are AWS's, not ours.

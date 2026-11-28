@@ -18,6 +18,8 @@ buildApp({
   stage,
   cliCredentials,
   webContentDir: join(REPO_ROOT, WEB_DIST_DIR),
+  // #111: `-c signInDomain=off` for a stage's first deploy (decision 0021).
+  signInDomain: app.node.tryGetContext('signInDomain') !== 'off',
   ...(owner ? { owner } : {}),
 });
 

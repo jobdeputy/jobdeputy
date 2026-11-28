@@ -4,7 +4,7 @@ import {
   extensionRedirectUrl,
 } from '@jobdeputy/shared/extension';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { region, signInUrlPattern, stackOutputs } from './stack.js';
+import { PREFIX_SIGN_IN_URL, region, signInUrlPattern, stackOutputs } from './stack.js';
 
 /**
  * The extension's sign-in wiring (#54, decision 0020), as deployed on a dev stack (which trusts
@@ -47,7 +47,10 @@ describe.skipIf(!outputs.ExtensionClientId)('extension sign-in (deployed, #54)',
       `https://cognito-idp.${region}.amazonaws.com/${poolId}/.well-known/openid-configuration`,
     );
     const config = (await res.json()) as { authorization_endpoint: string };
-    expect(config.authorization_endpoint).toBe(`${domain}/oauth2/authorize`);
+    // With a custom domain too (#111), discovery may name either of the pool's two.
+    const endpoint = new URL(config.authorization_endpoint);
+    expect(endpoint.pathname).toBe('/oauth2/authorize');
+    if (endpoint.origin !== domain) expect(endpoint.origin).toMatch(PREFIX_SIGN_IN_URL);
   });
 
   it('starts a code sign-in that returns to the extension', async () => {

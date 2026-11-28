@@ -10,7 +10,7 @@ import { accountEnvVar, isStageName, STAGES, type StageName } from '../config/st
 import { signInDomainName, WEB_SITES } from '../config/web.js';
 import { CellStack } from './cell-stack.js';
 import { KeysStack } from './keys-stack.js';
-import { WebDnsStack } from './web-dns-stack.js';
+import { WebDnsStack, webZoneIdParameter } from './web-dns-stack.js';
 import { WebStack } from './web-stack.js';
 
 export interface BuildAppOptions {
@@ -33,6 +33,11 @@ export interface BuildAppOptions {
    * given; left out (unit tests) the web stack is built without uploading anything.
    */
   readonly webContentDir?: string;
+  /**
+   * #111: false leaves managed login's custom domain out (`-c signInDomain=off`): a stage's first
+   * deploy or a rebuild, before the site's own record exists (decision 0021). Default true.
+   */
+  readonly signInDomain?: boolean;
 }
 
 const OWNER_PATTERN = /^[a-z][a-z0-9-]{1,15}$/;
@@ -82,8 +87,14 @@ export function buildApp(options: BuildAppOptions): App {
       ...(site && dns && cell === SITE_CELL
         ? {
             siteOrigin: `https://${site.domain}`,
-            ...(site.signInDomain
-              ? { signInDomain: { name: signInDomainName(site), zone: dns.zone } }
+            ...(site.signInDomain && options.signInDomain !== false
+              ? {
+                  signInDomain: {
+                    name: signInDomainName(site),
+                    zoneName: site.domain,
+                    zoneIdParameter: webZoneIdParameter(site.domain),
+                  },
+                }
               : {}),
           }
         : {}),
@@ -94,6 +105,8 @@ export function buildApp(options: BuildAppOptions): App {
     });
     // The cell reads the key's ARN from SSM at deploy time, so the key must exist first.
     if (keys) cellStack.addDependency(keys);
+    // …and the site's zone, whose ID it reads from SSM for auth.<site> (#111).
+    if (dns && cell === SITE_CELL) cellStack.addDependency(dns);
     cellStacks[cell] = cellStack;
   }
   if (site && dns) {

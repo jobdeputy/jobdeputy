@@ -73,6 +73,10 @@ export class Auth extends Construct {
    * Managed login's session is a cookie on this address, so signing in to one signs in the other.
    */
   readonly signInUrl?: string;
+  /** The custom domain's name, where there is one (#111). */
+  readonly signInDomainName?: string;
+  /** Where the web client's managed login may return (#111); none without web origins. */
+  readonly webCallbackUrls: readonly string[];
   readonly testsClient?: UserPoolClient;
 
   constructor(scope: Construct, id: string, props: AuthProps) {
@@ -115,6 +119,7 @@ export class Auth extends Construct {
     // to managed login (#111 PR B). Where it has origins, managed login too: authorization code
     // only (Amplify sends PKCE), back to the site's own callback, and sign-out back to the site.
     const webOAuth = props.webOrigins.length > 0;
+    this.webCallbackUrls = props.webOrigins.map((origin) => origin + WEB_SIGN_IN_CALLBACK_PATH);
     this.webClient = this.userPool.addClient('WebClient', {
       userPoolClientName: 'web',
       authFlows: { userSrp: true },
@@ -127,7 +132,7 @@ export class Auth extends Construct {
             oAuth: {
               flows: { authorizationCodeGrant: true },
               scopes: WEB_SCOPES.map((scope) => OAuthScope.custom(scope)),
-              callbackUrls: props.webOrigins.map((origin) => origin + WEB_SIGN_IN_CALLBACK_PATH),
+              callbackUrls: [...this.webCallbackUrls],
               logoutUrls: props.webOrigins.map((origin) => `${origin}/`),
             },
           }
@@ -167,6 +172,7 @@ export class Auth extends Construct {
     if (oauthClients.length > 0) {
       const domains = this.addDomains(props.signInDomain);
       this.signInUrl = (domains.custom ?? domains.prefix).baseUrl();
+      if (domains.custom && props.signInDomain) this.signInDomainName = props.signInDomain.name;
       // One change to the pool's managed login at a time: the clients, then the custom domain
       // (minutes to make), then each client's look.
       for (const { client } of oauthClients) domains.custom?.node.addDependency(client);

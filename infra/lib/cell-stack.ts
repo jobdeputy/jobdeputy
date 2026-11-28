@@ -49,6 +49,7 @@ import {
 import { Rule, Schedule } from 'aws-cdk-lib/aws-events';
 import { LambdaFunction } from 'aws-cdk-lib/aws-events-targets';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
+import { HostedZone } from 'aws-cdk-lib/aws-route53';
 import { Topic } from 'aws-cdk-lib/aws-sns';
 import { EmailSubscription } from 'aws-cdk-lib/aws-sns-subscriptions';
 import { StringParameter } from 'aws-cdk-lib/aws-ssm';
@@ -57,7 +58,7 @@ import { CELLS, type CellId } from '../config/cells.js';
 import type { StageName } from '../config/stages.js';
 import { AiKeys } from './constructs/ai-keys.js';
 import { AsyncPipeline } from './constructs/async-pipeline.js';
-import { Auth, type SignInDomain } from './constructs/auth.js';
+import { Auth } from './constructs/auth.js';
 import { Documents } from './constructs/documents.js';
 import { LlmMonitoring } from './constructs/llm-monitoring.js';
 import { AppFunction } from './constructs/node-function.js';
@@ -80,7 +81,13 @@ export interface CellStackProps extends StackProps {
    * #111 (decision 0021): managed login's address in the site's zone (auth.<site>), for the cell
    * the site signs people in to. Left out, managed login stays on the pool's Cognito prefix domain.
    */
-  readonly signInDomain?: SignInDomain;
+  readonly signInDomain?: {
+    /** For example auth.dev.jobdeputy.com. */
+    readonly name: string;
+    /** The site's zone (its web DNS stack), and the SSM parameter holding its ID. */
+    readonly zoneName: string;
+    readonly zoneIdParameter: string;
+  };
   /** Receive alarm emails. Come from JD_ALERT_EMAIL (comma-separated), never from the repository. */
   readonly alertEmails?: readonly string[];
 }
@@ -182,7 +189,20 @@ export class CellStack extends Stack {
         ...(props.siteOrigin ? [props.siteOrigin] : []),
         ...(props.stage === 'dev' ? [LOCAL_WEB_ORIGIN] : []),
       ],
-      ...(props.signInDomain ? { signInDomain: props.signInDomain } : {}),
+      ...(props.signInDomain
+        ? {
+            signInDomain: {
+              name: props.signInDomain.name,
+              zone: HostedZone.fromHostedZoneAttributes(this, 'SiteZone', {
+                zoneName: props.signInDomain.zoneName,
+                hostedZoneId: StringParameter.valueForStringParameter(
+                  this,
+                  props.signInDomain.zoneIdParameter,
+                ),
+              }),
+            },
+          }
+        : {}),
       // #54: the dev ID's key is public, so only dev stacks trust it.
       extensionIds:
         props.stage === 'dev'
@@ -1021,8 +1041,14 @@ export class CellStack extends Stack {
     // Managed login's address (#54, #111): auth.<site> where the cell has one, else the pool's
     // prefix domain. The extension builds against it; the web app reads it from its config.
     if (auth.signInUrl) new CfnOutput(this, 'AuthDomain', { value: auth.signInUrl });
-    // The web app's origin, whose /auth/callback the web client may return to (#111).
-    if (props.siteOrigin) new CfnOutput(this, 'SiteOrigin', { value: props.siteOrigin });
+    // #111, for the tests: auth.<site> where the cell serves it, and where the web client's
+    // managed login may return.
+    if (auth.signInDomainName) {
+      new CfnOutput(this, 'SignInDomain', { value: auth.signInDomainName });
+    }
+    if (auth.webCallbackUrls.length > 0) {
+      new CfnOutput(this, 'WebCallbackUrls', { value: auth.webCallbackUrls.join(',') });
+    }
     if (auth.testsClient) {
       new CfnOutput(this, 'TestsClientId', { value: auth.testsClient.userPoolClientId });
     }
