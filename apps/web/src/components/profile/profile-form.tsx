@@ -140,7 +140,9 @@ export function useProfileForm<N extends string>({
         | ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
         | { target: { value: string } },
     ) => {
-      setValues((current) => ({ ...current, [name]: event.target.value }));
+      // Read now, not in the updater: React may run it after restoring the input's value (#94).
+      const { value } = event.target;
+      setValues((current) => ({ ...current, [name]: value }));
       // A field's reason, about to be said or just said, no longer applies once a field changes;
       // the note about a saved field this form doesn't show still does, so it is still said, on
       // the beat already running (typing doesn't put it off).
