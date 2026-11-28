@@ -111,17 +111,29 @@ const ALIAS_TABLE: { tokens: string[]; canonical: string }[] = ALIASES.flatMap((
 }).sort((a, b) => b.tokens.length - a.tokens.length);
 
 /**
+ * "GO" in capitals as the word, not the language: "GO/NO-GO", "GO-LIVE", "GO live", "GO ahead",
+ * "GO getter", "ready to GO", "on the GO", "let's GO", "ready, set, GO", "no GO".
+ */
+const GO_BEFORE = /(?:[/-]|\b(?:ready[ \t]+to|on[ \t]+the|let['’]?s|set,?|no)[ \t]+)$/i;
+const GO_AFTER = /^(?:[-/]|[ \t]+(?:live|ahead|getter|team|figure)\b)/i;
+function goPhrase(text: string, at: number): boolean {
+  return (
+    GO_BEFORE.test(text.slice(Math.max(0, at - 16), at)) ||
+    GO_AFTER.test(text.slice(at + 2, at + 12))
+  );
+}
+
+/**
  * Technology names that are also common words ("the go-live", "the rest of the team") count
  * only as written for the technology: "Go", "GO" or "golang", "REST" or "RESTful".
  */
-const CASED: [RegExp, string][] = [
+const CASED: [RegExp, string | ((match: string, at: number, text: string) => string)][] = [
   [/\bGo\b(?!-)(?!['’](?!s\b))/g, 'golang'],
-  // "GO" in capitals (#117: "a MERN and GO starter framework", "Skills: JAVA GO SQL"), but not
-  // the word in its common phrases: "GO/NO-GO", "GO-LIVE", "GO live", "ready to GO", "on the GO",
-  // "let's GO", "GO ahead".
+  // "GO" in capitals (#117: "a MERN and GO starter framework", "Skills: JAVA GO SQL"), unless it
+  // is the word in one of its common phrases (goPhrase).
   [
-    /(?<![/-]|\b(?:[Tt][Oo]|[Nn][Oo]|[Tt][Hh][Ee]|[Ll][Ee][Tt]['’]?[Ss])[ \t]+)\bGO\b(?![-/])(?![ \t]+(?:[Ll][Ii][Vv][Ee]|[Aa][Hh][Ee][Aa][Dd])\b)(?!['’](?![sS]\b))/g,
-    'golang',
+    /\bGO\b(?!['’](?![sS]\b))/g,
+    (go, at: number, text: string) => (goPhrase(text, at) ? go : 'golang'),
   ],
   [/\bREST(?:ful)?\b|\bRest[Ff]ul\b|\brestful\b/g, 'restful'],
 ];
@@ -180,7 +192,14 @@ export function normalisedTokens(text: string): string[] {
   let cased = text.replace(SENTENCE_END, (all, word: string) =>
     ABBREVIATIONS.has(word.toLowerCase()) ? all : `${word}\n`,
   );
-  for (const [pattern, word] of CASED) cased = cased.replace(pattern, word);
+  for (const [pattern, word] of CASED) {
+    cased =
+      typeof word === 'string'
+        ? cased.replace(pattern, word)
+        : cased.replace(pattern, (match: string, at: number, text: string) =>
+            word(match, at, text),
+          );
+  }
   const out: string[] = [];
   for (const segment of cased.split(BOUNDARY)) {
     const tokens = rawTokens(segment);

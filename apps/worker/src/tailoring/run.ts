@@ -153,7 +153,7 @@ export async function finish(
     },
   });
   logger.info('Run ended', {
-    // First, so the run's own fields below always win.
+    // Extras first: they never replace the run's own fields below.
     ...logged,
     documentId: doc.documentId,
     kind: doc.kind,

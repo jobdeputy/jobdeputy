@@ -63,6 +63,8 @@ describe('TermIndex', () => {
       'Built a GO SDK',
       "Tuned GO'S garbage collector",
       "TUNED GO'S GARBAGE COLLECTOR",
+      'Migrated the platform from Java to GO',
+      'Rewrote the GO backend',
     ]) {
       expect(new TermIndex(text).has('Go'), text).toBe(true);
     }
@@ -77,6 +79,9 @@ describe('TermIndex', () => {
       'Apps on the GO',
       "LET'S GO",
       'Got the GO ahead',
+      'READY, SET, GO',
+      'A GO GETTER',
+      'No GO zones',
     ]) {
       expect(new TermIndex(text).has('Go'), text).toBe(false);
     }
