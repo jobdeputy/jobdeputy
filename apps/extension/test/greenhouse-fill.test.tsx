@@ -61,6 +61,9 @@ describe('the real Greenhouse form, as served (#54 PR C)', () => {
       "What's the name you'd prefer us to use throughout the interview process?",
     ]);
     expect((document.getElementById('email') as HTMLInputElement).value).toBe('sam@example.com');
+    // Every question counted, and how many hold an answer now.
+    expect(report.total).toBe(report.answered + report.left.length);
+    expect(report.answered).toBe(report.filled.length);
     const resume = document.getElementById('resume') as HTMLInputElement;
     expect(resume.files?.[0]?.name).toBe('Sam Example – Acme.pdf');
     expect(await resume.files?.[0]?.text()).toBe('%PDF-1.7 resume');

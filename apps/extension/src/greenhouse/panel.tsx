@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { copy, fill } from '../copy.ts';
+import { DevTag } from '../dev-tag.tsx';
 import type { Outcome } from './run.ts';
 
 const text = copy.panel;
@@ -61,12 +62,15 @@ export function Panel({
       className={`${place} grid w-[min(340px,calc(100vw-2rem))] gap-3 rounded-[18px] border border-border bg-paper p-4 font-text text-ink shadow-control`}
     >
       <div className="flex items-start justify-between gap-3">
-        <h2
-          id="jobdeputy-title"
-          className="m-0 font-display text-xl leading-none font-medium tracking-[-0.03em]"
-        >
-          {text.title}
-        </h2>
+        <div className="flex items-center gap-2">
+          <h2
+            id="jobdeputy-title"
+            className="m-0 font-display text-xl leading-none font-medium tracking-[-0.03em]"
+          >
+            {text.title}
+          </h2>
+          <DevTag />
+        </div>
         <button
           type="button"
           aria-label={text.hide}
@@ -131,13 +135,33 @@ function Summary({
   ].filter((note): note is string => Boolean(note));
   return (
     <div className="grid gap-3" role="status">
-      <p className="m-0 text-sm font-[650]">
-        {count === 0
-          ? text.filledNone
-          : count === 1
-            ? text.filledOne
-            : fill(text.filled, { count: String(count) })}
-      </p>
+      <div className="grid gap-1.5">
+        <p className="m-0 text-sm font-[650]">
+          {fill(text.progress, { answered: String(report.answered), total: String(report.total) })}
+        </p>
+        <div
+          role="progressbar"
+          aria-label={text.progressLabel}
+          aria-valuemin={0}
+          aria-valuemax={report.total}
+          aria-valuenow={report.answered}
+          className="h-1.5 overflow-hidden rounded-full bg-surface-strong"
+        >
+          <div
+            className="h-full rounded-full bg-green transition-[width] duration-300 ease-settle motion-reduce:transition-none"
+            style={{
+              width: `${report.total ? Math.round((report.answered / report.total) * 100) : 0}%`,
+            }}
+          />
+        </div>
+        <p className="m-0 text-sm text-muted-foreground">
+          {count === 0
+            ? text.filledNone
+            : count === 1
+              ? text.filledOne
+              : fill(text.filled, { count: String(count) })}
+        </p>
+      </div>
       {notes.length > 0 && (
         <ul className="m-0 grid list-none gap-1 p-0 text-sm text-muted-foreground">
           {notes.map((note) => (

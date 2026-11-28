@@ -11,6 +11,9 @@ import { attachFile, choose, hasChoice, isMulti, setText } from './dom.ts';
 export interface Report {
   /** Labels of the fields it filled, in page order. */
   filled: string[];
+  /** Every question on the form, and how many hold an answer now (the person's or ours). */
+  total: number;
+  answered: number;
   /** Empty fields it had no answer for, or couldn't fill: the person's to answer. */
   left: { id: string; label: string; required: boolean }[];
   /**
@@ -214,15 +217,14 @@ export async function fillForm(
     }
   }
   for (const marked of form.querySelectorAll(`[${LEFT_MARK}]`)) marked.removeAttribute(LEFT_MARK);
-  const left = scan(form)
-    .filter(isEmpty)
-    .map((field) => {
-      // Outlined only when required: the panel lists those, and the page matches it.
-      const [element] = field.elements;
-      if (field.required && element) wrapperOf(element).setAttribute(LEFT_MARK, '');
-      return { id: field.key, label: field.label, required: field.required };
-    });
-  return { filled, left, files };
+  const all = scan(form);
+  const left = all.filter(isEmpty).map((field) => {
+    // Outlined only when required: the panel lists those, and the page matches it.
+    const [element] = field.elements;
+    if (field.required && element) wrapperOf(element).setAttribute(LEFT_MARK, '');
+    return { id: field.key, label: field.label, required: field.required };
+  });
+  return { filled, total: all.length, answered: all.length - left.length, left, files };
 }
 
 /**

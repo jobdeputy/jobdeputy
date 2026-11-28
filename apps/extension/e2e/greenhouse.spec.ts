@@ -144,10 +144,11 @@ test('on a Greenhouse form, the panel fills it, attaches the résumé, and lists
     await tab.goto(POSTING);
     const panel = tab.getByRole('region', { name: 'JobDeputy' });
     await expect(panel.getByRole('button', { name: 'Fill this application' })).toBeVisible();
+    await expect(panel.getByTitle('Development build')).toBeVisible();
     await tab.screenshot({ path: 'screenshots/greenhouse-panel.png' });
 
     await panel.getByRole('button', { name: 'Fill this application' }).click();
-    await expect(panel.getByText(/^Filled \d+ fields\.$/)).toBeVisible();
+    await expect(panel.getByText(/^\d+ of \d+ questions answered$/)).toBeVisible();
     expect(await value(tab, 'first_name')).toBe('Sam');
     expect(await value(tab, 'email')).toBe('sam@example.com');
     expect(await value(tab, 'phone')).toBe('+1 555 0100');
@@ -169,12 +170,12 @@ test('on a Greenhouse form, the panel fills it, attaches the résumé, and lists
       location.hash = 'app';
     });
     await expect(tab).toHaveURL(`${POSTING}#app`);
-    await expect(panel.getByText(/^Filled \d+ fields\.$/)).toBeVisible();
+    await expect(panel.getByText(/^\d+ of \d+ questions answered$/)).toBeVisible();
     // A download link announces a navigation that never happens: the panel stays.
     const download = tab.waitForEvent('download');
     await tab.getByRole('link', { name: 'Our benefits' }).click();
     await download;
-    await expect(panel.getByText(/^Filled \d+ fields\.$/)).toBeVisible();
+    await expect(panel.getByText(/^\d+ of \d+ questions answered$/)).toBeVisible();
 
     // A left question, from the list: the page scrolls to it and focuses it.
     const first = panel.getByRole('list').last().getByRole('button').first();
@@ -199,7 +200,7 @@ test('on a company site that embeds the form, the panel shows above it, in the f
     const frame = tab.frameLocator('iframe[title="Application"]');
     const panel = frame.getByRole('region', { name: 'JobDeputy' });
     await panel.getByRole('button', { name: 'Fill this application' }).click();
-    await expect(panel.getByText(/^Filled \d+ fields\.$/)).toBeVisible();
+    await expect(panel.getByText(/^\d+ of \d+ questions answered$/)).toBeVisible();
     await expect(frame.locator('#first_name')).toHaveValue('Sam');
     // Only the frame: the company's own page has no panel.
     await expect(tab.getByRole('region', { name: 'JobDeputy' })).toHaveCount(0);
@@ -226,7 +227,7 @@ test('opening a job inside the board, without a page load, brings the panel', as
     await expect(tab).toHaveURL(POSTING);
     const panel = tab.getByRole('region', { name: 'JobDeputy' });
     await panel.getByRole('button', { name: 'Fill this application' }).click();
-    await expect(panel.getByText(/^Filled \d+ fields\.$/)).toBeVisible();
+    await expect(panel.getByText(/^\d+ of \d+ questions answered$/)).toBeVisible();
     expect(await value(tab, 'first_name')).toBe('Sam');
 
     // On to another job: a fresh panel, on the new job's form (not the old one it replaces).
@@ -234,7 +235,7 @@ test('opening a job inside the board, without a page load, brings the panel', as
     await expect(tab).toHaveURL('https://job-boards.greenhouse.io/acme/jobs/4001002');
     const fresh = tab.getByRole('region', { name: 'JobDeputy' });
     await fresh.getByRole('button', { name: 'Fill this application' }).click();
-    await expect(fresh.getByText(/^Filled \d+ fields\.$/)).toBeVisible();
+    await expect(fresh.getByText(/^\d+ of \d+ questions answered$/)).toBeVisible();
     await expect(tab.locator('form#application-form')).toHaveCount(1);
     expect(await value(tab, 'first_name')).toBe('Sam');
     // Only one panel: the board's page had none to leave behind.

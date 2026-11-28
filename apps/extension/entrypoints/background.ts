@@ -2,6 +2,7 @@ import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import { createApi } from '../src/api.ts';
 import { createAuth } from '../src/auth/session.ts';
+import { DEV_BUILD } from '../src/build.ts';
 import { readFillData } from '../src/fill/data.ts';
 import { createFiles } from '../src/fill/files.ts';
 import {
@@ -21,6 +22,8 @@ import { readSettings } from '../src/settings.ts';
  * messages (it can't sign in itself: Chrome closes it when managed login's window takes focus).
  */
 export default defineBackground(() => {
+  // A dev build says so on its toolbar button too (src/build.ts).
+  if (DEV_BUILD) void browser.action.setBadgeText({ text: 'DEV' });
   const settings = readSettings(import.meta.env);
   const auth = settings
     ? createAuth({

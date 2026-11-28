@@ -82,6 +82,13 @@ describe('manifest (#54, decision 0020)', () => {
     ]);
   });
 
+  it('names a dev build so, and the store build plainly', () => {
+    expect(manifest.name).toBe('JobDeputy Dev');
+    expect(manifest.action.default_title).toBe('JobDeputy Dev');
+    const store = manifestFor(SETTINGS, { store: true });
+    expect([store.name, store.action.default_title]).toEqual(['JobDeputy', 'JobDeputy']);
+  });
+
   it('fixes the dev ID with the public key, and leaves the key out of a store build', () => {
     expect(manifest.key).toBe(EXTENSION_DEV_KEY);
     expect(EXTENSION_DEV_IDS).toHaveLength(1);

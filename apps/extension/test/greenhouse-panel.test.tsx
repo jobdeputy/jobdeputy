@@ -13,6 +13,8 @@ const filled: Outcome = {
   ok: true,
   report: {
     filled: ['First Name', 'Last Name', 'Email'],
+    total: 40,
+    answered: 12,
     left: [
       { id: 'question_4', label: 'Have you previously worked at Acme?', required: true },
       { id: 'cover_letter', label: 'Cover Letter', required: false },
@@ -31,7 +33,11 @@ describe('the panel on a Greenhouse form (#54 PR C)', () => {
     render(<Panel fillForm={fillForm} goTo={goTo} />);
     expect(screen.getByRole('heading', { name: 'JobDeputy' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Fill this application' }));
-    expect(await screen.findByText('Filled 3 fields.')).toBeTruthy();
+    expect(await screen.findByText('12 of 40 questions answered')).toBeTruthy();
+    const bar = screen.getByRole('progressbar', { name: 'Questions answered' });
+    expect(bar.getAttribute('aria-valuenow')).toBe('12');
+    expect(bar.getAttribute('aria-valuemax')).toBe('40');
+    expect(screen.getByText('JobDeputy filled 3 of them.')).toBeTruthy();
     expect(screen.getByText('Attached your résumé tailored for this company.')).toBeTruthy();
     expect(screen.getByText(/Couldn’t read all your self-ID answers/)).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Left for you (1)' })).toBeTruthy();
@@ -95,7 +101,7 @@ describe('runFill (#54 PR C)', () => {
     expect(send).toHaveBeenCalledWith({ type: 'fill-data' });
     expect(outcome).toEqual({
       ok: true,
-      report: { filled: ['First Name'], left: [], files: {} },
+      report: { filled: ['First Name'], total: 1, answered: 1, left: [], files: {} },
       // This form asks for no résumé: nothing to say about one.
       resume: 'kept',
       coverLetter: false,
