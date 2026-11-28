@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { callerFromEvent, groupsFromClaim } from '../src/index.js';
+import { WEB_SCOPE } from '../src/extension.js';
+import { callerFromEvent, groupsFromClaim, scopesFromClaim } from '../src/index.js';
 
 const withClaims = (claims?: Record<string, unknown>) => ({
   requestContext: { authorizer: { jwt: { ...(claims ? { claims } : {}) } } },
@@ -11,6 +12,7 @@ describe('callerFromEvent', () => {
       userId: 'u-1',
       username: 'name-1',
       tier: 'free',
+      webScope: false,
     });
   });
 
@@ -66,5 +68,26 @@ describe('the tier (#74)', () => {
       'integration-tests',
     ]);
     expect(groupsFromClaim('')).toEqual([]);
+  });
+});
+
+describe('the web scope (#54 PR D, decision 0020)', () => {
+  const webScopeOf = (scope: unknown) =>
+    callerFromEvent(withClaims({ sub: 'u', username: 'n', scope }))?.webScope;
+
+  it.each([
+    ['a direct sign-in (the tests)', WEB_SCOPE, true],
+    ["the web app's managed login", `openid email ${WEB_SCOPE}`, true],
+    ["the extension's managed login", 'openid email', false],
+    ['no scope claim', undefined, false],
+    ['a scope that only contains it', `${WEB_SCOPE}.extra x${WEB_SCOPE}`, false],
+    ['not a string', [WEB_SCOPE], false],
+  ])('reads %s', (_, scope, webScope) => {
+    expect(webScopeOf(scope)).toBe(webScope);
+  });
+
+  it('splits on spaces only, dropping empty parts', () => {
+    expect(scopesFromClaim(' openid  email ')).toEqual(['openid', 'email']);
+    expect(scopesFromClaim(7)).toEqual([]);
   });
 });

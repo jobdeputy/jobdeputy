@@ -55,7 +55,7 @@ sequenceDiagram
   Note over Web: 200: out of the table at once, the pane closes, "Marked as applied" with Undo<br/>(PUT {stage: new, from: applied}); then GET /me/matches again.<br/>An error: said in the question, and Matches read again (a job gone from it closes the pane, saying why)
 ```
 
-From `new` the only move is to `applied` (nothing else has an applied date). Later stages change `status` and `stageAt` only; `appliedAt` stays. Back to `new` (an apply undone, only from `applied`) removes `appliedAt` and `appliedResumeId`, which takes the job out of the index; a closed or hidden job then expires again (`ttl`), as one never acted on, and takes the job out of its company's `APPLIED#` item (freeing its place in the cooldown) if its stage never moved past applied. The undo is conditioned on the closed and hidden state it read, so a crawl changing either meanwhile makes it a 409 rather than a wrong expiry. A crawl closing a job sets its expiry only if it is still `new` at that moment (the user may apply between the crawl's two writes).
+From `new` the only move is to `applied` (nothing else has an applied date). The browser extension (#54 PR D, decision 0020) may make that one move, and no other (403 `extension-stage`): its tokens carry no `WEB_SCOPE`. Later stages change `status` and `stageAt` only; `appliedAt` stays. Back to `new` (an apply undone, only from `applied`) removes `appliedAt` and `appliedResumeId`, which takes the job out of the index; a closed or hidden job then expires again (`ttl`), as one never acted on, and takes the job out of its company's `APPLIED#` item (freeing its place in the cooldown) if its stage never moved past applied. The undo is conditioned on the closed and hidden state it read, so a crawl changing either meanwhile makes it a 409 rather than a wrong expiry. A crawl closing a job sets its expiry only if it is still `new` at that moment (the user may apply between the crawl's two writes).
 
 ## The company cooldown (PR E)
 
@@ -92,5 +92,5 @@ In Applications a stage moves between `applied`, `interviewing`, `offer`, `rejec
 |---|---|
 | The stage, when applied, the résumé used | `jobs` item: `status`, `appliedAt`, `stageAt`, `appliedResumeId` |
 | Applied jobs, newest first | `jobs` GSI `applied` (`userId`, `appliedAt`), keys only |
-| Who changed what | `audit` `job.stage_changed` (`from`, `stage`) |
+| Who changed what | `audit` `job.stage_changed` (`from`, `stage`, `client`: `web` or `extension`, #54 PR D) |
 | Applications per company in the last 365 days (PR E) | `usage` `APPLIED#<companyKey>`: `applied` (`jobId` → `appliedAt`), `version`, `ttl` |

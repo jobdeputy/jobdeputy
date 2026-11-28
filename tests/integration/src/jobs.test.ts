@@ -1,5 +1,7 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { scopesFromClaim } from '@jobdeputy/shared';
+import { WEB_SCOPE } from '@jobdeputy/shared/extension';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   callApi,
@@ -352,5 +354,16 @@ describe('jobs (deployed)', () => {
       // biome-ignore lint/suspicious/noExplicitAny: tests read arbitrary JSON responses.
       audit.body.entries.filter((e: any) => e.name === 'job.stage_changed').length,
     ).toBe(4);
+  });
+
+  it("#54 PR D: a real token's scope claim carries the web scope the API reads (Caller.webScope)", () => {
+    // The API takes every stage change only from tokens with WEB_SCOPE in `scope`; the extension's
+    // lack it (decision 0020). The stage moves above pass on the deployed authorizer's claims, and
+    // this pins the claim's shape they rely on: one space-separated string.
+    const payload = JSON.parse(
+      Buffer.from(user.accessToken.split('.')[1] ?? '', 'base64url').toString(),
+    ) as { scope?: unknown };
+    expect(typeof payload.scope).toBe('string');
+    expect(scopesFromClaim(payload.scope)).toContain(WEB_SCOPE);
   });
 });

@@ -14,6 +14,12 @@ export interface Caller {
   authTime?: number;
   /** #74: `premium` when the token says the user is in the Cognito group of that name. */
   tier: Tier;
+  /**
+   * Decision 0020: whether the token carries `WEB_SCOPE` (the web app's and the tests' tokens). The
+   * extension's never do: they reach only `EXTENSION_API_ROUTES`, and a route there that also
+   * serves the web app limits what they may do. A token without a `scope` claim counts as without.
+   */
+  webScope: boolean;
 }
 
 /** #74: an admin adds a user to this group in their home cell's pool (never in code). */
@@ -31,6 +37,12 @@ export function groupsFromClaim(value: unknown): string[] {
     .replace(/^\[|\]$/g, '')
     .split(/[\s,"]+/)
     .filter((g) => g !== '');
+}
+
+/** An access token's `scope`: one space-separated string (RFC 8693); anything else is none. */
+export function scopesFromClaim(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  return value.split(' ').filter((scope) => scope !== '');
 }
 
 interface EventWithClaims {
@@ -54,6 +66,7 @@ export function callerFromEvent(event: EventWithClaims): Caller | undefined {
     username,
     ...(Number.isFinite(authTime) && authTime > 0 ? { authTime } : {}),
     tier,
+    webScope: scopesFromClaim(claims?.scope).includes(WEB_SCOPE),
   };
 }
 
