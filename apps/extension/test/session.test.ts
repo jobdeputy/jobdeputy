@@ -29,6 +29,8 @@ function json(status: number, body: unknown): Response {
 /** A managed login, its token endpoint, session storage, and a clock, all in memory. */
 function setup() {
   const stored = new Map<string, unknown>();
+  /** `chrome.storage.local`: outlasts the browser. */
+  const marked = new Map<string, unknown>();
   /** Keys whose removal fails (storage torn down). */
   const failRemove = new Set<string>();
   let clock = 1_000_000;
@@ -62,12 +64,18 @@ function setup() {
         stored.delete(key);
       },
     },
+    marks: {
+      get: async (key) => marked.get(key),
+      set: async (key, value) => void marked.set(key, value),
+      remove: async (key) => void marked.delete(key),
+    },
     fetch: fetch as typeof globalThis.fetch,
     now: () => clock,
   });
   return {
     auth,
     stored,
+    marked,
     failRemove,
     fetch,
     forms,
@@ -430,19 +438,22 @@ describe('signing in without a window (#111, decision 0021)', () => {
     expect(stored.has('session')).toBe(false);
   });
 
-  it('never signs back in silently after a Sign out here, until the person signs in again', async () => {
-    const { auth, launch } = setup();
+  it('never signs back in silently after a Sign out here, even after a restart, until the person signs in again', async () => {
+    const { auth, launch, stored, marked } = setup();
     await auth.signIn();
     await auth.signOut();
+    // The mark outlasts the browser (storage.local); the session store does not.
+    expect(marked.get('signedOutHere')).toBe(true);
+    stored.clear();
     launch.mockClear();
     expect(await auth.signInSilently()).toBe('none');
     expect(launch).not.toHaveBeenCalled();
     // Their own sign-in (a window) lifts it.
     await auth.signIn();
-    await auth.signOut();
-    await auth.signIn();
+    expect(marked.has('signedOutHere')).toBe(false);
     await auth.signedOutByApi();
-    expect(await auth.signInSilently()).toBe('signed-in');
+    // Refused by the API: no silent sign-in either, until the person signs in.
+    expect(await auth.signInSilently()).toBe('none');
   });
 
   it('does nothing when already signed in, and runs one at a time', async () => {
@@ -456,7 +467,7 @@ describe('signing in without a window (#111, decision 0021)', () => {
 
   it('lets a sign-in the person starts wait for a silent one at work, then open its window', async () => {
     const { auth, launch } = setup();
-    let answer = (_: string) => {};
+    let answer = () => {};
     launch.mockImplementationOnce(
       (url) =>
         new Promise((resolve) => {
@@ -472,9 +483,39 @@ describe('signing in without a window (#111, decision 0021)', () => {
     const own = auth.signIn();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(launch).toHaveBeenCalledTimes(1);
-    answer('');
+    answer();
     expect(await silent).toBe('none');
     expect(await own).toBe('signed-in');
     expect(launch.mock.calls[1]?.[1]).toBe(true);
+  });
+
+  it('opens no window when the silent sign-in it waited for signed the person in', async () => {
+    const { auth, launch } = setup();
+    const silent = auth.signInSilently();
+    // Already at managed login when the person presses Sign in.
+    await vi.waitFor(() => expect(launch).toHaveBeenCalledTimes(1));
+    const own = auth.signIn();
+    expect(await silent).toBe('signed-in');
+    expect(await own).toBe('signed-in');
+    expect(launch).toHaveBeenCalledTimes(1);
+    expect(launch.mock.calls[0]?.[1]).toBe(false);
+  });
+
+  it('starts no silent sign-in while one the person started is at work, and never waits for it', async () => {
+    const { auth, launch } = setup();
+    let close = () => {};
+    launch.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          close = () => reject(new Error('The user did not approve access.'));
+        }),
+    );
+    const own = auth.signIn();
+    await vi.waitFor(() => expect(launch).toHaveBeenCalledTimes(1));
+    // Answered at once, while the person's window stays open.
+    expect(await auth.signInSilently()).toBe('none');
+    expect(launch).toHaveBeenCalledTimes(1);
+    close();
+    expect(await own).toBe('cancelled');
   });
 });

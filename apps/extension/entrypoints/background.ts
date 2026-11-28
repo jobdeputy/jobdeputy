@@ -36,12 +36,19 @@ export default defineBackground(() => {
     ? createAuth({
         settings,
         redirectUrl: browser.identity.getRedirectURL(),
-        // Not interactive (#111): no window; Chrome gives up when the page would need the person.
+        // `interactive` false for the silent sign-in (#111): no window; Chrome gives up when the
+        // page would need the person. True for the sign-in the person starts.
         launch: (url, interactive) => browser.identity.launchWebAuthFlow({ url, interactive }),
         storage: {
           get: async (key) => (await browser.storage.session.get(key))[key],
           set: (key, value) => browser.storage.session.set({ [key]: value }),
           remove: (key) => browser.storage.session.remove(key),
+        },
+        // One flag that must outlast the browser (#111), never a token.
+        marks: {
+          get: async (key) => (await browser.storage.local.get(key))[key],
+          set: (key, value) => browser.storage.local.set({ [key]: value }),
+          remove: (key) => browser.storage.local.remove(key),
         },
         fetch: (...args) => fetch(...args),
         now: () => Date.now(),
@@ -57,9 +64,10 @@ export default defineBackground(() => {
         // #111: signed out here, but maybe signed in on the site: try without a window first.
         const status = await auth.status();
         if (status.state === 'signed-out' && !status.interrupted && !auth.signingIn) {
-          if ((await auth.signInSilently()) === 'signed-in') {
+          // Whatever goes wrong, the popup still gets the signed-out status it would have had.
+          const silent = await auth.signInSilently().catch(() => 'none' as const);
+          if (silent === 'signed-in')
             return { ...(await auth.status()), signingIn: auth.signingIn };
-          }
         }
         return { ...status, signingIn: auth.signingIn };
       }
