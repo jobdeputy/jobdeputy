@@ -21,9 +21,7 @@ async function onProfile(
   /** Changes the API before the app starts (an answer saved under an older schema). */
   before?: (api: Api) => void,
 ) {
-  const auth = createFakeAuth({ delay: 0 });
-  await auth.signUp('alex@example.com', 'a long enough password');
-  await auth.confirmSignUp('alex@example.com', 'a long enough password', '123456');
+  const auth = createFakeAuth({ delay: 0, signedInAs: 'alex@example.com' });
   const api = createFakeApi({ delay: 0 });
   await api.request('PUT', '/me/profile', { version: 0, firstName: 'Alex', lastName: 'Morgan' });
   if (answers) await api.request('PUT', '/me/applicant', { version: 0, ...answers });

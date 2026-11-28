@@ -15,9 +15,7 @@ afterEach(cleanup);
 
 /** A fake account already signed in. */
 async function signedIn() {
-  const auth = createFakeAuth({ delay: 0 });
-  await auth.signUp('new@example.com', 'a long enough password');
-  await auth.confirmSignUp('new@example.com', 'a long enough password', '123456');
+  const auth = createFakeAuth({ delay: 0, signedInAs: 'new@example.com' });
   return auth;
 }
 

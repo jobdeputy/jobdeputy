@@ -9,6 +9,8 @@ export interface Config {
   readonly userPoolClientId: string;
   /** The cell's API, without a trailing slash (its paths start with one). */
   readonly apiUrl?: string;
+  /** #111: managed login's host (auth.<site>), where people sign in; a bare host name. */
+  readonly authDomain?: string;
 }
 
 const CONFIG_URL = '/config.json';
@@ -33,6 +35,7 @@ export async function readConfig(): Promise<Config | null> {
       userPoolId: config.userPoolId,
       userPoolClientId: config.userPoolClientId,
       ...(typeof config.apiUrl === 'string' ? { apiUrl: config.apiUrl } : {}),
+      ...(typeof config.authDomain === 'string' ? { authDomain: config.authDomain } : {}),
     };
   }
   // The deploy writes the config whole, so anything else is not ours: the app's own page means

@@ -1,3 +1,4 @@
+import { WEB_SIGN_IN_CALLBACK_PATH } from '@jobdeputy/shared/auth';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { AppNav, HOME_PAGE, isPageAt, PAGES, pageAt } from '@/components/app-shell.tsx';
@@ -14,22 +15,35 @@ import { Button } from '@/components/ui/button.tsx';
 import { QueryRegion } from '@/components/ui/query-region.tsx';
 import { copy, fill } from '@/copy/index.ts';
 import { hasProfile, useProfile } from '@/lib/api/profile.ts';
-import { useAuth } from '@/lib/auth/index.ts';
+import { AuthError, type AuthErrorKind, useAuth } from '@/lib/auth/index.ts';
 import { useFinishBoot } from '@/lib/boot-loader.ts';
 import { navigate, usePath } from '@/lib/router.ts';
 
 /**
  * The app: the public landing page (the story of what the deputy does, and the way in), or, for a
- * signed-in person, their page. The boot ends once it knows which.
+ * signed-in person, their page. The boot ends once it knows which. Back from the secure sign-in
+ * page (#111) at `/auth/callback`, it first finishes that sign-in, then goes home; one that did not
+ * finish reopens the drawer saying so.
  */
 export function App() {
   const session = useAuth();
   // undefined: not known yet; null: nobody signed in.
   const [user, setUser] = useState<string | null | undefined>(undefined);
+  const [failed, setFailed] = useState<AuthErrorKind | undefined>(undefined);
   useEffect(() => {
     let current = true;
-    session.currentUser().then((email) => {
-      if (current) setUser(email);
+    const returning = window.location.pathname === WEB_SIGN_IN_CALLBACK_PATH;
+    const found = returning
+      ? session.finishSignIn().catch((error: unknown) => {
+          if (current) setFailed(error instanceof AuthError ? error.kind : 'unknown');
+          return null;
+        })
+      : session.currentUser();
+    found.then((email) => {
+      if (!current) return;
+      // The callback's address (and its one-time code) is never kept, nor offered by Back.
+      if (returning) navigate('/', { replace: true });
+      setUser(email);
     });
     return () => {
       current = false;
@@ -39,7 +53,7 @@ export function App() {
 
   if (user === undefined) return null;
   if (user) return <SignedInApp email={user} onSignedOut={() => setUser(null)} />;
-  return <Landing onSignedIn={setUser} />;
+  return <Landing {...(failed ? { failed } : {})} />;
 }
 
 /**
@@ -175,9 +189,12 @@ function ProfileFailed({ onRetry }: { onRetry: () => void }) {
 }
 
 /** The public landing page: the story of what the deputy does, and the way in (sign up or sign in). */
-function Landing({ onSignedIn }: { onSignedIn: (email: string) => void }) {
-  const [authMode, setAuthMode] = useState<AuthMode>('sign-up');
-  const [authOpen, setAuthOpen] = useState(false);
+function Landing({ failed }: { failed?: AuthErrorKind }) {
+  const [authMode, setAuthMode] = useState<AuthMode>(failed ? 'sign-in' : 'sign-up');
+  // A sign-in that came back unfinished opens the drawer, which says so.
+  const [authOpen, setAuthOpen] = useState(failed !== undefined);
+  // Said only the first time the drawer opens.
+  const [failure, setFailure] = useState(failed);
   // The landing page is at /: after signing out, or opening a signed-in page's address while
   // signed out, the address says so.
   useEffect(() => navigate('/', { replace: true }), []);
@@ -189,6 +206,7 @@ function Landing({ onSignedIn }: { onSignedIn: (email: string) => void }) {
     openAuth(mode, button) {
       opener.current = button;
       setAuthMode(mode);
+      setFailure(undefined);
       setAuthOpen(true);
     },
   };
@@ -208,7 +226,7 @@ function Landing({ onSignedIn }: { onSignedIn: (email: string) => void }) {
         mode={authMode}
         open={authOpen}
         onOpenChange={setAuthOpen}
-        onSignedIn={onSignedIn}
+        {...(failure ? { failed: failure } : {})}
         onCloseAutoFocus={(event) => {
           if (opener.current) {
             event.preventDefault();

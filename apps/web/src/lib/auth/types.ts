@@ -1,7 +1,9 @@
 /**
- * What the sign-in and sign-up forms need from authentication (#14), in our words: the forms never
- * see Cognito or Amplify. `amplify.ts` implements it against Cognito; `fake.ts` is the test
- * build's stand-in (browser tests cannot run Cognito's secure-password exchange).
+ * What the app needs from authentication, in our words: screens never see Cognito or Amplify.
+ * Since #111 (decision 0021) people sign in, sign up, confirm their email and reset a password on
+ * Cognito's managed login page (auth.<site>), shared with the extension; the app only leaves for
+ * it and finishes the sign-in it returns with. `amplify.ts` implements it against Cognito;
+ * `fake.ts` is the test build's stand-in.
  */
 export type Auth = {
   /** The signed-in person's email, or null. */
@@ -13,41 +15,34 @@ export type Auth = {
    * time), and `not-set-up` where sign-in is not configured.
    */
   accessToken(): Promise<string | null>;
-  /** Creates the account; a 6-digit code goes to the email next. */
-  signUp(email: string, password: string): Promise<void>;
-  /** Confirms the account with its code, and signs the person in. */
-  confirmSignUp(email: string, password: string, code: string): Promise<void>;
-  /** Sends a new sign-up code. */
-  resendSignUpCode(email: string): Promise<void>;
-  /** Signs in; `confirm` when the account still needs its emailed code. */
-  signIn(email: string, password: string): Promise<'done' | 'confirm'>;
-  /** Sends a reset code to the email, if an account uses it (it does not say). */
-  resetPassword(email: string): Promise<void>;
-  /** Sets the new password with the emailed code. */
-  confirmResetPassword(email: string, code: string, newPassword: string): Promise<void>;
+  /**
+   * Leaves for managed login: its sign-in form, or its create-account form (`sign-up`). Resolves
+   * once the browser is on its way; fails (`offline`, `not-set-up`) when it cannot leave.
+   */
+  signIn(mode: SignInMode): Promise<void>;
+  /**
+   * On the return address (`/auth/callback`): finishes the sign-in managed login came back with,
+   * and gives the person's email. Fails `sign-in-failed` when there is none to finish (cancelled,
+   * refused, or the page opened by itself), `offline` when the exchange could not be made.
+   */
+  finishSignIn(): Promise<string>;
+  /**
+   * Signs out here, then of managed login too (its `/logout`, which comes back to the site), so
+   * the next sign-in asks again. The extension's own sign-in is not touched.
+   */
   signOut(): Promise<void>;
 };
 
-/** Why an auth step failed, in the terms the forms explain to people. */
+export type SignInMode = 'sign-in' | 'sign-up';
+
+/** Why an auth step failed, in the terms the app explains to people. */
 export type AuthErrorKind =
-  /** Sign-in: the email or password is wrong (never which one, nor whether the account exists). */
-  | 'wrong-details'
-  /** Sign-up: an account already uses this email. */
-  | 'account-exists'
-  | 'wrong-code'
-  | 'expired-code'
-  /** Too many tries for now. */
-  | 'too-many-tries'
-  /** The password does not meet the rules. */
-  | 'weak-password'
-  /** The network failed. */
+  /** The network failed, or Cognito did not answer in time. */
   | 'offline'
-  /** No answer in time to a request that may still go through (a code may still arrive). */
-  | 'no-answer'
   /** Sign-in is not configured where the app runs. */
   | 'not-set-up'
-  /** The code confirmed the account, but signing in straight after failed: sign in now. */
-  | 'confirmed'
+  /** Managed login came back without a sign-in to finish (cancelled, or refused). */
+  | 'sign-in-failed'
   | 'unknown';
 
 export class AuthError extends Error {

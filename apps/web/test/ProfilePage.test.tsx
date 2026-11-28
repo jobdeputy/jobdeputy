@@ -114,9 +114,7 @@ describe('the landing page’s address', () => {
 
 describe('the signed-in app’s pages', () => {
   it('opens Matches at /matches once the set-up is done, whatever the path was (#52)', async () => {
-    const auth = createFakeAuth({ delay: 0 });
-    await auth.signUp('new@example.com', 'a long enough password');
-    await auth.confirmSignUp('new@example.com', 'a long enough password', '123456');
+    const auth = createFakeAuth({ delay: 0, signedInAs: 'new@example.com' });
     const api = createFakeApi({ delay: 0 });
     await api.request('PUT', '/me/profile', { version: 0, firstName: 'Alex', lastName: 'Morgan' });
     window.history.replaceState(null, '', '/somewhere-old');
@@ -150,9 +148,7 @@ describe('editing About you', () => {
   let queries: QueryClient;
   /** The app on the Profile page, for a person with `profile` saved; returns the fake API. */
   async function onProfile(profile: Record<string, unknown> = {}) {
-    const auth = createFakeAuth({ delay: 0 });
-    await auth.signUp('alex@example.com', 'a long enough password');
-    await auth.confirmSignUp('alex@example.com', 'a long enough password', '123456');
+    const auth = createFakeAuth({ delay: 0, signedInAs: 'alex@example.com' });
     const api = createFakeApi({ delay: 0 });
     await api.request('PUT', '/me/profile', {
       version: 0,
@@ -427,9 +423,7 @@ describe('normUrl', () => {
 
 describe('Target roles on the Profile page', () => {
   async function onProfile(titles: readonly string[]) {
-    const auth = createFakeAuth({ delay: 0 });
-    await auth.signUp('alex@example.com', 'a long enough password');
-    await auth.confirmSignUp('alex@example.com', 'a long enough password', '123456');
+    const auth = createFakeAuth({ delay: 0, signedInAs: 'alex@example.com' });
     const api = createFakeApi({ delay: 0 });
     await api.request('PUT', '/me/profile', { version: 0, firstName: 'Alex', lastName: 'Morgan' });
     for (const title of titles) await api.request('POST', '/me/roles', { title });
@@ -514,9 +508,7 @@ describe('Target roles on the Profile page', () => {
 
 describe('the jobs tabs (#52)', () => {
   it('shows each tab at its own address, with Jobs marked in the sidebar on each', async () => {
-    const auth = createFakeAuth({ delay: 0 });
-    await auth.signUp('new@example.com', 'a long enough password');
-    await auth.confirmSignUp('new@example.com', 'a long enough password', '123456');
+    const auth = createFakeAuth({ delay: 0, signedInAs: 'new@example.com' });
     const api = createFakeApi({ delay: 0 });
     await api.request('PUT', '/me/profile', { version: 0, firstName: 'Alex', lastName: 'Morgan' });
     // #49's old address goes to Matches.
