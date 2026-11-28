@@ -48,11 +48,19 @@ function choice(pick: (options: string[]) => number | null): Want {
 }
 
 /** A yes/no answer as the question asks it: a choice, or the word in a text box. */
+/** A label that is a yes/no question, as a text box can be: "Are you…", "Will you…". */
+const ASKS_YES_NO = /^(are|will|do|does|did|have|has|can|could|would|is)\b/;
+
+/**
+ * A yes/no answer as the question asks it: a choice, or the word in a text box when the label
+ * is itself a yes/no question (never into a box that only mentions the topic in passing).
+ */
 function yesNoWant(question: Question, answer: boolean | undefined): Want | null {
   if (answer === undefined) return null;
-  return question.kind === 'choice'
-    ? choice(yesNo(answer))
-    : { kind: 'text', value: answer ? 'Yes' : 'No' };
+  if (question.kind === 'choice') return choice(yesNo(answer));
+  return ASKS_YES_NO.test(norm(question.label))
+    ? { kind: 'text', value: answer ? 'Yes' : 'No' }
+    : null;
 }
 
 function textWant(question: Question, value: string | undefined): Want | null {
@@ -62,43 +70,74 @@ function textWant(question: Question, value: string | undefined): Want | null {
 const countryName = (code: string) =>
   new Intl.DisplayNames(['en'], { type: 'region' }).of(code) ?? code;
 
+/**
+ * Other names forms use for a place: short forms and unions. Only dotted or multi-letter forms:
+ * a bare "us" is also the word "us" ("tell us"), so it never names a country.
+ */
+const ALIASES: Record<string, string[]> = {
+  US: ['united states of america', 'usa', 'u.s.', 'u.s.a.'],
+  GB: [
+    'united kingdom of great britain and northern ireland',
+    'uk',
+    'u.k.',
+    'great britain',
+    'britain',
+    'england',
+    'scotland',
+    'wales',
+    'northern ireland',
+  ],
+  AE: ['uae', 'u.a.e.', 'emirates'],
+  /** Not a country, but a question about it is never about the US. */
+  EU: ['eu', 'e.u.', 'european union', 'europe', 'eea', 'schengen'],
+};
+
 /** Names forms use for a country, the official one first. */
 function countryNames(code: string): string[] {
-  const names = [countryName(code)];
-  if (code === 'US') names.push('United States of America', 'USA', 'US', 'U.S.');
-  if (code === 'GB') names.push('United Kingdom of Great Britain and Northern Ireland', 'UK');
-  return names.map(norm);
+  return [...(code === 'EU' ? [] : [norm(countryName(code))]), ...(ALIASES[code] ?? [])];
 }
 
-/** Every country name Intl knows, lowercase, to tell when a question names a country. */
-let allCountries: string[] | undefined;
-function everyCountryName(): string[] {
-  if (!allCountries) {
+/** Every place a question might name, by code: Intl's countries and the aliases above. */
+let places: Map<string, string[]> | undefined;
+function everyPlace(): Map<string, string[]> {
+  if (!places) {
+    places = new Map([['EU', countryNames('EU')]]);
     const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    allCountries = [...letters].flatMap((a) =>
-      [...letters].flatMap((b) => {
-        const name = countryName(a + b);
-        return name === a + b ? [] : [norm(name)];
-      }),
-    );
+    for (const a of letters) {
+      for (const b of letters) {
+        if (countryName(a + b) !== a + b) places.set(a + b, countryNames(a + b));
+      }
+    }
   }
-  return allCountries;
+  return places;
 }
-
-const mentions = (label: string, name: string) =>
-  new RegExp(`(^|[^a-z])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z])`).test(label);
 
 /**
- * The work authorization a question is about: the saved country it names; the US when it names
- * no country at all (the US-only launch, decision 0017); none when it names another country.
+ * Whether a label names a place. Not right after "new": New England, New South Wales, New
+ * Jersey and New Mexico are US and Australian places, not Britain, Wales, Jersey or Mexico.
  */
-function authorizationFor(data: FillData, label: string) {
-  const list = data.applicant?.workAuthorization ?? [];
-  const named = list.find((entry) =>
-    countryNames(entry.country).some((name) => mentions(label, name)),
+const mentions = (label: string, name: string) =>
+  new RegExp(`(^|[^a-z])(?<!\\bnew )${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z])`).test(
+    label,
   );
-  if (named) return named;
-  if (everyCountryName().some((name) => mentions(label, name))) return undefined;
+
+/**
+ * The work authorization a question is about: the one saved country it names; the US when it
+ * names no place at all (the US-only launch, decision 0017); none otherwise (only places with
+ * no saved answer, like the UK or the EU, or several saved ones).
+ */
+function authorizationFor(data: FillData, label: string, raw: string) {
+  const list = data.applicant?.workAuthorization ?? [];
+  const named = [...everyPlace()]
+    .filter(([, names]) => names.some((name) => mentions(label, name)))
+    .map(([code]) => code);
+  // "US" in capitals names the country; lowercase "us" is the word ("tell us").
+  if (/(^|[^A-Za-z])US($|[^A-Za-z])/.test(raw) && !named.includes('US')) named.push('US');
+  // A saved country the question names wins, even when another name matches too (a US state
+  // called like a country: New Jersey, Georgia); two saved ones named is the person's call.
+  const saved = list.filter((entry) => named.includes(entry.country));
+  if (saved.length === 1) return saved[0];
+  if (saved.length > 1 || named.length > 0) return undefined;
   return list.find((entry) => entry.country === 'US');
 }
 
@@ -230,8 +269,57 @@ function byId(question: Question, data: FillData): Want | null | undefined {
   return voluntary ? voluntaryWant(data, voluntary) : undefined;
 }
 
+/** Asks whether the person may work ("are you authorized to work…"). */
+const ASKS_AUTHORIZED = /(authori[sz]ed|eligible|permitted) to work|right to work/;
+/** Names work authorization, maybe only as the goal ("…sponsorship to maintain work authorization"). */
+const NAMES_AUTHORIZATION = /work authori[sz]ation/;
+/** Names sponsorship at all. */
+const NAMES_SPONSORSHIP = /sponsor/;
+/**
+ * Asks whether sponsorship is needed, as a question: "will you / do you require … sponsorship",
+ * "sponsorship required?", "Require sponsorship?". Not "…without the need for sponsorship".
+ */
+const ASKS_NEED =
+  /(will|would|do|does) you[^?]{0,40}(require|need)[^?]{0,40}sponsor|^(require|need)[^?]{0,40}sponsor|sponsorship[^?]{0,20}(required|needed)/;
+/** "…without sponsorship": asks about authorization with no sponsorship. */
+const WITHOUT_SPONSORSHIP = /without[^?]{0,30}sponsor/;
+
+/**
+ * Work authorization and sponsorship, worded every way forms word them:
+ * - "will you need sponsorship (to keep your work authorization)?": the sponsorship answer, even
+ *   with a hint like "(select No if you can work without sponsorship)";
+ * - "authorized to work …, and will you need sponsorship?": two questions in one, left;
+ * - "authorized … without sponsorship?": yes only when authorized and no sponsorship is needed;
+ * - "are you authorized to work / your work authorization?": the authorization answer.
+ */
+function authorizationWant(q: Question, d: FillData, label: string): Want | null {
+  const auth = authorizationFor(d, label, q.label);
+  if (!auth) return null;
+  if (ASKS_NEED.test(label)) {
+    return ASKS_AUTHORIZED.test(label) ? null : yesNoWant(q, auth.needsSponsorship);
+  }
+  if (WITHOUT_SPONSORSHIP.test(label)) {
+    return yesNoWant(q, auth.authorized && !auth.needsSponsorship);
+  }
+  if (NAMES_SPONSORSHIP.test(label) && !ASKS_AUTHORIZED.test(label)) {
+    return yesNoWant(q, auth.needsSponsorship);
+  }
+  return yesNoWant(q, auth.authorized);
+}
+
 /** Each company's own questions, by what their label asks. The first rule that names it wins. */
 const RULES: { asks: RegExp; want: (q: Question, d: FillData, label: string) => Want | null }[] = [
+  // First: a "how did you hear" question may name LinkedIn as an example, and isn't a link.
+  {
+    asks: /how did you (hear|find|learn)|where did you (hear|find|learn)|how you heard|referral source/,
+    want: (q, d) => {
+      const heard = d.applicant?.heardAbout;
+      const matches = heard ? HEARD[heard] : undefined;
+      return q.kind === 'choice' && matches
+        ? choice((options) => only(options, (o) => matches.test(o)))
+        : null;
+    },
+  },
   { asks: /linkedin/, want: (q, d) => textWant(q, d.person.links.linkedin) },
   { asks: /github/, want: (q, d) => textWant(q, d.person.links.github) },
   {
@@ -247,28 +335,17 @@ const RULES: { asks: RegExp; want: (q: Question, d: FillData, label: string) => 
     want: (q, d) => textWant(q, d.person.preferredName),
   },
   { asks: /pronoun/, want: (q, d) => textWant(q, d.applicant?.pronouns) },
+  // After the link, name and pronoun rules: their labels may mention sponsorship in passing.
   {
-    asks: /sponsor/,
-    want: (q, d, label) => yesNoWant(q, authorizationFor(d, label)?.needsSponsorship),
-  },
-  {
-    asks: /(legally )?(authori[sz]ed|eligible|permitted) to work|right to work|work authori[sz]ation/,
-    want: (q, d, label) => yesNoWant(q, authorizationFor(d, label)?.authorized),
+    asks: new RegExp(
+      `${ASKS_AUTHORIZED.source}|${NAMES_AUTHORIZATION.source}|${NAMES_SPONSORSHIP.source}`,
+    ),
+    want: authorizationWant,
   },
   { asks: /relocat/, want: (q, d) => yesNoWant(q, d.applicant?.willingToRelocate) },
   {
     asks: /\b18 years|at least 18|over (the age of )?18|age of 18|18 or older/,
     want: (q, d) => yesNoWant(q, d.applicant?.over18),
-  },
-  {
-    asks: /how did you (hear|find|learn)|where did you (hear|find|learn)|how you heard|referral source/,
-    want: (q, d) => {
-      const heard = d.applicant?.heardAbout;
-      const matches = heard ? HEARD[heard] : undefined;
-      return q.kind === 'choice' && matches
-        ? choice((options) => only(options, (o) => matches.test(o)))
-        : null;
-    },
   },
   {
     asks: /(salary|compensation|pay) (expectation|requirement|range)|(expected|desired) (salary|compensation|pay)/,

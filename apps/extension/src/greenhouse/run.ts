@@ -1,6 +1,6 @@
 import type { FillData, Unread } from '../fill/data.ts';
 import type { ContentRequest, FillDataResponse } from '../messages.ts';
-import { fillForm, markStyle, type Report } from './fill.ts';
+import { fillForm, markLeft, type Report } from './fill.ts';
 
 /**
  * #54 PR C: one fill, as the panel asks for it: the answers from the service worker (the page
@@ -11,8 +11,13 @@ export type Outcome =
   | {
       ok: true;
       report: Report;
-      /** Which résumé was attached, if any. */
-      resume: NonNullable<FillData['resume']>['from'] | null;
+      /**
+       * The résumé field: which résumé was attached; `kept` when the person's own file was
+       * already there or the form asks for none; `failed` when the page didn't take ours; null
+       * when it's empty (nothing to attach).
+       */
+      resume: NonNullable<FillData['resume']>['from'] | 'kept' | 'failed' | null;
+      /** Whether this job's cover letter was attached. */
       coverLetter: boolean;
       unread: Unread[];
     }
@@ -21,6 +26,8 @@ export type Outcome =
 export async function runFill(
   form: HTMLElement,
   send: (request: ContentRequest) => Promise<unknown>,
+  /** The `--color-orange` token, for the page's outline. */
+  outline = '',
 ): Promise<Outcome> {
   let answer: FillDataResponse;
   try {
@@ -31,13 +38,22 @@ export async function runFill(
   if (!answer) return { ok: false, reason: 'failed' };
   if (!answer.ok) return { ok: false, reason: answer.reason };
   const data = answer.body;
-  markStyle(form.ownerDocument);
+  markLeft(form, outline);
   const report = await fillForm(form, data);
+  // Said from what happened on the form, not from what the worker sent.
+  const resumeField = report.files.resume;
   return {
     ok: true,
     report,
-    resume: data.resume?.from ?? null,
-    coverLetter: data.coverLetter !== null,
+    resume:
+      resumeField === 'attached' && data.resume
+        ? data.resume.from
+        : resumeField === 'failed'
+          ? 'failed'
+          : resumeField === 'empty'
+            ? null
+            : 'kept',
+    coverLetter: report.files.cover_letter === 'attached',
     unread: data.unread,
   };
 }

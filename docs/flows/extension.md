@@ -59,7 +59,7 @@ sequenceDiagram
   participant A as API
   participant F as Documents origin (S3)
   C->>W: fill-data (a message)
-  Note over W: answered only for a tab of ours on job-boards.greenhouse.io;<br/>the posting comes from the sender's own address:<br/>companyKey greenhouse:<board>, jobId = sha256("ats:greenhouse:<board>:<id>")[0:32]
+  Note over W: answered only for a tab of ours on job-boards.greenhouse.io;<br/>the posting comes from Chrome's address for the sender (the tab's in the top frame,<br/>which follows the board's in-page navigation; the frame's in an embed):<br/>companyKey greenhouse:<board>, jobId = sha256("ats:greenhouse:<board>:<id>")[0:32]
   W->>A: GET /me/profile, /me/applicant, /me/voluntary,<br/>/me/tailorings?companyKey, /me/cover-letters?jobId, /me/documents
   W->>A: GET the newest ready tailored résumé (else the default résumé's document) and letter
   A-->>W: 5-minute download links
@@ -93,7 +93,10 @@ sequenceDiagram
   Note over C,G: never submits; never changes a field the person filled; never guesses (0019)
 ```
 
-- Each question is matched to a saved answer by its field ID (the form's own fields, the US self-ID questions) or its label (each company's questions: links, preferred name, pronouns, work authorization and sponsorship for the US or the country it names, relocation, 18+, how you heard, salary, notice, start date). A choice is made only when exactly one option fits (a plain Yes or No for yes/no questions); otherwise it's left.
+- The panel follows the board's in-page navigation: it goes on a page that isn't an application and comes back with the next form; on the same job (only `#…` or `?…` changed) it stays, with what it said. It acts only once the address has really changed (a download link announces a navigation that never happens), and on a move between jobs waits for the new job's form, not the old one still on the page.
+- A question taking several answers, checkboxes (a group is one question), radio buttons and dates are never filled; the required ones left empty are listed and outlined. An outline goes once every field in it holds an answer.
+- The panel says a résumé or letter was attached only when it was; nothing when the person's own file was already there; and that the page didn't take it, when it didn't.
+- Each question is matched to a saved answer by its field ID (the form's own fields, the US self-ID questions) or its label (each company's questions: links, preferred name, pronouns, work authorization and sponsorship for the US or the saved country it names (never when it names only another place, a short name like "UK" or "EU" included; "US" in capitals counts, "us" doesn't; New England or New Jersey aren't Britain or Jersey; "will you need sponsorship?" gets the sponsorship answer even with a "without sponsorship" hint; "authorized … without sponsorship" needs both). A yes or no goes into a text box only when its label is itself a yes/no question, relocation, 18+, how you heard, salary, notice, start date). A choice is made only when exactly one option fits (a plain Yes or No for yes/no questions); otherwise it's left.
 - Only a summary (labels, counts, which résumé) stays in the panel; the answers are gone once the fill ends.
 
 ## Where it is stored

@@ -59,6 +59,7 @@ export const copy = {
       tailored: 'Attached your résumé tailored for this company.',
       default: 'Attached your default résumé.',
       none: 'No résumé attached: add one in JobDeputy, or attach it here.',
+      failed: 'This page didn’t take your résumé: attach it yourself.',
     },
     coverLetter: 'Attached your cover letter for this job.',
     unread: {

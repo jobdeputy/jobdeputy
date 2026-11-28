@@ -81,6 +81,96 @@ describe('answerFor (#54 PR C)', () => {
     expect(picked(visa, ['No', 'Yes, Blue Card', 'Yes, H-1B'])).toBeNull();
   });
 
+  it('reads "authorized without sponsorship" as both, never as the sponsorship question', () => {
+    const ask = (label: string, d = data) =>
+      picked(answerFor(choice('question_11', label), d), ['Yes', 'No']);
+    expect(
+      ask('Are you legally authorized to work in the United States without sponsorship?'),
+    ).toBe('Yes');
+    expect(ask('Are you eligible to work in the U.S. without the need for visa sponsorship?')).toBe(
+      'Yes',
+    );
+    const needsVisa = fillData({
+      applicant: {
+        workAuthorization: [{ country: 'US', authorized: true, needsSponsorship: true }],
+        workSetups: [],
+      },
+    });
+    expect(ask('Are you authorized to work in the US without sponsorship?', needsVisa)).toBe('No');
+    expect(ask('Will you require sponsorship?', needsVisa)).toBe('Yes');
+    // Sponsorship asked, work authorization only named as its goal: the sponsorship answer.
+    expect(
+      ask(
+        'Will you now or in the future require visa sponsorship to obtain or maintain work authorization?',
+        needsVisa,
+      ),
+    ).toBe('Yes');
+    expect(ask('What is your current work authorization status in the US?')).toBe('Yes');
+    // Asks about sponsorship, with a hint mentioning "without sponsorship": still sponsorship.
+    const hinted =
+      'Will you now or in the future require sponsorship? (Select No if you can work without sponsorship)';
+    expect(ask(hinted, needsVisa)).toBe('Yes');
+    expect(ask(hinted)).toBe('No');
+    // Both asked at once: which to answer is the person's call.
+    expect(
+      answerFor(
+        choice('question_12', 'Are you authorized to work here, and will you need sponsorship?'),
+        data,
+      ),
+    ).toBeNull();
+  });
+
+  it('knows short names for places, so a question about one never gets the US answer', () => {
+    const ask = (label: string) => answerFor(choice('question_13', label), data);
+    for (const label of [
+      'Are you authorized to work in the UK?',
+      'Do you have the right to work in the EU?',
+      'Are you authorized to work in the UAE?',
+      'Will you require sponsorship to work in Canada? Please let us know.',
+    ]) {
+      expect(ask(label), label).toBeNull();
+    }
+    // The saved country named wins over a US state or region named like a country.
+    for (const label of [
+      'Are you legally authorized to work in the United States? (Role based in New Jersey)',
+      'Are you authorized to work in the United States? Office in Atlanta, Georgia',
+      'Are you authorized to work in the U.S.? Remote within New England',
+      // "US" in capitals names the country ("us" in lowercase is a word).
+      'Are you legally authorized to work in the US? This role is in Atlanta, Georgia',
+      // New England, New Jersey, New Mexico are US places, not Britain, Jersey or Mexico.
+      'Are you authorized to work? Remote within New England',
+      'Are you authorized to work? This role is in New Jersey or New Mexico',
+    ]) {
+      expect(picked(ask(label), ['Yes', 'No']), label).toBe('Yes');
+    }
+    expect(picked(ask('Are you authorized to work in the U.S.?'), ['Yes', 'No'])).toBe('Yes');
+    expect(picked(ask('Are you authorized to work in the USA?'), ['Yes', 'No'])).toBe('Yes');
+    // "us" is a word, not a country.
+    expect(picked(ask('Are you legally authorized to work for us?'), ['Yes', 'No'])).toBe('Yes');
+  });
+
+  it('never types yes or no into a box that only mentions sponsorship in passing', () => {
+    expect(
+      answerFor(text('question_15', 'LinkedIn profile URL (note: no visa sponsorship)'), data),
+    ).toEqual({ kind: 'text', value: 'https://www.linkedin.com/in/sam' });
+    expect(
+      answerFor(text('question_16', 'Why Acme? We do not offer sponsorship.'), data),
+    ).toBeNull();
+    expect(answerFor(text('question_17', 'Are you willing to relocate?'), data)).toEqual({
+      kind: 'text',
+      value: 'No',
+    });
+  });
+
+  it('never puts a link into a question that only names a site as an example', () => {
+    expect(
+      answerFor(
+        text('question_14', 'How did you hear about this role (e.g. LinkedIn, referral)?'),
+        data,
+      ),
+    ).toBeNull();
+  });
+
   it('chooses how they heard only when one option says it', () => {
     const heard = answerFor(choice('question_5', 'How did you hear about us?'), data);
     expect(picked(heard, ['Company website', 'LinkedIn', 'Referral'])).toBe('LinkedIn');

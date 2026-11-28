@@ -17,6 +17,7 @@ const filled: Outcome = {
       { id: 'question_4', label: 'Have you previously worked at Acme?', required: true },
       { id: 'cover_letter', label: 'Cover Letter', required: false },
     ],
+    files: { resume: 'attached', cover_letter: 'empty' },
   },
   resume: 'tailored',
   coverLetter: false,
@@ -56,6 +57,17 @@ describe('the panel on a Greenhouse form (#54 PR C)', () => {
     }
   });
 
+  it('says when the page did not take the résumé', async () => {
+    render(
+      <Panel
+        fillForm={async () => ({ ...filled, resume: 'failed', unread: [] })}
+        goTo={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Fill this application' }));
+    expect(await screen.findByText(/didn’t take your résumé: attach it yourself/)).toBeTruthy();
+  });
+
   it('says when no résumé was attached, and hides to a small button', async () => {
     render(
       <Panel fillForm={async () => ({ ...filled, resume: null, unread: [] })} goTo={() => {}} />,
@@ -83,8 +95,9 @@ describe('runFill (#54 PR C)', () => {
     expect(send).toHaveBeenCalledWith({ type: 'fill-data' });
     expect(outcome).toEqual({
       ok: true,
-      report: { filled: ['First Name'], left: [] },
-      resume: 'tailored',
+      report: { filled: ['First Name'], left: [], files: {} },
+      // This form asks for no résumé: nothing to say about one.
+      resume: 'kept',
       coverLetter: false,
       unread: [],
     });
@@ -93,6 +106,38 @@ describe('runFill (#54 PR C)', () => {
     for (const answer of ['asian', 'not_protected', 'sam@example.com', 'linkedin']) {
       expect(kept).not.toContain(answer);
     }
+  });
+
+  it('says a résumé was attached only when it was, and nothing when the person had one there', async () => {
+    const withResume = () => {
+      document.body.innerHTML = `<form id="application-form"><div class="field-wrapper">
+        <div id="upload-label-resume">Resume/CV</div><input id="resume" type="file"></div></form>`;
+      return document.getElementById('application-form') as HTMLElement;
+    };
+    const send = async () => ({ ok: true, body: fillData() });
+    expect(await runFill(withResume(), send)).toMatchObject({ resume: 'tailored' });
+    const own = withResume();
+    const input = document.getElementById('resume') as HTMLInputElement;
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(['mine'], 'Mine.pdf', { type: 'application/pdf' }));
+    input.files = transfer.files;
+    expect(await runFill(own, send)).toMatchObject({
+      resume: 'kept',
+      report: { files: { resume: 'kept' } },
+    });
+    expect(input.files?.[0]?.name).toBe('Mine.pdf');
+    const none = await runFill(withResume(), async () => ({
+      ok: true,
+      body: fillData({ resume: null }),
+    }));
+    expect(none).toMatchObject({ resume: null });
+    // The page refused the file (its uploader took nothing): said as such, not "add one".
+    const refusing = withResume();
+    Object.defineProperty(document.getElementById('resume'), 'files', {
+      get: () => null,
+      set: () => {},
+    });
+    expect(await runFill(refusing, send)).toMatchObject({ resume: 'failed' });
   });
 
   it('passes on why the worker could not answer, and fails safe when it says nothing', async () => {
