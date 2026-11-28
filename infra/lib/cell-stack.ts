@@ -987,7 +987,8 @@ export class CellStack extends Stack {
     new CfnOutput(this, 'ApiUrl', { value: stage.url });
     new CfnOutput(this, 'UserPoolId', { value: auth.userPool.userPoolId });
     new CfnOutput(this, 'DocumentsBucketName', { value: documents.bucket.bucketName });
-    // #54 PR C: written into the extension's build (scripts/extension-config.mjs).
+    // #54 PR C: the extension's host for downloads; PR C2 writes it into its build
+    // (scripts/extension-config.mjs).
     new CfnOutput(this, 'DocumentsOrigin', { value: documentsOrigin });
     new CfnOutput(this, 'MalwareProtectionPlanId', {
       value: documents.malwarePlan.attrMalwareProtectionPlanId,
