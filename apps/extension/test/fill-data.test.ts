@@ -202,12 +202,60 @@ describe('readFillData (#54 PR C)', () => {
     expect(result.ok && result.body.unread).toEqual([]);
   });
 
-  it('says offline when the profile could not be read for that', async () => {
-    const { api } = routes({ '/me/profile': { ok: false, reason: 'offline' } });
-    expect(await readFillData(api, fakeFiles().files, posting)).toEqual({
+  it("says offline only when the profile's own read was", async () => {
+    const offline = routes({ '/me/profile': { ok: false, reason: 'offline' } });
+    expect(await readFillData(offline.api, fakeFiles().files, posting)).toEqual({
       ok: false,
       reason: 'offline',
     });
+    const serverFault = routes({
+      '/me/profile': { ok: false, reason: 'failed' },
+      '/me/documents': { ok: false, reason: 'offline' },
+    });
+    expect(await readFillData(serverFault.api, fakeFiles().files, posting)).toEqual({
+      ok: false,
+      reason: 'failed',
+    });
+  });
+
+  it('downloads nothing when there is nothing to fill with', async () => {
+    for (const failing of [
+      { '/me/profile': { ok: false, reason: 'failed' } as const },
+      { '/me/applicant': { ok: false, reason: 'signed-out' } as const },
+    ]) {
+      const { api } = routes(failing);
+      const { files, read } = fakeFiles();
+      expect((await readFillData(api, files, posting)).ok).toBe(false);
+      expect(read).not.toHaveBeenCalled();
+    }
+  });
+
+  it('leaves out self-ID answers the API could not read back (never sent as decline)', async () => {
+    const some = routes({
+      '/me/voluntary': ok({ ...VOLUNTARY, gender: 'decline', unreadable: ['gender'] }),
+    });
+    const result = await readFillData(some.api, fakeFiles().files, posting);
+    expect(result.ok && result.body.voluntary).toEqual({
+      hispanicLatino: 'no',
+      race: 'asian',
+      veteran: 'not_protected',
+      disability: 'decline',
+    });
+    expect(result.ok && result.body.unread).toEqual(['voluntary']);
+    const all = routes({
+      '/me/voluntary': ok({
+        version: 3,
+        gender: 'decline',
+        hispanicLatino: 'decline',
+        race: 'decline',
+        veteran: 'decline',
+        disability: 'decline',
+        unreadable: ['gender', 'hispanicLatino', 'race', 'veteran', 'disability'],
+      }),
+    });
+    const none = await readFillData(all.api, fakeFiles().files, posting);
+    expect(none.ok && none.body.voluntary).toBeNull();
+    expect(none.ok && none.body.unread).toEqual(['voluntary']);
   });
 
   it('fails without the profile, and says signed out when any read was', async () => {

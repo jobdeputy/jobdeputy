@@ -91,7 +91,13 @@ describe('kmsVoluntaryStore (#53)', () => {
       version: 1,
       ciphertext: new TextEncoder().encode(`${JSON.stringify(enc.input.EncryptionContext)}|${old}`),
     });
-    expect(await store.get('u1')).toEqual({ version: 1, ...answers, gender: 'decline' });
+    // Said, so the extension leaves that question empty instead of answering decline (#54).
+    expect(await store.get('u1')).toEqual({
+      version: 1,
+      ...answers,
+      gender: 'decline',
+      unreadable: ['gender'],
+    });
   });
 
   it('reads unreadable stored answers as decline, never throwing their text', async () => {
@@ -103,7 +109,11 @@ describe('kmsVoluntaryStore (#53)', () => {
       version: 3,
       ciphertext: new TextEncoder().encode(`${ctx}|{"gender":"female","race":"as`),
     });
-    expect(await store.get('u1')).toEqual({ version: 3, ...DECLINED_VOLUNTARY });
+    expect(await store.get('u1')).toEqual({
+      version: 3,
+      ...DECLINED_VOLUNTARY,
+      unreadable: ['gender', 'hispanicLatino', 'race', 'veteran', 'disability'],
+    });
   });
 
   it.each([
@@ -118,8 +128,13 @@ describe('kmsVoluntaryStore (#53)', () => {
       const store = kmsVoluntaryStore(r, kms as never, KEY);
       await store.save('u1', answers, 0, audit);
       kms.send.mockRejectedValueOnce(Object.assign(new Error('kms'), { name }));
-      if (declined) expect(await store.get('u1')).toEqual({ version: 1, ...DECLINED_VOLUNTARY });
-      else await expect(store.get('u1')).rejects.toThrow('kms');
+      if (declined) {
+        expect(await store.get('u1')).toEqual({
+          version: 1,
+          ...DECLINED_VOLUNTARY,
+          unreadable: ['gender', 'hispanicLatino', 'race', 'veteran', 'disability'],
+        });
+      } else await expect(store.get('u1')).rejects.toThrow('kms');
     },
   );
 

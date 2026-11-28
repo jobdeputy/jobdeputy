@@ -73,7 +73,8 @@ export function createFiles(deps: { settings: Settings; fetch: typeof fetch }) {
       // Only the host the manifest asks for, so a link can never send the browser elsewhere.
       if (url.origin !== origin) return null;
       try {
-        const res = await deps.fetch(url.href, { credentials: 'omit' });
+        // No redirects: the origin checked above must be the one the bytes come from.
+        const res = await deps.fetch(url.href, { credentials: 'omit', redirect: 'error' });
         if (!res.ok) return null;
         const declared = Number(res.headers.get('content-length'));
         if (declared > MAX_FILE_BYTES) return null;

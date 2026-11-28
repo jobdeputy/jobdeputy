@@ -20,8 +20,11 @@ export interface FillData {
   person: Person;
   /** The application answers (#53), or null when none are saved. */
   applicant: ApplicantAnswers | null;
-  /** The self-ID answers, only once the person saved them (never the defaults). */
-  voluntary: VoluntaryAnswers | null;
+  /**
+   * The self-ID answers, only once the person saved them (never the defaults), and only those
+   * the API could read back: one it read as `decline` for that reason is left out (unread).
+   */
+  voluntary: Partial<VoluntaryAnswers> | null;
   /** The company's newest ready tailored résumé, else the default résumé. */
   resume: (FileData & { from: 'tailored' | 'default' }) | null;
   /** This job's newest ready cover letter; never one written for the page. */
@@ -65,7 +68,11 @@ export type Person = z.infer<typeof person>;
 const { version: _a, ...applicantShape } = applicantInput.shape;
 const applicant = z.object({ version: z.number(), ...applicantShape });
 const { version: _v, ...voluntaryShape } = voluntaryInput.shape;
-const voluntary = z.object({ version: z.number(), ...voluntaryShape });
+const voluntary = z.object({
+  version: z.number(),
+  ...voluntaryShape,
+  unreadable: z.array(z.string()).optional(),
+});
 
 const generated = z.object({
   documentId: z.string(),
@@ -91,6 +98,7 @@ const download = z.object({ downloadUrl: z.string() });
 /** A read that failed for a reason other than being signed out. */
 const FAILED = Symbol('failed');
 type Read<T> = T | typeof FAILED;
+type Failure = Extract<ApiResult<never>, { ok: false }>['reason'];
 
 /** The newest ready version with a file name (ISO times sort as text). */
 function newestReady(list: z.infer<typeof generated>[]) {
@@ -105,13 +113,16 @@ export async function readFillData(
   posting: Posting,
 ): Promise<ApiResult<FillData>> {
   let signedOut = false;
-  let offline = false;
-  /** The body, parsed; FAILED when it failed or has an odd shape; signed out or offline is noted. */
-  async function read<T>(path: string, schema: z.ZodType<T>): Promise<Read<T>> {
+  /** The body, parsed; FAILED when it failed or has an odd shape; signed out is noted. */
+  async function read<T>(
+    path: string,
+    schema: z.ZodType<T>,
+    onFailure?: (reason: Failure) => void,
+  ): Promise<Read<T>> {
     const res = await api.get<unknown>(path);
     if (!res.ok) {
       if (res.reason === 'signed-out') signedOut = true;
-      if (res.reason === 'offline') offline = true;
+      onFailure?.(res.reason);
       return FAILED;
     }
     const parsed = schema.safeParse(res.body);
@@ -133,14 +144,23 @@ export async function readFillData(
 
   const jobId = await jobIdFor(posting);
   const company = encodeURIComponent(posting.companyKey);
+  // The profile's own reason, if it fails: another read being offline says nothing about it.
+  let profileFailure = 'failed' as Failure;
   const [profile, answers, selfId, tailored, letters, docs] = await Promise.all([
-    read('/me/profile', person),
+    read('/me/profile', person, (reason) => {
+      profileFailure = reason;
+    }),
     read('/me/applicant', applicant),
     read('/me/voluntary', voluntary),
     read(`/me/tailorings?companyKey=${company}`, tailorings),
     read(`/me/cover-letters?jobId=${jobId}`, coverLetters),
     read('/me/documents', documents),
   ]);
+  // Nothing to fill with: no file is downloaded only to be dropped.
+  if (signedOut) return { ok: false, reason: 'signed-out' };
+  if (profile === FAILED)
+    return { ok: false, reason: profileFailure === 'offline' ? 'offline' : 'failed' };
+
   const [tailoredFile, letterFile] = await Promise.all([
     newestFile(tailored === FAILED ? FAILED : tailored.tailorings, (id) => `/me/tailorings/${id}`),
     newestFile(
@@ -163,23 +183,30 @@ export async function readFillData(
     }
   }
 
+  // Signed out only while reading the files: still nothing handed over.
   if (signedOut) return { ok: false, reason: 'signed-out' };
-  if (profile === FAILED) return { ok: false, reason: offline ? 'offline' : 'failed' };
   const unread: Unread[] = [];
   if (answers === FAILED) unread.push('answers');
-  if (selfId === FAILED) unread.push('voluntary');
+  const {
+    version: selfIdVersion,
+    unreadable = [],
+    ...declared
+  } = selfId === FAILED ? { version: 0 } : selfId;
+  // Only what the API read back as saved: an answer it couldn't is never sent as decline.
+  const saved = Object.fromEntries(
+    Object.entries(declared).filter(([key]) => !unreadable.includes(key)),
+  ) as Partial<VoluntaryAnswers>;
+  if (selfId === FAILED || unreadable.length > 0) unread.push('voluntary');
   if (resume === FAILED) unread.push('resume');
   if (letterFile === FAILED) unread.push('cover-letter');
   const { version: answersVersion, ...applicantAnswers } =
     answers === FAILED ? { version: 0 } : answers;
-  const { version: selfIdVersion, ...voluntaryAnswers } =
-    selfId === FAILED ? { version: 0 } : selfId;
   return {
     ok: true,
     body: {
       person: profile,
       applicant: answersVersion > 0 ? (applicantAnswers as ApplicantAnswers) : null,
-      voluntary: selfIdVersion > 0 ? (voluntaryAnswers as VoluntaryAnswers) : null,
+      voluntary: selfIdVersion > 0 && Object.keys(saved).length > 0 ? saved : null,
       resume: resume === FAILED ? null : resume,
       coverLetter: letterFile === FAILED ? null : (letterFile ?? null),
       unread,

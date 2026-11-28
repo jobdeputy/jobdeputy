@@ -68,7 +68,8 @@ sequenceDiagram
 ```
 
 - A tailored résumé that exists but can't be read attaches nothing, never the default instead: the panel says the résumé couldn't be read.
-- Answers never saved (`version` 0) are not handed over, so self-ID questions stay empty unless the person saved theirs (the API's own defaults are never used).
+- Answers never saved (`version` 0) are not handed over, so self-ID questions stay empty unless the person saved theirs (the API's own defaults are never used). A saved answer the API couldn't read back (it reads as `decline`, listed in `unreadable`) is left out too, and listed as unread.
+- No file is downloaded when the fill can't go on (signed out, or no profile), and a download that redirects is refused.
 - Nothing is stored: the worker reads it when asked and hands it over.
 
 ## Where it is stored

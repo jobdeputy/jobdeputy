@@ -30,7 +30,7 @@ describe('files (#54 PR C)', () => {
       type: 'application/pdf',
       base64: Buffer.from(bytes).toString('base64'),
     });
-    expect(fetch).toHaveBeenCalledWith(LINK, { credentials: 'omit' });
+    expect(fetch).toHaveBeenCalledWith(LINK, { credentials: 'omit', redirect: 'error' });
   });
 
   it('reads a file larger than one chunk intact', async () => {
