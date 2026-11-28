@@ -92,4 +92,26 @@ export const copy = {
     offline: 'Couldn’t reach JobDeputy. Check your connection and try again.',
     failed: 'Couldn’t get your answers. Try again.',
   },
+  /** #54 PR D: the panel on Greenhouse's confirmation page, after a submit. */
+  confirm: {
+    title: 'JobDeputy',
+    checking: 'Checking your JobDeputy list…',
+    ask: 'You applied to {title} at {company}. Mark it as applied in JobDeputy?',
+    askNoCompany: 'You applied to {title}. Mark it as applied in JobDeputy?',
+    mark: 'Mark as applied',
+    marking: 'Marking…',
+    notNow: 'Not now',
+    hide: 'Hide JobDeputy',
+    show: 'JobDeputy',
+    saved: 'Marked as applied. You’ll find it in Applications in JobDeputy.',
+    movedOn: 'Already marked in JobDeputy, so there’s nothing to record.',
+    notListed: 'This job isn’t in your JobDeputy list, so there’s nothing to record.',
+    coolingDown:
+      'Not recorded: you’ve reached your application limit for this company until {until}.',
+    coolingDownNoDate: 'Not recorded: you’ve reached your application limit for this company.',
+    signedOut: 'Sign in from the JobDeputy button in your toolbar to record this application.',
+    offline: 'Couldn’t reach JobDeputy. Check your connection and try again.',
+    failed: 'Couldn’t record this application. Try again.',
+    retry: 'Try again',
+  },
 };

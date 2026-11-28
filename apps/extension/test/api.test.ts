@@ -275,3 +275,58 @@ describe('readReadiness (#54)', () => {
     expect(await readReadiness(api)).toEqual({ ok: false, reason: 'failed' });
   });
 });
+
+describe('API answers (#54 PR D)', () => {
+  it('PUTs a JSON body with the bearer token and gives back any status with its body', async () => {
+    const { auth } = fakeAuth(['t1']);
+    const fetch = vi.fn(async () => json(409, { code: 'cooling-down' }));
+    const api = createApi({ settings, auth, fetch: fetch as typeof globalThis.fetch });
+    expect(await api.answer('/me/jobs/j/stage', { stage: 'applied', from: 'new' })).toEqual({
+      ok: true,
+      body: { status: 409, body: { code: 'cooling-down' } },
+    });
+    expect(fetch).toHaveBeenCalledWith('https://api.jobdeputy.test/me/jobs/j/stage', {
+      headers: { authorization: 'Bearer t1', 'content-type': 'application/json' },
+      method: 'PUT',
+      body: '{"stage":"applied","from":"new"}',
+    });
+  });
+
+  it('GETs without a body; a 404 or a body that is not JSON still comes back', async () => {
+    const { auth } = fakeAuth(['t1', 't1']);
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(json(404, { title: 'Not found' }))
+      .mockResolvedValueOnce(new Response('oops', { status: 502 }));
+    const api = createApi({ settings, auth, fetch: fetch as typeof globalThis.fetch });
+    expect(await api.answer('/me/jobs/j')).toEqual({
+      ok: true,
+      body: { status: 404, body: { title: 'Not found' } },
+    });
+    expect(fetch).toHaveBeenCalledWith('https://api.jobdeputy.test/me/jobs/j', {
+      headers: { authorization: 'Bearer t1' },
+    });
+    expect(await api.answer('/me/jobs/j')).toEqual({ ok: true, body: { status: 502, body: null } });
+  });
+
+  it('renews a refused token once, then is signed out', async () => {
+    const { auth, signedOutByApi } = fakeAuth(['a', 'b']);
+    const fetch = vi.fn(async () => json(401));
+    const api = createApi({ settings, auth, fetch: fetch as typeof globalThis.fetch });
+    expect(await api.answer('/me/jobs/j/stage', {})).toEqual({ ok: false, reason: 'signed-out' });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(signedOutByApi).toHaveBeenCalled();
+  });
+
+  it('offline is offline', async () => {
+    const { auth } = fakeAuth(['t']);
+    const api = createApi({
+      settings,
+      auth,
+      fetch: (async () => {
+        throw new TypeError('network');
+      }) as typeof globalThis.fetch,
+    });
+    expect(await api.answer('/me/jobs/j')).toEqual({ ok: false, reason: 'offline' });
+  });
+});

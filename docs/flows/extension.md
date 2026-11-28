@@ -1,4 +1,4 @@
-# Flow: the extension signs in and reads what it fills (#54)
+# Flow: the extension signs in, reads what it fills, and records applications (#54)
 
 The browser extension signs in through Cognito **managed login** with its own app client (authorization code + PKCE), and only its service worker holds the tokens. Decision: [0020](../decisions/0020-browser-extension-sign-in-and-permissions.md). PR C adds the Greenhouse filler.
 
@@ -100,6 +100,39 @@ sequenceDiagram
 - Each question is matched to a saved answer by its field ID (the form's own fields, the US self-ID questions) or its label (each company's questions: links, preferred name, pronouns, work authorization and sponsorship for the US or the saved country it names (never when it names only another place, a short name like "UK" or "EU" included; "US" in capitals counts, "us" doesn't; New England or New Jersey aren't Britain or Jersey; "will you need sponsorship?" gets the sponsorship answer even with a "without sponsorship" hint; "authorized … without sponsorship" needs both). A yes or no goes into a text box only when its label is itself a yes/no question, relocation, 18+, how you heard, salary, notice, start date). A choice is made only when exactly one option fits (a plain Yes or No for yes/no questions); otherwise it's left.
 - Only a summary (labels, counts, which résumé) stays in the panel; the answers are gone once the fill ends.
 
+## Auto apply and recording the application (#54 PR D)
+
+```mermaid
+sequenceDiagram
+  participant S as Web app (its origin only)
+  participant W as Service worker
+  participant T as New tab: the Greenhouse form
+  participant A as API
+  S->>W: hello (runtime.sendMessage; externally_connectable)
+  W-->>S: version, signed in? (a silent sign-in tried first)
+  S->>W: auto-apply {jobId, url}
+  Note over W: sender's origin is the site's, top frame of a tab;<br/>url is a job-boards.greenhouse.io form whose job ID is jobId;<br/>signed in. Else not-greenhouse / wrong-job / signed-out, no tab
+  W->>T: tabs.create(url) (no tabs permission needed)
+  W->>W: storage.session autoApply[tabId] = {jobId, at}
+  W-->>S: ok
+  T->>W: auto-fill (the form's content script, once)
+  W-->>T: yes, once: this tab, this job, within 10 minutes (then forgotten)
+  T->>T: fills, as Fill this application does; never submits
+  Note over T: the person reviews and clicks Submit
+  T->>W: application (on /<board>/jobs/<id>/confirmation, top frame)
+  W->>A: GET /me/jobs/{jobId} (the job from the tab's address)
+  A-->>W: 200 {jobId, title, companyName, status, stageAt} / 404
+  W-->>T: ask (stage New) / moved-on / not-listed
+  T->>W: record-application ("Mark as applied")
+  W->>A: PUT /me/jobs/{jobId}/stage {stage: applied, from: new}
+  A-->>W: 200 / 409 cooling-down (until) / 409 stage-changed / 404
+  W-->>T: saved / cooling-down / moved-on / not-listed
+```
+
+- The web app reaches the extension only from the origins in `externally_connectable` (`src/site.ts`: the build's site, and Vite's dev server in a dev build), and the worker checks the sender's origin again. It sends a job and an address; the worker trusts neither: the address must be that job's own Greenhouse form, and the worker opens the tab itself.
+- Any form, opened by Auto apply or not, can be filled with the button; only the tab Auto apply opened fills on its own, once, the first time its form shows. A board that sends `job-boards.greenhouse.io` links to the company's own site (the form embedded in a frame there) opens, but its form is filled with the button: Auto apply fills only the board's own page.
+- The confirmation page asks only in the board's own tab (not a company site's embed), for a job in the person's list at stage New. The person may hide it (Not now, ×).
+
 ## Where it is stored
 
 | What | Where | For how long |
@@ -111,6 +144,7 @@ sequenceDiagram
 | Refused by the API: no silent sign-in (#111) | `chrome.storage.session` (`refusedByApi`, a flag) | until the person signs in again, or the browser closes |
 | The build's settings (API, managed login, client, site, documents origin) | built in (`WXT_*`, `scripts/extension-config.mjs`) | the build |
 | What a form is filled with (PR C) | the service worker's memory, then the page's | while one fill runs |
+| The tabs Auto apply opened (PR D) | `chrome.storage.session` (`autoApply`: tab ID → job ID, when) | until its form fills, the tab closes, 10 minutes, or the browser closes |
 
 Nothing new is stored on the server.
 

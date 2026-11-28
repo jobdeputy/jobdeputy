@@ -2,6 +2,7 @@ import { EXTENSION_DEV_KEY } from '@jobdeputy/shared/extension-key';
 import { copy } from './copy.ts';
 import { GREENHOUSE_MATCHES } from './fill/posting.ts';
 import type { Settings } from './settings.ts';
+import { siteOrigins } from './site.ts';
 
 /**
  * #54 (decision 0020): the extension's manifest, kept here so a test can hold it to least
@@ -52,5 +53,13 @@ export function manifestFor(settings: Settings | null, { store = false } = {}) {
     optional_permissions: [...OPTIONAL_PERMISSIONS],
     optional_host_permissions: [...OPTIONAL_HOST_PERMISSIONS],
     action: { default_title: store ? copy.popup.title : copy.popup.devName },
+    ...externallyConnectable(siteOrigins(settings, { store })),
   };
+}
+
+/** `externally_connectable` for these origins (`<origin>/*`), or nothing: then no page may. */
+function externallyConnectable(origins: string[]) {
+  return origins.length > 0
+    ? { externally_connectable: { matches: origins.map((origin) => `${origin}/*`) } }
+    : {};
 }

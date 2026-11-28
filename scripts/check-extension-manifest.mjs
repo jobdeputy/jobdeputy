@@ -27,8 +27,21 @@ const granted = new Set(manifest.host_permissions ?? []);
 const strays = (built.content_scripts ?? []).flatMap((script) =>
   script.matches.filter((match) => !granted.has(match)),
 );
-// Any other way to reach pages or be reached (web_accessible_resources, externally_connectable,
-// content script globs, …) is refused until a decision allows it here.
+// #54 PR D (0020): only the web app's origins may message the extension, exactly those
+// src/manifest.ts gives (from src/site.ts), and never another extension (`ids`) or every page.
+const connectable = JSON.stringify(built.externally_connectable ?? null);
+if (connectable !== JSON.stringify(manifest.externally_connectable ?? null)) {
+  wrong.push('externally_connectable');
+}
+// Whatever src/ says: only `matches`, each exactly one http(s) origin's `/*` (no wildcard host,
+// no <all_urls>), and no `ids` (no other extension) or `accepts_tls_channel_id`.
+const { matches = [], ...rest } = built.externally_connectable ?? {};
+const ORIGIN_MATCH = /^https?:\/\/[a-z0-9.-]+(:\d+)?\/\*$/;
+if (Object.keys(rest).length > 0 || !matches.every((match) => ORIGIN_MATCH.test(match))) {
+  wrong.push('externally_connectable (only exact origins)');
+}
+// Any other way to reach pages or be reached (web_accessible_resources, content script globs, …)
+// is refused until a decision allows it here.
 const KNOWN = new Set([
   'manifest_version',
   'key',
@@ -40,6 +53,7 @@ const KNOWN = new Set([
   'action',
   'background',
   'content_scripts',
+  'externally_connectable',
   ...keys,
 ]);
 const unknown = Object.keys(built).filter((key) => !KNOWN.has(key));
