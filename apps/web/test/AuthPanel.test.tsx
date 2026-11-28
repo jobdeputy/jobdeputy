@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AuthPanel } from '../src/components/auth/auth-panel.tsx';
+import { AuthPanel, STILL_HERE_MS } from '../src/components/auth/auth-panel.tsx';
 import { Sheet, SheetContent } from '../src/components/ui/sheet.tsx';
 import { createFakeAuth } from '../src/lib/auth/fake.ts';
 import {
@@ -71,6 +71,22 @@ describe('AuthPanel', () => {
     expect(link.getAttribute('aria-disabled')).toBe('true');
     fireEvent.click(link);
     expect(screen.getByRole('heading', { name: 'Welcome back.' })).toBeTruthy();
+  });
+
+  it('is ready again when the page is still here well after leaving began (it was stopped)', async () => {
+    vi.useFakeTimers();
+    try {
+      const signIn = vi.fn(async () => {});
+      renderPanel('sign-in', { ...createFakeAuth({ delay: 0 }), signIn });
+      press('Continue to sign in');
+      await act(() => vi.advanceTimersByTimeAsync(STILL_HERE_MS));
+      // The button's pending look ends on its own timing (useDelayedPending's hold).
+      await act(() => vi.advanceTimersByTimeAsync(1000));
+      press('Continue to sign in');
+      expect(signIn).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('is ready again when the browser brings the page back from its cache', async () => {

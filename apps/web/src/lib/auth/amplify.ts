@@ -114,9 +114,7 @@ export const amplifyAuth: Auth = {
     try {
       // One limit for the whole check, so a stall (a token refresh on bad wifi) cannot hold the
       // page up.
-      return await within(
-        configure().then(({ fetchAuthSession }) => sessionEmail(fetchAuthSession)),
-      );
+      return await within(configure().then(whoIs));
     } catch {
       return null;
     }
@@ -136,7 +134,8 @@ export const amplifyAuth: Auth = {
     }
   },
   async signIn(mode: SignInMode) {
-    const { signInWithRedirect, signOut } = await configure();
+    const auth = await configure();
+    const { signInWithRedirect } = auth;
     const leave = () =>
       signInWithRedirect(
         mode === 'sign-up'
@@ -152,10 +151,15 @@ export const amplifyAuth: Auth = {
     try {
       await leave();
     } catch (error) {
-      // A session left from before (stored, but not readable at boot) blocks a new sign-in: forget
-      // it here (no trip to managed login, whose /logout would race this page's own leaving),
-      // then leave once more.
+      // A session left from before blocks a new sign-in. A readable one is someone's: go home. One
+      // that cannot be read is forgotten here (no trip to managed login, whose /logout would race
+      // this page's own leaving), then the page leaves once more.
       if ((error as { name?: string } | null)?.name === 'UserAlreadyAuthenticatedException') {
+        // Someone is signed in after all (in another tab, say): go home to them, never wipe it.
+        if (await whoIs(auth).catch(() => null)) {
+          window.location.assign('/');
+          return;
+        }
         clearStoredSession();
         try {
           await leave();
@@ -179,7 +183,7 @@ export const amplifyAuth: Auth = {
       // /logout, which comes back to the site's home.
       await signOut();
     } catch (error) {
-      throw new AuthError('offline', { cause: error });
+      throw inOurTerms(error);
     }
   },
 };
@@ -187,7 +191,7 @@ export const amplifyAuth: Auth = {
 let finishing: Promise<string> | undefined;
 
 /** How long finishing waits for Amplify's code exchange before checking the session itself. */
-export const FINISH_LIMIT_MS = 60_000;
+export const FINISH_LIMIT_MS = 30_000;
 
 /**
  * Finishes the sign-in managed login came back with. Amplify's OAuth listener exchanges the code as
@@ -202,9 +206,7 @@ async function finish(): Promise<string> {
   // Nothing under way here (Back or Forward to an old return address, or after the browser's
   // back-forward cache cancelled it): no word will come, so the session says at once.
   if (!exchangeUnderWay()) {
-    const email = await within(
-      configure().then(({ fetchAuthSession }) => sessionEmail(fetchAuthSession)),
-    ).catch((error: unknown) => {
+    const email = await within(configure().then(whoIs)).catch((error: unknown) => {
       throw error instanceof AuthError ? error : new AuthError('offline', { cause: error });
     });
     if (email) return email;
@@ -220,7 +222,7 @@ async function finish(): Promise<string> {
         if (payload.event === 'signInWithRedirect_failure') resolve('failed');
       });
     });
-    const { fetchAuthSession } = await configure();
+    const auth = await configure();
     // No word in time (a slow exchange, or none under way here): the session says.
     const said = await Promise.race([
       outcome,
@@ -229,7 +231,7 @@ async function finish(): Promise<string> {
       }),
     ]);
     if (said === 'failed') throw new AuthError('sign-in-failed');
-    const email = await within(sessionEmail(fetchAuthSession));
+    const email = await within(whoIs(auth));
     if (email) return email;
     throw new AuthError('sign-in-failed');
   } catch (error) {
@@ -240,13 +242,18 @@ async function finish(): Promise<string> {
   }
 }
 
-/** The signed-in person's email from their ID token (managed login gives no login ID), or null. */
-async function sessionEmail(
-  fetchAuthSession: Amplified['fetchAuthSession'],
-): Promise<string | null> {
-  const session = await fetchAuthSession();
-  const email = session.tokens?.idToken?.payload.email;
-  return typeof email === 'string' ? email : null;
+/**
+ * Who is signed in: the email from the ID token (managed login gives no login ID), else the
+ * session's login ID or username; null with no session.
+ */
+async function whoIs(auth: Amplified): Promise<string | null> {
+  const session = await auth.fetchAuthSession();
+  if (!session.tokens) return null;
+  const email = session.tokens.idToken?.payload.email;
+  if (typeof email === 'string') return email;
+  // A session without the claim (one made before #111, say) is still someone's.
+  const user = await auth.getCurrentUser();
+  return user.signInDetails?.loginId ?? user.username;
 }
 
 /**

@@ -202,6 +202,7 @@ function Landing({ failed }: { failed?: AuthErrorKind }) {
   useEffect(() => navigate('/', { replace: true }), []);
   // Four buttons open the drawer; focus returns to whichever one did.
   const opener = useRef<HTMLElement | null>(null);
+  const main = useRef<HTMLElement>(null);
 
   const auth: AuthControl = {
     open: authOpen,
@@ -220,7 +221,7 @@ function Landing({ failed }: { failed?: AuthErrorKind }) {
           minmax(0,1fr) columns keep wide content from widening the page. */}
       <div className="grid min-h-dvh grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr]">
         <SiteHeader auth={auth} />
-        <main className="grid grid-cols-[minmax(0,1fr)]">
+        <main ref={main} tabIndex={-1} className="grid grid-cols-[minmax(0,1fr)] outline-none">
           <Hero auth={auth} />
         </main>
       </div>
@@ -230,10 +231,9 @@ function Landing({ failed }: { failed?: AuthErrorKind }) {
         onOpenChange={setAuthOpen}
         {...(failure ? { failed: failure } : {})}
         onCloseAutoFocus={(event) => {
-          if (opener.current) {
-            event.preventDefault();
-            opener.current.focus();
-          }
+          // Opened by itself (a sign-in that did not finish): focus goes to the page's main part.
+          event.preventDefault();
+          (opener.current ?? main.current)?.focus();
         }}
       />
     </>

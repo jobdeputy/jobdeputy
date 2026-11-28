@@ -7,6 +7,7 @@ const amplify = vi.hoisted(() => ({
   signInWithRedirect: vi.fn(),
   signOut: vi.fn(),
   fetchAuthSession: vi.fn(),
+  getCurrentUser: vi.fn(),
 }));
 vi.mock('aws-amplify', () => ({ Amplify: { configure: amplify.configure } }));
 vi.mock('aws-amplify/auth', () => amplify);
@@ -147,6 +148,26 @@ describe('amplifyAuth', () => {
     expect(amplify.signInWithRedirect).toHaveBeenCalledTimes(2);
   });
 
+  it('goes home to a readable session in the way (another tab signed in), never wiping it', async () => {
+    localStorage.setItem('CognitoIdentityServiceProvider.client.abc.refreshToken', 'theirs');
+    const auth = await load();
+    amplify.signInWithRedirect.mockRejectedValue(
+      Object.assign(new Error('signed in'), { name: 'UserAlreadyAuthenticatedException' }),
+    );
+    amplify.fetchAuthSession.mockResolvedValue(sessionOf('b@example.com'));
+    const open = vi.spyOn(window.location, 'assign').mockImplementation(() => {});
+    try {
+      await auth.signIn('sign-in');
+      expect(open).toHaveBeenCalledWith('/');
+    } finally {
+      open.mockRestore();
+    }
+    expect(localStorage.getItem('CognitoIdentityServiceProvider.client.abc.refreshToken')).toBe(
+      'theirs',
+    );
+    expect(amplify.signInWithRedirect).toHaveBeenCalledTimes(1);
+  });
+
   it('calls a network failure on leaving a network problem', async () => {
     const auth = await load();
     amplify.signInWithRedirect.mockRejectedValue(
@@ -247,7 +268,11 @@ describe('amplifyAuth', () => {
     const auth = await load();
     amplify.fetchAuthSession.mockResolvedValue(sessionOf('a@example.com'));
     await expect(auth.currentUser()).resolves.toBe('a@example.com');
+    // A session without the claim is still someone's: its login ID or username.
     amplify.fetchAuthSession.mockResolvedValue(sessionOf(undefined));
+    amplify.getCurrentUser.mockResolvedValue({ username: 'abc' });
+    await expect(auth.currentUser()).resolves.toBe('abc');
+    amplify.fetchAuthSession.mockResolvedValue({ tokens: undefined });
     await expect(auth.currentUser()).resolves.toBeNull();
   });
 
@@ -255,8 +280,11 @@ describe('amplifyAuth', () => {
     const auth = await load();
     amplify.signOut.mockResolvedValue(undefined);
     await expect(auth.signOut()).resolves.toBeUndefined();
-    amplify.signOut.mockRejectedValue(new Error('NetworkError'));
+    amplify.signOut.mockRejectedValue(Object.assign(new Error('x'), { name: 'NetworkError' }));
     await expect(auth.signOut()).rejects.toMatchObject({ kind: 'offline' });
+    // Anything else is not a connection problem.
+    amplify.signOut.mockRejectedValue(Object.assign(new Error('x'), { name: 'InvalidOrigin' }));
+    await expect(auth.signOut()).rejects.toMatchObject({ kind: 'unknown' });
   });
 
   it('gives up on a config that does not come in 8 s', async () => {

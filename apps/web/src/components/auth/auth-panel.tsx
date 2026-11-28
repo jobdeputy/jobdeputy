@@ -14,6 +14,9 @@ import { cn } from '@/lib/utils.ts';
 
 const { auth: text } = copy;
 
+/** Still on this page this long after leaving began: the leaving was stopped. */
+export const STILL_HERE_MS = 15_000;
+
 /**
  * The drawer's way in (#14, #111): one button that leaves for the secure
  * sign-in page (Cognito managed login, shared with the extension), where people sign in, create
@@ -32,11 +35,16 @@ export function AuthPanel({
 }) {
   const auth = useAuth();
   const [mode, setMode] = useState<SignInMode>(start);
-  const [refusal, setRefusal] = useState<string | null>(failed ? text.errors[failed] : null);
+  // Set once mounted (below): a live region must be there empty before its words, to be read.
+  const [refusal, setRefusal] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const waiting = useDelayedPending(pending);
   const noteId = useId();
   const action = mode === 'sign-in' ? text.signIn : text.signUp;
+
+  useEffect(() => {
+    if (failed) setRefusal(text.errors[failed]);
+  }, [failed]);
 
   // Back from the sign-in page with the browser's back button, this page may come back as it was
   // (the back-forward cache): the button is ready again.
@@ -53,9 +61,11 @@ export function AuthPanel({
     setPending(true);
     setRefusal(null);
     try {
-      // On success the browser leaves: the button stays pending until it has.
+      // On success the browser leaves: the button stays pending until it has, or until it is
+      // clear it did not (stopped by the person, say), when it is ready again.
       rememberSignInMode(mode);
       await auth.signIn(mode);
+      setTimeout(() => setPending(false), STILL_HERE_MS);
     } catch (error) {
       setRefusal(text.errors[error instanceof AuthError ? error.kind : 'unknown']);
       setPending(false);
