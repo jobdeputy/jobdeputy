@@ -364,6 +364,7 @@ export function MatchesList({
                   }
                   onGone={() => leave(open, { kind: 'left', job: open })}
                   onFailed={() => void refetch()}
+                  onReturn={() => void refetch()}
                 />
               </>
             }

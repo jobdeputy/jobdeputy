@@ -179,6 +179,9 @@ export class CellStack extends Stack {
         treatMissingData: TreatMissingData.NOT_BREACHING,
       }).addAlarmAction(new SnsAction(alarmTopic));
 
+    // #54: the extension IDs this cell trusts: the dev ID's key is public, so only dev stacks.
+    const trustedExtensionIds =
+      props.stage === 'dev' ? [...EXTENSION_DEV_IDS, ...EXTENSION_STORE_IDS] : EXTENSION_STORE_IDS;
     const auth = new Auth(this, 'Auth', {
       namePrefix: id,
       removalPolicy,
@@ -205,10 +208,7 @@ export class CellStack extends Stack {
           }
         : {}),
       // #54: the dev ID's key is public, so only dev stacks trust it.
-      extensionIds:
-        props.stage === 'dev'
-          ? [...EXTENSION_DEV_IDS, ...EXTENSION_STORE_IDS]
-          : EXTENSION_STORE_IDS,
+      extensionIds: trustedExtensionIds,
     });
 
     // User data tables (docs/data-model.md): keyed by userId, never shared across cells.
@@ -849,6 +849,9 @@ export class CellStack extends Stack {
           ...(auth.signInUrl && auth.webCallbackUrls.length > 0
             ? { authDomain: Fn.select(2, Fn.split('/', auth.signInUrl)) }
             : {}),
+          // #54 PR D: the extensions the web app may hand a job to (Auto apply): the ones this
+          // cell trusts, and only where it has the extension's sign-in.
+          ...(auth.extension ? { extensionIds: [...trustedExtensionIds] } : {}),
         }),
       });
       new StringParameter(this, 'WebConnectSrc', {

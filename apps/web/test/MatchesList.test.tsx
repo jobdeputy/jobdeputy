@@ -451,6 +451,8 @@ describe('applying from the job’s pane (#52 PR C)', () => {
     screenWide(true);
     await renderList();
     openJob('Senior Backend Engineer');
+    // This site has no extension to hand jobs to (the unit tests' default).
+    await preview().findByText('Soon');
     const auto = preview().getByRole('button', { name: /^Auto apply/ });
     expect(auto.getAttribute('aria-disabled')).toBe('true');
     expect(auto.textContent).toContain('Soon');

@@ -567,6 +567,29 @@ export const en = {
       auto: 'Auto apply',
       soon: 'Soon',
       autoHint: 'Soon your deputy fills in applications for you, through its browser extension.',
+      /** #54 PR D: Auto apply, through the browser extension. */
+      autoOpening: 'Opening…',
+      autoChecking: 'Checking for the JobDeputy extension…',
+      autoReady:
+        'Opens the application in a new tab and fills it in with your saved answers. You review it and click Submit.',
+      autoSignIn:
+        'Opens the application and fills it in. Sign in to the JobDeputy extension from your browser’s toolbar first.',
+      autoMissing:
+        'Add the JobDeputy browser extension, and your deputy fills in Greenhouse applications for you.',
+      autoNotGreenhouse: 'Auto apply fills Greenhouse applications for now. Use Manual apply here.',
+      /** The job's posting couldn't be read, so its form isn't known. */
+      autoJobFailed: 'Couldn’t check this job for Auto apply. Close it and open it again.',
+      /** A Greenhouse job without the posting's ID: its form isn't known. */
+      autoNoForm: 'Couldn’t find this job’s application form. Use Manual apply here.',
+      autoCooling: 'Off while you can’t apply to this company.',
+      autoFailed: {
+        signedOut:
+          'Sign in to the JobDeputy extension from your browser’s toolbar, then try Auto apply again.',
+        cantOpen: 'The extension couldn’t open this application. Use Manual apply.',
+        noAnswer: 'The extension didn’t answer. Try again, or use Manual apply.',
+        /** Reached, but no answer in time: the form may have opened anyway. */
+        late: 'The extension took too long to answer. If it opened the application, finish it there.',
+      },
       /** Asked once Manual apply has opened the employer's page. */
       ask: 'Did you apply on the employer site?',
       askLine: 'Confirm only if you sent the application yourself.',

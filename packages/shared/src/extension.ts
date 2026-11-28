@@ -65,3 +65,36 @@ export const EXTENSION_STAGE_CHANGE = { stage: 'applied', from: 'new' } as const
  * login sign-in, which asks for it (#111, `WEB_SCOPES`), and to a direct (admin) sign-in.
  */
 export const WEB_SCOPE = 'aws.cognito.signin.user.admin';
+
+/**
+ * #54 PR D (decision 0020): what the web app and the extension say to each other, through the
+ * extension's `externally_connectable` (the site's origin only). The web app asks `hello`, then
+ * `auto-apply` with a job and its Greenhouse form; the extension checks both and opens the form.
+ */
+export interface ExtensionHello {
+  /** The extension's version. */
+  version: string;
+  /** Signed in now (the extension may still sign in without a window when asked to apply). */
+  signedIn: boolean;
+}
+
+export type AutoApplyAnswer =
+  | { ok: true }
+  | { ok: false; reason: 'signed-out' | 'not-greenhouse' | 'wrong-job' | 'failed' };
+
+const GREENHOUSE_BOARD = /^greenhouse:([a-z0-9][a-z0-9._-]{0,99})$/;
+const GREENHOUSE_POSTING = /^\d{1,20}$/;
+
+/**
+ * A Greenhouse job's own application form on the board's host, which Auto apply opens: built from
+ * the job's board (`greenhouse:acme`) and its posting ID, never from its stored address, which is
+ * often the company's careers page. Null for any other job.
+ */
+export function greenhouseFormUrl(
+  companyKey: string,
+  externalId: string | undefined,
+): string | null {
+  const board = GREENHOUSE_BOARD.exec(companyKey)?.[1];
+  if (!board || externalId === undefined || !GREENHOUSE_POSTING.test(externalId)) return null;
+  return `https://job-boards.greenhouse.io/${board}/jobs/${externalId}`;
+}

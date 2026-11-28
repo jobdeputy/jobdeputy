@@ -11,6 +11,8 @@ export interface Config {
   readonly apiUrl?: string;
   /** #111: managed login's host (auth.<site>), where people sign in; a bare host name. */
   readonly authDomain?: string;
+  /** #54 PR D: the browser extensions this cell trusts, which Auto apply may hand a job to. */
+  readonly extensionIds?: readonly string[];
 }
 
 const CONFIG_URL = '/config.json';
@@ -36,6 +38,13 @@ export async function readConfig(): Promise<Config | null> {
       userPoolClientId: config.userPoolClientId,
       ...(typeof config.apiUrl === 'string' ? { apiUrl: config.apiUrl } : {}),
       ...(typeof config.authDomain === 'string' ? { authDomain: config.authDomain } : {}),
+      ...(Array.isArray(config.extensionIds)
+        ? {
+            extensionIds: config.extensionIds.filter(
+              (id): id is string => typeof id === 'string' && /^[a-p]{32}$/.test(id),
+            ),
+          }
+        : {}),
     };
   }
   // The deploy writes the config whole, so anything else is not ours: the app's own page means
