@@ -3,6 +3,7 @@ import { atsJobKey, jobIdOf } from '@jobdeputy/shared/job-id';
 import { type BrowserContext, expect, type Page, test } from '@playwright/test';
 import { buildEnv } from '../build-env.ts';
 import { readSettings } from '../src/settings.ts';
+import { siteOrigins } from '../src/site.ts';
 import { withExtension } from './extension.ts';
 
 // #54 PR C: the filler on a Greenhouse form, in Chromium with the built extension. The form is
@@ -18,6 +19,7 @@ const FORM = readFileSync(
 );
 const POSTING = 'https://job-boards.greenhouse.io/acme/jobs/4001001';
 const EMBED = 'https://job-boards.greenhouse.io/embed/job_app?for=acme&token=4001001';
+const CONFIRMATION = `${POSTING}/confirmation`;
 const PDF = Buffer.from('%PDF-1.7\n% JobDeputy e2e résumé\n');
 
 const page = (body: string) =>
@@ -26,7 +28,7 @@ const page = (body: string) =>
   <h1>Senior Engineer at Acme</h1>${body}</body></html>`;
 
 /** The API and files, answered here: the service worker's calls go through the context's routes. */
-async function serve(context: BrowserContext) {
+async function serve(context: BrowserContext, { listed = true } = {}) {
   if (!settings) throw new Error('no settings');
   const jobId = await jobIdOf(atsJobKey('greenhouse:acme', '4001001'));
   const bodies: Record<string, unknown> = {
@@ -55,14 +57,43 @@ async function serve(context: BrowserContext) {
     '/me/tailorings/t1': { downloads: { pdf: `${settings.filesOrigin}/t1.pdf`, docx: 'x' } },
     [`/me/cover-letters?jobId=${jobId}`]: { coverLetters: [] },
     '/me/documents': { documents: [] },
+    // #54 PR D: the job, as an extension token sees it (in the list, stage New).
+    ...(listed
+      ? {
+          [`/me/jobs/${jobId}`]: {
+            jobId,
+            title: 'Senior Engineer',
+            companyName: 'Acme',
+            status: 'new',
+          },
+        }
+      : {}),
   };
   const seen: string[] = [];
   await context.route(`${settings.apiUrl}/**`, (route) => {
     const url = new URL(route.request().url());
     const path = `${url.pathname}${url.search}`;
+    if (route.request().method() === 'PUT') {
+      // #54 PR D: the extension's one write.
+      seen.push(`PUT ${path} ${route.request().postData()}`);
+      return route.fulfill({ json: { jobId, status: 'applied' } });
+    }
     seen.push(path);
     return route.fulfill({ json: bodies[path] ?? {}, status: path in bodies ? 200 : 404 });
   });
+  // #54 PR D: Greenhouse's page after a submit.
+  await context.route(CONFIRMATION, (route) =>
+    route.fulfill({
+      body: page('<p>Thank you for applying. Your application has been received.</p>'),
+      contentType: 'text/html',
+    }),
+  );
+  // #54 PR D: the web app's job pane (its Auto apply hands the job to the extension).
+  const site = SITE;
+  if (site)
+    await context.route(`${site}/**`, (route) =>
+      route.fulfill({ body: page('<p>The job pane.</p>'), contentType: 'text/html' }),
+    );
   await context.route(`${settings.filesOrigin}/**`, (route) =>
     route.fulfill({ body: PDF, contentType: 'application/pdf' }),
   );
@@ -256,6 +287,120 @@ test('signed out, the panel says to sign in from the toolbar', async () => {
     await panel.getByRole('button', { name: 'Fill this application' }).click();
     await expect(panel.getByRole('alert')).toHaveText(/Sign in from the JobDeputy button/);
     expect(await value(tab, 'first_name')).toBe('');
+  } finally {
+    await close();
+  }
+});
+
+/** The web app's first origin this build lets message it (#54 PR D). */
+const SITE = settings
+  ? siteOrigins(settings, { store: process.env.JD_STORE_BUILD === '1' })[0]
+  : '';
+
+test('Auto apply: the web app hands over a job; its form opens in a new tab and fills itself', async () => {
+  test.skip(!settings || !SITE, 'a build without sign-in settings or a site');
+  const { context, id, close } = await withExtension({ offline: true });
+  try {
+    await serve(context);
+    await signIn(context);
+    const site = await context.newPage();
+    await site.goto(`${SITE}/jobs`);
+    const send = (message: unknown) =>
+      site.evaluate(
+        ([extension, body]) =>
+          (
+            globalThis as unknown as {
+              chrome: { runtime: { sendMessage(id: string, m: unknown): Promise<unknown> } };
+            }
+          ).chrome.runtime.sendMessage(extension as string, body),
+        [id, message] as const,
+      );
+    expect(await send({ type: 'hello' })).toEqual({ version: expect.any(String), signedIn: true });
+    const jobId = await jobIdOf(atsJobKey('greenhouse:acme', '4001001'));
+    // Another job's form, or not a Greenhouse form: refused, and no tab opens.
+    expect(
+      await send({
+        type: 'auto-apply',
+        jobId,
+        url: 'https://job-boards.greenhouse.io/acme/jobs/9',
+      }),
+    ).toEqual({ ok: false, reason: 'wrong-job' });
+    expect(await send({ type: 'auto-apply', jobId, url: 'https://evil.example/' })).toEqual({
+      ok: false,
+      reason: 'not-greenhouse',
+    });
+    const opened = context.waitForEvent('page');
+    expect(await send({ type: 'auto-apply', jobId, url: POSTING })).toEqual({ ok: true });
+    const tab = await opened;
+    await tab.setViewportSize({ width: 1280, height: 800 });
+    // Opened at the job's form. Its first load never reaches the network (offline); loaded
+    // through the routes, it is still the tab Auto apply opened.
+    await expect(tab).toHaveURL(POSTING);
+    // Whether the routes caught the first load is a race: load it again only if they didn't.
+    await tab.waitForLoadState('domcontentloaded');
+    if ((await tab.locator('form#application-form').count()) === 0) await tab.goto(POSTING);
+    const panel = tab.getByRole('region', { name: 'JobDeputy' });
+    // Filled without a click.
+    await expect(panel.getByText(/^\d+ of \d+ questions answered$/)).toBeVisible();
+    expect(await value(tab, 'first_name')).toBe('Sam');
+    await tab.screenshot({ path: 'screenshots/greenhouse-auto-apply.png' });
+    // Once: a reload waits for the button.
+    await tab.reload();
+    await expect(panel.getByRole('button', { name: 'Fill this application' })).toBeVisible();
+    expect(await value(tab, 'first_name')).toBe('');
+    // A form the person opened themselves never fills on its own.
+    const own = await context.newPage();
+    await own.goto(POSTING);
+    await expect(
+      own.getByRole('region', { name: 'JobDeputy' }).getByRole('button', {
+        name: 'Fill this application',
+      }),
+    ).toBeVisible();
+    expect(await value(own, 'first_name')).toBe('');
+  } finally {
+    await close();
+  }
+});
+
+test('on the confirmation page, "Mark as applied?" records the application in one click', async () => {
+  test.skip(!settings, 'a build without sign-in settings');
+  const { context, close } = await withExtension();
+  try {
+    const seen = await serve(context);
+    await signIn(context);
+    const tab = await context.newPage();
+    await tab.setViewportSize({ width: 1280, height: 800 });
+    await tab.goto(CONFIRMATION);
+    const panel = tab.getByRole('region', { name: 'JobDeputy' });
+    await expect(
+      panel.getByText('You applied to Senior Engineer at Acme. Mark it as applied in JobDeputy?'),
+    ).toBeVisible();
+    await tab.screenshot({ path: 'screenshots/greenhouse-confirmation.png' });
+    await panel.getByRole('button', { name: 'Mark as applied' }).click();
+    await expect(panel.getByText(/^Marked as applied\./)).toBeVisible();
+    await tab.screenshot({ path: 'screenshots/greenhouse-confirmation-saved.png' });
+    const jobId = await jobIdOf(atsJobKey('greenhouse:acme', '4001001'));
+    expect(seen).toContain(`/me/jobs/${jobId}`);
+    expect(seen).toContain(`PUT /me/jobs/${jobId}/stage {"stage":"applied","from":"new"}`);
+    // The only write.
+    expect(seen.filter((entry) => entry.startsWith('PUT '))).toHaveLength(1);
+  } finally {
+    await close();
+  }
+});
+
+test('on the confirmation page of a job not in the list, there is nothing to record', async () => {
+  test.skip(!settings, 'a build without sign-in settings');
+  const { context, close } = await withExtension();
+  try {
+    const seen = await serve(context, { listed: false });
+    await signIn(context);
+    const tab = await context.newPage();
+    await tab.goto(CONFIRMATION);
+    const panel = tab.getByRole('region', { name: 'JobDeputy' });
+    await expect(panel.getByText(/isn’t in your JobDeputy list/)).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Mark as applied' })).toHaveCount(0);
+    expect(seen.filter((entry) => entry.startsWith('PUT '))).toHaveLength(0);
   } finally {
     await close();
   }

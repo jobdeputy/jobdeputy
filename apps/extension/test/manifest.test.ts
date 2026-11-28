@@ -1,3 +1,4 @@
+import { LOCAL_WEB_ORIGIN as SHARED_LOCAL_WEB_ORIGIN } from '@jobdeputy/shared/auth';
 import { EXTENSION_DEV_IDS } from '@jobdeputy/shared/extension';
 import { EXTENSION_DEV_KEY } from '@jobdeputy/shared/extension-key';
 import { describe, expect, it } from 'vitest';
@@ -9,6 +10,7 @@ import {
   PERMISSIONS,
 } from '../src/manifest.ts';
 import type { Settings } from '../src/settings.ts';
+import { LOCAL_WEB_ORIGIN, siteOrigins } from '../src/site.ts';
 
 const SETTINGS: Settings = {
   apiUrl: 'https://abc123.execute-api.us-east-1.amazonaws.com',
@@ -102,6 +104,39 @@ describe('manifest (#54, decision 0020)', () => {
     // No wildcard host or scheme: every host is one site over https.
     for (const host of hosts) {
       expect(host).toMatch(/^https:\/\/[a-z0-9.-]+\.[a-z]+\/\*$/);
+    }
+  });
+});
+
+describe('who may message the extension (#54 PR D, decision 0020)', () => {
+  const SITE = { ...SETTINGS, siteUrl: 'https://app.jobdeputy.test/x' };
+
+  it("lets only the web app's origin in a store build, and Vite's dev server too in a dev one", () => {
+    expect(manifestFor(SITE, { store: true }).externally_connectable).toEqual({
+      matches: ['https://app.jobdeputy.test/*'],
+    });
+    expect(manifestFor(SITE).externally_connectable).toEqual({
+      matches: ['https://app.jobdeputy.test/*', 'http://localhost:5173/*'],
+    });
+    // A personal stack has no site: its web app runs on Vite's dev server.
+    expect(siteOrigins(SETTINGS)).toEqual(['http://localhost:5173']);
+    expect(manifestFor(SETTINGS, { store: true })).not.toHaveProperty('externally_connectable');
+  });
+
+  it("names Vite's dev server as the web app does", () => {
+    expect(LOCAL_WEB_ORIGIN).toBe(SHARED_LOCAL_WEB_ORIGIN);
+  });
+
+  it('lets no page in without sign-in settings (nothing to answer)', () => {
+    expect(manifestFor(null)).not.toHaveProperty('externally_connectable');
+    expect(siteOrigins(null)).toEqual([]);
+  });
+
+  it('never lets every site in, nor another extension', () => {
+    for (const settings of [SITE, SETTINGS]) {
+      const matches = manifestFor(settings).externally_connectable?.matches ?? [];
+      for (const match of matches) expect(match).toMatch(/^https?:\/\/[a-z0-9.-]+(:\d+)?\/\*$/);
+      expect(manifestFor(settings).externally_connectable).not.toHaveProperty('ids');
     }
   });
 });

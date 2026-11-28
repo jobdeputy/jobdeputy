@@ -1,16 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { copy, fill } from '../copy.ts';
 import { DevTag } from '../dev-tag.tsx';
 import type { Progress } from './fill.ts';
 import type { Outcome } from './run.ts';
+import { primary, quiet } from './styles.ts';
 
 const text = copy.panel;
-
-// The popup's button styles (src/popup.tsx), from the same tokens.
-const primary =
-  'inline-flex w-full cursor-pointer items-center justify-center rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-[translate,background-color] duration-180 ease-settle hover:-translate-y-px hover:bg-ink-soft focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ring disabled:cursor-wait disabled:opacity-60 disabled:hover:translate-y-0 motion-reduce:transition-none';
-const quiet =
-  'cursor-pointer rounded-xs bg-transparent p-0 text-sm font-[650] text-accent-foreground underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ring';
 
 /**
  * #54 PR C: the panel on a Greenhouse application form. One button fills the form; then it says
@@ -21,9 +16,15 @@ export function Panel({
   fillForm,
   goTo,
   watchProgress,
+  autoFill,
   embedded = false,
 }: {
   fillForm: () => Promise<Outcome>;
+  /**
+   * #54 PR D: whether Auto apply opened this tab for this job, asked once when the panel shows;
+   * yes fills at once, as the button would.
+   */
+  autoFill?: () => Promise<boolean>;
   /** Follows the form's progress after a fill (the person answering); returns a stop. */
   watchProgress?: (onChange: (now: Progress) => void) => () => void;
   /** Scrolls to a field left for the person and focuses it. */
@@ -35,16 +36,42 @@ export function Panel({
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
 
-  async function run() {
+  /** One fill at a time: a click while Auto apply's own fill starts (or the reverse) waits. */
+  const filling = useRef(false);
+  const run = useCallback(async () => {
+    if (filling.current) return;
+    filling.current = true;
     setBusy(true);
     try {
       setOutcome(await fillForm());
     } catch {
       setOutcome({ ok: false, reason: 'failed' });
     } finally {
+      filling.current = false;
       setBusy(false);
     }
-  }
+  }, [fillForm]);
+
+  // Asked once per panel (a new job's form gets a new panel); the answer is used up in the worker.
+  const asked = useRef(false);
+  const filled = useRef(false);
+  if (outcome) filled.current = true;
+  useEffect(() => {
+    // Not asked once a fill has started: the answer would be used up for nothing.
+    if (!autoFill || asked.current || filling.current) return;
+    asked.current = true;
+    let mounted = true;
+    autoFill().then(
+      (yes) => {
+        // Not over a fill the person already started, one already shown, or a panel gone.
+        if (yes && mounted && !filled.current) void run();
+      },
+      () => undefined,
+    );
+    return () => {
+      mounted = false;
+    };
+  }, [autoFill, run]);
 
   const place = embedded ? 'mx-auto my-4' : 'fixed right-4 bottom-4 z-[2147483647]';
   if (!shown) {

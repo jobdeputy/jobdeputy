@@ -205,3 +205,62 @@ describe('runFill (#54 PR C)', () => {
     });
   });
 });
+
+describe('Auto apply on the form (#54 PR D)', () => {
+  it('fills at once when Auto apply opened the tab, asking only once', async () => {
+    const fillForm = vi.fn(async () => filled);
+    const autoFill = vi.fn(async () => true);
+    const { rerender } = render(<Panel fillForm={fillForm} goTo={vi.fn()} autoFill={autoFill} />);
+    expect(await screen.findByText('12 of 40 questions answered')).toBeTruthy();
+    rerender(<Panel fillForm={fillForm} goTo={vi.fn()} autoFill={autoFill} />);
+    expect(autoFill).toHaveBeenCalledTimes(1);
+    expect(fillForm).toHaveBeenCalledTimes(1);
+  });
+
+  it('otherwise waits for the button', async () => {
+    const fillForm = vi.fn(async () => filled);
+    const autoFill = vi.fn(async () => false);
+    render(<Panel fillForm={fillForm} goTo={vi.fn()} autoFill={autoFill} />);
+    await waitFor(() => expect(autoFill).toHaveBeenCalled());
+    expect(fillForm).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Fill this application' })).toBeTruthy();
+  });
+
+  it('a click while the ask is pending fills once, not twice', async () => {
+    let answerAsk: (yes: boolean) => void = () => {};
+    let finish: (outcome: Outcome) => void = () => {};
+    const fillForm = vi.fn(
+      () =>
+        new Promise<Outcome>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const autoFill = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          answerAsk = resolve;
+        }),
+    );
+    render(<Panel fillForm={fillForm} goTo={vi.fn()} autoFill={autoFill} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Fill this application' }));
+    await act(async () => answerAsk(true));
+    expect(fillForm).toHaveBeenCalledTimes(1);
+    await act(async () => finish(filled));
+    expect(await screen.findByText('12 of 40 questions answered')).toBeTruthy();
+    // The ask answered after the person's own fill: no second one.
+    expect(fillForm).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed ask is the same as no', async () => {
+    const fillForm = vi.fn(async () => filled);
+    render(
+      <Panel
+        fillForm={fillForm}
+        goTo={vi.fn()}
+        autoFill={vi.fn(async () => Promise.reject(new Error('gone')))}
+      />,
+    );
+    await act(async () => {});
+    expect(fillForm).not.toHaveBeenCalled();
+  });
+});

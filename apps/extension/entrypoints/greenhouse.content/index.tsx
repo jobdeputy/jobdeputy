@@ -5,10 +5,17 @@ import {
   type ShadowRootContentScriptUi,
 } from 'wxt/utils/content-script-ui/shadow-root';
 import { defineContentScript } from 'wxt/utils/define-content-script';
-import { GREENHOUSE_MATCHES, greenhousePosting } from '../../src/fill/posting.ts';
+import {
+  GREENHOUSE_MATCHES,
+  greenhouseConfirmation,
+  greenhousePosting,
+} from '../../src/fill/posting.ts';
+import { ConfirmPanel } from '../../src/greenhouse/confirm.tsx';
 import { watchProgress } from '../../src/greenhouse/fill.ts';
 import { Panel } from '../../src/greenhouse/panel.tsx';
 import { runFill } from '../../src/greenhouse/run.ts';
+import type { ContentRequest } from '../../src/messages.ts';
+import type { Application } from '../../src/record.ts';
 // Built into the script and set in the shadow root: no file the page could load (no
 // web_accessible_resources, which the manifest check refuses).
 import css from './style.css?inline';
@@ -77,8 +84,55 @@ export default defineContentScript({
     let on: string | null = null;
     let onForm: HTMLFormElement | null = null;
 
+    const ask = async (request: ContentRequest) => {
+      try {
+        return await browser.runtime.sendMessage(request);
+      } catch {
+        return null;
+      }
+    };
+    const readApplication = () => ask({ type: 'application' }) as Promise<Application | null>;
+    const recordApplication = () =>
+      ask({ type: 'record-application' }) as Promise<Application | null>;
+    const autoFill = async () => (await ask({ type: 'auto-fill' })) === true;
+
+    /** #54 PR D: Greenhouse's confirmation page, in the board's own tab: "Mark as applied?". */
+    async function showConfirmation(at: number) {
+      const next = await createShadowRootUi<Root>(ctx, {
+        name: 'jobdeputy-panel',
+        css,
+        mode: 'open',
+        position: 'inline',
+        anchor: 'body',
+        append: 'last',
+        onMount(container) {
+          const root = createRoot(container);
+          root.render(<ConfirmPanel read={readApplication} record={recordApplication} />);
+          return root;
+        },
+        onRemove(root) {
+          root?.unmount();
+        },
+      });
+      if (at !== shown || ctx.isInvalid) return;
+      ui = next;
+      ui.mount();
+    }
+
     /** `address`: the page's new one (it can arrive before `location` shows it). */
     async function show(address: string) {
+      const confirmed = embedded ? null : greenhouseConfirmation(address);
+      if (confirmed) {
+        const key = `confirm:${confirmed.companyKey}/${confirmed.postingId}`;
+        if (key === on && ui) return;
+        const at = ++shown;
+        on = key;
+        onForm = null;
+        ui?.remove();
+        ui = null;
+        await showConfirmation(at);
+        return;
+      }
       const posting = greenhousePosting(address);
       const key = posting ? `${posting.companyKey}/${posting.postingId}` : null;
       // The same job (only its #hash or ?query changed): the panel, and what it says, stay.
@@ -104,6 +158,8 @@ export default defineContentScript({
           root.render(
             <Panel
               embedded={embedded}
+              // Only the tab's own form: an embed's top frame is the company's page.
+              {...(embedded ? {} : { autoFill })}
               goTo={goTo}
               watchProgress={(onChange) => watchProgress(() => findForm() ?? form, onChange)}
               // The form on the page now (the page may have drawn it again), and the outline in

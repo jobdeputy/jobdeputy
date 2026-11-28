@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { contentPosting, fromOwnPage, isContentRequest, isRequest } from '../src/messages.ts';
+import {
+  confirmationPosting,
+  contentPosting,
+  fromOwnPage,
+  fromSite,
+  isConfirmationRequest,
+  isContentRequest,
+  isExternalRequest,
+  isRequest,
+} from '../src/messages.ts';
 
 const ID = 'pkdigeiognmabnigddaekkkmecnaiadf';
 
@@ -70,5 +79,68 @@ describe('content scripts (#54 PR C)', () => {
     for (const other of [{ type: 'status' }, { type: 'sign-in' }, null, 'fill-data']) {
       expect(isContentRequest(other)).toBe(false);
     }
+  });
+});
+
+describe('the web app (#54 PR D, decision 0020)', () => {
+  const SITE = 'https://app.jobdeputy.test';
+  const JOB = 'a'.repeat(32);
+  const URL = 'https://job-boards.greenhouse.io/acme/jobs/1';
+
+  it("answers only the site's origins, in a tab's top frame", () => {
+    expect(fromSite({ origin: SITE, frameId: 0, tab: {} }, [SITE])).toBe(true);
+    expect(fromSite({ origin: 'https://evil.example', frameId: 0, tab: {} }, [SITE])).toBe(false);
+    expect(fromSite({ origin: SITE, frameId: 3, tab: {} }, [SITE])).toBe(false);
+    expect(fromSite({ origin: SITE, frameId: 0 }, [SITE])).toBe(false);
+    expect(fromSite({ frameId: 0, tab: {} }, [SITE])).toBe(false);
+    expect(fromSite({ origin: SITE, frameId: 0, tab: {} }, [])).toBe(false);
+  });
+
+  it('knows only hello and auto-apply, exactly as sent', () => {
+    expect(isExternalRequest({ type: 'hello' })).toBe(true);
+    expect(isExternalRequest({ type: 'auto-apply', jobId: JOB, url: URL })).toBe(true);
+    for (const value of [
+      null,
+      'hello',
+      { type: 'hello', extra: 1 },
+      { type: 'status' },
+      { type: 'fill-data' },
+      { type: 'auto-apply', jobId: JOB },
+      { type: 'auto-apply', jobId: 'A'.repeat(32), url: URL },
+      { type: 'auto-apply', jobId: JOB, url: 7 },
+      { type: 'auto-apply', jobId: JOB, url: `${URL}?${'x'.repeat(2048)}` },
+      { type: 'auto-apply', jobId: JOB, url: URL, tabId: 1 },
+    ]) {
+      expect(isExternalRequest(value), JSON.stringify(value)?.slice(0, 80)).toBe(false);
+    }
+  });
+});
+
+describe('confirmation pages (#54 PR D)', () => {
+  const DONE = 'https://job-boards.greenhouse.io/acme/jobs/4001001/confirmation';
+
+  it('knows its requests apart from the forms', () => {
+    for (const type of ['auto-fill', 'application', 'record-application']) {
+      expect(isContentRequest({ type })).toBe(true);
+    }
+    expect(isConfirmationRequest({ type: 'application' })).toBe(true);
+    expect(isConfirmationRequest({ type: 'record-application' })).toBe(true);
+    expect(isConfirmationRequest({ type: 'fill-data' })).toBe(false);
+    expect(isConfirmationRequest({ type: 'auto-fill' })).toBe(false);
+  });
+
+  it("answers only the tab's own address in its top frame", () => {
+    const posting = { companyKey: 'greenhouse:acme', postingId: '4001001' };
+    expect(confirmationPosting({ id: ID, frameId: 0, tab: { url: DONE } }, ID)).toEqual(posting);
+    expect(confirmationPosting({ id: ID, frameId: 2, tab: { url: DONE } }, ID)).toBeNull();
+    expect(confirmationPosting({ id: 'other', frameId: 0, tab: { url: DONE } }, ID)).toBeNull();
+    expect(confirmationPosting({ id: ID, frameId: 0 }, ID)).toBeNull();
+    // The form itself is not a confirmation.
+    expect(
+      confirmationPosting(
+        { id: ID, frameId: 0, tab: { url: 'https://job-boards.greenhouse.io/acme/jobs/4001001' } },
+        ID,
+      ),
+    ).toBeNull();
   });
 });

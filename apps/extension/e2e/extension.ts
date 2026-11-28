@@ -21,7 +21,13 @@ export function unpackedId(path: string): string {
  * the profile. Tests the build in `.output` (`pnpm test:e2e` builds first; CI tests the build it
  * zips).
  */
-export async function withExtension(): Promise<{
+export async function withExtension({
+  /**
+   * No host resolves (#54 PR D): a tab the extension opens itself loads before the context's
+   * routes catch it, so this keeps that first load off the real site. Routed loads still work.
+   */
+  offline = false,
+} = {}): Promise<{
   context: BrowserContext;
   id: string;
   close: () => Promise<void>;
@@ -32,7 +38,11 @@ export async function withExtension(): Promise<{
   const context = await chromium.launchPersistentContext(profile, {
     channel: 'chromium',
     headless: true,
-    args: [`--disable-extensions-except=${built}`, `--load-extension=${built}`],
+    args: [
+      `--disable-extensions-except=${built}`,
+      `--load-extension=${built}`,
+      ...(offline ? ['--host-resolver-rules=MAP * ~NOTFOUND'] : []),
+    ],
   });
   const close = async () => {
     await context.close();

@@ -1,7 +1,7 @@
 import type { ApiResult } from './api.ts';
 import type { AuthStatus, SignInOutcome } from './auth/session.ts';
 import type { FillData } from './fill/data.ts';
-import { greenhousePosting, type Posting } from './fill/posting.ts';
+import { greenhouseConfirmation, greenhousePosting, type Posting } from './fill/posting.ts';
 import type { Readiness } from './readiness.ts';
 
 /**
@@ -56,11 +56,77 @@ export function isRequest(value: unknown): value is Request {
  * answers to fill it with. The job is taken from the sender's own address (Chrome sets it, for
  * the frame that sent it), never from the message, so a page can't ask for another job's files.
  */
-export type ContentRequest = { type: 'fill-data' };
+export type ContentRequest =
+  | { type: 'fill-data' }
+  /** #54 PR D: was this tab opened by Auto apply for this job? Asked once; the answer is used up. */
+  | { type: 'auto-fill' }
+  /** #54 PR D, on a confirmation page: is there an application to record? */
+  | { type: 'application' }
+  /** #54 PR D, on a confirmation page: record it (`new` → `applied`). */
+  | { type: 'record-application' };
 export type FillDataResponse = ApiResult<FillData> | null;
 
+const CONTENT_TYPES = new Set(['fill-data', 'auto-fill', 'application', 'record-application']);
+
 export function isContentRequest(value: unknown): value is ContentRequest {
-  return (value as { type?: unknown } | null)?.type === 'fill-data';
+  const type = (value as { type?: unknown } | null)?.type;
+  return typeof type === 'string' && CONTENT_TYPES.has(type);
+}
+
+/** The requests a confirmation page makes; every other one comes from an application form. */
+export const isConfirmationRequest = (request: ContentRequest) =>
+  request.type === 'application' || request.type === 'record-application';
+
+/**
+ * #54 PR D (decision 0020): what the web app may ask, from the origins in the manifest's
+ * `externally_connectable` only: `hello` (installed? signed in?) and `auto-apply`, which opens the
+ * job's Greenhouse form in a new tab and fills it there.
+ */
+export type ExternalRequest =
+  | { type: 'hello' }
+  | { type: 'auto-apply'; jobId: string; url: string };
+
+export interface HelloResponse {
+  /** The extension's version, so the site can tell an old one. */
+  version: string;
+  signedIn: boolean;
+}
+
+export type AutoApplyResponse =
+  | { ok: true }
+  | { ok: false; reason: 'signed-out' | 'not-greenhouse' | 'wrong-job' | 'failed' };
+
+const JOB_ID = /^[0-9a-f]{32}$/;
+
+export function isExternalRequest(value: unknown): value is ExternalRequest {
+  if (typeof value !== 'object' || value === null) return false;
+  const message = value as Record<string, unknown>;
+  if (message.type === 'hello') return Object.keys(message).length === 1;
+  return (
+    message.type === 'auto-apply' &&
+    Object.keys(message).length === 3 &&
+    typeof message.jobId === 'string' &&
+    JOB_ID.test(message.jobId) &&
+    typeof message.url === 'string' &&
+    message.url.length <= 2048
+  );
+}
+
+/**
+ * The web app's page, from the origin Chrome sets for the sender (never from the message), in a
+ * tab's top frame. Chrome already refuses origins outside `externally_connectable`; this checks
+ * again, so a wider manifest by mistake still lets no other site in.
+ */
+export function fromSite(
+  sender: { origin?: string | undefined; frameId?: number | undefined; tab?: unknown },
+  origins: readonly string[],
+): boolean {
+  return (
+    typeof sender.origin === 'string' &&
+    origins.includes(sender.origin) &&
+    sender.frameId === 0 &&
+    Boolean(sender.tab)
+  );
 }
 
 /**
@@ -83,4 +149,20 @@ export function contentPosting(
   // The top frame's own sender.url may be a job it navigated away from: without the tab's
   // address, nothing.
   return greenhousePosting(sender.frameId === 0 ? sender.tab.url : sender.url);
+}
+
+/**
+ * #54 PR D: the posting a Greenhouse confirmation page confirms, or null. The tab's own address
+ * in its top frame only (Chrome sets it; the forms' host permission lets the worker see it).
+ */
+export function confirmationPosting(
+  sender: {
+    id?: string | undefined;
+    frameId?: number | undefined;
+    tab?: { url?: string | undefined } | undefined;
+  },
+  extensionId: string,
+): Posting | null {
+  if (sender.id !== extensionId || !sender.tab || sender.frameId !== 0) return null;
+  return greenhouseConfirmation(sender.tab.url);
 }

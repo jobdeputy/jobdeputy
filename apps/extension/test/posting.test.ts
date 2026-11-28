@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { greenhousePosting, jobIdFor } from '../src/fill/posting.ts';
+import { greenhouseConfirmation, greenhousePosting, jobIdFor } from '../src/fill/posting.ts';
 
 describe('greenhousePosting (#54 PR C)', () => {
   it('reads the board and posting from a form or an embedded form', () => {
@@ -39,5 +39,31 @@ describe('greenhousePosting (#54 PR C)', () => {
     const posting = { companyKey: 'greenhouse:acme', postingId: '4001001' };
     const crawl = createHash('sha256').update('ats:greenhouse:acme:4001001').digest('hex');
     expect(await jobIdFor(posting)).toBe(crawl.slice(0, 32));
+  });
+});
+
+describe('greenhouseConfirmation (#54 PR D)', () => {
+  it("reads the posting a board's confirmation page confirms", () => {
+    expect(
+      greenhouseConfirmation('https://job-boards.greenhouse.io/Acme/jobs/4001001/confirmation'),
+    ).toEqual({ companyKey: 'greenhouse:acme', postingId: '4001001' });
+    expect(
+      greenhouseConfirmation(
+        'https://job-boards.greenhouse.io/acme/jobs/4001001/confirmation?x=1#top',
+      ),
+    ).toEqual({ companyKey: 'greenhouse:acme', postingId: '4001001' });
+  });
+
+  it.each([
+    'https://job-boards.greenhouse.io/acme/jobs/4001001',
+    'https://job-boards.greenhouse.io/acme/jobs/4001001/confirmation/x',
+    'https://job-boards.greenhouse.io/acme/jobs/abc/confirmation',
+    'https://job-boards.greenhouse.io/acme/notjobs/4001001/confirmation',
+    'https://evil.example/acme/jobs/4001001/confirmation',
+    'http://job-boards.greenhouse.io/acme/jobs/4001001/confirmation',
+    'https://job-boards.greenhouse.io/embed/job_app/x/confirmation',
+    'not a url',
+  ])('is not one: %s', (address) => {
+    expect(greenhouseConfirmation(address)).toBeNull();
   });
 });

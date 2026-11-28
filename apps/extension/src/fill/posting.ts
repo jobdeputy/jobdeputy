@@ -47,3 +47,22 @@ export function greenhousePosting(address: string | undefined): Posting | null {
 export function jobIdFor(posting: Posting): Promise<string> {
   return jobIdOf(atsJobKey(posting.companyKey, posting.postingId));
 }
+
+/**
+ * #54 PR D: the page Greenhouse shows after a submit, `/acme/jobs/123/confirmation`, as the
+ * posting it confirms (the board's own host only; never an embed, whose page is the company's).
+ */
+export function greenhouseConfirmation(address: string | undefined): Posting | null {
+  let url: URL;
+  try {
+    url = new URL(address ?? '');
+  } catch {
+    return null;
+  }
+  const parts = url.pathname.split('/').filter(Boolean);
+  if (parts.length !== 4 || parts[3] !== 'confirmation') return null;
+  url.pathname = `/${parts.slice(0, 3).join('/')}`;
+  url.search = '';
+  url.hash = '';
+  return greenhousePosting(url.href);
+}
