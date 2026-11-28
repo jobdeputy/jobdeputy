@@ -1,5 +1,12 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+  EXTENSION_API_ROUTES,
+  EXTENSION_DEV_IDS,
+  EXTENSION_STORE_IDS,
+  extensionRedirectUrl,
+  WEB_SCOPE,
+} from '@jobdeputy/shared/extension';
 import { App, Stack } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { CfnUserPool } from 'aws-cdk-lib/aws-cognito';
@@ -164,11 +171,75 @@ describe('Cognito (T05)', () => {
     });
   });
 
+  it('lets the extension client only sign in through managed login with a code, back to the extension (#54)', () => {
+    t.hasResourceProperties('AWS::Cognito::UserPoolClient', {
+      ClientName: 'extension',
+      // No password or SRP flow of its own: only managed login's code, then refresh.
+      ExplicitAuthFlows: ['ALLOW_REFRESH_TOKEN_AUTH'],
+      GenerateSecret: false,
+      PreventUserExistenceErrors: 'ENABLED',
+      EnableTokenRevocation: true,
+      AllowedOAuthFlowsUserPoolClient: true,
+      AllowedOAuthFlows: ['code'],
+      AllowedOAuthScopes: ['openid', 'email'],
+      CallbackURLs: [...EXTENSION_DEV_IDS, ...EXTENSION_STORE_IDS].map(extensionRedirectUrl),
+      SupportedIdentityProviders: ['COGNITO'],
+      AccessTokenValidity: 60,
+      RefreshTokenValidity: 43200,
+    });
+    const extension = Object.values(t.findResources('AWS::Cognito::UserPoolClient')).find(
+      (client) => client.Properties.ClientName === 'extension',
+    );
+    expect(extension?.Properties.LogoutURLs).toBeUndefined();
+  });
+
+  it('serves managed login (v2) on a domain from the stack ID, branded for the extension (#54)', () => {
+    t.hasResourceProperties('AWS::Cognito::UserPoolDomain', {
+      // `jobdeputy-` + the first part of the stack ID's UUID: never a word Cognito refuses.
+      Domain: {
+        'Fn::Join': [
+          '',
+          [
+            'jobdeputy-',
+            {
+              'Fn::Select': [
+                0,
+                {
+                  'Fn::Split': [
+                    '-',
+                    { 'Fn::Select': [2, { 'Fn::Split': ['/', { Ref: 'AWS::StackId' }] }] },
+                  ],
+                },
+              ],
+            },
+          ],
+        ],
+      },
+      ManagedLoginVersion: 2,
+    });
+    t.resourceCountIs('AWS::Cognito::ManagedLoginBranding', 1);
+    t.hasResourceProperties('AWS::Cognito::ManagedLoginBranding', {
+      ClientId: { Ref: Match.stringLikeRegexp('ExtensionClient') },
+    });
+  });
+
+  it('lets the API accept tokens from the web, extension and (dev) tests clients only', () => {
+    const authorizer = Object.values(t.findResources('AWS::ApiGatewayV2::Authorizer'))[0];
+    const audience = authorizer?.Properties.JwtConfiguration.Audience as { Ref: string }[];
+    expect(audience.map((ref) => ref.Ref.replace(/[0-9A-F]{8}$/, '')).sort()).toEqual(
+      ['AuthUserPoolExtensionClient', 'AuthUserPoolTestsClient', 'AuthUserPoolWebClient'].sort(),
+    );
+  });
+
   it('has a tests client only in dev, and protects prod pools from deletion', () => {
-    t.resourceCountIs('AWS::Cognito::UserPoolClient', 2);
+    t.resourceCountIs('AWS::Cognito::UserPoolClient', 3);
     const prod = buildApp({ stage: 'prod', env: {} }).node.findChild('jobdeputy-prod-lhr');
     const pt = Template.fromStack(prod as never);
+    // #54: prod trusts only the store item's ID (the dev key is public); none yet, so prod has
+    // no extension client, managed login, or branding until the store item exists.
     pt.resourceCountIs('AWS::Cognito::UserPoolClient', 1);
+    pt.resourceCountIs('AWS::Cognito::UserPoolDomain', 0);
+    pt.resourceCountIs('AWS::Cognito::ManagedLoginBranding', 0);
     pt.hasResource('AWS::Cognito::UserPool', {
       Properties: Match.objectLike({ DeletionProtection: 'ACTIVE' }),
       DeletionPolicy: 'Retain',
@@ -269,6 +340,22 @@ describe('least privilege (T04)', () => {
 
 describe('HTTP API (T04)', () => {
   const t = devTemplate();
+
+  it("lets the extension's tokens reach only the routes it uses (#54, decision 0020)", () => {
+    const routes = Object.entries(t.findResources('AWS::ApiGatewayV2::Route')).filter(
+      ([id, r]) => !id.startsWith('TestSiteApi') && r.Properties.AuthorizationType === 'JWT',
+    );
+    const keys = routes.map(([, r]) => r.Properties.RouteKey as string);
+    // Every route the extension may call exists (a typo would quietly lock it out).
+    for (const key of EXTENSION_API_ROUTES) expect(keys).toContain(key);
+    for (const [, route] of routes) {
+      const { RouteKey, AuthorizationScopes } = route.Properties;
+      if (EXTENSION_API_ROUTES.includes(RouteKey))
+        expect(AuthorizationScopes, RouteKey).toBeUndefined();
+      else expect(AuthorizationScopes, RouteKey).toEqual([WEB_SCOPE]);
+    }
+    expect(keys).toContain('DELETE /me');
+  });
 
   it('requires a Cognito token on every product API route', () => {
     // The dev test site is a separate API (see below); the product API has no open route.

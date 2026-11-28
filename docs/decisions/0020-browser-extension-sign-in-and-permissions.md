@@ -13,7 +13,8 @@ The extension ([0014](0014-browser-extension-in-monorepo.md)) fills application 
 1. **Sign-in: its own Cognito managed login (chosen).** A new public `ExtensionClient` (authorization code + PKCE) and a Cognito domain; `chrome.identity.launchWebAuthFlow` opens the login page and returns to `https://<extension-id>.chromiumapp.org/`. Its own client: revocable and limited apart from the web app; works without the web app open. Costs one-time setup (domain, branding, a fixed extension ID). The pool is on Essentials, which includes managed login.
 2. **Sign-in: tokens handed over by the web app** (`externally_connectable`). No Cognito change, but the web app's refresh token leaves its origin and the extension can't be revoked on its own.
 3. **Sign-in: an email and password form in the extension.** A second password form to secure and keep in step.
-4. **Build: WXT (chosen)** (Vite-based, MV3, builds for Firefox and Safari too, for #55) or plain Vite with a hand-written manifest (fewer dependencies, more glue).
+4. **API access: CORS from the extension's origin instead of a host permission** (no install warning for our API). Not possible: API Gateway HTTP APIs refuse a `chrome-extension://` CORS origin ("Invalid format for origin", PR B1). Managed login's token endpoint does answer the extension's origin, so it needs no host permission.
+5. **Build: WXT (chosen)** (Vite-based, MV3, builds for Firefox and Safari too, for #55) or plain Vite with a hand-written manifest (fewer dependencies, more glue).
 
 ## Decision
 
@@ -28,6 +29,6 @@ The standard OAuth flow keeps the web app's tokens in the web app and gives the 
 
 ## Consequences
 
-- PR B adds the Cognito domain, `ExtensionClient`, and managed-login branding; the extension ID must be fixed before its callback URL is registered.
+- PR B adds the Cognito domain, `ExtensionClient`, and managed-login branding; the extension ID must be fixed before its callback URL is registered. Done in PR B: one managed login domain per stack (`jobdeputy-` and the first part of the stack's ID: a stack name may hold a word Cognito refuses, such as `aws`, and prefixes are global), the client allows only the code flow back to `https://<id>.chromiumapp.org/` and refresh, and the dev ID comes from a public key committed in `packages/shared/src/extension.ts` (no private key is kept). As that key is public, anyone can load an unpacked extension with the dev ID, so **only dev stacks trust it**; prod trusts only the store item's ID (which no one else can take), and has no extension sign-in until that item exists. Sign-out clears the tokens; the signed-out popup then offers *Continue as* the last person or *Use a different account*, which goes through managed login's `/logout` back to sign-in (no sign-out address registered). The API host the extension asks for is the stack's own, set when the extension is built.
 - Every new job site is a manifest change, its test, and a store update.
 - Firefox and Safari (#55) reuse the WXT build; their sign-in redirect differs and is decided there.

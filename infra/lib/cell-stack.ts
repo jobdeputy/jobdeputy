@@ -6,8 +6,28 @@ import {
   SCANNED_PREFIX,
   VOLUNTARY_KMS_PURPOSE,
 } from '@jobdeputy/shared';
-import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps, Tags } from 'aws-cdk-lib';
-import { CorsHttpMethod, HttpApi, HttpMethod, HttpStage } from 'aws-cdk-lib/aws-apigatewayv2';
+import {
+  EXTENSION_API_ROUTES,
+  EXTENSION_DEV_IDS,
+  EXTENSION_STORE_IDS,
+  WEB_SCOPE,
+} from '@jobdeputy/shared/extension';
+import {
+  Aspects,
+  CfnOutput,
+  Duration,
+  RemovalPolicy,
+  Stack,
+  type StackProps,
+  Tags,
+} from 'aws-cdk-lib';
+import {
+  CfnRoute,
+  CorsHttpMethod,
+  HttpApi,
+  HttpMethod,
+  HttpStage,
+} from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import {
@@ -150,6 +170,11 @@ export class CellStack extends Stack {
       removalPolicy,
       deletionProtection: isProd,
       testsClient: props.stage === 'dev',
+      // #54: the dev ID's key is public, so only dev stacks trust it.
+      extensionIds:
+        props.stage === 'dev'
+          ? [...EXTENSION_DEV_IDS, ...EXTENSION_STORE_IDS]
+          : EXTENSION_STORE_IDS,
     });
 
     // User data tables (docs/data-model.md): keyed by userId, never shared across cells.
@@ -733,8 +758,21 @@ export class CellStack extends Stack {
       // Every route needs a valid token from this cell's pool (T05). API Gateway
       // rejects missing, invalid, or expired tokens before any Lambda runs.
       defaultAuthorizer: new HttpUserPoolAuthorizer('Cognito', auth.userPool, {
-        userPoolClients: [auth.webClient, ...(auth.testsClient ? [auth.testsClient] : [])],
+        userPoolClients: [
+          auth.webClient,
+          ...(auth.extension ? [auth.extension.client] : []),
+          ...(auth.testsClient ? [auth.testsClient] : []),
+        ],
       }),
+    });
+    // #54 (decision 0020): the extension's tokens reach only the routes it uses. Every other
+    // route with a token asks for the scope a direct sign-in gives (the web app's and the tests'),
+    // which managed login never gives the extension. An aspect, so routes added anywhere count.
+    Aspects.of(httpApi).add({
+      visit(node) {
+        if (!(node instanceof CfnRoute) || node.authorizationType !== 'JWT') return;
+        if (!EXTENSION_API_ROUTES.includes(node.routeKey)) node.authorizationScopes = [WEB_SCOPE];
+      },
     });
     if (!props.owner) {
       alarm(
@@ -953,6 +991,11 @@ export class CellStack extends Stack {
       value: documents.malwarePlan.attrMalwareProtectionPlanId,
     });
     new CfnOutput(this, 'WebClientId', { value: auth.webClient.userPoolClientId });
+    // The extension's build settings (#54).
+    if (auth.extension) {
+      new CfnOutput(this, 'AuthDomain', { value: auth.extension.domain.baseUrl() });
+      new CfnOutput(this, 'ExtensionClientId', { value: auth.extension.client.userPoolClientId });
+    }
     if (auth.testsClient) {
       new CfnOutput(this, 'TestsClientId', { value: auth.testsClient.userPoolClientId });
     }

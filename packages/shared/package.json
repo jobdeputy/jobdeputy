@@ -10,6 +10,8 @@
     "./cover-letter": "./src/cover-letter.ts",
     "./crawl": "./src/crawl.ts",
     "./documents": "./src/documents.ts",
+    "./extension": "./src/extension.ts",
+    "./extension-key": "./src/extension-key.ts",
     "./lists": "./src/lists.ts",
     "./match-score": "./src/match-score.ts",
     "./profile": "./src/profile.ts",
