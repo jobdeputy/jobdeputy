@@ -216,13 +216,7 @@ export async function fillForm(
       if (field.kind === 'file') files[field.key] = 'attached';
     }
   }
-  for (const marked of form.querySelectorAll(`[${LEFT_MARK}]`)) marked.removeAttribute(LEFT_MARK);
-  const { total, answered, open } = questionsOf(form);
-  for (const field of open) {
-    // Outlined only when required: the panel lists those, and the page matches it.
-    const [element] = field.elements;
-    if (field.required && element) wrapperOf(element).setAttribute(LEFT_MARK, '');
-  }
+  const { total, answered, open } = syncOutlines(form);
   return { filled, total, answered, left: open.map(leftOf), files };
 }
 
@@ -243,12 +237,38 @@ function questionsOf(form: ParentNode): { total: number; answered: number; open:
     if (field.kind === 'text' && base !== field.key && files.has(base)) textOf.set(base, field);
   }
   const alternatives = new Set(textOf.values());
-  const questions = all.filter((field) => !alternatives.has(field));
+  const questions = all
+    .filter((field) => !alternatives.has(field))
+    // A pair is required when either half is.
+    .map((field) => {
+      const text = textOf.get(field.key);
+      return text?.required && !field.required ? { ...field, required: true } : field;
+    });
   const open = questions.filter((field) => {
     const text = textOf.get(field.key);
     return isEmpty(field) && (!text || isEmpty(text));
   });
   return { total: questions.length, answered: questions.length - open.length, open };
+}
+
+/**
+ * Outlines exactly the required questions still open, by the same count the panel shows (a
+ * file answered through its text box is answered): ones the page showed since are added,
+ * answered ones lose theirs. The panel lists those, and the page matches it.
+ */
+function syncOutlines(form: ParentNode) {
+  const now = questionsOf(form);
+  const wanted = new Set(
+    now.open.flatMap((field) => {
+      const [element] = field.elements;
+      return field.required && element ? [wrapperOf(element)] : [];
+    }),
+  );
+  for (const marked of form.querySelectorAll<HTMLElement>(`[${LEFT_MARK}]`)) {
+    if (!wanted.has(marked)) marked.removeAttribute(LEFT_MARK);
+  }
+  for (const wrapper of wanted) wrapper.setAttribute(LEFT_MARK, '');
+  return now;
 }
 
 /** Where the form stands now: every question, how many hold an answer, and what's left. */
@@ -282,14 +302,17 @@ export function watchProgress(
       if (!stopped && form) onChange(progress(form));
     });
   };
+  // Around the form only (its parent, which stays when the page draws the form again), never
+  // the whole page.
+  const root = currentForm()?.parentElement ?? document.body;
   const types = ['input', 'change', 'click', 'keyup'];
-  for (const type of types) document.addEventListener(type, update, true);
+  for (const type of types) root.addEventListener(type, update, true);
   const observer = new MutationObserver(update);
-  observer.observe(document.body, { childList: true, subtree: true });
+  observer.observe(root, { childList: true, subtree: true });
   return () => {
     stopped = true;
     if (frame !== null) cancelAnimationFrame(frame);
-    for (const type of types) document.removeEventListener(type, update, true);
+    for (const type of types) root.removeEventListener(type, update, true);
     observer.disconnect();
   };
 }
@@ -310,19 +333,16 @@ export function markLeft(form: HTMLElement, color: string): void {
   }
   if (form.dataset.jobdeputyWatch) return;
   form.dataset.jobdeputyWatch = '1';
-  // An outline goes once every required field in it holds an answer. Choices are made by a
-  // click or a key and drawn by the page afterwards (no input event), so the outlines are
-  // checked again once the page has drawn: after the person's events and the page's changes.
+  // Outlines follow the open required questions (syncOutlines). Choices are made by a click or
+  // a key and drawn by the page afterwards (no input event), so they're checked again once the
+  // page has drawn: after the person's events and the page's changes.
   let queued = false;
   const recheck = () => {
     if (queued) return;
     queued = true;
     requestAnimationFrame(() => {
       queued = false;
-      for (const wrapper of form.querySelectorAll<HTMLElement>(`[${LEFT_MARK}]`)) {
-        const open = scan(wrapper).some((field) => field.required && isEmpty(field));
-        if (!open) wrapper.removeAttribute(LEFT_MARK);
-      }
+      syncOutlines(form);
     });
   };
   for (const type of ['input', 'change', 'click', 'keyup'])

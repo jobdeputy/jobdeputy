@@ -38,7 +38,7 @@ describe('the panel on a Greenhouse form (#54 PR C)', () => {
     const bar = screen.getByRole('progressbar', { name: 'Questions answered' });
     expect(bar.getAttribute('aria-valuenow')).toBe('12');
     expect(bar.getAttribute('aria-valuemax')).toBe('40');
-    expect(screen.getByText('JobDeputy filled 3 of them.')).toBeTruthy();
+    expect(screen.getByText('JobDeputy filled 3 fields.')).toBeTruthy();
     expect(screen.getByText('Attached your résumé tailored for this company.')).toBeTruthy();
     expect(screen.getByText(/Couldn’t read all your self-ID answers/)).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Left for you (1)' })).toBeTruthy();
@@ -74,13 +74,13 @@ describe('the panel on a Greenhouse form (#54 PR C)', () => {
     expect(screen.queryByRole('heading', { name: /Left for you/ })).toBeNull();
     // What JobDeputy filled stays a fact about the fill, whatever happened since.
     act(() => push?.({ total: 40, answered: 0, left: filled.report.left }));
-    expect(screen.getByText('JobDeputy filled 3 of them.')).toBeTruthy();
+    expect(screen.getByText('JobDeputy filled 3 fields.')).toBeTruthy();
     expect(screen.queryByText(/Nothing to fill/)).toBeNull();
     cleanup();
     expect(stop).toHaveBeenCalled();
   });
 
-  it('shows no progress bar on a form with no questions', async () => {
+  it('shows no count or bar on a form with no questions', async () => {
     render(
       <Panel
         fillForm={async () => ({
@@ -91,7 +91,9 @@ describe('the panel on a Greenhouse form (#54 PR C)', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Fill this application' }));
-    expect(await screen.findByText('0 of 0 questions answered')).toBeTruthy();
+    // Shown, and said once to screen readers.
+    expect(await screen.findAllByText(/Nothing to fill/)).toHaveLength(2);
+    expect(screen.queryByText(/questions answered/)).toBeNull();
     expect(screen.queryByRole('progressbar')).toBeNull();
   });
 

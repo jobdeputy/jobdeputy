@@ -166,6 +166,40 @@ describe('fields only the person answers (#54 PR C round 1)', () => {
     });
   });
 
+  it('outlines by the same count: an answered "Enter manually" box clears it, a new question gets one', async () => {
+    document.body.innerHTML = `<form id="application-form">
+      <div class="field-wrapper"><div id="upload-label-resume">Resume</div>
+        <input id="resume" type="file" aria-required="true"><textarea id="resume_text"></textarea></div>
+    </form>`;
+    const form = document.getElementById('application-form') as HTMLElement;
+    markLeft(form, '#f36b3f');
+    await fillForm(form, fillData({ resume: null }), { waitMs: 20 });
+    const first = form.querySelector('.field-wrapper') as HTMLElement;
+    expect(first.hasAttribute(LEFT_MARK)).toBe(true);
+    const text = document.getElementById('resume_text') as HTMLTextAreaElement;
+    text.value = 'My résumé';
+    text.dispatchEvent(new Event('input', { bubbles: true }));
+    await waitFor(() => expect(first.hasAttribute(LEFT_MARK)).toBe(false));
+    // The page shows a new required question after the fill: outlined like the rest.
+    form.insertAdjacentHTML(
+      'beforeend',
+      `<div class="field-wrapper" id="later"><label for="specify">Please specify</label>
+        <input id="specify" type="text" aria-required="true"></div>`,
+    );
+    await waitFor(() =>
+      expect(document.getElementById('later')?.hasAttribute(LEFT_MARK)).toBe(true),
+    );
+  });
+
+  it('counts a required "Enter manually" box beside an unmarked file as required', () => {
+    document.body.innerHTML = `<form id="application-form"><div class="field-wrapper">
+      <div id="upload-label-resume">Resume</div><input id="resume" type="file">
+      <textarea id="resume_text" aria-required="true"></textarea></div></form>`;
+    expect(progress(document.getElementById('application-form') as HTMLElement).left).toEqual([
+      { id: 'resume', label: 'Resume', required: true },
+    ]);
+  });
+
   it('tells the panel the new count as the person answers', async () => {
     document.body.innerHTML = `<form id="application-form"><div class="field-wrapper">
       <label for="why">Why Acme?</label><input id="why" type="text"></div></form>`;

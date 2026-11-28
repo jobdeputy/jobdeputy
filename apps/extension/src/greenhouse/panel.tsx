@@ -156,9 +156,12 @@ function Summary({
   return (
     <div className="grid gap-3">
       <div className="grid gap-1.5">
-        <p className="m-0 text-sm font-[650]">
-          {fill(text.progress, { answered: String(now.answered), total: String(now.total) })}
-        </p>
+        {/* Only with questions to count: "0 of 0" says nothing. */}
+        {now.total > 0 && (
+          <p className="m-0 text-sm font-[650]">
+            {fill(text.progress, { answered: String(now.answered), total: String(now.total) })}
+          </p>
+        )}
         {/* Only with questions to count (a bar's top must be above its bottom). */}
         {now.total > 0 && (
           <div
@@ -236,7 +239,9 @@ function announcement(outcome: Extract<Outcome, { ok: true }>): string {
   const { report } = outcome;
   const required = report.left.filter((field) => field.required).length;
   return [
-    fill(text.progress, { answered: String(report.answered), total: String(report.total) }),
+    report.total > 0
+      ? fill(text.progress, { answered: String(report.answered), total: String(report.total) })
+      : '',
     report.filled.length === 0
       ? text.filledNone
       : report.filled.length === 1
