@@ -4,7 +4,7 @@ import { createApi } from '../src/api.ts';
 import { createAuth } from '../src/auth/session.ts';
 import { DEV_BUILD } from '../src/build.ts';
 import { copy } from '../src/copy.ts';
-import { readFillData } from '../src/fill/data.ts';
+import { readFillDataSigningIn } from '../src/fill/data.ts';
 import { createFiles } from '../src/fill/files.ts';
 import {
   contentPosting,
@@ -36,7 +36,8 @@ export default defineBackground(() => {
     ? createAuth({
         settings,
         redirectUrl: browser.identity.getRedirectURL(),
-        launch: (url) => browser.identity.launchWebAuthFlow({ url, interactive: true }),
+        // Not interactive (#111): no window; Chrome gives up when the page would need the person.
+        launch: (url, interactive) => browser.identity.launchWebAuthFlow({ url, interactive }),
         storage: {
           get: async (key) => (await browser.storage.session.get(key))[key],
           set: (key, value) => browser.storage.session.set({ [key]: value }),
@@ -52,8 +53,16 @@ export default defineBackground(() => {
   async function answer(request: Request): Promise<Responses[Request['type']]> {
     if (!auth || !api) return request.type === 'status' ? { state: 'unconfigured' } : null;
     switch (request.type) {
-      case 'status':
-        return { ...(await auth.status()), signingIn: auth.signingIn };
+      case 'status': {
+        // #111: signed out here, but maybe signed in on the site: try without a window first.
+        const status = await auth.status();
+        if (status.state === 'signed-out' && !status.interrupted && !auth.signingIn) {
+          if ((await auth.signInSilently()) === 'signed-in') {
+            return { ...(await auth.status()), signingIn: auth.signingIn };
+          }
+        }
+        return { ...status, signingIn: auth.signingIn };
+      }
       case 'sign-in':
         return auth.signIn({ different: request.different === true });
       case 'sign-in-wait':
@@ -76,8 +85,11 @@ export default defineBackground(() => {
     const posting = contentPosting(sender, browser.runtime.id);
     if (!posting || !isContentRequest(message)) return false;
     const reply = (value: FillDataResponse) => sendResponse(value);
-    if (!api || !files) reply(null);
-    else readFillData(api, files, posting).then(reply, () => reply(null));
+    if (!api || !files || !auth) reply(null);
+    else
+      readFillDataSigningIn(api, files, posting, () => auth.signInSilently()).then(reply, () =>
+        reply(null),
+      );
     return true;
   });
 });

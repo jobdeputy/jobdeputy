@@ -23,6 +23,7 @@ sequenceDiagram
   Note over S: only the extension's pages and worker can read it;<br/>gone when the browser closes
 ```
 
+- **Without a window (#111, [0021](../decisions/0021-one-sign-in-through-managed-login.md)):** when the popup opens signed out, or a form asks for its answers while signed out, the worker first tries `launchWebAuthFlow` with `interactive: false` and `prompt=none`. Managed login answers at once: a code when it knows the person (they signed in on the site, or here, within its session), else `login_required`, and Chrome never shows a window. After **Sign out** here it doesn't try (`signedOutHere` in `storage.session`) until the person signs in again themselves, so signing out sticks. One at a time; a sign-in the person starts waits for it.
 - A second Sign in while the window is open waits for the first. A popup opened while a sign-in is at work waits for it (`sign-in-wait`), never starting another.
 - If Chrome stops the service worker while managed login waits (a long sign-up, say), the one-time PKCE values go with it: a mark in `storage.session` lets the next popup say the sign-in was interrupted.
 - Known limit: "Continue as" is remembered only until the browser closes, while managed login remembers the person for its own session (about an hour). Signing in within that time after a restart goes straight to the last person; signing out then offers "Use a different account".
@@ -106,6 +107,7 @@ sequenceDiagram
 | Access, ID, refresh tokens; email | `chrome.storage.session` (`session`) | until sign-out, a refused refresh, or the browser closes |
 | The last person's email after sign-out | `chrome.storage.session` (`lastEmail`) | until the next sign-in or the browser closes |
 | A sign-in at work | `chrome.storage.session` (`signInPending`) | until it ends, or the next popup after Chrome stopped the worker |
+| Signed out here: no silent sign-in (#111) | `chrome.storage.session` (`signedOutHere`) | until the person signs in again, or the browser closes |
 | The build's settings (API, managed login, client, site, documents origin) | built in (`WXT_*`, `scripts/extension-config.mjs`) | the build |
 | What a form is filled with (PR C) | the service worker's memory, then the page's | while one fill runs |
 

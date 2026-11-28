@@ -30,14 +30,20 @@ export interface AuthDeps {
   settings: Settings;
   /** `chrome.identity.getRedirectURL()`: `https://<id>.chromiumapp.org/`. */
   redirectUrl: string;
-  /** Opens managed login; resolves with the address it returned to (rejects when closed). */
-  launch(url: string): Promise<string | undefined>;
+  /**
+   * Opens managed login; resolves with the address it returned to (rejects when closed). Not
+   * `interactive` (#111): no window at all, and a rejection when the page would need the person.
+   */
+  launch(url: string, interactive: boolean): Promise<string | undefined>;
   storage: Storage;
   fetch: typeof fetch;
   now(): number;
 }
 
 export type SignInOutcome = 'signed-in' | 'cancelled' | 'offline' | 'failed';
+
+/** #111: a sign-in without a window: done, not possible now (`none`), or managed login unreachable. */
+export type SilentOutcome = 'signed-in' | 'none' | 'offline';
 
 export type AuthStatus =
   | { state: 'signed-in'; email?: string }
@@ -58,6 +64,11 @@ const SESSION = 'session';
 /** Set while a sign-in waits on managed login: a worker Chrome restarted finds it, and says so. */
 const PENDING = 'signInPending';
 const LAST_EMAIL = 'lastEmail';
+/**
+ * #111: set by Sign out here, cleared by the next sign-in the person starts. Until then the
+ * extension never signs in silently: managed login still remembers them, and signing out must stick.
+ */
+const SIGNED_OUT_HERE = 'signedOutHere';
 
 /** A sign-in or refresh that couldn't reach managed login, or that it refused. */
 export class AuthError extends Error {
@@ -103,6 +114,8 @@ export function createAuth(deps: AuthDeps) {
   let refreshing: { refreshToken: string; done: Promise<string | null> } | null = null;
   let signingIn: Promise<SignInOutcome> | null = null;
   let signingInDifferent = false;
+  /** The silent sign-in at work (#111): one at a time, shared. */
+  let silently: Promise<SilentOutcome> | null = null;
 
   async function session(): Promise<Session | null> {
     const value = await storage.get(SESSION);
@@ -126,7 +139,7 @@ export function createAuth(deps: AuthDeps) {
     return json;
   }
 
-  async function signInOnce(different: boolean): Promise<SignInOutcome> {
+  async function signInOnce(different: boolean, silent = false): Promise<SignInOutcome> {
     const verifier = randomToken();
     const state = randomToken();
     const params = new URLSearchParams({
@@ -137,6 +150,9 @@ export function createAuth(deps: AuthDeps) {
       state,
       code_challenge: await challengeFor(verifier),
       code_challenge_method: 'S256',
+      // #111: without a window, managed login answers at once: a code when it knows the person
+      // (they signed in on the site, say), else `login_required`.
+      ...(silent ? { prompt: 'none' } : {}),
     });
     // A different account: /logout ends managed login's remembered sign-in, then shows sign-in
     // with these same parameters, PKCE included (checked on a real stack: a wrong verifier is
@@ -144,7 +160,7 @@ export function createAuth(deps: AuthDeps) {
     const url = `${settings.authDomain}/${different ? 'logout' : 'oauth2/authorize'}?${params}`;
     let returned: string | undefined;
     try {
-      returned = await deps.launch(url);
+      returned = await deps.launch(url, !silent);
     } catch (error) {
       return launchFailure(error);
     }
@@ -171,6 +187,7 @@ export function createAuth(deps: AuthDeps) {
         ...(email ? { email } : {}),
       } satisfies Session);
       await storage.remove(LAST_EMAIL);
+      if (!silent) await storage.remove(SIGNED_OUT_HERE);
       return 'signed-in';
     } catch (error) {
       return error instanceof AuthError ? error.kind : 'failed';
@@ -242,6 +259,8 @@ export function createAuth(deps: AuthDeps) {
       if (!signingIn) {
         signingInDifferent = different;
         signingIn = (async () => {
+          // A silent sign-in at work finishes first (its window-less flow would race this one).
+          await silently;
           await storage.set(PENDING, true);
           try {
             return await signInOnce(different);
@@ -253,6 +272,26 @@ export function createAuth(deps: AuthDeps) {
         })();
       }
       return signingIn;
+    },
+
+    /**
+     * #111: signs in without a window when managed login already knows the person, so signing in
+     * on the site signs the extension in too. Never after a Sign out here until the person signs in
+     * again themselves, never while a sign-in they started is at work, one at a time.
+     */
+    async signInSilently(): Promise<SilentOutcome> {
+      if (await session()) return 'signed-in';
+      if (signingIn) return (await signingIn) === 'signed-in' ? 'signed-in' : 'none';
+      if ((await storage.get(SIGNED_OUT_HERE)) === true) return 'none';
+      silently ??= (async () => {
+        try {
+          const outcome = await signInOnce(false, true);
+          return outcome === 'signed-in' ? 'signed-in' : outcome === 'offline' ? 'offline' : 'none';
+        } finally {
+          silently = null;
+        }
+      })();
+      return silently;
     },
 
     /** The sign-in at work, joined without ever opening a window; null when none is. */
@@ -287,10 +326,14 @@ export function createAuth(deps: AuthDeps) {
       return refreshing.done;
     },
 
-    /** Signs out here at once; revoking the refresh token is best effort. */
+    /**
+     * Signs out here at once; revoking the refresh token is best effort. Silent sign-in waits for
+     * the next sign-in the person starts (#111); the site's own sign-in is not touched.
+     */
     async signOut(): Promise<void> {
       const current = await session();
       if (!current) return;
+      await storage.set(SIGNED_OUT_HERE, true);
       await forget(current);
       await deps
         .fetch(`${settings.authDomain}/oauth2/revoke`, {

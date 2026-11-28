@@ -1,7 +1,7 @@
 import { EXTENSION_API_ROUTES } from '@jobdeputy/shared/extension';
 import { describe, expect, it, vi } from 'vitest';
 import type { Api, ApiResult } from '../src/api.ts';
-import { readFillData } from '../src/fill/data.ts';
+import { readFillData, readFillDataSigningIn } from '../src/fill/data.ts';
 import type { Files } from '../src/fill/files.ts';
 import { jobIdFor } from '../src/fill/posting.ts';
 
@@ -301,5 +301,34 @@ describe('readFillData (#54 PR C)', () => {
     );
     expect(called.length).toBeGreaterThan(0);
     for (const route of called) expect(EXTENSION_API_ROUTES).toContain(route);
+  });
+});
+
+describe('readFillDataSigningIn (#111)', () => {
+  const SIGNED_OUT = { ok: false, reason: 'signed-out' } as const;
+
+  it('signs in without a window when signed out here, then reads once more', async () => {
+    const { api, get } = routes();
+    // Signed out on the first read, signed in after the silent sign-in.
+    get.mockResolvedValueOnce(SIGNED_OUT);
+    const signInSilently = vi.fn(async () => 'signed-in' as const);
+    const result = await readFillDataSigningIn(api, fakeFiles().files, posting, signInSilently);
+    expect(signInSilently).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(true);
+  });
+
+  it('says signed out when the silent sign-in could not sign in', async () => {
+    const { api } = routes({ '/me/profile': SIGNED_OUT });
+    const signInSilently = vi.fn(async () => 'none' as const);
+    const result = await readFillDataSigningIn(api, fakeFiles().files, posting, signInSilently);
+    expect(result).toEqual(SIGNED_OUT);
+  });
+
+  it('never tries to sign in when signed in, or when reading failed for another reason', async () => {
+    const signInSilently = vi.fn(async () => 'signed-in' as const);
+    await readFillDataSigningIn(routes().api, fakeFiles().files, posting, signInSilently);
+    const failing = routes({ '/me/profile': { ok: false, reason: 'offline' } });
+    await readFillDataSigningIn(failing.api, fakeFiles().files, posting, signInSilently);
+    expect(signInSilently).not.toHaveBeenCalled();
   });
 });

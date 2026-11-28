@@ -2,7 +2,7 @@
 
 The web app signs in through Cognito **managed login** at `auth.<site>` (`auth.dev.jobdeputy.com`), the page the browser extension uses too, so one sign-in serves both: each client still gets its own tokens. Decision: [0021](../decisions/0021-one-sign-in-through-managed-login.md). The extension's side: [extension.md](extension.md).
 
-- **Task:** [#111](https://github.com/jobdeputy/jobdeputy/issues/111). Infra: PR A (#112). The web app: PR B. The extension's silent sign-in: PR C.
+- **Task:** [#111](https://github.com/jobdeputy/jobdeputy/issues/111). Infra: PR A (#112). The web app: PR B (#113). The extension's silent sign-in: PR C.
 - **Keep it true:** a PR that changes this flow updates this file.
 
 ## Signing in or creating an account
@@ -33,6 +33,10 @@ sequenceDiagram
 ## Signing out
 
 Sign out forgets the tokens (revoking the refresh token), then goes through managed login's `/logout`, which ends its session and comes back to the site's home. The extension keeps its own tokens until it signs out on its own; it can no longer sign in silently until the person signs in again.
+
+## The extension follows
+
+Signed in here, the person is signed in on managed login too (its cookie). The extension then signs in without a window when its popup opens or a form asks for answers (`prompt=none`, Chrome's non-interactive flow; PR C, [extension.md](extension.md)). Its tokens are its own: read-only routes, and no token passes between the two.
 
 ## Stored
 

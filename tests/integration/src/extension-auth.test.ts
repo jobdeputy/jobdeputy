@@ -60,6 +60,15 @@ describe.skipIf(!outputs.ExtensionClientId)('extension sign-in (deployed, #54)',
     }
   });
 
+  it('answers a sign-in without a window at once: back to the extension, login required (#111)', async () => {
+    // No managed login session here (no cookie): the silent sign-in learns it without a page.
+    const redirect = extensionRedirectUrl(EXTENSION_DEV_IDS[0] ?? '');
+    const next = await authorize({ ...pkce, redirect_uri: redirect, state: 's', prompt: 'none' });
+    expect(`${next.origin}${next.pathname}`).toBe(redirect.replace(/\/$/, '') + '/');
+    expect(next.searchParams.get('error')).toBe('login_required');
+    expect(next.searchParams.get('state')).toBe('s');
+  });
+
   it('"Use a different account" (/logout) reaches sign-in with the PKCE challenge kept', async () => {
     const query = new URLSearchParams({
       client_id: clientId,

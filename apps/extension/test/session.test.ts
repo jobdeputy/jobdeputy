@@ -46,7 +46,7 @@ function setup() {
     if (String(url).endsWith('/oauth2/revoke')) return new Response('', { status: 200 });
     return tokenAnswer();
   });
-  const launch = vi.fn(async (url: string) => {
+  const launch = vi.fn(async (url: string, _interactive?: boolean) => {
     const state = new URL(url).searchParams.get('state');
     return `${REDIRECT}?code=the-code&state=${state}`;
   });
@@ -396,5 +396,85 @@ describe('emailFromIdToken', () => {
     expect(emailFromIdToken(`h.${utf8}.s`)).toBe('josé@example.com');
     expect(emailFromIdToken('not.a-token')).toBeUndefined();
     expect(emailFromIdToken(undefined)).toBeUndefined();
+  });
+});
+
+describe('signing in without a window (#111, decision 0021)', () => {
+  /** Managed login doesn't know the person: no code, `login_required`. */
+  const unknownPerson = async (url: string) =>
+    `${REDIRECT}?error=login_required&state=${new URL(url).searchParams.get('state')}`;
+
+  it('signs in silently when managed login knows the person (signed in on the site)', async () => {
+    const { auth, launch, stored } = setup();
+    expect(await auth.signInSilently()).toBe('signed-in');
+    const [url, interactive] = launch.mock.calls[0] ?? [];
+    expect(interactive).toBe(false);
+    expect(Object.fromEntries(new URL(url ?? '').searchParams)).toMatchObject({
+      prompt: 'none',
+      code_challenge_method: 'S256',
+      redirect_uri: REDIRECT,
+    });
+    expect((stored.get('session') as Session).email).toBe('ada@example.com');
+    // No "sign-in at work" mark: there was no window to wait for.
+    expect(stored.has('signInPending')).toBe(false);
+  });
+
+  it('says none when managed login does not know the person, or Chrome would need them', async () => {
+    const { auth, launch, stored } = setup();
+    launch.mockImplementationOnce(unknownPerson);
+    expect(await auth.signInSilently()).toBe('none');
+    launch.mockRejectedValueOnce(new Error('User interaction required.'));
+    expect(await auth.signInSilently()).toBe('none');
+    launch.mockRejectedValueOnce(new Error('Authorization page could not be loaded.'));
+    expect(await auth.signInSilently()).toBe('offline');
+    expect(stored.has('session')).toBe(false);
+  });
+
+  it('never signs back in silently after a Sign out here, until the person signs in again', async () => {
+    const { auth, launch } = setup();
+    await auth.signIn();
+    await auth.signOut();
+    launch.mockClear();
+    expect(await auth.signInSilently()).toBe('none');
+    expect(launch).not.toHaveBeenCalled();
+    // Their own sign-in (a window) lifts it.
+    await auth.signIn();
+    await auth.signOut();
+    await auth.signIn();
+    await auth.signedOutByApi();
+    expect(await auth.signInSilently()).toBe('signed-in');
+  });
+
+  it('does nothing when already signed in, and runs one at a time', async () => {
+    const { auth, launch } = setup();
+    const [first, second] = await Promise.all([auth.signInSilently(), auth.signInSilently()]);
+    expect([first, second]).toEqual(['signed-in', 'signed-in']);
+    expect(launch).toHaveBeenCalledTimes(1);
+    expect(await auth.signInSilently()).toBe('signed-in');
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets a sign-in the person starts wait for a silent one at work, then open its window', async () => {
+    const { auth, launch } = setup();
+    let answer = (_: string) => {};
+    launch.mockImplementationOnce(
+      (url) =>
+        new Promise((resolve) => {
+          answer = () =>
+            resolve(
+              `${REDIRECT}?error=login_required&state=${new URL(url).searchParams.get('state')}`,
+            );
+        }),
+    );
+    const silent = auth.signInSilently();
+    // Its window-less flow has reached managed login (after storage and PKCE).
+    await vi.waitFor(() => expect(launch).toHaveBeenCalledTimes(1));
+    const own = auth.signIn();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(launch).toHaveBeenCalledTimes(1);
+    answer('');
+    expect(await silent).toBe('none');
+    expect(await own).toBe('signed-in');
+    expect(launch.mock.calls[1]?.[1]).toBe(true);
   });
 });
