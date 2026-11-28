@@ -154,6 +154,25 @@ describe('readReadiness (#54)', () => {
       ok: true,
       body: { answers: { answered: 1, ready: false } },
     });
+    // Someone living in the UK is ready with their UK answer.
+    const inUk = apiAnswering({
+      '/me/profile': {
+        version: 1,
+        firstName: 'Ada',
+        lastName: 'L',
+        email: 'a@example.com',
+        location: { country: 'GB' },
+      },
+      '/me/documents': { documents: [] },
+      '/me/applicant': {
+        version: 1,
+        workAuthorization: [{ country: 'GB', authorized: true, needsSponsorship: false }],
+      },
+    });
+    expect(await readReadiness(inUk)).toMatchObject({
+      ok: true,
+      body: { answers: { ready: true } },
+    });
     const unreadable = apiAnswering({
       '/me/profile': ['not', 'a', 'profile'],
       '/me/documents': { documents: [] },

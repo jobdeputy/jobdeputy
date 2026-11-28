@@ -77,7 +77,7 @@ test('signed in, it says who and what the deputy can fill in, read from the API'
     await expect(items).toHaveText([
       /Your details: Ready, 3 of 6 saved/,
       /A résumé to attach: Ready/,
-      /Application answers: Not added yet, 0 of 10 saved/,
+      /Application answers: Not ready yet, 0 of 10 saved/,
     ]);
     expect(seen.sort()).toEqual([
       'Bearer e2e-access /me/applicant',

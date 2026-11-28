@@ -144,7 +144,7 @@ describe('Popup (#54)', () => {
     expect(items.map((item) => item.textContent)).toEqual([
       '✓Your details: Ready, 6 of 6 saved6 of 6 saved',
       'A résumé to attach: Not added yetAdd in JobDeputy',
-      'Application answers: Not added yet, 3 of 10 saved3 of 10 savedAdd in JobDeputy',
+      'Application answers: Not ready yet, 3 of 10 saved3 of 10 saved · work authorization neededAdd in JobDeputy',
     ]);
     const links = within(list).getAllByRole('link', { name: 'Add in JobDeputy' });
     expect(links.map((link) => link.getAttribute('href'))).toEqual([
@@ -167,13 +167,9 @@ describe('Popup (#54)', () => {
       },
     });
     render(<Popup version="0.1.0" send={send} siteUrl="https://dev.jobdeputy.com" />);
-    const answers = await screen.findByRole('link', {
-      name: '7 of 10 saved: add the rest in JobDeputy',
-    });
-    expect(answers.getAttribute('href')).toBe('https://dev.jobdeputy.com/profile');
-    expect(
-      screen.getByRole('link', { name: '4 of 6 saved: add the rest in JobDeputy' }),
-    ).toBeTruthy();
+    const links = await screen.findAllByRole('link', { name: 'Add the rest in JobDeputy' });
+    expect(links.map((link) => link.textContent)).toEqual(['4 of 6 saved', '7 of 10 saved']);
+    expect(links[1]?.getAttribute('href')).toBe('https://dev.jobdeputy.com/profile');
     // Screen readers hear that both are ready, with their counts.
     expect(screen.getByText('Ready, 7 of 10 saved')).toBeTruthy();
     // Nothing missing that every form asks: no "Add in JobDeputy".

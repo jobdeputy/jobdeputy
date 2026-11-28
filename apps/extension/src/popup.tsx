@@ -272,7 +272,7 @@ function SignedIn({
                     {counted && done && more && siteUrl ? (
                       // Ready, with more a form might ask: the count leads to where they're added.
                       <a
-                        aria-label={fill(text.ready.addRest, { count: status })}
+                        aria-label={text.ready.addRest}
                         className="justify-self-start text-xs text-muted-foreground underline-offset-2 hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-ring"
                         href={`${siteUrl}${path}`}
                         target="_blank"
@@ -281,8 +281,12 @@ function SignedIn({
                         {status}
                       </a>
                     ) : counted ? (
-                      <span aria-hidden="true" className="text-xs text-muted-foreground">
-                        {status}
+                      <span className="text-xs text-muted-foreground">
+                        <span aria-hidden="true">{status}</span>
+                        {/* What's missing for it to be ready, said to everyone. */}
+                        {!done && (key === 'details' || key === 'answers') && (
+                          <> · {text.ready.needs[key]}</>
+                        )}
                       </span>
                     ) : (
                       <span className="sr-only">{status}</span>
