@@ -57,6 +57,17 @@ describe('the panel on a Greenhouse form (#54 PR C)', () => {
     }
   });
 
+  it('says when the page did not take the résumé', async () => {
+    render(
+      <Panel
+        fillForm={async () => ({ ...filled, resume: 'failed', unread: [] })}
+        goTo={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Fill this application' }));
+    expect(await screen.findByText(/didn’t take your résumé: attach it yourself/)).toBeTruthy();
+  });
+
   it('says when no résumé was attached, and hides to a small button', async () => {
     render(
       <Panel fillForm={async () => ({ ...filled, resume: null, unread: [] })} goTo={() => {}} />,
@@ -120,6 +131,13 @@ describe('runFill (#54 PR C)', () => {
       body: fillData({ resume: null }),
     }));
     expect(none).toMatchObject({ resume: null });
+    // The page refused the file (its uploader took nothing): said as such, not "add one".
+    const refusing = withResume();
+    Object.defineProperty(document.getElementById('resume'), 'files', {
+      get: () => null,
+      set: () => {},
+    });
+    expect(await runFill(refusing, send)).toMatchObject({ resume: 'failed' });
   });
 
   it('passes on why the worker could not answer, and fails safe when it says nothing', async () => {

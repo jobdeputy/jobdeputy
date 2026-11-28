@@ -13,9 +13,10 @@ export type Outcome =
       report: Report;
       /**
        * The résumé field: which résumé was attached; `kept` when the person's own file was
-       * already there or the form asks for none; null when it's empty (nothing to attach).
+       * already there or the form asks for none; `failed` when the page didn't take ours; null
+       * when it's empty (nothing to attach).
        */
-      resume: NonNullable<FillData['resume']>['from'] | 'kept' | null;
+      resume: NonNullable<FillData['resume']>['from'] | 'kept' | 'failed' | null;
       /** Whether this job's cover letter was attached. */
       coverLetter: boolean;
       unread: Unread[];
@@ -47,9 +48,11 @@ export async function runFill(
     resume:
       resumeField === 'attached' && data.resume
         ? data.resume.from
-        : resumeField === 'empty'
-          ? null
-          : 'kept',
+        : resumeField === 'failed'
+          ? 'failed'
+          : resumeField === 'empty'
+            ? null
+            : 'kept',
     coverLetter: report.files.cover_letter === 'attached',
     unread: data.unread,
   };

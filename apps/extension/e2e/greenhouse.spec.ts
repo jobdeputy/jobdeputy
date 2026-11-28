@@ -147,6 +147,12 @@ test('on a Greenhouse form, the panel fills it, attaches the résumé, and lists
     // Only reads, and only for this posting's company and job.
     expect(seen).toContain('/me/tailorings?companyKey=greenhouse%3Aacme');
     await tab.screenshot({ path: 'screenshots/greenhouse-filled.png' });
+    // Only the #hash changes (the same job): the panel and its summary stay.
+    await tab.evaluate(() => {
+      location.hash = 'app';
+    });
+    await expect(tab).toHaveURL(`${POSTING}#app`);
+    await expect(panel.getByText(/^Filled \d+ fields\.$/)).toBeVisible();
 
     // A left question, from the list: the page scrolls to it and focuses it.
     const first = panel.getByRole('list').last().getByRole('button').first();

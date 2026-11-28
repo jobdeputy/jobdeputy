@@ -105,6 +105,33 @@ describe('fields only the person answers (#54 PR C round 1)', () => {
     expect((form.querySelector('[name="attest"]') as HTMLInputElement).checked).toBe(false);
   });
 
+  it('counts a "select all that apply" group as one question, answered once any box is ticked', async () => {
+    document.body.innerHTML = `<form id="application-form">
+      <fieldset aria-required="true"><legend>Where could you work from?</legend>
+        <label><input type="checkbox" name="offices" value="ny"> New York</label>
+        <label><input type="checkbox" name="offices" value="remote"> Remote</label>
+        <label><input type="checkbox" name="offices" value="london"> London</label></fieldset>
+    </form>`;
+    const form = document.getElementById('application-form') as HTMLElement;
+    const empty = await fillForm(form, fillData(), { waitMs: 20 });
+    expect(empty.left).toEqual([
+      { id: 'name:offices', label: 'Where could you work from?', required: true },
+    ]);
+    (form.querySelector('[value="remote"]') as HTMLInputElement).checked = true;
+    expect((await fillForm(form, fillData(), { waitMs: 20 })).left).toEqual([]);
+  });
+
+  it('keeps an outline while its field is still empty (a search typed, a box ticked and unticked)', async () => {
+    document.body.innerHTML = `<form id="application-form"><div class="field-wrapper">
+      <label for="why">Why Acme?</label><input id="why" type="text" aria-required="true"></div></form>`;
+    const form = document.getElementById('application-form') as HTMLElement;
+    markLeft(form, '#f36b3f');
+    await fillForm(form, fillData(), { waitMs: 20 });
+    const why = document.getElementById('why') as HTMLInputElement;
+    why.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(form.querySelector('.field-wrapper')?.hasAttribute(LEFT_MARK)).toBe(true);
+  });
+
   it('drops an outline once the person answers that field', async () => {
     document.body.innerHTML = `<form id="application-form"><div class="field-wrapper">
       <label for="why">Why Acme?</label><input id="why" type="text" aria-required="true"></div></form>`;

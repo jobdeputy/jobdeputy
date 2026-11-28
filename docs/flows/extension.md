@@ -93,9 +93,9 @@ sequenceDiagram
   Note over C,G: never submits; never changes a field the person filled; never guesses (0019)
 ```
 
-- The panel follows the board's in-page navigation: it goes on a page that isn't an application and comes back with the next form.
-- A question taking several answers, checkboxes, radio buttons and dates are never filled; the required ones left empty are listed and outlined. An outline goes once the person answers that field.
-- The panel says a résumé or letter was attached only when it was; nothing when the person's own file was already there.
+- The panel follows the board's in-page navigation: it goes on a page that isn't an application and comes back with the next form; on the same job (only `#…` or `?…` changed) it stays, with what it said.
+- A question taking several answers, checkboxes (a group is one question), radio buttons and dates are never filled; the required ones left empty are listed and outlined. An outline goes once every field in it holds an answer.
+- The panel says a résumé or letter was attached only when it was; nothing when the person's own file was already there; and that the page didn't take it, when it didn't.
 - Each question is matched to a saved answer by its field ID (the form's own fields, the US self-ID questions) or its label (each company's questions: links, preferred name, pronouns, work authorization and sponsorship for the US or the saved country it names (never when it names another place, a short name like "UK" or "EU" included; "authorized … without sponsorship" needs both), relocation, 18+, how you heard, salary, notice, start date). A choice is made only when exactly one option fits (a plain Yes or No for yes/no questions); otherwise it's left.
 - Only a summary (labels, counts, which résumé) stays in the panel; the answers are gone once the fill ends.
 

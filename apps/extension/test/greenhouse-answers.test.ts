@@ -98,6 +98,14 @@ describe('answerFor (#54 PR C)', () => {
     });
     expect(ask('Are you authorized to work in the US without sponsorship?', needsVisa)).toBe('No');
     expect(ask('Will you require sponsorship?', needsVisa)).toBe('Yes');
+    // Sponsorship asked, work authorization only named as its goal: the sponsorship answer.
+    expect(
+      ask(
+        'Will you now or in the future require visa sponsorship to obtain or maintain work authorization?',
+        needsVisa,
+      ),
+    ).toBe('Yes');
+    expect(ask('What is your current work authorization status in the US?')).toBe('Yes');
     // Both asked at once: which to answer is the person's call.
     expect(
       answerFor(
@@ -113,9 +121,17 @@ describe('answerFor (#54 PR C)', () => {
       'Are you authorized to work in the UK?',
       'Do you have the right to work in the EU?',
       'Are you authorized to work in the UAE?',
-      'Are you authorized to work in England or the US?',
+      'Will you require sponsorship to work in Canada? Please let us know.',
     ]) {
       expect(ask(label), label).toBeNull();
+    }
+    // The saved country named wins over a US state or region named like a country.
+    for (const label of [
+      'Are you legally authorized to work in the United States? (Role based in New Jersey)',
+      'Are you authorized to work in the United States? Office in Atlanta, Georgia',
+      'Are you authorized to work in the U.S.? Remote within New England',
+    ]) {
+      expect(picked(ask(label), ['Yes', 'No']), label).toBe('Yes');
     }
     expect(picked(ask('Are you authorized to work in the U.S.?'), ['Yes', 'No'])).toBe('Yes');
     expect(picked(ask('Are you authorized to work in the USA?'), ['Yes', 'No'])).toBe('Yes');

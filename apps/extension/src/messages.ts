@@ -80,5 +80,7 @@ export function contentPosting(
   extensionId: string,
 ): Posting | null {
   if (sender.id !== extensionId || !sender.tab) return null;
-  return greenhousePosting(sender.frameId === 0 ? (sender.tab.url ?? sender.url) : sender.url);
+  // The top frame's own sender.url may be a job it navigated away from: without the tab's
+  // address, nothing.
+  return greenhousePosting(sender.frameId === 0 ? sender.tab.url : sender.url);
 }

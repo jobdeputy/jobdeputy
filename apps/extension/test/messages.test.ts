@@ -53,6 +53,9 @@ describe('content scripts (#54 PR C)', () => {
       postingId: '4001001',
     });
     expect(contentPosting({ id: ID, url: FORM, frameId: 0, tab: { url: board } }, ID)).toBeNull();
+    // Without the tab's address (no host permission for it), nothing: the loaded address may be
+    // another job.
+    expect(contentPosting({ id: ID, url: FORM, frameId: 0, tab: {} }, ID)).toBeNull();
     // In a company site's frame, the frame's own address: the tab is the company's site.
     expect(
       contentPosting(

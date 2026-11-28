@@ -13,8 +13,11 @@ export interface Report {
   filled: string[];
   /** Empty fields it had no answer for, or couldn't fill: the person's to answer. */
   left: { id: string; label: string; required: boolean }[];
-  /** Each file field on the form: attached now, already holding the person's file, or empty. */
-  files: Record<string, 'attached' | 'kept' | 'empty'>;
+  /**
+   * Each file field on the form: attached now, already holding the person's file, empty (none
+   * to attach), or failed (the page didn't take the file).
+   */
+  files: Record<string, 'attached' | 'kept' | 'empty' | 'failed'>;
 }
 
 export const LEFT_MARK = 'data-jobdeputy-left';
@@ -28,7 +31,7 @@ interface Field {
   key: string;
   kind: Kind;
   label: string;
-  /** The field's inputs: one, or each radio button of a group. */
+  /** The field's inputs: one, or each radio button or checkbox of a group. */
   elements: Input[];
   required: boolean;
 }
@@ -51,7 +54,7 @@ function labelOf(element: Input): string {
   return textOf(byId ?? element.closest('label')) || (element.getAttribute('aria-label') ?? '');
 }
 
-/** A radio group's question: its fieldset's legend or its group's label. */
+/** A radio or checkbox group's question: its fieldset's legend or its group's label. */
 function groupLabelOf(element: Input): string {
   const group = element.closest('fieldset, [role="radiogroup"], [role="group"]');
   const labelledBy = group?.getAttribute('aria-labelledby');
@@ -92,7 +95,8 @@ export function scan(form: ParentNode): Field[] {
           ? 'select'
           : element.type;
     if (SKIPPED_TYPES.has(type)) continue;
-    if (type === 'radio') {
+    // A group of radio buttons, or of checkboxes ("select all that apply"), is one question.
+    if (type === 'radio' || (type === 'checkbox' && element.name)) {
       const key = element.name ? `name:${element.name}` : element.id;
       if (!key) continue;
       const group = groups.get(key);
@@ -104,6 +108,7 @@ export function scan(form: ParentNode): Field[] {
       const field: Field = {
         key,
         kind: 'other',
+        // A lone checkbox's question is its own label: groupLabelOf falls back to it.
         label: groupLabelOf(element),
         elements: [element],
         required: isRequired(element),
@@ -139,9 +144,8 @@ function isEmpty(field: Field): boolean {
   if (field.kind === 'choice') return !hasChoice(element as HTMLInputElement);
   if (element instanceof HTMLInputElement) {
     if (element.type === 'file') return (element.files?.length ?? 0) === 0;
-    if (element.type === 'checkbox') return !element.checked;
-    if (element.type === 'radio') {
-      return !field.elements.some((radio) => (radio as HTMLInputElement).checked);
+    if (element.type === 'checkbox' || element.type === 'radio') {
+      return !field.elements.some((box) => (box as HTMLInputElement).checked);
     }
   }
   return element.value.trim() === '';
@@ -188,7 +192,10 @@ export async function fillForm(
           : want.kind === 'file'
             ? attachFile(element as HTMLInputElement, want.file)
             : await choose(element as HTMLInputElement, want.pick, waitMs);
-      if (!ok) continue;
+      if (!ok) {
+        if (field.kind === 'file') files[field.key] = 'failed';
+        continue;
+      }
       filled.push(field.label || field.key);
       if (field.kind === 'file') files[field.key] = 'attached';
     }
@@ -221,9 +228,11 @@ export function markLeft(form: HTMLElement, color: string): void {
   }
   if (form.dataset.jobdeputyWatch) return;
   form.dataset.jobdeputyWatch = '1';
+  // Only once every field in that outline holds an answer: typing a search, or ticking then
+  // unticking a box, leaves it.
   const answered = (event: Event) => {
     const wrapper = (event.target as Element | null)?.closest?.(`[${LEFT_MARK}]`);
-    if (wrapper) wrapper.removeAttribute(LEFT_MARK);
+    if (wrapper && !scan(wrapper).some(isEmpty)) wrapper.removeAttribute(LEFT_MARK);
   };
   form.addEventListener('input', answered, true);
   form.addEventListener('change', answered, true);

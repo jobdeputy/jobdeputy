@@ -62,12 +62,20 @@ export default defineContentScript({
       field?.focus({ preventScroll: true });
     };
 
+    /** The posting the panel is on (`companyKey/postingId`), or null. */
+    let on: string | null = null;
+
     /** `address`: the page's new one (it can arrive before `location` shows it). */
     async function show(address: string) {
+      const posting = greenhousePosting(address);
+      const key = posting ? `${posting.companyKey}/${posting.postingId}` : null;
+      // The same job (only its #hash or ?query changed): the panel, and what it says, stay.
+      if (key !== null && key === on && ui) return;
       const at = ++shown;
+      on = key;
       ui?.remove();
       ui = null;
-      if (!greenhousePosting(address)) return;
+      if (!posting) return;
       const form = await waitForForm();
       if (!form || ctx.isInvalid || at !== shown) return;
       const next = await createShadowRootUi<Root>(ctx, {
