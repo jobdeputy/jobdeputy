@@ -6,6 +6,11 @@ export { fill };
 export const copy = {
   popup: {
     title: 'JobDeputy',
+    /** On a dev build: beside the title, on the toolbar button, and as its name. */
+    dev: 'Dev',
+    devBadge: 'DEV',
+    devName: 'JobDeputy Dev',
+    devLabel: 'Development build',
     line: 'Your deputy fills in job applications with your saved answers. You review and click Submit.',
     version: 'Version {version}',
     broken: 'Something went wrong in the extension. Close this and open it again.',
@@ -48,8 +53,10 @@ export const copy = {
     again: 'Fill again',
     hide: 'Hide JobDeputy',
     show: 'JobDeputy',
-    filled: 'Filled {count} fields.',
-    filledOne: 'Filled 1 field.',
+    progress: '{answered} of {total} questions answered',
+    progressLabel: 'Questions answered',
+    filled: 'JobDeputy filled {count} fields.',
+    filledOne: 'JobDeputy filled 1 field.',
     filledNone: 'Nothing to fill: every field your answers cover is already filled.',
     leftHeading: 'Left for you',
     leftNote: 'Outlined on the page. Select one to go to it.',

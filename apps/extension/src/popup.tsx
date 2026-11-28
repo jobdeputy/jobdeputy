@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { ApiResult } from './api.ts';
 import type { SignInOutcome } from './auth/session.ts';
 import { copy, fill } from './copy.ts';
+import { DevTag } from './dev-tag.tsx';
 import type { Request, Responses, Status } from './messages.ts';
 import type { Readiness } from './readiness.ts';
 
@@ -99,9 +100,12 @@ export function Popup({
   return (
     <main className="grid w-[340px] grid-cols-1 gap-3 p-[21px]">
       <header className="grid gap-1.5">
-        <h1 className="m-0 font-display text-[1.75rem] leading-none font-medium tracking-[-0.04em]">
-          {text.title}
-        </h1>
+        <div className="flex items-center gap-2">
+          <h1 className="m-0 font-display text-[1.75rem] leading-none font-medium tracking-[-0.04em]">
+            {text.title}
+          </h1>
+          <DevTag />
+        </div>
         <p className="m-0 text-sm leading-normal text-muted-foreground">{text.line}</p>
       </header>
 

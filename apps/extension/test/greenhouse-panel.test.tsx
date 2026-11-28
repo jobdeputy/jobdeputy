@@ -1,5 +1,6 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Progress } from '../src/greenhouse/fill.ts';
 import { Panel } from '../src/greenhouse/panel.tsx';
 import { type Outcome, runFill } from '../src/greenhouse/run.ts';
 import { fillData } from './greenhouse-data.ts';
@@ -13,6 +14,8 @@ const filled: Outcome = {
   ok: true,
   report: {
     filled: ['First Name', 'Last Name', 'Email'],
+    total: 40,
+    answered: 12,
     left: [
       { id: 'question_4', label: 'Have you previously worked at Acme?', required: true },
       { id: 'cover_letter', label: 'Cover Letter', required: false },
@@ -31,7 +34,11 @@ describe('the panel on a Greenhouse form (#54 PR C)', () => {
     render(<Panel fillForm={fillForm} goTo={goTo} />);
     expect(screen.getByRole('heading', { name: 'JobDeputy' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Fill this application' }));
-    expect(await screen.findByText('Filled 3 fields.')).toBeTruthy();
+    expect(await screen.findByText('12 of 40 questions answered')).toBeTruthy();
+    const bar = screen.getByRole('progressbar', { name: 'Questions answered' });
+    expect(bar.getAttribute('aria-valuenow')).toBe('12');
+    expect(bar.getAttribute('aria-valuemax')).toBe('40');
+    expect(screen.getByText('JobDeputy filled 3 fields.')).toBeTruthy();
     expect(screen.getByText('Attached your résumé tailored for this company.')).toBeTruthy();
     expect(screen.getByText(/Couldn’t read all your self-ID answers/)).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Left for you (1)' })).toBeTruthy();
@@ -42,6 +49,52 @@ describe('the panel on a Greenhouse form (#54 PR C)', () => {
     // Filling again is a quieter action once it has run.
     fireEvent.click(screen.getByRole('button', { name: 'Fill again' }));
     await waitFor(() => expect(fillForm).toHaveBeenCalledTimes(2));
+  });
+
+  it('keeps the count and what is left true as the person answers after the fill', async () => {
+    let push: ((now: Progress) => void) | undefined;
+    const stop = vi.fn();
+    render(
+      <Panel
+        fillForm={async () => filled}
+        goTo={() => {}}
+        watchProgress={(onChange) => {
+          push = onChange;
+          return stop;
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Fill this application' }));
+    expect(await screen.findByText('12 of 40 questions answered')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Left for you (1)' })).toBeTruthy();
+    // The person answers the rest: the count, the bar and the list follow.
+    act(() => push?.({ total: 40, answered: 40, left: [] }));
+    expect(screen.getByText('40 of 40 questions answered')).toBeTruthy();
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('40');
+    expect(screen.queryByRole('heading', { name: /Left for you/ })).toBeNull();
+    // What JobDeputy filled stays a fact about the fill, whatever happened since.
+    act(() => push?.({ total: 40, answered: 0, left: filled.report.left }));
+    expect(screen.getByText('JobDeputy filled 3 fields.')).toBeTruthy();
+    expect(screen.queryByText(/Nothing to fill/)).toBeNull();
+    cleanup();
+    expect(stop).toHaveBeenCalled();
+  });
+
+  it('shows no count or bar on a form with no questions', async () => {
+    render(
+      <Panel
+        fillForm={async () => ({
+          ...filled,
+          report: { ...filled.report, total: 0, answered: 0, filled: [] },
+        })}
+        goTo={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Fill this application' }));
+    // Shown, and said once to screen readers.
+    expect(await screen.findAllByText(/Nothing to fill/)).toHaveLength(2);
+    expect(screen.queryByText(/questions answered/)).toBeNull();
+    expect(screen.queryByRole('progressbar')).toBeNull();
   });
 
   it('says why it could not fill: signed out, offline, or failed', async () => {
@@ -95,7 +148,7 @@ describe('runFill (#54 PR C)', () => {
     expect(send).toHaveBeenCalledWith({ type: 'fill-data' });
     expect(outcome).toEqual({
       ok: true,
-      report: { filled: ['First Name'], left: [], files: {} },
+      report: { filled: ['First Name'], total: 1, answered: 1, left: [], files: {} },
       // This form asks for no résumé: nothing to say about one.
       resume: 'kept',
       coverLetter: false,

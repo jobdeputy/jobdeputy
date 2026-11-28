@@ -6,6 +6,7 @@ import {
 } from 'wxt/utils/content-script-ui/shadow-root';
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { GREENHOUSE_MATCHES, greenhousePosting } from '../../src/fill/posting.ts';
+import { watchProgress } from '../../src/greenhouse/fill.ts';
 import { Panel } from '../../src/greenhouse/panel.tsx';
 import { runFill } from '../../src/greenhouse/run.ts';
 // Built into the script and set in the shadow root: no file the page could load (no
@@ -104,6 +105,7 @@ export default defineContentScript({
             <Panel
               embedded={embedded}
               goTo={goTo}
+              watchProgress={(onChange) => watchProgress(() => findForm() ?? form, onChange)}
               // The form on the page now (the page may have drawn it again), and the outline in
               // the panel's own token colour.
               fillForm={() =>

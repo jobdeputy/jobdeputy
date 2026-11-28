@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { copy, fill } from '../copy.ts';
+import { DevTag } from '../dev-tag.tsx';
+import type { Progress } from './fill.ts';
 import type { Outcome } from './run.ts';
 
 const text = copy.panel;
@@ -18,9 +20,12 @@ const quiet =
 export function Panel({
   fillForm,
   goTo,
+  watchProgress,
   embedded = false,
 }: {
   fillForm: () => Promise<Outcome>;
+  /** Follows the form's progress after a fill (the person answering); returns a stop. */
+  watchProgress?: (onChange: (now: Progress) => void) => () => void;
   /** Scrolls to a field left for the person and focuses it. */
   goTo: (id: string) => void;
   /** Inside a company site's frame: shown above the form, not pinned to the corner. */
@@ -61,12 +66,15 @@ export function Panel({
       className={`${place} grid w-[min(340px,calc(100vw-2rem))] gap-3 rounded-[18px] border border-border bg-paper p-4 font-text text-ink shadow-control`}
     >
       <div className="flex items-start justify-between gap-3">
-        <h2
-          id="jobdeputy-title"
-          className="m-0 font-display text-xl leading-none font-medium tracking-[-0.03em]"
-        >
-          {text.title}
-        </h2>
+        <div className="flex items-center gap-2">
+          <h2
+            id="jobdeputy-title"
+            className="m-0 font-display text-xl leading-none font-medium tracking-[-0.03em]"
+          >
+            {text.title}
+          </h2>
+          <DevTag />
+        </div>
         <button
           type="button"
           aria-label={text.hide}
@@ -83,7 +91,9 @@ export function Panel({
           {text[outcome.reason === 'signed-out' ? 'signedOut' : outcome.reason]}
         </p>
       )}
-      {outcome?.ok && <Summary outcome={outcome} goTo={goTo} />}
+      {outcome?.ok && (
+        <Summary outcome={outcome} goTo={goTo} {...(watchProgress ? { watchProgress } : {})} />
+      )}
 
       {outcome?.ok ? (
         <button
@@ -99,8 +109,10 @@ export function Panel({
           {busy ? text.filling : text.fill}
         </button>
       )}
+      {/* Said once per fill (the live count beside the bar is not a live region: it would be
+          said again at every answer). */}
       <p role="status" className="sr-only">
-        {busy ? text.filling : ''}
+        {busy ? text.filling : outcome?.ok ? announcement(outcome) : ''}
       </p>
     </section>
   );
@@ -109,14 +121,26 @@ export function Panel({
 function Summary({
   outcome,
   goTo,
+  watchProgress,
 }: {
   outcome: Extract<Outcome, { ok: true }>;
   goTo: (id: string) => void;
+  watchProgress?: (onChange: (now: Progress) => void) => () => void;
 }) {
   const { report } = outcome;
+  // Where the form stands as of the fill, then kept true as the person answers the rest: the
+  // count, the bar and what's left all follow it.
+  const atFill: Progress = { total: report.total, answered: report.answered, left: report.left };
+  const [now, setNow] = useState<Progress>(atFill);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new fill (report) starts afresh.
+  useEffect(() => {
+    setNow({ total: report.total, answered: report.answered, left: report.left });
+    return watchProgress?.(setNow);
+  }, [report, watchProgress]);
+  /** What JobDeputy filled in this fill: a fact about the fill, whatever happened since. */
   const count = report.filled.length;
-  const required = report.left.filter((field) => field.required);
-  const optional = report.left.length - required.length;
+  const required = now.left.filter((field) => field.required);
+  const optional = now.left.length - required.length;
   const notes = [
     // Nothing to say when the person's own file was there, or the form asks for none.
     outcome.resume === 'kept'
@@ -130,14 +154,40 @@ function Summary({
     ...outcome.unread.map((part) => text.unread[part]),
   ].filter((note): note is string => Boolean(note));
   return (
-    <div className="grid gap-3" role="status">
-      <p className="m-0 text-sm font-[650]">
-        {count === 0
-          ? text.filledNone
-          : count === 1
-            ? text.filledOne
-            : fill(text.filled, { count: String(count) })}
-      </p>
+    <div className="grid gap-3">
+      <div className="grid gap-1.5">
+        {/* Only with questions to count: "0 of 0" says nothing. */}
+        {now.total > 0 && (
+          <p className="m-0 text-sm font-[650]">
+            {fill(text.progress, { answered: String(now.answered), total: String(now.total) })}
+          </p>
+        )}
+        {/* Only with questions to count (a bar's top must be above its bottom). */}
+        {now.total > 0 && (
+          <div
+            role="progressbar"
+            aria-label={text.progressLabel}
+            aria-valuemin={0}
+            aria-valuemax={now.total}
+            aria-valuenow={now.answered}
+            className="h-1.5 overflow-hidden rounded-full bg-line"
+          >
+            <div
+              className="h-full rounded-full bg-green transition-[width] duration-300 ease-settle motion-reduce:transition-none"
+              style={{
+                width: `${Math.round((now.answered / now.total) * 100)}%`,
+              }}
+            />
+          </div>
+        )}
+        <p className="m-0 text-sm text-muted-foreground">
+          {count === 0
+            ? text.filledNone
+            : count === 1
+              ? text.filledOne
+              : fill(text.filled, { count: String(count) })}
+        </p>
+      </div>
       {notes.length > 0 && (
         <ul className="m-0 grid list-none gap-1 p-0 text-sm text-muted-foreground">
           {notes.map((note) => (
@@ -182,4 +232,23 @@ function Summary({
       <p className="m-0 text-sm font-[650]">{text.review}</p>
     </div>
   );
+}
+
+/** What a screen reader hears when a fill ends: the count then, and what's left. */
+function announcement(outcome: Extract<Outcome, { ok: true }>): string {
+  const { report } = outcome;
+  const required = report.left.filter((field) => field.required).length;
+  return [
+    report.total > 0
+      ? fill(text.progress, { answered: String(report.answered), total: String(report.total) })
+      : '',
+    report.filled.length === 0
+      ? text.filledNone
+      : report.filled.length === 1
+        ? text.filledOne
+        : fill(text.filled, { count: String(report.filled.length) }),
+    required > 0 ? `${text.leftHeading}: ${required}.` : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 }

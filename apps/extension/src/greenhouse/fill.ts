@@ -11,6 +11,9 @@ import { attachFile, choose, hasChoice, isMulti, setText } from './dom.ts';
 export interface Report {
   /** Labels of the fields it filled, in page order. */
   filled: string[];
+  /** Every question on the form, and how many hold an answer now (the person's or ours). */
+  total: number;
+  answered: number;
   /** Empty fields it had no answer for, or couldn't fill: the person's to answer. */
   left: { id: string; label: string; required: boolean }[];
   /**
@@ -213,16 +216,105 @@ export async function fillForm(
       if (field.kind === 'file') files[field.key] = 'attached';
     }
   }
-  for (const marked of form.querySelectorAll(`[${LEFT_MARK}]`)) marked.removeAttribute(LEFT_MARK);
-  const left = scan(form)
-    .filter(isEmpty)
+  const { total, answered, open } = syncOutlines(form);
+  return { filled, total, answered, left: open.map(leftOf), files };
+}
+
+const leftOf = (field: Field) => ({ id: field.key, label: field.label, required: field.required });
+
+/**
+ * The form's questions and which are still open. A file question and its "Enter manually" box
+ * (Greenhouse's `resume_text` or `resume-text` beside `resume`) are one question, answered
+ * either way; only a text box beside a file pairs so. An open pair is the file's.
+ */
+function questionsOf(form: ParentNode): { total: number; answered: number; open: Field[] } {
+  const all = scan(form);
+  const files = new Map(all.filter((f) => f.kind === 'file').map((f) => [f.key, f]));
+  /** Each file's text box, by the file's key. */
+  const textOf = new Map<string, Field>();
+  for (const field of all) {
+    const base = field.key.replace(/[-_]text$/, '');
+    if (field.kind === 'text' && base !== field.key && files.has(base)) textOf.set(base, field);
+  }
+  const alternatives = new Set(textOf.values());
+  const questions = all
+    .filter((field) => !alternatives.has(field))
+    // A pair is required when either half is.
     .map((field) => {
-      // Outlined only when required: the panel lists those, and the page matches it.
-      const [element] = field.elements;
-      if (field.required && element) wrapperOf(element).setAttribute(LEFT_MARK, '');
-      return { id: field.key, label: field.label, required: field.required };
+      const text = textOf.get(field.key);
+      return text?.required && !field.required ? { ...field, required: true } : field;
     });
-  return { filled, left, files };
+  const open = questions.filter((field) => {
+    const text = textOf.get(field.key);
+    return isEmpty(field) && (!text || isEmpty(text));
+  });
+  return { total: questions.length, answered: questions.length - open.length, open };
+}
+
+/**
+ * Outlines exactly the required questions still open, by the same count the panel shows (a
+ * file answered through its text box is answered): ones the page showed since are added,
+ * answered ones lose theirs. The panel lists those, and the page matches it.
+ */
+function syncOutlines(form: ParentNode) {
+  const now = questionsOf(form);
+  const wanted = new Set(
+    now.open.flatMap((field) => {
+      const [element] = field.elements;
+      return field.required && element ? [wrapperOf(element)] : [];
+    }),
+  );
+  for (const marked of form.querySelectorAll<HTMLElement>(`[${LEFT_MARK}]`)) {
+    if (!wanted.has(marked)) marked.removeAttribute(LEFT_MARK);
+  }
+  for (const wrapper of wanted) wrapper.setAttribute(LEFT_MARK, '');
+  return now;
+}
+
+/** Where the form stands now: every question, how many hold an answer, and what's left. */
+export interface Progress {
+  total: number;
+  answered: number;
+  left: Report['left'];
+}
+
+export function progress(form: ParentNode): Progress {
+  const { total, answered, open } = questionsOf(form);
+  return { total, answered, left: open.map(leftOf) };
+}
+
+/**
+ * Calls `onChange` with the form's progress whenever the person answers or the page redraws,
+ * so the panel stays true after the fill. It follows whichever form the page shows now
+ * (`currentForm`), as the page may replace it. Returns a function that stops watching.
+ */
+export function watchProgress(
+  currentForm: () => HTMLElement | null,
+  onChange: (now: Progress) => void,
+): () => void {
+  let frame: number | null = null;
+  let stopped = false;
+  const update = () => {
+    if (frame !== null || stopped) return;
+    frame = requestAnimationFrame(() => {
+      frame = null;
+      const form = currentForm();
+      if (!stopped && form) onChange(progress(form));
+    });
+  };
+  // Around the form only (its parent, which stays when the page draws the form again), never
+  // the whole page.
+  const root = currentForm()?.parentElement ?? document.body;
+  const types = ['input', 'change', 'click', 'keyup'];
+  for (const type of types) root.addEventListener(type, update, true);
+  const observer = new MutationObserver(update);
+  observer.observe(root, { childList: true, subtree: true });
+  return () => {
+    stopped = true;
+    if (frame !== null) cancelAnimationFrame(frame);
+    for (const type of types) root.removeEventListener(type, update, true);
+    observer.disconnect();
+  };
 }
 
 /**
@@ -241,19 +333,16 @@ export function markLeft(form: HTMLElement, color: string): void {
   }
   if (form.dataset.jobdeputyWatch) return;
   form.dataset.jobdeputyWatch = '1';
-  // An outline goes once every required field in it holds an answer. Choices are made by a
-  // click or a key and drawn by the page afterwards (no input event), so the outlines are
-  // checked again once the page has drawn: after the person's events and the page's changes.
+  // Outlines follow the open required questions (syncOutlines). Choices are made by a click or
+  // a key and drawn by the page afterwards (no input event), so they're checked again once the
+  // page has drawn: after the person's events and the page's changes.
   let queued = false;
   const recheck = () => {
     if (queued) return;
     queued = true;
     requestAnimationFrame(() => {
       queued = false;
-      for (const wrapper of form.querySelectorAll<HTMLElement>(`[${LEFT_MARK}]`)) {
-        const open = scan(wrapper).some((field) => field.required && isEmpty(field));
-        if (!open) wrapper.removeAttribute(LEFT_MARK);
-      }
+      syncOutlines(form);
     });
   };
   for (const type of ['input', 'change', 'click', 'keyup'])

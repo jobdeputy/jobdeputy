@@ -17,6 +17,8 @@ test('signed out, the popup says what the extension is for and offers sign-in', 
     await page.setViewportSize({ width: 340, height: 280 });
     await page.goto(`chrome-extension://${id}/popup.html`);
     await expect(page.getByRole('heading', { level: 1, name: 'JobDeputy' })).toBeVisible();
+    // A dev build (every build but the store's) says so beside the title.
+    await expect(page.getByTitle('Development build')).toBeVisible();
     await expect(page.getByText(/You review and click Submit/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
     await page.screenshot({ path: 'screenshots/popup.png' });

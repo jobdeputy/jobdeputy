@@ -13,5 +13,9 @@ export default defineConfig({
     manifestFor(readSettings(process.env), {
       store: process.env.JD_STORE_BUILD === '1',
     }) as UserManifest,
-  vite: () => ({ plugins: [tailwindcss()] }),
+  vite: () => ({
+    plugins: [tailwindcss()],
+    // Every build but the store's is a dev build, and says so (src/build.ts).
+    define: { __JD_DEV_BUILD__: JSON.stringify(process.env.JD_STORE_BUILD !== '1') },
+  }),
 });

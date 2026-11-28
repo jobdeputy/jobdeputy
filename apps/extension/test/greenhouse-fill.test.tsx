@@ -3,7 +3,14 @@ import { join } from 'node:path';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { choose } from '../src/greenhouse/dom.ts';
-import { fillForm, LEFT_MARK, markLeft, scan } from '../src/greenhouse/fill.ts';
+import {
+  fillForm,
+  LEFT_MARK,
+  markLeft,
+  progress,
+  scan,
+  watchProgress,
+} from '../src/greenhouse/fill.ts';
 import { fillData } from './greenhouse-data.ts';
 import { GreenhouseForm } from './greenhouse-form.tsx';
 
@@ -61,6 +68,9 @@ describe('the real Greenhouse form, as served (#54 PR C)', () => {
       "What's the name you'd prefer us to use throughout the interview process?",
     ]);
     expect((document.getElementById('email') as HTMLInputElement).value).toBe('sam@example.com');
+    // Every question counted, and how many hold an answer now.
+    expect(report.total).toBe(report.answered + report.left.length);
+    expect(report.answered).toBe(report.filled.length);
     const resume = document.getElementById('resume') as HTMLInputElement;
     expect(resume.files?.[0]?.name).toBe('Sam Example – Acme.pdf');
     expect(await resume.files?.[0]?.text()).toBe('%PDF-1.7 resume');
@@ -122,6 +132,85 @@ describe('fields only the person answers (#54 PR C round 1)', () => {
       'Keep my data for future roles',
       'Mobile',
     ]);
+  });
+
+  it('counts a file and its "enter manually" box as one question, answered either way', async () => {
+    document.body.innerHTML = `<form id="application-form">
+      <div class="field-wrapper"><div id="upload-label-cover_letter">Cover Letter</div>
+        <input id="cover_letter" type="file"><textarea id="cover_letter_text"></textarea></div>
+      <div class="field-wrapper"><label for="why">Why Acme?</label><input id="why" type="text"></div>
+    </form>`;
+    const form = document.getElementById('application-form') as HTMLElement;
+    // Both empty: one question, listed once (as the file).
+    expect(progress(form)).toMatchObject({ total: 2, answered: 0 });
+    expect(progress(form).left.map((field) => field.id)).toEqual(['cover_letter', 'why']);
+    (document.getElementById('cover_letter_text') as HTMLTextAreaElement).value = 'Dear team';
+    expect(progress(form)).toMatchObject({ total: 2, answered: 1 });
+    const report = await fillForm(form, fillData({ coverLetter: null }), { waitMs: 20 });
+    expect(report.left.map((field) => field.id)).toEqual(['why']);
+    expect(report.total).toBe(report.answered + report.left.length);
+  });
+
+  it('pairs a "_text" box only with a file: "Please specify" beside a choice is its own question', () => {
+    document.body.innerHTML = `<form id="application-form">
+      <div class="field-wrapper"><label for="question_9">How did you hear?</label>
+        <input id="question_9" type="text" value="Other"></div>
+      <div class="field-wrapper"><label for="question_9_text">Please specify</label>
+        <input id="question_9_text" type="text" aria-required="true"></div>
+    </form>`;
+    const now = progress(document.getElementById('application-form') as HTMLElement);
+    expect(now).toEqual({
+      total: 2,
+      answered: 1,
+      left: [{ id: 'question_9_text', label: 'Please specify', required: true }],
+    });
+  });
+
+  it('outlines by the same count: an answered "Enter manually" box clears it, a new question gets one', async () => {
+    document.body.innerHTML = `<form id="application-form">
+      <div class="field-wrapper"><div id="upload-label-resume">Resume</div>
+        <input id="resume" type="file" aria-required="true"><textarea id="resume_text"></textarea></div>
+    </form>`;
+    const form = document.getElementById('application-form') as HTMLElement;
+    markLeft(form, '#f36b3f');
+    await fillForm(form, fillData({ resume: null }), { waitMs: 20 });
+    const first = form.querySelector('.field-wrapper') as HTMLElement;
+    expect(first.hasAttribute(LEFT_MARK)).toBe(true);
+    const text = document.getElementById('resume_text') as HTMLTextAreaElement;
+    text.value = 'My résumé';
+    text.dispatchEvent(new Event('input', { bubbles: true }));
+    await waitFor(() => expect(first.hasAttribute(LEFT_MARK)).toBe(false));
+    // The page shows a new required question after the fill: outlined like the rest.
+    form.insertAdjacentHTML(
+      'beforeend',
+      `<div class="field-wrapper" id="later"><label for="specify">Please specify</label>
+        <input id="specify" type="text" aria-required="true"></div>`,
+    );
+    await waitFor(() =>
+      expect(document.getElementById('later')?.hasAttribute(LEFT_MARK)).toBe(true),
+    );
+  });
+
+  it('counts a required "Enter manually" box beside an unmarked file as required', () => {
+    document.body.innerHTML = `<form id="application-form"><div class="field-wrapper">
+      <div id="upload-label-resume">Resume</div><input id="resume" type="file">
+      <textarea id="resume_text" aria-required="true"></textarea></div></form>`;
+    expect(progress(document.getElementById('application-form') as HTMLElement).left).toEqual([
+      { id: 'resume', label: 'Resume', required: true },
+    ]);
+  });
+
+  it('tells the panel the new count as the person answers', async () => {
+    document.body.innerHTML = `<form id="application-form"><div class="field-wrapper">
+      <label for="why">Why Acme?</label><input id="why" type="text"></div></form>`;
+    const form = document.getElementById('application-form') as HTMLElement;
+    const seen = vi.fn();
+    const stop = watchProgress(() => form, seen);
+    const why = document.getElementById('why') as HTMLInputElement;
+    why.value = 'Because';
+    why.dispatchEvent(new Event('input', { bubbles: true }));
+    await waitFor(() => expect(seen).toHaveBeenLastCalledWith({ total: 1, answered: 1, left: [] }));
+    stop();
   });
 
   it('counts a "select all that apply" group as one question, answered once any box is ticked', async () => {
