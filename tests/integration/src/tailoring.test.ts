@@ -23,12 +23,17 @@ let user: TestUser;
 
 // Built from repeated letters, so no secret scanner mistakes it for a real key.
 const STUB_KEY = `stub-tailoring-${'x'.repeat(8)}-valid`;
+/** The download links' origin, which the extension asks for as a host (#54 PR C). */
+let documentsOrigin: string;
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 beforeAll(async () => {
   const outputs = await stackOutputs();
   api = outputs.ApiUrl ?? '';
   testSite = outputs.TestSiteUrl ?? '';
+  // #54 PR C: the extension's host for downloads; a stack deployed before it has no such output.
+  if (!outputs.DocumentsOrigin) throw new Error('No DocumentsOrigin output: redeploy the stack');
+  documentsOrigin = outputs.DocumentsOrigin;
   await waitForMalwareScanning(outputs);
   user = await createTestUser(outputs);
 }, 360_000);
@@ -149,7 +154,10 @@ describe('tailored résumés (deployed)', () => {
     expect(version.scores[0].tailored).toBe(version.scores[0].base);
     expect(version.scores[0].missingUnproven).toContain('AWS');
 
-    // Both files download from their 5-minute links.
+    // Both files download from their 5-minute links, on the extension's download host.
+    for (const link of Object.values(version.downloads)) {
+      expect(new URL(link as string).origin).toBe(documentsOrigin);
+    }
     const pdf = new Uint8Array(await (await fetch(version.downloads.pdf)).arrayBuffer());
     expect(new TextDecoder().decode(pdf.slice(0, 5))).toBe('%PDF-');
     const docx = new Uint8Array(await (await fetch(version.downloads.docx)).arrayBuffer());
@@ -217,6 +225,9 @@ describe('tailored résumés (deployed)', () => {
     );
     expect(letter.text).toContain('Built REST APIs in TypeScript.');
     expect(letter.text).toMatch(/Sincerely,\nSam Example$/);
+    for (const link of Object.values(letter.downloads)) {
+      expect(new URL(link as string).origin).toBe(documentsOrigin);
+    }
     const letterPdf = new Uint8Array(await (await fetch(letter.downloads.pdf)).arrayBuffer());
     expect(new TextDecoder().decode(letterPdf.slice(0, 5))).toBe('%PDF-');
     const letterDocx = new Uint8Array(await (await fetch(letter.downloads.docx)).arrayBuffer());

@@ -31,7 +31,8 @@ let carol: TestUser;
 beforeAll(async () => {
   const outputs = await stackOutputs();
   api = outputs.ApiUrl ?? '';
-  documentsOrigin = outputs.DocumentsOrigin ?? '';
+  if (!outputs.DocumentsOrigin) throw new Error('No DocumentsOrigin output: redeploy the stack');
+  documentsOrigin = outputs.DocumentsOrigin;
   await waitForMalwareScanning(outputs);
   [alice, bob, carol] = await Promise.all([
     createTestUser(outputs),
