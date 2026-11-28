@@ -53,6 +53,38 @@ describe('TermIndex', () => {
     expect(new TermIndex('Owned the go-live').has('Go')).toBe(false);
     expect(new TermIndex("Tuned Go's garbage collector").has('Go')).toBe(true);
     expect(new TermIndex('Let us go there').has('Go')).toBe(false);
+    // #117: a résumé that writes the language in capitals.
+    for (const text of [
+      'a MERN and GO starter framework',
+      'Wrote AWS, GO, and Python services',
+      'Languages\nPython\nGO\nAWS',
+      'Built services in GO. AWS Lambda too',
+      'Skills: JAVA GO SQL',
+      'Built a GO SDK',
+      "Tuned GO'S garbage collector",
+      "TUNED GO'S GARBAGE COLLECTOR",
+      'Migrated the platform from Java to GO',
+      'Rewrote the GO backend',
+    ]) {
+      expect(new TermIndex(text).has('Go'), text).toBe(true);
+    }
+    // ... but not the word in its common phrases.
+    for (const text of [
+      'GO-LIVE checklist',
+      'Owned GO/NO-GO decisions',
+      'GO live in March',
+      'GO LIVE plan',
+      'ready to GO',
+      'PROJECTS: READY TO GO',
+      'Apps on the GO',
+      "LET'S GO",
+      'Got the GO ahead',
+      'READY, SET, GO',
+      'A GO GETTER',
+      'No GO zones',
+    ]) {
+      expect(new TermIndex(text).has('Go'), text).toBe(false);
+    }
     expect(new TermIndex('Aligned the rest of the team').has('REST')).toBe(false);
     expect(new TermIndex('Led go-to-market').has('go-to-market')).toBe(true);
   });

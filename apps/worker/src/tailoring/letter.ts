@@ -18,6 +18,7 @@ import {
   DOCX,
   fail,
   finish,
+  issueKinds,
   jobKeywords,
   logger,
   modelCalls,
@@ -139,7 +140,7 @@ export async function writeLetter(run: Run, deps: TailoringWorkerDeps): Promise<
       : written.attempts.length === 0
         ? 'stopped'
         : 'model_unavailable';
-    return fail(run, deps, reason);
+    return fail(run, deps, reason, { issueKinds: issueKinds(written.attempts) });
   }
 
   // 4. Keep the letter before rendering: a retry from here makes no model call. Kept once: a
