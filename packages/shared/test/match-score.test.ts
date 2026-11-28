@@ -56,6 +56,11 @@ describe('TermIndex', () => {
     // #117: a résumé that writes the language in capitals ("a MERN and GO starter framework").
     expect(new TermIndex('a MERN and GO starter framework').has('Go')).toBe(true);
     expect(new TermIndex('GO-LIVE checklist').has('Go')).toBe(false);
+    expect(new TermIndex('Wrote AWS, GO, and Python services').has('Go')).toBe(true);
+    expect(new TermIndex("TUNED GO'S GARBAGE COLLECTOR").has('Go')).toBe(false);
+    expect(new TermIndex("Tuned GO'S garbage collector").has('Go')).toBe(true);
+    expect(new TermIndex('GO LIVE plan').has('Go')).toBe(false);
+    expect(new TermIndex('PROJECTS: READY TO GO').has('Go')).toBe(false);
     expect(new TermIndex('Aligned the rest of the team').has('REST')).toBe(false);
     expect(new TermIndex('Led go-to-market').has('go-to-market')).toBe(true);
   });

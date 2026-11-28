@@ -413,6 +413,16 @@ describe('tailoring worker', () => {
     expect(retry.runs.saveCall).not.toHaveBeenCalled();
     expect(finished(retry.runs).outcome.tailoring).toMatchObject(draft);
     expect(JSON.parse(retry.files.get(keys.json) as string)).toEqual(draftResume);
+
+    // #117: a draft kept by older score code links its scores as that version, never as today's.
+    const older = setup(
+      { model: vi.fn(async () => stubTailoringSource('stub-model')) },
+      version({
+        tailoring: { calls: 3, attempts: 2, drafted: true, draftResume, ...draft, scoreVersion: 1 },
+      }),
+    );
+    expect(await processRecord(record(undefined, 2), older.deps)).toBe('ready');
+    expect(older.runs.saveMatches).toHaveBeenCalledWith(USER, DOC, draft.scores, 1);
   });
 
   it('prunes only when this delivery ended the run', async () => {

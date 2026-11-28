@@ -147,6 +147,8 @@ export async function finish(
     },
   });
   logger.info('Run ended', {
+    // First, so the run's own fields below always win.
+    ...logged,
     documentId: doc.documentId,
     kind: doc.kind,
     status: outcome.status,
@@ -154,7 +156,6 @@ export async function finish(
     ...(outcome.status === 'failed' ? { error: outcome.error } : {}),
     calls: run.calls,
     ended,
-    ...logged,
   });
   return ended;
 }

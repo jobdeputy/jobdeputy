@@ -181,7 +181,8 @@ async function tailor(run: Run, deps: TailoringWorkerDeps): Promise<TailoringOut
       scores: doc.tailoring.scores,
       ...(doc.tailoring.coverage !== undefined ? { coverage: doc.tailoring.coverage } : {}),
       promptVersion: doc.tailoring.promptVersion ?? promptVersion(tailorResumeTask),
-      scoreVersion: doc.tailoring.scoreVersion ?? MATCH_SCORE_VERSION,
+      // A draft kept before scores carried a version was scored by version 1.
+      scoreVersion: doc.tailoring.scoreVersion ?? 1,
       ...(doc.tailoring.baseETag !== undefined ? { baseETag: doc.tailoring.baseETag } : {}),
     });
   }
@@ -291,7 +292,14 @@ async function render(
   ]);
   // Before the end, so a failure is retried (the links are idempotent; the app reads a job's
   // version only once it is ready).
-  await deps.runs.saveMatches(userId, documentId, draft.scores ?? [], MATCH_SCORE_VERSION);
+  // The draft's own score version: a draft kept by older score code is never saved as today's
+  // (#117 raised it; the API shows only today's, decision 0015).
+  await deps.runs.saveMatches(
+    userId,
+    documentId,
+    draft.scores ?? [],
+    draft.scoreVersion ?? MATCH_SCORE_VERSION,
+  );
   const ended = await finish(
     run,
     deps,
