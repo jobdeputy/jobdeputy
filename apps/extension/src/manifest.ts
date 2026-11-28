@@ -1,22 +1,43 @@
+import { EXTENSION_DEV_KEY } from '@jobdeputy/shared/extension-key';
+import type { Settings } from './settings.ts';
+
 /**
  * #54 (decision 0020): the extension's manifest, kept here so a test can hold it to least
- * privilege. It asks only for what a shipped feature uses: this shell asks for nothing. Sign-in
- * (PR B) adds `identity`, `storage` and the API's origin; the Greenhouse filler (PR C) adds the
- * Greenhouse boards. Every later job site is an optional host, asked for when first needed; its
- * content script is registered at runtime once granted, never listed in the manifest (a host a
- * static content script matches is granted at install).
+ * privilege. It asks only for what a shipped feature uses. Sign-in (PR B) needs `identity`
+ * (managed login in a window of its own) and `storage` (the session, `storage.session` only), and
+ * the API's own origin, set when it's built. Managed login answers the extension's origin itself
+ * (CORS), so it needs no host. The Greenhouse filler (PR C) adds the Greenhouse boards. Every later
+ * job site is an optional host, asked for when first needed; its content script is registered at
+ * runtime once granted, never listed in the manifest (a host a static content script matches is
+ * granted at install).
  */
-export const PERMISSIONS: readonly string[] = [];
-export const HOST_PERMISSIONS: readonly string[] = [];
+export const PERMISSIONS: readonly string[] = ['identity', 'storage'];
+
+/** The permissions a build asks for: sign-in's only when it can sign in. */
+export function permissions(settings: Settings | null): string[] {
+  return settings ? [...PERMISSIONS] : [];
+}
 export const OPTIONAL_PERMISSIONS: readonly string[] = [];
 export const OPTIONAL_HOST_PERMISSIONS: readonly string[] = [];
 
-export const manifest = {
-  name: 'JobDeputy',
-  description: 'Fills job applications with your saved answers. You review and submit.',
-  permissions: [...PERMISSIONS],
-  host_permissions: [...HOST_PERMISSIONS],
-  optional_permissions: [...OPTIONAL_PERMISSIONS],
-  optional_host_permissions: [...OPTIONAL_HOST_PERMISSIONS],
-  action: { default_title: 'JobDeputy' },
-};
+/** The hosts granted at install: the API's origin, when the build has one. */
+export function hostPermissions(settings: Settings | null): string[] {
+  return settings ? [`${new URL(settings.apiUrl).origin}/*`] : [];
+}
+
+/**
+ * The manifest for a build. `key` fixes the extension's ID (and so its sign-in return address)
+ * for unpacked builds; a store build leaves it out, as the store gives the item its own ID.
+ */
+export function manifestFor(settings: Settings | null, { store = false } = {}) {
+  return {
+    name: 'JobDeputy',
+    description: 'Fills job applications with your saved answers. You review and submit.',
+    ...(store ? {} : { key: EXTENSION_DEV_KEY }),
+    permissions: permissions(settings),
+    host_permissions: hostPermissions(settings),
+    optional_permissions: [...OPTIONAL_PERMISSIONS],
+    optional_host_permissions: [...OPTIONAL_HOST_PERMISSIONS],
+    action: { default_title: 'JobDeputy' },
+  };
+}

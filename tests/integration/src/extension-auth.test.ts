@@ -58,6 +58,23 @@ describe.skipIf(!outputs.ExtensionClientId)('extension sign-in (deployed, #54)',
     }
   });
 
+  it('"Use a different account" (/logout) reaches sign-in with the PKCE challenge kept', async () => {
+    const query = new URLSearchParams({
+      client_id: clientId,
+      scope: 'openid email',
+      ...pkce,
+      state: 'different-account',
+      redirect_uri: extensionRedirectUrl(EXTENSION_DEV_IDS[0] ?? ''),
+    });
+    const res = await fetch(`${domain}/logout?${query}`, { redirect: 'manual' });
+    expect(res.status).toBe(302);
+    const next = new URL(res.headers.get('location') ?? '', domain);
+    expect(next.pathname).toBe('/login');
+    expect(next.searchParams.get('code_challenge')).toBe(pkce.code_challenge);
+    expect(next.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(next.searchParams.get('state')).toBe('different-account');
+  });
+
   it('refuses any other return address, and tokens straight in the URL', async () => {
     const elsewhere = await authorize({ ...pkce, redirect_uri: 'https://example.com/' });
     expect(elsewhere.searchParams.get('error')).toBe('redirect_mismatch');

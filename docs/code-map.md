@@ -77,11 +77,16 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 
 | File | Role |
 |---|---|
-| `src/manifest.ts` | the manifest's permissions and hosts (decision 0020: only what a shipped feature uses); `wxt.config.ts` builds from it |
-| `src/popup.tsx`, `entrypoints/popup/` | the toolbar popup (the shell: what the extension is for, its version); styled with the web app's tokens |
+| `src/manifest.ts` | `manifestFor(settings)`: the manifest's permissions and hosts (decision 0020: only what a shipped feature uses: `identity`, `storage`, the API's origin), the dev `key` (left out of a store build, `JD_STORE_BUILD=1`); `wxt.config.ts` builds from it |
+| `build-env.ts` | `buildEnv`: the variables a build sees, read as WXT reads them (`.env*` files, then the process's), for the browser tests and the manifest check |
+| `src/settings.ts` | `readSettings`: the build's sign-in settings (`WXT_API_URL`, `WXT_AUTH_DOMAIN`, `WXT_CLIENT_ID`, `WXT_SITE_URL`), from `.env.local` (`scripts/extension-config.mjs`) or CI |
+| `entrypoints/background.ts` | the service worker: owns sign-in and every token; answers only the extension's own pages (`src/messages.ts`: `fromOwnPage`, the requests) |
+| `src/auth/session.ts`, `src/auth/pkce.ts` | `createAuth`: managed login through `launchWebAuthFlow` (code + PKCE; `/logout` first for a different account), the session in `storage.session`, refresh a minute early (one at a time), sign-out (revoke; the person remembered for "Continue as"); a sign-in Chrome cut short is said as interrupted |
+| `src/api.ts`, `src/readiness.ts` | `createApi`: GETs with the person's token (renewed once on a 401, then signed out); `readReadiness`: details, a ready résumé, answers saved |
+| `src/popup.tsx`, `entrypoints/popup/` | the toolbar popup: sign in (or Continue as / Use a different account), who is signed in, what the deputy can fill in (each missing one linking to the web app); styled with the web app's tokens |
 | `src/copy.ts` | the extension's words |
-| `test/manifest.test.ts`, `test/popup.test.tsx` | least privilege: the allowed permissions and hosts (granted and optional), never broad access; the popup's words |
-| `e2e/extension.ts`, `e2e/popup.spec.ts` | browser tests: the built extension loaded unpacked in Chromium (`withExtension`); the popup and its screenshot (the Extension workflow's artifact) |
+| `test/*.test.ts(x)` | least privilege (`manifest`: the allowed permissions and hosts, granted and optional, never broad access), settings, sign-in and tokens against a fake managed login (`session`), API reads (`api`), message senders, the popup's states |
+| `e2e/extension.ts`, `e2e/popup.spec.ts` | browser tests: the built extension loaded unpacked in Chromium (`withExtension`, the fixed dev ID); the popup signed out and signed in (the session seeded, the API answered by routes), and its screenshots (the Extension workflow's artifact) |
 
 ## apps/api/src: one Lambda per feature (API Gateway HTTP API)
 
@@ -199,5 +204,6 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `scripts/request-account-deletion.sh` | the only way to delete an account by hand |
 | `scripts/cleanup-log-groups.sh`, `scripts/cloud-setup.sh` | orphaned log groups; cloud dev environment |
 | `scripts/delete-pr-stack.sh` | deletes a PR stack, retrying AWS internal delete failures (#61) |
-| `scripts/check-extension-manifest.mjs` | #54: the built extension's manifest asks only for what `src/manifest.ts` lists (Extension workflows) |
+| `scripts/check-extension-manifest.mjs` | #54: the built extension's manifest asks only for what `src/manifest.ts` gives for the same build settings, and carries the dev `key` only outside a store build (Extension workflows) |
+| `scripts/extension-config.mjs` | #54: writes the extension's `.env.local` from a dev stack's outputs (`node scripts/extension-config.mjs jobdeputy-dev-<you>-iad`) |
 | `scripts/publish-ui-screenshots.sh` | posts a PR's UI screenshots as one comment (only screens that differ from `main`'s, when `compare-*.json` covers every shot); images on the `ui-screenshots` branch (one commit: each PR's last 3 pushes, kept 30 days after close; retries when two PRs publish at once) (#14) |
