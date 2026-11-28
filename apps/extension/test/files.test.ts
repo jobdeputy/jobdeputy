@@ -70,6 +70,19 @@ describe('files (#54 PR C)', () => {
     expect(await files(() => huge).files.read(LINK, 'a.pdf')).toBeNull();
   });
 
+  it('stops reading a body without a length once it passes the cap', async () => {
+    let sent = 0;
+    const chunk = new Uint8Array(1024 * 1024);
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        sent += chunk.length;
+        controller.enqueue(chunk);
+      },
+    });
+    expect(await files(() => new Response(endless)).files.read(LINK, 'a.pdf')).toBeNull();
+    expect(sent).toBeLessThanOrEqual(MAX_FILE_BYTES + 3 * chunk.length);
+  });
+
   it('knows only the formats the app keeps', () => {
     expect(fileType('A.PDF')).toBe('application/pdf');
     expect(fileType('noextension')).toBeNull();

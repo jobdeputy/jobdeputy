@@ -46,9 +46,11 @@ const values = {
   // #54 PR C: the documents' download links (the résumé and cover letter the filler attaches).
   WXT_FILES_ORIGIN: output('DocumentsOrigin'),
 };
-const missing = ['WXT_API_URL', 'WXT_AUTH_DOMAIN', 'WXT_CLIENT_ID'].filter((key) => !values[key]);
+const missing = ['WXT_API_URL', 'WXT_AUTH_DOMAIN', 'WXT_CLIENT_ID', 'WXT_FILES_ORIGIN'].filter(
+  (key) => !values[key],
+);
 if (missing.length > 0) {
-  console.error(`${stack} has no ${missing.join(', ')} output: deploy it with #54 PR B first`);
+  console.error(`${stack} has no ${missing.join(', ')} output: deploy it (with #54 PR C1) first`);
   process.exit(1);
 }
 const file = new URL('../apps/extension/.env.local', import.meta.url);

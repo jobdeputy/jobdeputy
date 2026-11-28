@@ -6,6 +6,7 @@ import {
 } from '@jobdeputy/shared/applicant';
 import { z } from 'zod';
 import type { Api, ApiResult } from '../api.ts';
+import { isAttachable } from '../readiness.ts';
 import type { FileData, Files } from './files.ts';
 import { jobIdFor, type Posting } from './posting.ts';
 
@@ -39,21 +40,22 @@ const person = z.object({
   preferredName: text.optional().catch(undefined),
   email: text.optional().catch(undefined),
   phone: z.object({ countryCode: text, number: text }).optional().catch(undefined),
+  // Field by field, so one odd value drops only itself (the country is the location's key).
   location: z
     .object({
-      city: text.optional(),
-      region: text.optional(),
+      city: text.optional().catch(undefined),
+      region: text.optional().catch(undefined),
       country: z.string().regex(/^[A-Z]{2}$/),
-      postalCode: text.optional(),
+      postalCode: text.optional().catch(undefined),
     })
     .optional()
     .catch(undefined),
   links: z
     .object({
-      linkedin: text.optional(),
-      github: text.optional(),
-      portfolio: text.optional(),
-      website: text.optional(),
+      linkedin: text.optional().catch(undefined),
+      github: text.optional().catch(undefined),
+      portfolio: text.optional().catch(undefined),
+      website: text.optional().catch(undefined),
     })
     .catch({}),
 });
@@ -103,11 +105,13 @@ export async function readFillData(
   posting: Posting,
 ): Promise<ApiResult<FillData>> {
   let signedOut = false;
-  /** The body, parsed; FAILED when it failed or has an odd shape; signed out is noted. */
+  let offline = false;
+  /** The body, parsed; FAILED when it failed or has an odd shape; signed out or offline is noted. */
   async function read<T>(path: string, schema: z.ZodType<T>): Promise<Read<T>> {
     const res = await api.get<unknown>(path);
     if (!res.ok) {
       if (res.reason === 'signed-out') signedOut = true;
+      if (res.reason === 'offline') offline = true;
       return FAILED;
     }
     const parsed = schema.safeParse(res.body);
@@ -151,7 +155,7 @@ export async function readFillData(
   if (tailoredFile === FAILED || (!tailoredFile && docs === FAILED)) resume = FAILED;
   else if (tailoredFile) resume = { ...tailoredFile, from: 'tailored' };
   else if (docs !== FAILED) {
-    const chosen = docs.documents.find((d) => d.isDefault && d.status === 'ready');
+    const chosen = docs.documents.find(isAttachable);
     if (chosen) {
       const one = await read(`/me/documents/${chosen.documentId}`, download);
       const file = one === FAILED ? null : await files.read(one.downloadUrl, chosen.fileName);
@@ -160,7 +164,7 @@ export async function readFillData(
   }
 
   if (signedOut) return { ok: false, reason: 'signed-out' };
-  if (profile === FAILED) return { ok: false, reason: 'failed' };
+  if (profile === FAILED) return { ok: false, reason: offline ? 'offline' : 'failed' };
   const unread: Unread[] = [];
   if (answers === FAILED) unread.push('answers');
   if (selfId === FAILED) unread.push('voluntary');

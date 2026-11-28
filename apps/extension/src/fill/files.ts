@@ -32,6 +32,31 @@ function base64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/** The body, or null once it passes the cap (read in chunks: a missing length can't fool it). */
+async function readCapped(res: Response): Promise<Uint8Array | null> {
+  if (!res.body) return new Uint8Array();
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > MAX_FILE_BYTES) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let at = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, at);
+    at += chunk.length;
+  }
+  return bytes;
+}
+
 export function createFiles(deps: { settings: Settings; fetch: typeof fetch }) {
   return {
     /** The file at a download link, or null: not on the documents' origin, too big, or failed. */
@@ -52,8 +77,8 @@ export function createFiles(deps: { settings: Settings; fetch: typeof fetch }) {
         if (!res.ok) return null;
         const declared = Number(res.headers.get('content-length'));
         if (declared > MAX_FILE_BYTES) return null;
-        const bytes = new Uint8Array(await res.arrayBuffer());
-        if (bytes.length === 0 || bytes.length > MAX_FILE_BYTES) return null;
+        const bytes = await readCapped(res);
+        if (!bytes || bytes.length === 0) return null;
         return { name, type, base64: base64(bytes) };
       } catch {
         return null;

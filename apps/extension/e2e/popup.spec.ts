@@ -38,7 +38,7 @@ test('signed in, it says who and what the deputy can fill in, read from the API'
         lastName: 'Lovelace',
         email: 'ada@example.com',
       },
-      '/me/documents': { documents: [{ status: 'ready' }] },
+      '/me/documents': { documents: [{ status: 'ready', isDefault: true }] },
       '/me/applicant': { version: 0, workAuthorization: [], workSetups: [] },
     };
     const seen: string[] = [];

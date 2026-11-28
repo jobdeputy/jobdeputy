@@ -172,6 +172,44 @@ describe('readFillData (#54 PR C)', () => {
     expect(result.ok && result.body.resume?.from).toBe('tailored');
   });
 
+  it('drops only the odd field of a profile, never its neighbours', async () => {
+    const { api } = routes({
+      '/me/profile': ok({
+        ...PROFILE,
+        links: { linkedin: 'https://www.linkedin.com/in/sam', portfolio: '' },
+        location: { city: '', region: 'TX', country: 'US' },
+      }),
+    });
+    const result = await readFillData(api, fakeFiles().files, posting);
+    expect(result.ok && result.body.person.links).toEqual({
+      linkedin: 'https://www.linkedin.com/in/sam',
+    });
+    expect(result.ok && result.body.person.location).toEqual({ region: 'TX', country: 'US' });
+  });
+
+  it('attaches no résumé that is not the default (as the popup counts it)', async () => {
+    const { api } = routes({
+      '/me/tailorings?companyKey=greenhouse%3Aacme': ok({ tailorings: [] }),
+      '/me/documents': ok({
+        documents: [
+          { documentId: 'd-1', status: 'ready', isDefault: false, fileName: 'a.pdf' },
+          { documentId: 'd-2', status: 'failed', isDefault: true, fileName: 'b.pdf' },
+        ],
+      }),
+    });
+    const result = await readFillData(api, fakeFiles().files, posting);
+    expect(result.ok && result.body.resume).toBeNull();
+    expect(result.ok && result.body.unread).toEqual([]);
+  });
+
+  it('says offline when the profile could not be read for that', async () => {
+    const { api } = routes({ '/me/profile': { ok: false, reason: 'offline' } });
+    expect(await readFillData(api, fakeFiles().files, posting)).toEqual({
+      ok: false,
+      reason: 'offline',
+    });
+  });
+
   it('fails without the profile, and says signed out when any read was', async () => {
     const noProfile = routes({ '/me/profile': { ok: false, reason: 'failed' } });
     expect(await readFillData(noProfile.api, fakeFiles().files, posting)).toEqual({
