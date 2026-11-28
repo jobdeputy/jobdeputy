@@ -1,4 +1,5 @@
 import { EXTENSION_DEV_KEY } from '@jobdeputy/shared/extension-key';
+import { GREENHOUSE_MATCHES } from './fill/posting.ts';
 import type { Settings } from './settings.ts';
 
 /**
@@ -22,12 +23,17 @@ export const OPTIONAL_PERMISSIONS: readonly string[] = [];
 export const OPTIONAL_HOST_PERMISSIONS: readonly string[] = [];
 
 /**
- * The hosts granted at install: the API's origin, when the build has one, and (#54 PR C) the
- * origin of the documents' download links, which answer only the web app's origin (CORS).
+ * The hosts granted at install: the Greenhouse forms (PR C); and, when the build can sign in,
+ * the API's origin and the origin of the documents' download links, which answer only the web
+ * app's origin (CORS).
  */
 export function hostPermissions(settings: Settings | null): string[] {
-  if (!settings) return [];
-  return [`${new URL(settings.apiUrl).origin}/*`, `${settings.filesOrigin}/*`];
+  if (!settings) return [...GREENHOUSE_MATCHES];
+  return [
+    `${new URL(settings.apiUrl).origin}/*`,
+    `${settings.filesOrigin}/*`,
+    ...GREENHOUSE_MATCHES,
+  ];
 }
 
 /**

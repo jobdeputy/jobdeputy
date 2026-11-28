@@ -29,6 +29,8 @@ const ALLOWED = {
   host_permissions: [
     'https://abc123.execute-api.us-east-1.amazonaws.com/*',
     'https://jobdeputy-dev-iad-documentsbucket.s3.us-east-1.amazonaws.com/*',
+    // PR C: the Greenhouse application forms, where the filler's content script runs.
+    'https://job-boards.greenhouse.io/*',
   ],
   optional_permissions: [] as string[],
   optional_host_permissions: [] as string[],
@@ -66,16 +68,17 @@ describe('manifest (#54, decision 0020)', () => {
     expect(manifest.optional_host_permissions).toEqual([...OPTIONAL_HOST_PERMISSIONS]);
   });
 
-  it('asks for nothing at all when the build has no sign-in settings', () => {
-    expect(manifestFor(null).host_permissions).toEqual([]);
+  it('asks only for the forms its content script is on when the build has no sign-in settings', () => {
+    expect(manifestFor(null).host_permissions).toEqual(['https://job-boards.greenhouse.io/*']);
     expect(manifestFor(null, { store: true }).permissions).toEqual([]);
-    expect(hostPermissions(null)).toEqual([]);
+    expect(hostPermissions(null)).toEqual(['https://job-boards.greenhouse.io/*']);
   });
 
   it('asks for the API origin only, never a path beyond it or another host', () => {
     expect(hostPermissions({ ...SETTINGS, apiUrl: 'https://api.example.com/v1' })).toEqual([
       'https://api.example.com/*',
       'https://jobdeputy-dev-iad-documentsbucket.s3.us-east-1.amazonaws.com/*',
+      'https://job-boards.greenhouse.io/*',
     ]);
   });
 

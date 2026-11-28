@@ -1,0 +1,4 @@
+/* #54 PR C: the panel on Greenhouse forms, in its own shadow root: the web app's tokens, as in
+   the popup. Nothing here reaches the page. */
+@import "tailwindcss";
+@import "../../../web/src/styles/tokens.css";

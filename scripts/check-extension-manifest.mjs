@@ -43,9 +43,11 @@ const KNOWN = new Set([
   ...keys,
 ]);
 const unknown = Object.keys(built).filter((key) => !KNOWN.has(key));
-// Each content script only says where (matches), what (js, css) and when (run_at): no globs,
-// frames beyond the top one, page world, or about:/blob: fallbacks until a decision allows them.
-const SCRIPT_KEYS = new Set(['matches', 'js', 'css', 'run_at']);
+// Each content script only says where (matches), what (js, css) and when (run_at), and (0020,
+// #54 PR C) whether it runs in frames too: a company site embeds Greenhouse's form in a frame of
+// a host it already matches. No globs, page world, or about:/blob: fallbacks until a decision
+// allows them.
+const SCRIPT_KEYS = new Set(['matches', 'js', 'css', 'run_at', 'all_frames']);
 const globs = (built.content_scripts ?? []).filter((script) =>
   Object.keys(script).some((key) => !SCRIPT_KEYS.has(key)),
 );
