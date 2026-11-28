@@ -317,7 +317,7 @@ describe('readFillDataSigningIn (#111)', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('says offline when managed login could not be reached', async () => {
+  it('still says signed out when managed login could not be reached', async () => {
     const { api } = routes({ '/me/profile': SIGNED_OUT });
     const result = await readFillDataSigningIn(
       api,
@@ -325,7 +325,7 @@ describe('readFillDataSigningIn (#111)', () => {
       posting,
       async () => 'offline',
     );
-    expect(result).toEqual({ ok: false, reason: 'offline' });
+    expect(result).toEqual(SIGNED_OUT);
   });
 
   it('says signed out when the silent sign-in could not sign in', async () => {

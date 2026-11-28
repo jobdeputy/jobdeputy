@@ -260,9 +260,8 @@ export async function readFillDataSigningIn(
 ): Promise<ApiResult<FillData>> {
   const first = await readFillData(api, files, posting);
   if (first.ok || first.reason !== 'signed-out') return first;
-  const silent = await signInSilently();
-  // Managed login unreachable: a network problem, not a reason to ask for a sign-in.
-  if (silent === 'offline') return { ok: false, reason: 'offline' };
-  if (silent !== 'signed-in') return first;
+  // Not signed in silently (managed login unreachable included): still signed out here, and
+  // signing in is the person's next step (their own sign-in says if it can't reach it).
+  if ((await signInSilently()) !== 'signed-in') return first;
   return readFillData(api, files, posting);
 }
