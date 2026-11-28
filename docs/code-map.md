@@ -87,6 +87,7 @@ The public landing page so far (#14); screens come one at a time. Runs with `pnp
 | `src/api.ts`, `src/readiness.ts` | `createApi`: GETs with the person's token (renewed once on a 401, then signed out); `readReadiness`: details, a ready résumé, answers saved |
 | `src/popup.tsx`, `entrypoints/popup/` | the toolbar popup: sign in (or Continue as / Use a different account), who is signed in, what the deputy can fill in (each missing one linking to the web app); styled with the web app's tokens |
 | `src/copy.ts` | the extension's words |
+| `src/build.ts`, `src/dev-tag.tsx` | #54: `DEV_BUILD` (every build but the store's, set in `wxt.config.ts`) and the Dev tag beside the title in the popup and the panel; the toolbar's DEV badge (`entrypoints/background.ts`) |
 | `test/*.test.ts(x)` | least privilege (`manifest`: the allowed permissions and hosts, granted and optional, never broad access), settings, sign-in and tokens against a fake managed login (`session`), API reads (`api`), message senders, the popup's states |
 | `e2e/greenhouse.spec.ts`, `test/fixtures/greenhouse-form.html` | #54 PR C3: the built extension on a saved copy of a real Greenhouse form (and the same form in a company site's frame), with the API and files answered by routes; its screenshots |
 | `e2e/extension.ts`, `e2e/popup.spec.ts` | browser tests: the built extension loaded unpacked in Chromium (`withExtension`, the fixed dev ID); the popup signed out and signed in (the session seeded, the API answered by routes), and its screenshots (the Extension workflow's artifact) |
