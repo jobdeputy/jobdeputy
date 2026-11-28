@@ -33,9 +33,19 @@ export const EXTENSION_SCOPES: readonly string[] = ['openid', 'email'];
  * gives its tokens and managed login never gives the extension's.
  */
 export const EXTENSION_API_ROUTES: readonly string[] = [
+  // PR B: the popup's "ready to fill" lines.
   'GET /me/profile',
   'GET /me/documents',
   'GET /me/applicant',
+  // PR C, the Greenhouse filler: the self-ID answers (decrypted for the user's own client, never
+  // stored by it), the résumé file (the default's, or the company's tailored one) and the job's
+  // cover letter. Reads only: every write stays the web app's.
+  'GET /me/voluntary',
+  'GET /me/documents/{documentId}',
+  'GET /me/tailorings',
+  'GET /me/tailorings/{documentId}',
+  'GET /me/cover-letters',
+  'GET /me/cover-letters/{documentId}',
 ];
 
 /** The scope Cognito gives tokens from a direct (SRP or admin) sign-in: the web app and tests. */

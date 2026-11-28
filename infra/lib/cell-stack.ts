@@ -246,6 +246,9 @@ export class CellStack extends Stack {
       health: queueHealth,
       ...(props.siteOrigin ? { siteOrigin: props.siteOrigin } : {}),
     });
+    // Where the documents' download links point: the web app's CSP allows it, and the extension
+    // asks for it as a host (#54 PR C: the links answer the site's origin only, not the extension's).
+    const documentsOrigin = `https://${documents.bucket.bucketRegionalDomainName}`;
 
     // T13, every stage: reserved test domains (example.com, *.test, …) can never become
     // real accounts. Admin-created test users are allowed only in dev pools.
@@ -812,10 +815,7 @@ export class CellStack extends Stack {
         parameterName: this.webConfig.connectSrc,
         description:
           'The origins the web app calls in this cell, for its CSP (read by the web stack).',
-        stringValue: [
-          httpApi.apiEndpoint,
-          `https://${documents.bucket.bucketRegionalDomainName}`,
-        ].join(' '),
+        stringValue: [httpApi.apiEndpoint, documentsOrigin].join(' '),
       });
     }
     if (ping) {
@@ -987,6 +987,9 @@ export class CellStack extends Stack {
     new CfnOutput(this, 'ApiUrl', { value: stage.url });
     new CfnOutput(this, 'UserPoolId', { value: auth.userPool.userPoolId });
     new CfnOutput(this, 'DocumentsBucketName', { value: documents.bucket.bucketName });
+    // #54 PR C: the extension's host for downloads; PR C2 writes it into its build
+    // (scripts/extension-config.mjs).
+    new CfnOutput(this, 'DocumentsOrigin', { value: documentsOrigin });
     new CfnOutput(this, 'MalwareProtectionPlanId', {
       value: documents.malwarePlan.attrMalwareProtectionPlanId,
     });
