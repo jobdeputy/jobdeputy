@@ -1,4 +1,4 @@
-# 0021: The web app and the extension sign in on one managed login page, at auth.<site>
+# 0021: The web app and the extension sign in on one managed login page, at `auth.<site>`
 
 - **Status:** Accepted
 - **Date:** 2026-11-28
