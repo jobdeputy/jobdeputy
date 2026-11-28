@@ -116,9 +116,13 @@ const ALIAS_TABLE: { tokens: string[]; canonical: string }[] = ALIASES.flatMap((
  */
 const CASED: [RegExp, string][] = [
   [/\bGo\b(?!-)(?!['’](?!s\b))/g, 'golang'],
-  // "GO" in capitals (#117: "a MERN and GO starter framework"), but not the word in a run of
-  // capitals ("GO LIVE", "READY TO GO").
-  [/(?<!\b[A-Z]{2,}\s+)\bGO\b(?!-)(?!\s+[A-Z]{2,}\b)(?!['’](?![sS]\b))/g, 'golang'],
+  // "GO" in capitals (#117: "a MERN and GO starter framework", "Skills: JAVA GO SQL"), but not
+  // the word in its common phrases: "GO/NO-GO", "GO-LIVE", "GO live", "ready to GO", "on the GO",
+  // "let's GO", "GO ahead".
+  [
+    /(?<![/-]|\b(?:[Tt][Oo]|[Nn][Oo]|[Tt][Hh][Ee]|[Ll][Ee][Tt]['’]?[Ss])[ \t]+)\bGO\b(?![-/])(?![ \t]+(?:[Ll][Ii][Vv][Ee]|[Aa][Hh][Ee][Aa][Dd])\b)(?!['’](?![sS]\b))/g,
+    'golang',
+  ],
   [/\bREST(?:ful)?\b|\bRest[Ff]ul\b|\brestful\b/g, 'restful'],
 ];
 

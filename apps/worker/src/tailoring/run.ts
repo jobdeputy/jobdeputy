@@ -114,13 +114,19 @@ type FinishOutcome = Parameters<TailoringWorkerDeps['runs']['finish']>[0]['outco
 
 const letter = (run: Run) => run.doc.kind === 'cover_letter';
 
+/**
+ * Added to the "Run ended" log line (#117): issue kinds and counts only, never an issue's
+ * message, which names résumé and job terms.
+ */
+type RunEndedExtra = { issueKinds?: Record<string, number>[] };
+
 /** Ends the run; false when it had ended already (another delivery ended it). */
 export async function finish(
   run: Run,
   deps: TailoringWorkerDeps,
   outcome: FinishOutcome,
   summary: string,
-  logged: Record<string, unknown> = {},
+  logged: RunEndedExtra = {},
 ): Promise<boolean> {
   const { doc } = run;
   const prefix = letter(run) ? 'cover_letter' : 'tailoring';
@@ -177,8 +183,7 @@ export async function fail(
   run: Run,
   deps: TailoringWorkerDeps,
   error: TailoringError,
-  /** Added to the "Run ended" log line: names and counts only, never résumé or job text. */
-  logged?: Record<string, unknown>,
+  logged?: RunEndedExtra,
 ): Promise<TailoringOutcome> {
   const summary = letter(run)
     ? `Cover letter not written: ${COVER_LETTER_ERRORS[error]}`

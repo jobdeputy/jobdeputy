@@ -294,12 +294,7 @@ async function render(
   // version only once it is ready).
   // The draft's own score version: a draft kept by older score code is never saved as today's
   // (#117 raised it; the API shows only today's, decision 0015).
-  await deps.runs.saveMatches(
-    userId,
-    documentId,
-    draft.scores ?? [],
-    draft.scoreVersion ?? MATCH_SCORE_VERSION,
-  );
+  await deps.runs.saveMatches(userId, documentId, draft.scores ?? [], draft.scoreVersion ?? 1);
   const ended = await finish(
     run,
     deps,
