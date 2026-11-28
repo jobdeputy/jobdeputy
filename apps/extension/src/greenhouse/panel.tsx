@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { copy, fill } from '../copy.ts';
 import { DevTag } from '../dev-tag.tsx';
+import type { Progress } from './fill.ts';
 import type { Outcome } from './run.ts';
 
 const text = copy.panel;
@@ -108,14 +109,14 @@ export function Panel({
           {busy ? text.filling : text.fill}
         </button>
       )}
+      {/* Said once per fill (the live count beside the bar is not a live region: it would be
+          said again at every answer). */}
       <p role="status" className="sr-only">
-        {busy ? text.filling : ''}
+        {busy ? text.filling : outcome?.ok ? announcement(outcome) : ''}
       </p>
     </section>
   );
 }
-
-type Progress = { total: number; answered: number };
 
 function Summary({
   outcome,
@@ -127,16 +128,19 @@ function Summary({
   watchProgress?: (onChange: (now: Progress) => void) => () => void;
 }) {
   const { report } = outcome;
-  // The count as of the fill, then kept true as the person answers the rest.
-  const [now, setNow] = useState<Progress>({ total: report.total, answered: report.answered });
+  // Where the form stands as of the fill, then kept true as the person answers the rest: the
+  // count, the bar and what's left all follow it.
+  const atFill: Progress = { total: report.total, answered: report.answered, left: report.left };
+  const [now, setNow] = useState<Progress>(atFill);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new fill (report) starts afresh.
   useEffect(() => {
-    setNow({ total: report.total, answered: report.answered });
+    setNow({ total: report.total, answered: report.answered, left: report.left });
     return watchProgress?.(setNow);
   }, [report, watchProgress]);
-  // Never more filled than answered (a page can clear a field it took).
-  const count = Math.min(report.filled.length, now.answered);
-  const required = report.left.filter((field) => field.required);
-  const optional = report.left.length - required.length;
+  /** What JobDeputy filled in this fill: a fact about the fill, whatever happened since. */
+  const count = report.filled.length;
+  const required = now.left.filter((field) => field.required);
+  const optional = now.left.length - required.length;
   const notes = [
     // Nothing to say when the person's own file was there, or the form asks for none.
     outcome.resume === 'kept'
@@ -150,7 +154,7 @@ function Summary({
     ...outcome.unread.map((part) => text.unread[part]),
   ].filter((note): note is string => Boolean(note));
   return (
-    <div className="grid gap-3" role="status">
+    <div className="grid gap-3">
       <div className="grid gap-1.5">
         <p className="m-0 text-sm font-[650]">
           {fill(text.progress, { answered: String(now.answered), total: String(now.total) })}
@@ -163,7 +167,7 @@ function Summary({
             aria-valuemin={0}
             aria-valuemax={now.total}
             aria-valuenow={now.answered}
-            className="h-1.5 overflow-hidden rounded-full bg-surface-strong"
+            className="h-1.5 overflow-hidden rounded-full bg-line"
           >
             <div
               className="h-full rounded-full bg-green transition-[width] duration-300 ease-settle motion-reduce:transition-none"
@@ -225,4 +229,21 @@ function Summary({
       <p className="m-0 text-sm font-[650]">{text.review}</p>
     </div>
   );
+}
+
+/** What a screen reader hears when a fill ends: the count then, and what's left. */
+function announcement(outcome: Extract<Outcome, { ok: true }>): string {
+  const { report } = outcome;
+  const required = report.left.filter((field) => field.required).length;
+  return [
+    fill(text.progress, { answered: String(report.answered), total: String(report.total) }),
+    report.filled.length === 0
+      ? text.filledNone
+      : report.filled.length === 1
+        ? text.filledOne
+        : fill(text.filled, { count: String(report.filled.length) }),
+    required > 0 ? `${text.leftHeading}: ${required}.` : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 }

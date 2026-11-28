@@ -141,11 +141,29 @@ describe('fields only the person answers (#54 PR C round 1)', () => {
       <div class="field-wrapper"><label for="why">Why Acme?</label><input id="why" type="text"></div>
     </form>`;
     const form = document.getElementById('application-form') as HTMLElement;
-    expect(progress(form)).toEqual({ total: 2, answered: 0 });
+    // Both empty: one question, listed once (as the file).
+    expect(progress(form)).toMatchObject({ total: 2, answered: 0 });
+    expect(progress(form).left.map((field) => field.id)).toEqual(['cover_letter', 'why']);
     (document.getElementById('cover_letter_text') as HTMLTextAreaElement).value = 'Dear team';
-    expect(progress(form)).toEqual({ total: 2, answered: 1 });
+    expect(progress(form)).toMatchObject({ total: 2, answered: 1 });
     const report = await fillForm(form, fillData({ coverLetter: null }), { waitMs: 20 });
     expect(report.left.map((field) => field.id)).toEqual(['why']);
+    expect(report.total).toBe(report.answered + report.left.length);
+  });
+
+  it('pairs a "_text" box only with a file: "Please specify" beside a choice is its own question', () => {
+    document.body.innerHTML = `<form id="application-form">
+      <div class="field-wrapper"><label for="question_9">How did you hear?</label>
+        <input id="question_9" type="text" value="Other"></div>
+      <div class="field-wrapper"><label for="question_9_text">Please specify</label>
+        <input id="question_9_text" type="text" aria-required="true"></div>
+    </form>`;
+    const now = progress(document.getElementById('application-form') as HTMLElement);
+    expect(now).toEqual({
+      total: 2,
+      answered: 1,
+      left: [{ id: 'question_9_text', label: 'Please specify', required: true }],
+    });
   });
 
   it('tells the panel the new count as the person answers', async () => {
@@ -153,11 +171,11 @@ describe('fields only the person answers (#54 PR C round 1)', () => {
       <label for="why">Why Acme?</label><input id="why" type="text"></div></form>`;
     const form = document.getElementById('application-form') as HTMLElement;
     const seen = vi.fn();
-    const stop = watchProgress(form, seen);
+    const stop = watchProgress(() => form, seen);
     const why = document.getElementById('why') as HTMLInputElement;
     why.value = 'Because';
     why.dispatchEvent(new Event('input', { bubbles: true }));
-    await waitFor(() => expect(seen).toHaveBeenLastCalledWith({ total: 1, answered: 1 }));
+    await waitFor(() => expect(seen).toHaveBeenLastCalledWith({ total: 1, answered: 1, left: [] }));
     stop();
   });
 

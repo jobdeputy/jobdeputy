@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Progress } from '../src/greenhouse/fill.ts';
 import { Panel } from '../src/greenhouse/panel.tsx';
 import { type Outcome, runFill } from '../src/greenhouse/run.ts';
 import { fillData } from './greenhouse-data.ts';
@@ -50,12 +51,12 @@ describe('the panel on a Greenhouse form (#54 PR C)', () => {
     await waitFor(() => expect(fillForm).toHaveBeenCalledTimes(2));
   });
 
-  it('keeps the count true as the person answers after the fill, and never claims more filled', async () => {
-    let push: ((now: { total: number; answered: number }) => void) | undefined;
+  it('keeps the count and what is left true as the person answers after the fill', async () => {
+    let push: ((now: Progress) => void) | undefined;
     const stop = vi.fn();
     render(
       <Panel
-        fillForm={async () => ({ ...filled, report: { ...filled.report, answered: 2 } })}
+        fillForm={async () => filled}
         goTo={() => {}}
         watchProgress={(onChange) => {
           push = onChange;
@@ -64,12 +65,17 @@ describe('the panel on a Greenhouse form (#54 PR C)', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Fill this application' }));
-    expect(await screen.findByText('2 of 40 questions answered')).toBeTruthy();
-    // Filled 3, but only 2 hold an answer now (the page cleared one): never "3 of them".
-    expect(screen.getByText('JobDeputy filled 2 of them.')).toBeTruthy();
-    act(() => push?.({ total: 40, answered: 15 }));
-    expect(screen.getByText('15 of 40 questions answered')).toBeTruthy();
-    expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('15');
+    expect(await screen.findByText('12 of 40 questions answered')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Left for you (1)' })).toBeTruthy();
+    // The person answers the rest: the count, the bar and the list follow.
+    act(() => push?.({ total: 40, answered: 40, left: [] }));
+    expect(screen.getByText('40 of 40 questions answered')).toBeTruthy();
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('40');
+    expect(screen.queryByRole('heading', { name: /Left for you/ })).toBeNull();
+    // What JobDeputy filled stays a fact about the fill, whatever happened since.
+    act(() => push?.({ total: 40, answered: 0, left: filled.report.left }));
+    expect(screen.getByText('JobDeputy filled 3 of them.')).toBeTruthy();
+    expect(screen.queryByText(/Nothing to fill/)).toBeNull();
     cleanup();
     expect(stop).toHaveBeenCalled();
   });

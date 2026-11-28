@@ -105,7 +105,7 @@ export default defineContentScript({
             <Panel
               embedded={embedded}
               goTo={goTo}
-              watchProgress={(onChange) => watchProgress(findForm() ?? form, onChange)}
+              watchProgress={(onChange) => watchProgress(() => findForm() ?? form, onChange)}
               // The form on the page now (the page may have drawn it again), and the outline in
               // the panel's own token colour.
               fillForm={() =>
