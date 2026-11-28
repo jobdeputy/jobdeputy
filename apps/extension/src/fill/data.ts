@@ -109,7 +109,8 @@ const generated = z.object({
 });
 const tailorings = z.object({ tailorings: z.array(generated) });
 const coverLetters = z.object({ coverLetters: z.array(generated) });
-const documents = z.object({
+/** The documents list as the filler reads it (the popup checks the résumé with it too). */
+export const documents = z.object({
   documents: z.array(
     z.object({
       documentId: z.string(),

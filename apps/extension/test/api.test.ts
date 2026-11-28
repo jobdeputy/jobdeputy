@@ -92,7 +92,10 @@ describe('readReadiness (#54)', () => {
         email: 'ada@example.com',
       },
       '/me/documents': {
-        documents: [{ status: 'scanning' }, { status: 'ready', isDefault: true }],
+        documents: [
+          { documentId: 'd1', fileName: 'new.pdf', status: 'scanning' },
+          { documentId: 'd2', fileName: 'cv.pdf', status: 'ready', isDefault: true },
+        ],
       },
       '/me/applicant': { version: 1 },
     });
@@ -138,6 +141,27 @@ describe('readReadiness (#54)', () => {
     });
   });
 
+  it('is ready for US forms only with a US work authorization, and fails on an unreadable profile', async () => {
+    const ukOnly = apiAnswering({
+      '/me/profile': { version: 1, firstName: 'Ada', lastName: 'L', email: 'a@example.com' },
+      '/me/documents': { documents: [] },
+      '/me/applicant': {
+        version: 1,
+        workAuthorization: [{ country: 'GB', authorized: true, needsSponsorship: false }],
+      },
+    });
+    expect(await readReadiness(ukOnly)).toMatchObject({
+      ok: true,
+      body: { answers: { answered: 1, ready: false } },
+    });
+    const unreadable = apiAnswering({
+      '/me/profile': ['not', 'a', 'profile'],
+      '/me/documents': { documents: [] },
+      '/me/applicant': { version: 0 },
+    });
+    expect(await readReadiness(unreadable)).toEqual({ ok: false, reason: 'failed' });
+  });
+
   it('counts only what the filler can use: a half phone or an option this build lacks is not saved', async () => {
     const api = apiAnswering({
       '/me/profile': {
@@ -171,8 +195,8 @@ describe('readReadiness (#54)', () => {
       // default, and a default that isn't ready, are no résumé to fill with.
       '/me/documents': {
         documents: [
-          { status: 'ready', isDefault: false },
-          { status: 'rejected', isDefault: true },
+          { documentId: 'd1', fileName: 'a.pdf', status: 'ready', isDefault: false },
+          { documentId: 'd2', fileName: 'b.pdf', status: 'rejected', isDefault: true },
         ],
       },
       '/me/applicant': { version: 0 },
@@ -203,7 +227,7 @@ describe('readReadiness (#54)', () => {
 
   it('counts an unexpected answer as not there, never a crash', async () => {
     const api = apiAnswering({
-      '/me/profile': null,
+      '/me/profile': {},
       '/me/documents': { documents: 'none' },
       '/me/applicant': {},
     });

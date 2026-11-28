@@ -260,9 +260,19 @@ function SignedIn({
                       {label}
                       <span className="sr-only">: </span>
                     </span>
+                    {/* Screen readers hear whether it's ready with the count; the tick is
+                        hidden from them. */}
+                    {counted && (
+                      <span className="sr-only">
+                        {fill(done ? text.ready.readyCount : text.ready.missingCount, {
+                          count: status,
+                        })}
+                      </span>
+                    )}
                     {counted && done && more && siteUrl ? (
                       // Ready, with more a form might ask: the count leads to where they're added.
                       <a
+                        aria-label={fill(text.ready.addRest, { count: status })}
                         className="justify-self-start text-xs text-muted-foreground underline-offset-2 hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-ring"
                         href={`${siteUrl}${path}`}
                         target="_blank"
@@ -271,7 +281,9 @@ function SignedIn({
                         {status}
                       </a>
                     ) : counted ? (
-                      <span className="text-xs text-muted-foreground">{status}</span>
+                      <span aria-hidden="true" className="text-xs text-muted-foreground">
+                        {status}
+                      </span>
                     ) : (
                       <span className="sr-only">{status}</span>
                     )}

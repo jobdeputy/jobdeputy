@@ -40,6 +40,11 @@ export const copy = {
       missing: 'Not added yet',
       /** Details and application answers: how many of those forms ask for are saved. */
       count: '{answered} of {total} saved',
+      /** The count, said with whether the section is ready (screen readers). */
+      readyCount: 'Ready, {count}',
+      missingCount: 'Not added yet, {count}',
+      /** The count as a link to add the rest. */
+      addRest: '{count}: add the rest in JobDeputy',
       add: 'Add in JobDeputy',
       offline: 'Couldn’t reach JobDeputy. Check your connection.',
       failed: 'Couldn’t read your details.',
