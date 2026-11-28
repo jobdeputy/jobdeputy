@@ -8,6 +8,7 @@ const settings = {
   apiUrl: 'https://api.jobdeputy.test',
   authDomain: 'https://auth.jobdeputy.test',
   clientId: 'e2etestclient0000000000000',
+  filesOrigin: 'https://files.jobdeputy.test',
 };
 
 function fakeAuth(tokens: (string | null | Error)[]) {
@@ -90,7 +91,9 @@ describe('readReadiness (#54)', () => {
         lastName: 'Lovelace',
         email: 'ada@example.com',
       },
-      '/me/documents': { documents: [{ status: 'scanning' }, { status: 'ready' }] },
+      '/me/documents': {
+        documents: [{ status: 'scanning' }, { status: 'ready', isDefault: true }],
+      },
       '/me/applicant': { version: 1 },
     });
     expect(await readReadiness(api)).toEqual({
@@ -102,7 +105,14 @@ describe('readReadiness (#54)', () => {
   it('marks what is missing: no name, no ready résumé, no answers saved', async () => {
     const api = apiAnswering({
       '/me/profile': { version: 0, email: 'ada@example.com' },
-      '/me/documents': { documents: [{ status: 'rejected' }] },
+      // Only the default counts (the filler attaches nothing else): a ready one that isn't the
+      // default, and a default that isn't ready, are no résumé to fill with.
+      '/me/documents': {
+        documents: [
+          { status: 'ready', isDefault: false },
+          { status: 'rejected', isDefault: true },
+        ],
+      },
       '/me/applicant': { version: 0 },
     });
     expect(await readReadiness(api)).toEqual({

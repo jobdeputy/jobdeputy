@@ -16,7 +16,15 @@ const UNDECRYPTABLE = new Set(['InvalidCiphertextException', 'IncorrectKeyExcept
 /** The voluntary answers as the user sees them, with the version a save must send back. */
 export interface VoluntaryView extends VoluntaryAnswers {
   version: number;
+  /**
+   * #54 PR C: saved answers that could not be read back and so read as `decline` (all of them
+   * when the stored item can't be decrypted or parsed). Not the person's choice: the extension
+   * leaves those questions empty. Only present when there are any.
+   */
+  unreadable?: (keyof VoluntaryAnswers)[];
 }
+
+const ALL_UNREADABLE = Object.keys(DECLINED_VOLUNTARY) as (keyof VoluntaryAnswers)[];
 
 /**
  * #53 (decision 0019): the voluntary self-identification answers, encrypted with the cell's KMS
@@ -63,10 +71,15 @@ export function kmsVoluntaryStore(
         logger.warn('Stored voluntary answers cannot be decrypted; reading them as decline', {
           reason: (error as Error).name,
         });
-        return { version: item.version, ...DECLINED_VOLUNTARY };
+        return { version: item.version, ...DECLINED_VOLUNTARY, unreadable: [...ALL_UNREADABLE] };
       }
       if (!plaintext) throw new Error('KMS returned no plaintext');
-      return { version: item.version, ...readable(parsed(plaintext)) };
+      const { answers, unreadable } = readable(parsed(plaintext));
+      return {
+        version: item.version,
+        ...answers,
+        ...(unreadable.length > 0 ? { unreadable } : {}),
+      };
     },
     async save(userId, answers, expectedVersion, audit) {
       // A stale save is refused before KMS is asked (the write checks again).
@@ -104,15 +117,20 @@ function parsed(plaintext: Uint8Array): unknown {
  * since it was saved), or all of them when unreadable, reads as `decline`, so the user still gets a version to save over
  * instead of an error.
  */
-function readable(stored: unknown): VoluntaryAnswers {
+function readable(stored: unknown): {
+  answers: VoluntaryAnswers;
+  unreadable: (keyof VoluntaryAnswers)[];
+} {
   const fields = (typeof stored === 'object' && stored !== null ? stored : {}) as Record<
     string,
     unknown
   >;
   const answers = { ...DECLINED_VOLUNTARY };
-  for (const key of Object.keys(answers) as (keyof VoluntaryAnswers)[]) {
+  const unreadable: (keyof VoluntaryAnswers)[] = [];
+  for (const key of ALL_UNREADABLE) {
     const ok = voluntaryAnswers.shape[key].safeParse(fields[key]);
     if (ok.success) (answers as Record<string, string>)[key] = ok.data;
+    else unreadable.push(key);
   }
-  return answers;
+  return { answers, unreadable };
 }

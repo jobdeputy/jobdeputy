@@ -18,7 +18,15 @@ interface Profile {
   email?: string;
 }
 interface Documents {
-  documents: { status: string }[];
+  documents: { status: string; isDefault?: boolean }[];
+}
+
+/**
+ * The résumé the filler attaches when a company has no tailored one: the default, once ready.
+ * The popup's "résumé ready" uses the same rule, so it never promises a file the filler lacks.
+ */
+export function isAttachable(doc: { status?: unknown; isDefault?: unknown } | null): boolean {
+  return doc?.isDefault === true && doc.status === 'ready';
 }
 interface Applicant {
   version: number;
@@ -43,7 +51,7 @@ export async function readReadiness(api: Api): Promise<ApiResult<Readiness>> {
     ok: true,
     body: {
       details: Boolean(profile.body?.firstName && profile.body.lastName && profile.body.email),
-      resume: docs.some((doc) => doc?.status === 'ready'),
+      resume: docs.some(isAttachable),
       answers: Number(applicant.body?.version) > 0,
     },
   };

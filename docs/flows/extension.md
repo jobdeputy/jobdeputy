@@ -1,6 +1,6 @@
 # Flow: the extension signs in and reads what it fills (#54)
 
-The browser extension signs in through Cognito **managed login** with its own app client (authorization code + PKCE), and only its service worker holds the tokens. Decision: [0020](../decisions/0020-browser-extension-sign-in-and-permissions.md). After this: the Greenhouse filler (#54 PR C).
+The browser extension signs in through Cognito **managed login** with its own app client (authorization code + PKCE), and only its service worker holds the tokens. Decision: [0020](../decisions/0020-browser-extension-sign-in-and-permissions.md). PR C adds the Greenhouse filler.
 
 - **Task:** [#54](https://github.com/jobdeputy/jobdeputy/issues/54). Managed login, the client and its branding: PR B1. The extension's sign-in and reads: PR B2.
 - **Keep it true:** a PR that changes this flow updates this file.
@@ -48,6 +48,30 @@ sequenceDiagram
   W-->>P: details, a ready résumé, answers saved (each: ready or not yet)
 ```
 
+## Reading what a Greenhouse form is filled with (#54 PR C)
+
+PR C2 adds the service worker's part; the form's content script and its panel come in PR C3.
+
+```mermaid
+sequenceDiagram
+  participant C as Content script<br/>(job-boards.greenhouse.io form)
+  participant W as Service worker
+  participant A as API
+  participant F as Documents origin (S3)
+  C->>W: fill-data (a message)
+  Note over W: answered only for a tab of ours on job-boards.greenhouse.io;<br/>the posting comes from the sender's own address:<br/>companyKey greenhouse:<board>, jobId = sha256("ats:greenhouse:<board>:<id>")[0:32]
+  W->>A: GET /me/profile, /me/applicant, /me/voluntary,<br/>/me/tailorings?companyKey, /me/cover-letters?jobId, /me/documents
+  W->>A: GET the newest ready tailored résumé (else the default résumé's document) and letter
+  A-->>W: 5-minute download links
+  W->>F: GET each link (only this origin, the manifest's host; at most 10 MB; no cookies)
+  W-->>C: details, answers, self-ID (only once saved), résumé (tailored, else default), the job's letter (base64), and what couldn't be read
+```
+
+- A tailored résumé that exists but can't be read attaches nothing, never the default instead: the panel says the résumé couldn't be read.
+- Answers never saved (`version` 0) are not handed over, so self-ID questions stay empty unless the person saved theirs (the API's own defaults are never used). A saved answer the API couldn't read back (it reads as `decline`, listed in `unreadable`) is left out too, and listed as unread.
+- No file is downloaded when the fill can't go on (signed out, or no profile), and a download that redirects is refused.
+- Nothing is stored: the worker reads it when asked and hands it over.
+
 ## Where it is stored
 
 | What | Where | For how long |
@@ -55,7 +79,8 @@ sequenceDiagram
 | Access, ID, refresh tokens; email | `chrome.storage.session` (`session`) | until sign-out, a refused refresh, or the browser closes |
 | The last person's email after sign-out | `chrome.storage.session` (`lastEmail`) | until the next sign-in or the browser closes |
 | A sign-in at work | `chrome.storage.session` (`signInPending`) | until it ends, or the next popup after Chrome stopped the worker |
-| The build's settings (API, managed login, client, site) | built in (`WXT_*`, `scripts/extension-config.mjs`) | the build |
+| The build's settings (API, managed login, client, site, documents origin) | built in (`WXT_*`, `scripts/extension-config.mjs`) | the build |
+| What a form is filled with (PR C) | the service worker's memory, then the page's | while one fill runs |
 
 Nothing new is stored on the server.
 

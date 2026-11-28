@@ -1,5 +1,7 @@
 import type { ApiResult } from './api.ts';
 import type { AuthStatus, SignInOutcome } from './auth/session.ts';
+import type { FillData } from './fill/data.ts';
+import { greenhousePosting, type Posting } from './fill/posting.ts';
 import type { Readiness } from './readiness.ts';
 
 /**
@@ -47,4 +49,25 @@ export function isRequest(value: unknown): value is Request {
     type === 'sign-out' ||
     type === 'readiness'
   );
+}
+
+/**
+ * #54 PR C: what a content script may ask, and only from a Greenhouse application form: the
+ * answers to fill it with. The job is taken from the sender's own address (Chrome sets it, for
+ * the frame that sent it), never from the message, so a page can't ask for another job's files.
+ */
+export type ContentRequest = { type: 'fill-data' };
+export type FillDataResponse = ApiResult<FillData> | null;
+
+export function isContentRequest(value: unknown): value is ContentRequest {
+  return (value as { type?: unknown } | null)?.type === 'fill-data';
+}
+
+/** The Greenhouse posting a content script runs on, or null: not ours, not a tab, not a form. */
+export function contentPosting(
+  sender: { id?: string; url?: string; tab?: unknown },
+  extensionId: string,
+): Posting | null {
+  if (sender.id !== extensionId || !sender.tab) return null;
+  return greenhousePosting(sender.url);
 }

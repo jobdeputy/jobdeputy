@@ -5,6 +5,7 @@ const env = {
   WXT_API_URL: 'https://abc.execute-api.us-east-1.amazonaws.com/',
   WXT_AUTH_DOMAIN: 'https://jobdeputy-dev-iad.auth.us-east-1.amazoncognito.com',
   WXT_CLIENT_ID: '37qq0qiq6rckk23cg85qi6m4bs',
+  WXT_FILES_ORIGIN: 'https://bucket.s3.us-east-1.amazonaws.com/',
 };
 
 describe('readSettings (#54)', () => {
@@ -13,6 +14,7 @@ describe('readSettings (#54)', () => {
       apiUrl: 'https://abc.execute-api.us-east-1.amazonaws.com',
       authDomain: 'https://jobdeputy-dev-iad.auth.us-east-1.amazoncognito.com',
       clientId: '37qq0qiq6rckk23cg85qi6m4bs',
+      filesOrigin: 'https://bucket.s3.us-east-1.amazonaws.com',
       siteUrl: 'https://dev.jobdeputy.com',
     });
   });
@@ -38,5 +40,21 @@ describe('readSettings (#54)', () => {
     expect(
       readSettings({ ...env, WXT_SITE_URL: 'http://localhost:5173' })?.siteUrl,
     ).toBeUndefined();
+  });
+
+  it("needs the documents' download origin, an origin only (#54 PR C)", () => {
+    const files = 'https://bucket.s3.us-east-1.amazonaws.com';
+    expect(readSettings({ ...env, WXT_FILES_ORIGIN: files })?.filesOrigin).toBe(files);
+    for (const bad of [
+      '',
+      'http://bucket.s3.amazonaws.com',
+      `${files}/path`,
+      `${files}/?x=1`,
+      'nope',
+    ]) {
+      expect(readSettings({ ...env, WXT_FILES_ORIGIN: bad }), bad).toBeNull();
+    }
+    const { WXT_FILES_ORIGIN: _, ...without } = env;
+    expect(readSettings(without)).toBeNull();
   });
 });
