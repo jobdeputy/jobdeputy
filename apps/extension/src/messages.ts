@@ -63,11 +63,22 @@ export function isContentRequest(value: unknown): value is ContentRequest {
   return (value as { type?: unknown } | null)?.type === 'fill-data';
 }
 
-/** The Greenhouse posting a content script runs on, or null: not ours, not a tab, not a form. */
+/**
+ * The Greenhouse posting a content script runs on, or null: not ours, not a tab, not a form.
+ * Both addresses come from Chrome, never from the message. In the top frame it's the tab's
+ * address, which follows the board's in-page navigation (`sender.url` stays the one the page
+ * loaded at); the host permission for the forms lets the worker see it. In a frame (a company
+ * site's embed), it's the frame's own address.
+ */
 export function contentPosting(
-  sender: { id?: string; url?: string; tab?: unknown },
+  sender: {
+    id?: string | undefined;
+    url?: string | undefined;
+    frameId?: number | undefined;
+    tab?: { url?: string | undefined } | undefined;
+  },
   extensionId: string,
 ): Posting | null {
   if (sender.id !== extensionId || !sender.tab) return null;
-  return greenhousePosting(sender.url);
+  return greenhousePosting(sender.frameId === 0 ? (sender.tab.url ?? sender.url) : sender.url);
 }

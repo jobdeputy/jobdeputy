@@ -33,16 +33,33 @@ describe('content scripts (#54 PR C)', () => {
   const FORM = 'https://job-boards.greenhouse.io/acme/jobs/4001001';
 
   it('answers only a tab of ours on a Greenhouse form, for the posting of its own address', () => {
-    expect(contentPosting({ id: ID, url: FORM, tab: { id: 3 } }, ID)).toEqual({
+    expect(contentPosting({ id: ID, url: FORM, tab: {} }, ID)).toEqual({
       companyKey: 'greenhouse:acme',
       postingId: '4001001',
     });
-    expect(contentPosting({ id: 'someone-else', url: FORM, tab: { id: 3 } }, ID)).toBeNull();
+    expect(contentPosting({ id: 'someone-else', url: FORM, tab: {} }, ID)).toBeNull();
     expect(contentPosting({ id: ID, url: FORM }, ID)).toBeNull();
     expect(
       contentPosting({ id: ID, url: 'https://evil.test/acme/jobs/1', tab: {} }, ID),
     ).toBeNull();
     expect(contentPosting({ id: ID, tab: {} }, ID)).toBeNull();
+  });
+
+  it("follows the board's in-page navigation in the top frame (the tab's address)", () => {
+    const board = 'https://job-boards.greenhouse.io/acme';
+    // Opened on the board, then a job without a page load: Chrome's sender.url is still the board.
+    expect(contentPosting({ id: ID, url: board, frameId: 0, tab: { url: FORM } }, ID)).toEqual({
+      companyKey: 'greenhouse:acme',
+      postingId: '4001001',
+    });
+    expect(contentPosting({ id: ID, url: FORM, frameId: 0, tab: { url: board } }, ID)).toBeNull();
+    // In a company site's frame, the frame's own address: the tab is the company's site.
+    expect(
+      contentPosting(
+        { id: ID, url: FORM, frameId: 7, tab: { url: 'https://careers.acme.test/jobs' } },
+        ID,
+      ),
+    ).toEqual({ companyKey: 'greenhouse:acme', postingId: '4001001' });
   });
 
   it('asks only for fill data', () => {

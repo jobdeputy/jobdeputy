@@ -68,9 +68,25 @@ function optionsOf(combobox: HTMLInputElement): HTMLElement[] {
 
 /** The value a react-select combobox shows, or '' when none is chosen. */
 export function chosenText(combobox: HTMLInputElement): string {
-  const control = combobox.closest('[class*="control"]') ?? combobox.parentElement?.parentElement;
-  const single = control?.querySelector('[class*="single-value"]');
+  const single = controlOf(combobox)?.querySelector('[class*="single-value"]');
   return single?.textContent?.trim() ?? '';
+}
+
+function controlOf(combobox: HTMLInputElement): Element | null {
+  return combobox.closest('[class*="control"]') ?? combobox.parentElement?.parentElement ?? null;
+}
+
+/** A combobox that takes several answers (react-select's `isMulti`): never filled by us. */
+export function isMulti(combobox: HTMLInputElement): boolean {
+  return Boolean(controlOf(combobox)?.querySelector('[class*="value-container--is-multi"]'));
+}
+
+/** Whether a combobox holds any answer: its one value, or any of several. */
+export function hasChoice(combobox: HTMLInputElement): boolean {
+  return (
+    chosenText(combobox) !== '' ||
+    Boolean(controlOf(combobox)?.querySelector('[class*="multi-value"]'))
+  );
 }
 
 /**

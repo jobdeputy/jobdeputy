@@ -15,14 +15,21 @@ function Choice({
   label,
   options,
   required = false,
+  multi = false,
+  chosen,
   onPick,
 }: {
   id: string;
   label: string;
   options: string[];
   required?: boolean;
+  /** Several answers (react-select's isMulti). */
+  multi?: boolean;
+  /** What the person already chose. */
+  chosen?: string[];
   onPick?: (value: string) => void;
 }) {
+  const asOption = (o: string) => ({ value: o, label: o });
   return (
     <div className="field-wrapper">
       <div className="select__container">
@@ -36,8 +43,10 @@ function Choice({
           classNamePrefix="select"
           aria-labelledby={`${id}-label`}
           required={required}
-          options={options.map((o) => ({ value: o, label: o }))}
-          onChange={(option) => onPick?.(option?.value ?? '')}
+          isMulti={multi}
+          {...(chosen ? { defaultValue: chosen.map(asOption) } : {})}
+          options={options.map(asOption)}
+          onChange={(option) => onPick?.(option && 'value' in option ? String(option.value) : '')}
         />
       </div>
     </div>
@@ -110,6 +119,20 @@ export function GreenhouseForm({ onResume }: { onResume?: (file: File | undefine
         required
       />
       <Text id="question_5" label="Why Acme?" required />
+      <Choice
+        id="question_6"
+        label="How did you hear about us? Choose all that apply."
+        options={['LinkedIn', 'Referral', 'Job board']}
+        multi
+        required
+      />
+      <Choice
+        id="question_7"
+        label="Which languages do you speak?"
+        options={['English', 'Spanish']}
+        multi
+        chosen={['Spanish']}
+      />
       <Choice id="gender" label="Gender" options={['Male', 'Female', DECLINE]} />
       <Choice
         id="hispanic_ethnicity"

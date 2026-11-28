@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fillForm, LEFT_MARK, scan } from '../src/greenhouse/fill.ts';
+import { fillForm, LEFT_MARK, markLeft, scan } from '../src/greenhouse/fill.ts';
 import { fillData } from './greenhouse-data.ts';
 import { GreenhouseForm } from './greenhouse-form.tsx';
 
@@ -24,7 +24,12 @@ describe('the real Greenhouse form, as served (#54 PR C)', () => {
   }
 
   it('finds every field a person answers, with its label and whether it is required', () => {
-    const fields = scan(savedForm()).map(({ question, required }) => ({ ...question, required }));
+    const fields = scan(savedForm()).map(({ key, label, kind, required }) => ({
+      id: key,
+      label,
+      kind,
+      required,
+    }));
     expect(fields.slice(0, 8)).toEqual([
       { id: 'first_name', label: 'First Name', kind: 'text', required: true },
       { id: 'last_name', label: 'Last Name', kind: 'text', required: true },
@@ -76,6 +81,46 @@ describe('the real Greenhouse form, as served (#54 PR C)', () => {
   });
 });
 
+describe('fields only the person answers (#54 PR C round 1)', () => {
+  it('lists required checkboxes, radio groups and dates left empty, and never touches them', async () => {
+    document.body.innerHTML = `<form id="application-form">
+      <div class="field-wrapper"><label for="first_name">First Name</label>
+        <input id="first_name" type="text" aria-required="true"></div>
+      <fieldset aria-required="true"><legend>Do you agree to the privacy notice?</legend>
+        <label><input type="radio" name="consent" value="yes"> Yes</label>
+        <label><input type="radio" name="consent" value="no"> No</label></fieldset>
+      <div class="field-wrapper"><label><input type="checkbox" name="attest" required>
+        I confirm this is true</label></div>
+      <div class="field-wrapper"><label for="start">Start</label><input id="start" type="date"></div>
+    </form>`;
+    const form = document.getElementById('application-form') as HTMLElement;
+    const report = await fillForm(form, fillData(), { waitMs: 20 });
+    expect(report.filled).toEqual(['First Name']);
+    expect(report.left).toEqual([
+      { id: 'name:consent', label: 'Do you agree to the privacy notice?', required: true },
+      { id: 'name:attest', label: 'I confirm this is true', required: true },
+      { id: 'start', label: 'Start', required: false },
+    ]);
+    expect(form.querySelectorAll(`[${LEFT_MARK}]`)).toHaveLength(2);
+    expect((form.querySelector('[name="attest"]') as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('drops an outline once the person answers that field', async () => {
+    document.body.innerHTML = `<form id="application-form"><div class="field-wrapper">
+      <label for="why">Why Acme?</label><input id="why" type="text" aria-required="true"></div></form>`;
+    const form = document.getElementById('application-form') as HTMLElement;
+    markLeft(form, '#f36b3f');
+    await fillForm(form, fillData(), { waitMs: 20 });
+    const wrapper = form.querySelector('.field-wrapper') as HTMLElement;
+    expect(wrapper.hasAttribute(LEFT_MARK)).toBe(true);
+    const why = document.getElementById('why') as HTMLInputElement;
+    why.value = 'Because';
+    why.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(wrapper.hasAttribute(LEFT_MARK)).toBe(false);
+    expect(document.getElementById('jobdeputy-left-style')?.textContent).toContain('#f36b3f');
+  });
+});
+
 describe('a working form with Greenhouse’s choice widget (react-select)', () => {
   it('chooses answers, fills a question that appears after one, and leaves the rest', async () => {
     const onResume = vi.fn();
@@ -107,10 +152,19 @@ describe('a working form with Greenhouse’s choice widget (react-select)', () =
     expect(onResume).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'Sam Example – Acme.pdf' }),
     );
+    // Several-answer questions are the person's: one empty is left, one answered is kept as is.
     expect(report.left).toEqual([
       { id: 'question_4', label: 'Have you previously worked at Acme?', required: true },
       { id: 'question_5', label: 'Why Acme?', required: true },
+      // A rule would answer it (LinkedIn), but it takes several answers: never filled.
+      {
+        id: 'question_6',
+        label: 'How did you hear about us? Choose all that apply.',
+        required: true,
+      },
     ]);
+    expect(screen.getByText('Spanish')).toBeTruthy();
+    expect(screen.queryByText('English')).toBeNull();
     // The React state took the typed values (the native setter), not only the DOM.
     expect((document.getElementById('first_name') as HTMLInputElement).value).toBe('Sam');
   });

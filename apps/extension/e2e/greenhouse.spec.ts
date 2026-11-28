@@ -72,6 +72,21 @@ async function serve(context: BrowserContext) {
   await context.route(EMBED, (route) =>
     route.fulfill({ body: page(FORM), contentType: 'text/html' }),
   );
+  // The board's list of jobs, which opens a job without loading a page (as Greenhouse's app does).
+  await context.route('https://job-boards.greenhouse.io/acme', (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      body: page(`<a href="/acme/jobs/4001001" id="open">Senior Engineer</a>
+        <template id="form">${FORM}</template>
+        <script>
+          document.getElementById('open').addEventListener('click', (event) => {
+            event.preventDefault();
+            history.pushState({}, '', '/acme/jobs/4001001');
+            document.body.append(document.getElementById('form').content.cloneNode(true));
+          });
+        </script>`),
+    }),
+  );
   await context.route('https://careers.acme.test/**', (route) =>
     route.fulfill({
       contentType: 'text/html',
@@ -166,6 +181,27 @@ test('on a company site that embeds the form, the panel shows above it, in the f
       window.scrollTo(0, window.scrollY + top - 24);
     });
     await tab.screenshot({ path: 'screenshots/greenhouse-embedded.png' });
+  } finally {
+    await close();
+  }
+});
+
+test('opening a job inside the board, without a page load, brings the panel', async () => {
+  test.skip(!settings, 'a build without sign-in settings');
+  const { context, close } = await withExtension();
+  try {
+    await serve(context);
+    await signIn(context);
+    const tab = await context.newPage();
+    await tab.goto('https://job-boards.greenhouse.io/acme');
+    await tab.getByRole('link', { name: 'Senior Engineer' }).click();
+    await expect(tab).toHaveURL(POSTING);
+    const panel = tab.getByRole('region', { name: 'JobDeputy' });
+    await panel.getByRole('button', { name: 'Fill this application' }).click();
+    await expect(panel.getByText(/^Filled \d+ fields\.$/)).toBeVisible();
+    expect(await value(tab, 'first_name')).toBe('Sam');
+    // Only one panel: the board's page had none to leave behind.
+    await expect(tab.getByRole('region', { name: 'JobDeputy' })).toHaveCount(1);
   } finally {
     await close();
   }
