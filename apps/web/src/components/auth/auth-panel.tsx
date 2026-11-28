@@ -2,7 +2,13 @@ import { useEffect, useId, useState } from 'react';
 import { Button } from '@/components/ui/button.tsx';
 import { SheetDescription, SheetTitle } from '@/components/ui/sheet.tsx';
 import { copy } from '@/copy/index.ts';
-import { AuthError, type AuthErrorKind, type SignInMode, useAuth } from '@/lib/auth/index.ts';
+import {
+  AuthError,
+  type AuthErrorKind,
+  rememberSignInMode,
+  type SignInMode,
+  useAuth,
+} from '@/lib/auth/index.ts';
 import { useDelayedPending } from '@/lib/use-delayed-pending.ts';
 import { cn } from '@/lib/utils.ts';
 
@@ -48,6 +54,7 @@ export function AuthPanel({
     setRefusal(null);
     try {
       // On success the browser leaves: the button stays pending until it has.
+      rememberSignInMode(mode);
       await auth.signIn(mode);
     } catch (error) {
       setRefusal(text.errors[error instanceof AuthError ? error.kind : 'unknown']);

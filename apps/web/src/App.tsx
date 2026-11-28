@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button.tsx';
 import { QueryRegion } from '@/components/ui/query-region.tsx';
 import { copy, fill } from '@/copy/index.ts';
 import { hasProfile, useProfile } from '@/lib/api/profile.ts';
-import { AuthError, type AuthErrorKind, useAuth } from '@/lib/auth/index.ts';
+import { AuthError, type AuthErrorKind, lastSignInMode, useAuth } from '@/lib/auth/index.ts';
 import { useFinishBoot } from '@/lib/boot-loader.ts';
 import { navigate, usePath } from '@/lib/router.ts';
 
@@ -190,8 +190,8 @@ function ProfileFailed({ onRetry }: { onRetry: () => void }) {
 
 /** The public landing page: the story of what the deputy does, and the way in (sign up or sign in). */
 function Landing({ failed }: { failed?: AuthErrorKind }) {
-  const [authMode, setAuthMode] = useState<AuthMode>(failed ? 'sign-in' : 'sign-up');
-  // A sign-in that came back unfinished opens the drawer, which says so.
+  // A sign-in that came back unfinished opens the drawer as it was left, saying so.
+  const [authMode, setAuthMode] = useState<AuthMode>(() => (failed ? lastSignInMode() : 'sign-up'));
   const [authOpen, setAuthOpen] = useState(failed !== undefined);
   // Said only the first time the drawer opens.
   const [failure, setFailure] = useState(failed);

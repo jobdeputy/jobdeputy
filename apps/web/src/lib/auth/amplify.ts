@@ -153,26 +153,23 @@ export const amplifyAuth: Auth = {
       await leave();
     } catch (error) {
       // A session left from before (stored, but not readable at boot) blocks a new sign-in: sign
-      // it out, which goes through managed login's /logout and back home, clean.
+      // it out, then leave once more.
       if ((error as { name?: string } | null)?.name === 'UserAlreadyAuthenticatedException') {
-        await signOut();
-        return;
+        try {
+          await signOut();
+          await leave();
+          return;
+        } catch (again) {
+          throw new AuthError('unknown', { cause: again });
+        }
       }
       throw error instanceof AuthError ? error : new AuthError('unknown', { cause: error });
     }
   },
-  async finishSignIn() {
-    // Amplify finishes the code exchange as it is configured; the session waits for it.
-    try {
-      const email = await within(
-        configure().then(({ fetchAuthSession }) => sessionEmail(fetchAuthSession)),
-      );
-      if (email) return email;
-    } catch (error) {
-      if (error instanceof AuthError) throw error;
-      throw new AuthError('offline', { cause: error });
-    }
-    throw new AuthError('sign-in-failed');
+  finishSignIn() {
+    // Once per page load (React's strict mode runs the app's effect twice in development).
+    finishing ??= finish();
+    return finishing;
   },
   async signOut() {
     const { signOut } = await configure();
@@ -185,6 +182,50 @@ export const amplifyAuth: Auth = {
     }
   },
 };
+
+let finishing: Promise<string> | undefined;
+
+/** How long finishing waits for Amplify's code exchange before checking the session itself. */
+export const FINISH_LIMIT_MS = 60_000;
+
+/**
+ * Finishes the sign-in managed login came back with. Amplify's OAuth listener exchanges the code as
+ * Amplify is configured, and says when it is done on its Hub (a session read waits for it only for
+ * 5 minutes after leaving, too short for a new account's email code). An address with neither a
+ * code nor an error has nothing to finish.
+ */
+async function finish(): Promise<string> {
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has('code') && !params.has('error')) throw new AuthError('sign-in-failed');
+  let stop = () => {};
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const { Hub } = await import('aws-amplify/utils');
+    const outcome = new Promise<'done' | 'failed'>((resolve) => {
+      stop = Hub.listen('auth', ({ payload }) => {
+        if (payload.event === 'signInWithRedirect') resolve('done');
+        if (payload.event === 'signInWithRedirect_failure') resolve('failed');
+      });
+    });
+    const { fetchAuthSession } = await configure();
+    // No word in time (a slow exchange, or none under way here): the session says.
+    const said = await Promise.race([
+      outcome,
+      new Promise<'unsure'>((resolve) => {
+        timer = setTimeout(() => resolve('unsure'), FINISH_LIMIT_MS);
+      }),
+    ]);
+    if (said === 'failed') throw new AuthError('sign-in-failed');
+    const email = await within(sessionEmail(fetchAuthSession));
+    if (email) return email;
+    throw new AuthError('sign-in-failed');
+  } catch (error) {
+    throw error instanceof AuthError ? error : new AuthError('offline', { cause: error });
+  } finally {
+    clearTimeout(timer);
+    stop();
+  }
+}
 
 /** The signed-in person's email from their ID token (managed login gives no login ID), or null. */
 async function sessionEmail(

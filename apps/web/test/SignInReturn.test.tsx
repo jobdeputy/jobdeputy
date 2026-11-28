@@ -7,6 +7,7 @@ import { renderApp } from './render-app.tsx';
 afterEach(() => {
   cleanup();
   window.history.replaceState(null, '', '/');
+  sessionStorage.clear();
 });
 
 /** The app opened on the return address managed login sends people back to (#111). */
@@ -45,6 +46,15 @@ describe('back from the secure sign-in page (#111)', () => {
       expect(screen.getByRole('alert').textContent).toBe('Sign-in didn’t finish. Try again.'),
     );
     expect(window.location.pathname).toBe('/');
+  });
+
+  it('reopens the drawer as it was left: creating an account, when that was cancelled', async () => {
+    sessionStorage.setItem('jobdeputy.sign-in-mode', 'sign-up');
+    returning('?error=access_denied');
+    await renderApp(createFakeAuth({ delay: 0 }), {}, undefined, { waitForPage: false });
+    const drawer = await screen.findByRole('dialog');
+    expect(drawer.textContent).toContain('Set up your search desk.');
+    expect(screen.getByRole('button', { name: 'Continue to create account' })).toBeTruthy();
   });
 
   it('says so when the sign-in could not be finished for a connection problem', async () => {

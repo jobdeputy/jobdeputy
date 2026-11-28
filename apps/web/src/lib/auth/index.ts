@@ -3,6 +3,7 @@ import { amplifyAuth } from './amplify.ts';
 import { createFakeAuth } from './fake.ts';
 import type { Auth } from './types.ts';
 
+export { lastSignInMode, rememberSignInMode } from './last-mode.ts';
 export { type Auth, AuthError, type AuthErrorKind, type SignInMode } from './types.ts';
 
 /**

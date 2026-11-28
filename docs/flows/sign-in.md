@@ -24,7 +24,8 @@ sequenceDiagram
 ```
 
 - `config.json` (from the site's cell) names the pool, the web client and `authDomain`; the site's CSP lets the app call that origin (token, revoke).
-- A sign-in that comes back unfinished (`?error=`, or no sign-in to finish) reopens the drawer saying so. Back from the sign-in page brings the landing page back with its button ready.
+- Finishing waits for Amplify's own word that the code exchange is done (its Hub), up to 60 s, then lets the session say: a session read alone waits only 5 minutes after leaving, too short for a new account's email code.
+- A sign-in that comes back unfinished (`?error=`, or no sign-in to finish) reopens the drawer as it was left (sign in or create an account, kept in sessionStorage) saying so. Back from the sign-in page brings the landing page back with its button ready.
 - Back from the callback is a fresh page load: focus starts at the top, as on any load.
 - The person's email comes from the ID token (`email` scope); managed login gives no login ID.
 

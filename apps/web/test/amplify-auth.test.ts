@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CALL_LIMIT_MS, signUpUrl } from '../src/lib/auth/amplify.ts';
+import { CALL_LIMIT_MS, FINISH_LIMIT_MS, signUpUrl } from '../src/lib/auth/amplify.ts';
 
 const amplify = vi.hoisted(() => ({
   configure: vi.fn(),
@@ -11,6 +11,30 @@ const amplify = vi.hoisted(() => ({
 vi.mock('aws-amplify', () => ({ Amplify: { configure: amplify.configure } }));
 vi.mock('aws-amplify/auth', () => amplify);
 vi.mock('aws-amplify/auth/enable-oauth-listener', () => ({}));
+/** Amplify's Hub, where its OAuth listener says how the code exchange went. */
+const hub = vi.hoisted(() => {
+  const listeners = new Set<(capsule: { payload: { event: string } }) => void>();
+  return {
+    listeners,
+    say: (event: string) => {
+      for (const listener of listeners) listener({ payload: { event } });
+    },
+  };
+});
+vi.mock('aws-amplify/utils', () => ({
+  Hub: {
+    listen: (_channel: string, listener: (capsule: { payload: { event: string } }) => void) => {
+      hub.listeners.add(listener);
+      return () => hub.listeners.delete(listener);
+    },
+  },
+}));
+
+/** Back on the return address; Amplify's listener says `event` once it is configured. */
+function returning(event?: string, search = '?code=c&state=s') {
+  window.history.replaceState(null, '', `/auth/callback${search}`);
+  if (event) amplify.configure.mockImplementation(() => setTimeout(() => hub.say(event), 0));
+}
 
 const CONFIG = {
   userPoolId: 'us-east-1_abc',
@@ -34,11 +58,13 @@ const sessionOf = (email: unknown) => ({ tokens: { idToken: { payload: { email }
 
 beforeEach(() => {
   for (const mock of Object.values(amplify)) mock.mockReset();
+  hub.listeners.clear();
   localStorage.clear();
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  window.history.replaceState(null, '', '/');
 });
 
 describe('amplifyAuth', () => {
@@ -100,37 +126,79 @@ describe('amplifyAuth', () => {
     },
   );
 
-  it('signs out an unreadable session left from before instead of leaving, through managed login', async () => {
+  it('signs out an unreadable session left from before, then leaves once more', async () => {
     const auth = await load();
-    amplify.signInWithRedirect.mockRejectedValue(
-      Object.assign(new Error('signed in'), { name: 'UserAlreadyAuthenticatedException' }),
-    );
+    amplify.signInWithRedirect
+      .mockRejectedValueOnce(
+        Object.assign(new Error('signed in'), { name: 'UserAlreadyAuthenticatedException' }),
+      )
+      .mockResolvedValueOnce(undefined);
     await auth.signIn('sign-in');
     expect(amplify.signOut).toHaveBeenCalledTimes(1);
+    expect(amplify.signInWithRedirect).toHaveBeenCalledTimes(2);
   });
 
-  it('finishes the sign-in managed login came back with, and gives its email', async () => {
+  it('finishes the sign-in managed login came back with, once Amplify says so, and gives its email', async () => {
+    returning('signInWithRedirect');
     const auth = await load();
     amplify.fetchAuthSession.mockResolvedValue(sessionOf('a@example.com'));
+    await expect(auth.finishSignIn()).resolves.toBe('a@example.com');
+    // Once per page load, however often asked (React's strict mode asks twice).
     await expect(auth.finishSignIn()).resolves.toBe('a@example.com');
     expect(amplify.configure).toHaveBeenCalledTimes(1);
   });
 
-  it('says a sign-in that came back unfinished did not finish, and a stalled one offline', async () => {
+  it('says a sign-in that Amplify could not finish did not finish', async () => {
+    returning('signInWithRedirect_failure');
     const auth = await load();
-    amplify.fetchAuthSession.mockResolvedValue({ tokens: undefined });
     await expect(auth.finishSignIn()).rejects.toMatchObject({ kind: 'sign-in-failed' });
-    amplify.fetchAuthSession.mockRejectedValue(new Error('NetworkError'));
-    await expect(auth.finishSignIn()).rejects.toMatchObject({ kind: 'offline' });
+  });
+
+  it('has nothing to finish on a return address with neither a code nor an error', async () => {
+    returning(undefined, '');
+    const auth = await load();
+    await expect(auth.finishSignIn()).rejects.toMatchObject({ kind: 'sign-in-failed' });
+    expect(amplify.configure).not.toHaveBeenCalled();
+  });
+
+  it('waits out a slow exchange, then lets the session say (a new account’s long sign-up too)', async () => {
+    returning();
+    const auth = await load();
+    // Set up first (its fetch is real time); the listener never says.
+    amplify.signInWithRedirect.mockResolvedValue(undefined);
+    await auth.signIn('sign-in');
     vi.useFakeTimers();
     try {
-      amplify.fetchAuthSession.mockReturnValue(new Promise(() => {}));
-      const result = expect(auth.finishSignIn()).rejects.toMatchObject({ kind: 'offline' });
-      await vi.advanceTimersByTimeAsync(CALL_LIMIT_MS);
+      amplify.fetchAuthSession.mockResolvedValue(sessionOf('a@example.com'));
+      const email = auth.finishSignIn();
+      await vi.advanceTimersByTimeAsync(FINISH_LIMIT_MS);
+      await expect(email).resolves.toBe('a@example.com');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('says a sign-in with no session after the wait did not finish', async () => {
+    returning();
+    const auth = await load();
+    amplify.signInWithRedirect.mockResolvedValue(undefined);
+    await auth.signIn('sign-in');
+    vi.useFakeTimers();
+    try {
+      amplify.fetchAuthSession.mockResolvedValue({ tokens: undefined });
+      const result = expect(auth.finishSignIn()).rejects.toMatchObject({ kind: 'sign-in-failed' });
+      await vi.advanceTimersByTimeAsync(FINISH_LIMIT_MS);
       await result;
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('calls a session read that fails after the exchange a network problem', async () => {
+    returning('signInWithRedirect');
+    const auth = await load();
+    amplify.fetchAuthSession.mockRejectedValue(new Error('NetworkError'));
+    await expect(auth.finishSignIn()).rejects.toMatchObject({ kind: 'offline' });
   });
 
   it('finds nobody signed in without loading Amplify when no session is stored', async () => {

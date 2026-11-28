@@ -44,11 +44,13 @@ describe('AuthPanel', () => {
     await waitFor(() => expect(go).toHaveBeenCalledWith('/auth/callback?code=fake&state=sign-in'));
   });
 
-  it('leaves for the create-account form from the sign-up drawer', async () => {
+  it('leaves for the create-account form from the sign-up drawer, remembering it left so', async () => {
     const { go } = renderPanel('sign-up');
     expect(screen.getByRole('heading', { name: 'Set up your search desk.' })).toBeTruthy();
     press('Continue to create account');
     await waitFor(() => expect(go).toHaveBeenCalledWith('/auth/callback?code=fake&state=sign-up'));
+    expect(sessionStorage.getItem('jobdeputy.sign-in-mode')).toBe('sign-up');
+    sessionStorage.clear();
   });
 
   it('switches between signing in and creating an account', () => {
