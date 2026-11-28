@@ -14,7 +14,7 @@ The web app signs in with its own form (Amplify, secure remote password, in the 
 2. **The web app hands its tokens to the extension** (`externally_connectable`). No new page, but the extension would hold full-power tokens: every API route, plus Cognito user admin such as `DeleteUser`. A leak from the extension becomes a leak of everything.
 3. **Keep two sign-ins.** No work, but two passwords to type and two forms to keep in step.
 
-For the address: the prefix domain (free, no setup), or a **custom domain in the site's zone** (chosen): an ACM certificate, an alias record and the pool's custom domain.
+For the address: the prefix domain (free, no setup), or a **custom domain in the site's zone** (chosen): an ACM certificate, alias records (IPv4 and IPv6) and the pool's custom domain.
 
 ## Decision
 
@@ -29,7 +29,7 @@ One page and one session give one sign-in without widening what the extension ca
 
 ## Consequences
 
-- Cognito serves a custom domain through CloudFront, so its certificate must be in us-east-1 (the site's cell is), and the parent name must already resolve: the site's own alias record (the web stack). A stage's first deploy therefore needs its web stack (or a placeholder record at the site's address) before the cell can add the custom domain; dev has it. Prod gets `auth.<prod site>` when its address is chosen at launch.
+- Cognito serves a custom domain through CloudFront, so its certificate must be in us-east-1 (the site's cell is), and the parent name must already resolve: the site's own alias record (the web stack). So the custom domain is opt-in per site (`signInDomain` in `infra/config/web.ts`): a stage's first deploy leaves it out, and a second deploy, once the web stack has made the site's record, turns it on. Dev has it on. Prod gets `auth.<prod site>` when its address is chosen at launch.
 - A custom domain takes several minutes to create, and changing it replaces the pool's domain and record.
 - Managed login's session lasts about an hour; after that, either client asks for the password again.
 - Sign-up, email confirmation and forgotten passwords move to managed login with PR B, so their words are AWS's, not ours.

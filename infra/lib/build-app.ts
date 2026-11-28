@@ -82,7 +82,9 @@ export function buildApp(options: BuildAppOptions): App {
       ...(site && dns && cell === SITE_CELL
         ? {
             siteOrigin: `https://${site.domain}`,
-            signInDomain: { name: signInDomainName(site), zone: dns.zone },
+            ...(site.signInDomain
+              ? { signInDomain: { name: signInDomainName(site), zone: dns.zone } }
+              : {}),
           }
         : {}),
       env: stackEnv,

@@ -20,7 +20,7 @@ import {
   type UserPoolDomain,
   UserPoolEmail,
 } from 'aws-cdk-lib/aws-cognito';
-import { ARecord, type IHostedZone, RecordTarget } from 'aws-cdk-lib/aws-route53';
+import { AaaaRecord, ARecord, type IHostedZone, RecordTarget } from 'aws-cdk-lib/aws-route53';
 import { CloudFrontTarget } from 'aws-cdk-lib/aws-route53-targets';
 import { Construct } from 'constructs';
 import { loginBranding } from './login-branding.js';
@@ -167,13 +167,16 @@ export class Auth extends Construct {
     if (oauthClients.length > 0) {
       const domains = this.addDomains(props.signInDomain);
       this.signInUrl = (domains.custom ?? domains.prefix).baseUrl();
+      // One change to the pool's managed login at a time: the clients, then the custom domain
+      // (minutes to make), then each client's look.
+      for (const { client } of oauthClients) domains.custom?.node.addDependency(client);
       // Managed login's look, set per client: the same for both (login-branding.ts).
       for (const { id, client } of oauthClients) {
         const branding = loginBranding(this, id, {
           userPoolId: this.userPool.userPoolId,
           clientId: client.userPoolClientId,
         });
-        branding.node.addDependency(domains.prefix);
+        branding.node.addDependency(domains.custom ?? domains.prefix);
       }
     }
 
@@ -241,17 +244,16 @@ export class Auth extends Construct {
     });
     // One domain change at a time on a pool.
     custom.node.addDependency(prefix);
-    new ARecord(this, 'SignInRecord', {
-      zone: signIn.zone,
-      recordName: signIn.name,
-      // The domain's own CloudFront attribute (UserPoolDomainTarget would add a lookup Lambda).
-      target: RecordTarget.fromAlias({
-        bind: (record) => ({
-          dnsName: custom.cloudFrontEndpoint,
-          hostedZoneId: CloudFrontTarget.getHostedZoneId(record),
-        }),
+    // The domain's own CloudFront attribute (UserPoolDomainTarget would add a lookup Lambda).
+    // IPv6 too, as the site has.
+    const target = RecordTarget.fromAlias({
+      bind: (record) => ({
+        dnsName: custom.cloudFrontEndpoint,
+        hostedZoneId: CloudFrontTarget.getHostedZoneId(record),
       }),
     });
+    new ARecord(this, 'SignInRecord', { zone: signIn.zone, recordName: signIn.name, target });
+    new AaaaRecord(this, 'SignInAaaa', { zone: signIn.zone, recordName: signIn.name, target });
     return { prefix, custom };
   }
 }

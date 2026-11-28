@@ -75,12 +75,18 @@ describe.skipIf(!outputs.AuthDomain)('web sign-in through managed login (deploye
   });
 
   it('signs out back to the web app only', async () => {
-    const query = new URLSearchParams({
-      client_id: outputs.WebClientId ?? '',
-      logout_uri: `${LOCAL_WEB_ORIGIN}/`,
-    });
-    const res = await fetch(`${domain}/logout?${query}`, { redirect: 'manual' });
-    expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe(`${LOCAL_WEB_ORIGIN}/`);
+    const logout = (uri: string) =>
+      fetch(
+        `${domain}/logout?${new URLSearchParams({ client_id: outputs.WebClientId ?? '', logout_uri: uri })}`,
+        { redirect: 'manual' },
+      );
+    for (const origin of [...(outputs.SiteOrigin ? [outputs.SiteOrigin] : []), LOCAL_WEB_ORIGIN]) {
+      const res = await logout(`${origin}/`);
+      expect(res.status).toBe(302);
+      expect(res.headers.get('location')).toBe(`${origin}/`);
+    }
+    // Anywhere else: never sent there.
+    const elsewhere = await logout('https://example.com/');
+    expect(elsewhere.headers.get('location') ?? '').not.toMatch(/^https:\/\/example\.com/);
   });
 });

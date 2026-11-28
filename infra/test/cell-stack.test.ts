@@ -292,6 +292,26 @@ describe('Cognito (T05)', () => {
         },
       }),
     });
+    t.hasResourceProperties('AWS::Route53::RecordSet', {
+      Name: 'auth.dev.jobdeputy.com.',
+      Type: 'AAAA',
+      HostedZoneId: zone,
+    });
+    // One managed login change at a time: the clients, then the custom domain, then the looks.
+    const [customId, custom] = Object.entries(t.findResources('AWS::Cognito::UserPoolDomain')).find(
+      ([, d]) => d.Properties.Domain === 'auth.dev.jobdeputy.com',
+    ) ?? ['', {}];
+    const after = (custom as { DependsOn?: string[] }).DependsOn ?? [];
+    for (const client of [
+      'AuthUserPoolWebClient',
+      'AuthUserPoolExtensionClient',
+      'AuthUserPoolDomain',
+    ]) {
+      expect(after.some((id) => id.startsWith(client))).toBe(true);
+    }
+    for (const branding of Object.values(t.findResources('AWS::Cognito::ManagedLoginBranding'))) {
+      expect(branding.DependsOn).toContain(customId);
+    }
     // The domain's own attribute: no lookup function.
     expect(Object.keys(t.findResources('Custom::AWS'))).toEqual([]);
     // The extension builds against it, and the web app reads it from its config.

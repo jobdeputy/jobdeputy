@@ -9,6 +9,12 @@ import type { StageName } from './stages.js';
  */
 export interface WebSite {
   readonly domain: string;
+  /**
+   * #111: the site's cell also serves managed login at `signInDomainName` (decision 0021). Set it
+   * only once the site's own address resolves (its web stack is deployed): Cognito refuses a custom
+   * domain whose parent has no record, so a stage's first deploy leaves it out.
+   */
+  readonly signInDomain?: boolean;
 }
 
 /**
@@ -20,7 +26,7 @@ export function signInDomainName(site: WebSite): string {
 }
 
 export const WEB_SITES: Partial<Record<StageName, WebSite>> = {
-  dev: { domain: 'dev.jobdeputy.com' },
+  dev: { domain: 'dev.jobdeputy.com', signInDomain: true },
 };
 
 /** The built web app (`pnpm --filter @jobdeputy/web build`), relative to the repo root. */
