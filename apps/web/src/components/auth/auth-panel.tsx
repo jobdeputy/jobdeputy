@@ -93,8 +93,12 @@ export function AuthPanel({
     name,
     value: values[name] ?? '',
     error: errors[name as keyof Errors] ?? null,
-    onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
-      setValues((current) => ({ ...current, [name]: event.target.value })),
+    // Read now: React may run the updater after it has put the controlled input back to the
+    // last rendered value, so reading `event.target` inside it can save '' (#94).
+    onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
+      const { value } = event.target;
+      setValues((current) => ({ ...current, [name]: value }));
+    },
   });
 
   async function submit(event: FormEvent) {
