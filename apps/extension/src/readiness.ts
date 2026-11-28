@@ -72,11 +72,13 @@ export async function readReadiness(api: Api): Promise<ApiResult<Readiness>> {
       answers: {
         answered: APPLICANT_KEYS.filter((key) => has(values[key])).length,
         total: APPLICANT_KEYS.length,
-        // US forms nearly all ask whether you may work in the US: the answer the filler gives.
+        // Nearly every form asks whether you may work where you live (the US by default, as the
+        // filler answers): a work authorization for that country makes it ready.
         ready:
           Array.isArray(values.workAuthorization) &&
           values.workAuthorization.some(
-            (entry) => (entry as { country?: unknown }).country === 'US',
+            (entry) =>
+              (entry as { country?: unknown }).country === (details.location?.country ?? 'US'),
           ),
       },
     },

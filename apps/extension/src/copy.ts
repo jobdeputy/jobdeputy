@@ -42,9 +42,14 @@ export const copy = {
       count: '{answered} of {total} saved',
       /** The count, said with whether the section is ready (screen readers). */
       readyCount: 'Ready, {count}',
-      missingCount: 'Not added yet, {count}',
+      missingCount: 'Not ready yet, {count}',
       /** The count as a link to add the rest. */
-      addRest: '{count}: add the rest in JobDeputy',
+      addRest: 'Add the rest in JobDeputy',
+      /** What a section still needs before it's ready, shown beside its count. */
+      needs: {
+        details: 'name and email needed',
+        answers: 'work authorization needed',
+      },
       add: 'Add in JobDeputy',
       offline: 'Couldn’t reach JobDeputy. Check your connection.',
       failed: 'Couldn’t read your details.',
