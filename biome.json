@@ -8,6 +8,12 @@
   "css": { "parser": { "tailwindDirectives": true } },
   "overrides": [
     {
+      "includes": ["apps/extension/test/fixtures/**"],
+      "linter": { "enabled": false },
+      "formatter": { "enabled": false },
+      "assist": { "enabled": false }
+    },
+    {
       "includes": ["apps/web/src/**", "!apps/web/src/copy/**"],
       "linter": {
         "rules": {

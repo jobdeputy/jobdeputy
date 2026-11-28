@@ -8,6 +8,12 @@ import { atsJobKey, jobIdOf } from '@jobdeputy/shared/job-id';
  */
 export const GREENHOUSE_HOST = 'job-boards.greenhouse.io';
 
+/**
+ * The forms the filler's content script runs on (its matches), so granted at install in every
+ * build: a static content script's hosts always are (decision 0020).
+ */
+export const GREENHOUSE_MATCHES: readonly string[] = [`https://${GREENHOUSE_HOST}/*`];
+
 const SLUG = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 const POSTING_ID = /^\d{1,20}$/;
 

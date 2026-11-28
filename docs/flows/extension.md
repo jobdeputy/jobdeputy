@@ -50,7 +50,7 @@ sequenceDiagram
 
 ## Reading what a Greenhouse form is filled with (#54 PR C)
 
-PR C2 adds the service worker's part; the form's content script and its panel come in PR C3.
+PR C2 adds the service worker's part; PR C3 the form's content script and its panel.
 
 ```mermaid
 sequenceDiagram
@@ -71,6 +71,30 @@ sequenceDiagram
 - Answers never saved (`version` 0) are not handed over, so self-ID questions stay empty unless the person saved theirs (the API's own defaults are never used). A saved answer the API couldn't read back (it reads as `decline`, listed in `unreadable`) is left out too, and listed as unread.
 - No file is downloaded when the fill can't go on (signed out, or no profile), and a download that redirects is refused.
 - Nothing is stored: the worker reads it when asked and hands it over.
+
+## Filling the form (#54 PR C3)
+
+```mermaid
+sequenceDiagram
+  actor U as Person
+  participant C as Content script + panel<br/>(job-boards.greenhouse.io, top page or a company site's frame)
+  participant W as Service worker
+  participant G as The form (Greenhouse's React)
+  C->>C: the page shows form#application-form (waits up to 10 s)
+  C-->>U: panel: "Fill this application" (bottom right; above the form in a frame)
+  U->>C: Fill this application
+  C->>W: fill-data
+  W-->>C: the answers (above)
+  loop each empty field, at most 3 looks (a choice can show new questions)
+    C->>G: text: native value setter + input/change<br/>file: DataTransfer + change<br/>choice: open (ArrowDown), read options, click the one match
+  end
+  C->>G: outline the required fields left empty
+  C-->>U: "Filled N fields", the résumé attached, what couldn't be read,<br/>"Left for you" (select one to go to it), "Check every answer, then click Submit yourself."
+  Note over C,G: never submits; never changes a field the person filled; never guesses (0019)
+```
+
+- Each question is matched to a saved answer by its field ID (the form's own fields, the US self-ID questions) or its label (each company's questions: links, preferred name, pronouns, work authorization and sponsorship for the US or the country it names, relocation, 18+, how you heard, salary, notice, start date). A choice is made only when exactly one option fits (a plain Yes or No for yes/no questions); otherwise it's left.
+- Only a summary (labels, counts, which résumé) stays in the panel; the answers are gone once the fill ends.
 
 ## Where it is stored
 
