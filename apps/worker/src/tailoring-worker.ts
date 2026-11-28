@@ -45,6 +45,7 @@ import {
   DOCX,
   fail,
   finish,
+  issueKinds,
   jobKeywords,
   logger,
   modelCalls,
@@ -242,7 +243,7 @@ async function tailor(run: Run, deps: TailoringWorkerDeps): Promise<TailoringOut
       : tailored.attempts.length === 0
         ? 'stopped'
         : 'model_unavailable';
-    return fail(run, deps, reason);
+    return fail(run, deps, reason, { issueKinds: issueKinds(tailored.attempts) });
   }
 
   // 4. Keep the draft before rendering: a retry from here makes no model call.

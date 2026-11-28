@@ -165,6 +165,13 @@ describe('checkTailored', () => {
   it('refuses keyword stuffing beyond the cap or the base count', () => {
     expect(repeatsAllowed(0)).toBe(KEYWORD_REPEAT_CAP);
     expect(repeatsAllowed(KEYWORD_REPEAT_CAP)).toBe(KEYWORD_REPEAT_CAP + 2);
+    // #117: two more than the base whenever that is more than the cap, and never fewer for a
+    // base that has more.
+    expect(repeatsAllowed(KEYWORD_REPEAT_CAP - 1)).toBe(KEYWORD_REPEAT_CAP + 1);
+    for (let before = 0; before < 10; before++) {
+      expect(repeatsAllowed(before + 1)).toBeGreaterThanOrEqual(repeatsAllowed(before));
+      expect(repeatsAllowed(before)).toBeGreaterThanOrEqual(before + 2);
+    }
     const parts = clean();
     parts.summary = 'TypeScript, TypeScript, TypeScript, TypeScript.';
     expect(kinds(parts)).toEqual(['repeated-keyword']);

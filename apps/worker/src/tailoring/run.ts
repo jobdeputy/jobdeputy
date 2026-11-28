@@ -120,6 +120,7 @@ export async function finish(
   deps: TailoringWorkerDeps,
   outcome: FinishOutcome,
   summary: string,
+  logged: Record<string, unknown> = {},
 ): Promise<boolean> {
   const { doc } = run;
   const prefix = letter(run) ? 'cover_letter' : 'tailoring';
@@ -149,10 +150,25 @@ export async function finish(
     documentId: doc.documentId,
     kind: doc.kind,
     status: outcome.status,
+    // #117: why a run failed, so it can be told from the logs alone.
+    ...(outcome.status === 'failed' ? { error: outcome.error } : {}),
     calls: run.calls,
     ended,
+    ...logged,
   });
   return ended;
+}
+
+/**
+ * Each draft's issue kinds and how many of each ({ "unsupported-keyword": 2 }), for the log of a
+ * run that kept no draft (#117). Kinds only: an issue's message names résumé and job terms.
+ */
+export function issueKinds(attempts: readonly { issues: readonly { kind: string }[] }[]) {
+  return attempts.map((a) => {
+    const counts: Record<string, number> = {};
+    for (const { kind } of a.issues) counts[kind] = (counts[kind] ?? 0) + 1;
+    return counts;
+  });
 }
 
 /** A free platform run is given back only when no model call was made. */
@@ -160,6 +176,8 @@ export async function fail(
   run: Run,
   deps: TailoringWorkerDeps,
   error: TailoringError,
+  /** Added to the "Run ended" log line: names and counts only, never résumé or job text. */
+  logged?: Record<string, unknown>,
 ): Promise<TailoringOutcome> {
   const summary = letter(run)
     ? `Cover letter not written: ${COVER_LETTER_ERRORS[error]}`
@@ -169,6 +187,7 @@ export async function fail(
     deps,
     { status: 'failed', error, giveBack: run.doc.platformRun && run.calls === 0 },
     summary,
+    logged,
   );
   return ended ? 'failed' : 'skipped';
 }

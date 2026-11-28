@@ -43,10 +43,12 @@ export const KEYWORD_REPEAT_CAP = 4;
 
 /**
  * Repeats allowed for a keyword the base résumé has `before` times: the cap, or two more than
- * the base when the base already reaches it ("AWS" in "AWS Lambda", "AWS CDK", …).
+ * the base when that is more ("AWS" in "AWS Lambda", "AWS CDK", …). Never fewer for a base
+ * that has more (#117: a base with 3 got 4, one with 4 got 6, so a draft that kept the base's
+ * 3 and named the keyword in its summary and skills was refused on every repair).
  */
 export function repeatsAllowed(before: number): number {
-  return before >= KEYWORD_REPEAT_CAP ? before + 2 : KEYWORD_REPEAT_CAP;
+  return Math.max(KEYWORD_REPEAT_CAP, before + 2);
 }
 
 /**

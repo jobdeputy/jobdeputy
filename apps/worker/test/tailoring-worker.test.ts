@@ -22,6 +22,7 @@ import {
 } from '@jobdeputy/shared';
 import type { SQSRecord } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
+import { logger } from '../src/tailoring/run.js';
 import {
   processRecord,
   RETRY_DELAY_SECONDS,
@@ -439,6 +440,39 @@ describe('tailoring worker', () => {
     expect(finished(runs).outcome.error).toBe('model_unavailable');
   });
 
+  it('logs why no draft was kept: the reason and the issue kinds of each draft, no résumé text (#117)', async () => {
+    const first = setup();
+    await processRecord(record(), first.deps);
+    // biome-ignore lint/suspicious/noExplicitAny: reading the mock's argument.
+    const cache = (first.documents.saveStructured.mock.calls[0] as any[])[2];
+    // biome-ignore lint/suspicious/noExplicitAny: reading the mock's argument.
+    const terms = (first.runs.saveKeywords.mock.calls[0] as any[])[2];
+    // Every draft invents a number.
+    const { deps, runs, files } = setup({
+      documents: { get: async () => base({ structured: cache }), saveStructured: vi.fn() },
+      jobs: { getMany: async () => [job({ keywords: terms })] },
+      model: async () =>
+        stubSource(() => ({
+          tool: { summary: 'Built 900 services.', skills: [], experience: [], projects: [] },
+        })),
+    });
+    files.set(cache.s3Key, first.files.get(cache.s3Key));
+    const info = vi.spyOn(logger, 'info');
+    try {
+      expect(await processRecord(record(), deps)).toBe('failed');
+      expect(finished(runs).outcome.error).toBe('no_honest_draft');
+      const ended = info.mock.calls.find(([message]) => message === 'Run ended');
+      expect(ended?.[1]).toMatchObject({
+        status: 'failed',
+        error: 'no_honest_draft',
+        issueKinds: [{ number: 1 }, { number: 1 }, { number: 1 }],
+      });
+      expect(JSON.stringify(ended?.[1])).not.toContain('900');
+    } finally {
+      info.mockRestore();
+    }
+  });
+
   it('removes a structured copy made for a résumé replaced or deleted meanwhile', async () => {
     const { deps } = setup({
       documents: { get: async () => base(), saveStructured: vi.fn(async () => false) },
@@ -780,9 +814,21 @@ describe('tailoring worker: cover letters (#51 PR D)', () => {
         },
       })),
     );
-    expect(await processRecord(record({ userId: USER, documentId: LETTER }), ctx.deps)).toBe(
-      'failed',
-    );
+    const info = vi.spyOn(logger, 'info');
+    try {
+      expect(await processRecord(record({ userId: USER, documentId: LETTER }), ctx.deps)).toBe(
+        'failed',
+      );
+      const ended = info.mock.calls.find(([message]) => message === 'Run ended');
+      // #117: why, from the log alone; the kinds only, not the letter's words.
+      expect(ended?.[1]).toMatchObject({
+        error: 'no_honest_draft',
+        issueKinds: [expect.any(Object), expect.any(Object), expect.any(Object)],
+      });
+      expect(JSON.stringify(ended?.[1])).not.toContain('900');
+    } finally {
+      info.mockRestore();
+    }
     expect(calls(ctx.runs)).toEqual(['cover-letter', 'cover-letter', 'cover-letter']);
     expect(ctx.runs.saveLetterDraft).not.toHaveBeenCalled();
     expect(finished(ctx.runs).outcome).toMatchObject({ error: 'no_honest_draft', giveBack: false });

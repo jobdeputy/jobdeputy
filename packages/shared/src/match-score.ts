@@ -26,7 +26,7 @@ export const MATCH_THRESHOLD = 80;
  * The score code's version, stored with every score (decision 0015): raise it when weights,
  * aliases, or matching change, so scores made by different code are never compared.
  */
-export const MATCH_SCORE_VERSION = 1;
+export const MATCH_SCORE_VERSION = 2;
 /** At most this many keywords are kept per job. */
 export const MAX_JOB_KEYWORDS = 30;
 /** Longer "keywords" are sentences, not keywords. */
@@ -112,10 +112,10 @@ const ALIAS_TABLE: { tokens: string[]; canonical: string }[] = ALIASES.flatMap((
 
 /**
  * Technology names that are also common words ("the go-live", "the rest of the team") count
- * only as written for the technology: "Go" or "golang", "REST" or "RESTful".
+ * only as written for the technology: "Go", "GO" or "golang", "REST" or "RESTful".
  */
 const CASED: [RegExp, string][] = [
-  [/\bGo\b(?!-)(?!['’](?!s\b))/g, 'golang'],
+  [/\b(?:Go|GO)\b(?!-)(?!['’](?!s\b))/g, 'golang'],
   [/\bREST(?:ful)?\b|\bRest[Ff]ul\b|\brestful\b/g, 'restful'],
 ];
 
