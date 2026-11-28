@@ -24,6 +24,7 @@ Short records of choices that shape the project. Agents and contributors treat a
 | [0018](0018-shared-job-catalog-and-matching.md) | A shared job catalog: scheduled visits, duplicates, job age, matching, free and premium, tailoring on demand | Accepted (design) |
 | [0019](0019-application-answers-and-voluntary-self-id.md) | Application answers in the profile; voluntary self-identification encrypted with the cell's KMS key | Accepted |
 | [0020](0020-browser-extension-sign-in-and-permissions.md) | The browser extension signs in through Cognito managed login and asks only for the job sites it fills | Accepted |
+| [0021](0021-one-sign-in-through-managed-login.md) | The web app and the extension sign in on one managed login page, at `auth.<site>` | Accepted |
 
 ## Template
 

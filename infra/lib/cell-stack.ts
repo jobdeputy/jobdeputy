@@ -3,6 +3,7 @@ import {
   crawlKeys,
   DEFAULT_CRAWL_LIMITS,
   DERIVED_PREFIX,
+  LOCAL_WEB_ORIGIN,
   SCANNED_PREFIX,
   VOLUNTARY_KMS_PURPOSE,
 } from '@jobdeputy/shared';
@@ -16,6 +17,7 @@ import {
   Aspects,
   CfnOutput,
   Duration,
+  Fn,
   RemovalPolicy,
   Stack,
   type StackProps,
@@ -48,6 +50,7 @@ import {
 import { Rule, Schedule } from 'aws-cdk-lib/aws-events';
 import { LambdaFunction } from 'aws-cdk-lib/aws-events-targets';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
+import { HostedZone } from 'aws-cdk-lib/aws-route53';
 import { Topic } from 'aws-cdk-lib/aws-sns';
 import { EmailSubscription } from 'aws-cdk-lib/aws-sns-subscriptions';
 import { StringParameter } from 'aws-cdk-lib/aws-ssm';
@@ -75,6 +78,17 @@ export interface CellStackProps extends StackProps {
    * documents bucket answer CORS for that origin only (#33). Left out, no browser may call them.
    */
   readonly siteOrigin?: string;
+  /**
+   * #111 (decision 0021): managed login's address in the site's zone (auth.<site>), for the cell
+   * the site signs people in to. Left out, managed login stays on the pool's Cognito prefix domain.
+   */
+  readonly signInDomain?: {
+    /** For example auth.dev.jobdeputy.com. */
+    readonly name: string;
+    /** The site's zone (its web DNS stack), and the SSM parameter holding its ID. */
+    readonly zoneName: string;
+    readonly zoneIdParameter: string;
+  };
   /** Receive alarm emails. Come from JD_ALERT_EMAIL (comma-separated), never from the repository. */
   readonly alertEmails?: readonly string[];
 }
@@ -170,6 +184,26 @@ export class CellStack extends Stack {
       removalPolicy,
       deletionProtection: isProd,
       testsClient: props.stage === 'dev',
+      // #111: the web app signs in through managed login and comes back to its own origin; dev
+      // stacks also let a web app on Vite's dev server sign in.
+      webOrigins: [
+        ...(props.siteOrigin ? [props.siteOrigin] : []),
+        ...(props.stage === 'dev' ? [LOCAL_WEB_ORIGIN] : []),
+      ],
+      ...(props.signInDomain
+        ? {
+            signInDomain: {
+              name: props.signInDomain.name,
+              zone: HostedZone.fromHostedZoneAttributes(this, 'SiteZone', {
+                zoneName: props.signInDomain.zoneName,
+                hostedZoneId: StringParameter.valueForStringParameter(
+                  this,
+                  props.signInDomain.zoneIdParameter,
+                ),
+              }),
+            },
+          }
+        : {}),
       // #54: the dev ID's key is public, so only dev stacks trust it.
       extensionIds:
         props.stage === 'dev'
@@ -809,13 +843,21 @@ export class CellStack extends Stack {
           userPoolClientId: auth.webClient.userPoolClientId,
           // No trailing slash: the app adds paths that start with one.
           apiUrl: httpApi.apiEndpoint,
+          // #111: managed login's host, where the web app signs in (auth.<site>): a bare host
+          // name, as Amplify's oauth.domain takes.
+          ...(auth.signInUrl ? { authDomain: Fn.select(2, Fn.split('/', auth.signInUrl)) } : {}),
         }),
       });
       new StringParameter(this, 'WebConnectSrc', {
         parameterName: this.webConfig.connectSrc,
         description:
           'The origins the web app calls in this cell, for its CSP (read by the web stack).',
-        stringValue: [httpApi.apiEndpoint, documentsOrigin].join(' '),
+        // #111: managed login's token and revoke endpoints too (the web app calls them).
+        stringValue: [
+          httpApi.apiEndpoint,
+          documentsOrigin,
+          ...(auth.signInUrl ? [auth.signInUrl] : []),
+        ].join(' '),
       });
     }
     if (ping) {
@@ -994,10 +1036,20 @@ export class CellStack extends Stack {
       value: documents.malwarePlan.attrMalwareProtectionPlanId,
     });
     new CfnOutput(this, 'WebClientId', { value: auth.webClient.userPoolClientId });
-    // The extension's build settings (#54).
+    // The extension's build settings (#54), with AuthDomain below.
     if (auth.extension) {
-      new CfnOutput(this, 'AuthDomain', { value: auth.extension.domain.baseUrl() });
       new CfnOutput(this, 'ExtensionClientId', { value: auth.extension.client.userPoolClientId });
+    }
+    // Managed login's address (#54, #111): auth.<site> where the cell has one, else the pool's
+    // prefix domain. The extension builds against it; the web app reads it from its config.
+    if (auth.signInUrl) new CfnOutput(this, 'AuthDomain', { value: auth.signInUrl });
+    // #111, for the tests: auth.<site> where the cell serves it, and where the web client's
+    // managed login may return.
+    if (auth.signInDomainName) {
+      new CfnOutput(this, 'SignInDomain', { value: auth.signInDomainName });
+    }
+    if (auth.webCallbackUrls.length > 0) {
+      new CfnOutput(this, 'WebCallbackUrls', { value: auth.webCallbackUrls.join(',') });
     }
     if (auth.testsClient) {
       new CfnOutput(this, 'TestsClientId', { value: auth.testsClient.userPoolClientId });

@@ -6,6 +6,10 @@ import { htmlCopy } from './html-copy.ts';
 
 export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss(), htmlCopy()],
+  // Always this port: dev stacks let managed login return only to it (LOCAL_WEB_ORIGIN, #111).
+  server: { port: 5173, strictPort: true },
+  // Preview would follow the dev server's strictPort; it may move to a free port as before.
+  preview: { strictPort: false },
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },

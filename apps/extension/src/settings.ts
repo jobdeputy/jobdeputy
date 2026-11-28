@@ -6,7 +6,10 @@
 export interface Settings {
   /** The API's base address, no trailing slash. The manifest asks for this origin only. */
   apiUrl: string;
-  /** Managed login's address, `https://<stack>.auth.<region>.amazoncognito.com`. */
+  /**
+   * Managed login's address: `https://auth.<site>` on the site's cell (#111), else the stack's
+   * `https://jobdeputy-<id>.auth.<region>.amazoncognito.com`.
+   */
   authDomain: string;
   /** The extension's Cognito app client. */
   clientId: string;

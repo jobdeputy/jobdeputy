@@ -1,4 +1,5 @@
 import type { Tier } from './crawl.js';
+import { WEB_SCOPE } from './extension.js';
 
 /**
  * The signed-in caller, taken only from the JWT claims that API Gateway has
@@ -80,3 +81,22 @@ export function isReservedEmailDomain(email: string): boolean {
 
 /** The Cognito group every integration-test user belongs to (dev pools only). */
 export const TEST_USERS_GROUP = 'integration-tests';
+
+/**
+ * #111 (decision 0021): the web app signs in through managed login (code + PKCE) and comes back
+ * here on its own origin.
+ */
+export const WEB_SIGN_IN_CALLBACK_PATH = '/auth/callback';
+
+/**
+ * Vite's dev server: dev stacks also let a web app run on it sign in (#111). Never prod. Open it
+ * at exactly this origin (not 127.0.0.1): managed login returns only here.
+ */
+export const LOCAL_WEB_ORIGIN = 'http://localhost:5173';
+
+/**
+ * The OAuth scopes the web app asks managed login for: who you are, your email, and
+ * `WEB_SCOPE` (aws.cognito.signin.user.admin), which every API route outside
+ * `EXTENSION_API_ROUTES` asks for (decision 0020). The extension's client may never ask for it.
+ */
+export const WEB_SCOPES: readonly string[] = ['openid', 'email', WEB_SCOPE];

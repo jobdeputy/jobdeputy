@@ -7,10 +7,10 @@ import {
 } from 'aws-cdk-lib';
 import { CELLS, type CellId } from '../config/cells.js';
 import { accountEnvVar, isStageName, STAGES, type StageName } from '../config/stages.js';
-import { WEB_SITES } from '../config/web.js';
+import { signInDomainName, WEB_SITES } from '../config/web.js';
 import { CellStack } from './cell-stack.js';
 import { KeysStack } from './keys-stack.js';
-import { WebDnsStack } from './web-dns-stack.js';
+import { WebDnsStack, webZoneIdParameter } from './web-dns-stack.js';
 import { WebStack } from './web-stack.js';
 
 export interface BuildAppOptions {
@@ -33,6 +33,11 @@ export interface BuildAppOptions {
    * given; left out (unit tests) the web stack is built without uploading anything.
    */
   readonly webContentDir?: string;
+  /**
+   * #111: false leaves managed login's custom domain out (`-c signInDomain=off`): a stage's first
+   * deploy or a rebuild, before the site's own record exists (decision 0021). Default true.
+   */
+  readonly signInDomain?: boolean;
 }
 
 const OWNER_PATTERN = /^[a-z][a-z0-9-]{1,15}$/;
@@ -55,6 +60,9 @@ export function buildApp(options: BuildAppOptions): App {
   }
 
   const app = options.app ?? new App(options.appProps);
+  // The site's zone comes first: its cell serves managed login on an address in it (#111).
+  const site = owner ? undefined : WEB_SITES[stage];
+  const dns = site ? webDnsStack(app, stage, env, site.domain) : undefined;
   const cellStacks: Partial<Record<CellId, CellStack>> = {};
   for (const cell of STAGES[stage].cells) {
     const account = env[accountEnvVar(stage, cell)];
@@ -74,9 +82,21 @@ export function buildApp(options: BuildAppOptions): App {
       cell,
       ...(owner ? { owner } : {}),
       alertEmails: parseAlertEmails(env.JD_ALERT_EMAIL),
-      // The site's cell answers CORS for the site's origin (shared stacks only).
-      ...(!owner && cell === SITE_CELL && WEB_SITES[stage]
-        ? { siteOrigin: `https://${WEB_SITES[stage].domain}` }
+      // The site's cell answers CORS for the site's origin, and serves managed login at
+      // auth.<site> (shared stacks only).
+      ...(site && dns && cell === SITE_CELL
+        ? {
+            siteOrigin: `https://${site.domain}`,
+            ...(site.signInDomain && options.signInDomain !== false
+              ? {
+                  signInDomain: {
+                    name: signInDomainName(site),
+                    zoneName: site.domain,
+                    zoneIdParameter: webZoneIdParameter(site.domain),
+                  },
+                }
+              : {}),
+          }
         : {}),
       env: stackEnv,
       // Decision 0004: never share values across Regions.
@@ -85,10 +105,32 @@ export function buildApp(options: BuildAppOptions): App {
     });
     // The cell reads the key's ARN from SSM at deploy time, so the key must exist first.
     if (keys) cellStack.addDependency(keys);
+    // …and the site's zone, whose ID it reads from SSM for auth.<site> (#111).
+    if (dns && cell === SITE_CELL) cellStack.addDependency(dns);
     cellStacks[cell] = cellStack;
   }
-  if (!owner) addWebStacks(app, stage, env, options.webContentDir, cellStacks[SITE_CELL]);
+  if (site && dns) {
+    addWebStack(app, stage, env, site.domain, dns, options.webContentDir, cellStacks[SITE_CELL]);
+  }
   return app;
+}
+
+/** Decision 0011: the site's Route 53 zone, in the site cell's account and Region. */
+function webDnsStack(
+  app: App,
+  stage: StageName,
+  env: Record<string, string | undefined>,
+  domain: string,
+): WebDnsStack {
+  return new WebDnsStack(app, `jobdeputy-${stage}-web-dns`, {
+    domain,
+    env: siteStackEnv(stage, env),
+  });
+}
+
+function siteStackEnv(stage: StageName, env: Record<string, string | undefined>) {
+  const account = env[accountEnvVar(stage, SITE_CELL)];
+  return { region: CELLS[SITE_CELL].region, ...(account ? { account } : {}) };
 }
 
 /**
@@ -96,15 +138,15 @@ export function buildApp(options: BuildAppOptions): App {
  * (CloudFront's certificate must be in us-east-1). Shared stacks only: personal and PR
  * stacks have no web app.
  */
-function addWebStacks(
+function addWebStack(
   app: App,
   stage: StageName,
   env: Record<string, string | undefined>,
+  domain: string,
+  dns: WebDnsStack,
   contentDir: string | undefined,
   siteCell: CellStack | undefined,
 ): void {
-  const site = WEB_SITES[stage];
-  if (!site) return;
   if (contentDir !== undefined && !existsSync(contentDir)) {
     throw new Error(
       `The web app is not built (${contentDir} is missing): run pnpm --filter @jobdeputy/web build.`,
@@ -113,16 +155,10 @@ function addWebStacks(
   if (!siteCell) {
     throw new Error(`The ${stage} site signs people in to the ${SITE_CELL} cell, which it lacks.`);
   }
-  const account = env[accountEnvVar(stage, SITE_CELL)];
-  const stackEnv = { region: CELLS[SITE_CELL].region, ...(account ? { account } : {}) };
-  const dns = new WebDnsStack(app, `jobdeputy-${stage}-web-dns`, {
-    domain: site.domain,
-    env: stackEnv,
-  });
   new WebStack(app, `jobdeputy-${stage}-web`, {
-    domain: site.domain,
+    domain,
     zone: dns.zone,
-    env: stackEnv,
+    env: siteStackEnv(stage, env),
     ...(contentDir !== undefined ? { contentDir } : {}),
     signIn: siteCell,
   });
@@ -131,6 +167,13 @@ function addWebStacks(
 // Cast: the class's optional getters do not satisfy exactOptionalPropertyTypes.
 function cliSynthesizer(): IStackSynthesizer {
   return new CliCredentialsStackSynthesizer() as unknown as IStackSynthesizer;
+}
+
+/** `-c signInDomain=on|off` (#111); left out, on. Anything else is refused, never guessed. */
+export function signInDomainFromContext(value: unknown): boolean {
+  if (value === undefined || value === 'on') return true;
+  if (value === 'off') return false;
+  throw new Error(`Unknown signInDomain "${String(value)}". Use on or off.`);
 }
 
 export function stageFromContext(value: unknown): StageName {

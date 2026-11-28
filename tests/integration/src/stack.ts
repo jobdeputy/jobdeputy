@@ -32,6 +32,20 @@ export async function stackOutputs(): Promise<Record<string, string>> {
   return Object.fromEntries(outputs.map((o) => [o.OutputKey ?? '', o.OutputValue ?? '']));
 }
 
+/** A Cognito prefix domain in this Region (`jobdeputy-<id>.auth.<region>.amazoncognito.com`). */
+export const PREFIX_SIGN_IN_URL = new RegExp(
+  `^https://[a-z0-9-]+\\.auth\\.${region}\\.amazoncognito\\.com$`,
+);
+
+/**
+ * Where managed login must be for this stack (#54, #111): `https://<SignInDomain>` where the
+ * stack serves its custom domain (the site's cell), the pool's prefix domain elsewhere.
+ */
+export function signInUrlPattern(outputs: Record<string, string>): RegExp {
+  if (!outputs.SignInDomain) return PREFIX_SIGN_IN_URL;
+  return new RegExp(`^https://${outputs.SignInDomain.replaceAll('.', '\\.')}$`);
+}
+
 export interface TestUser {
   email: string;
   accessToken: string;

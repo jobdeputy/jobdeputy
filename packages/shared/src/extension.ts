@@ -48,5 +48,8 @@ export const EXTENSION_API_ROUTES: readonly string[] = [
   'GET /me/cover-letters/{documentId}',
 ];
 
-/** The scope Cognito gives tokens from a direct (SRP or admin) sign-in: the web app and tests. */
+/**
+ * The scope the web app's and the tests' tokens carry: Cognito gives it to a direct (SRP or admin)
+ * sign-in, and to the web client's managed login sign-in, which asks for it (#111, `WEB_SCOPES`).
+ */
 export const WEB_SCOPE = 'aws.cognito.signin.user.admin';
