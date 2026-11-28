@@ -11,6 +11,7 @@
     "./crawl": "./src/crawl.ts",
     "./documents": "./src/documents.ts",
     "./extension": "./src/extension.ts",
+    "./job-id": "./src/job-id.ts",
     "./extension-key": "./src/extension-key.ts",
     "./lists": "./src/lists.ts",
     "./match-score": "./src/match-score.ts",

@@ -14,6 +14,7 @@ const SETTINGS: Settings = {
   apiUrl: 'https://abc123.execute-api.us-east-1.amazonaws.com',
   authDomain: 'https://jobdeputy-dev-iad.auth.us-east-1.amazoncognito.com',
   clientId: '37qq0qiq6rckk23cg85qi6m4bs',
+  filesOrigin: 'https://jobdeputy-dev-iad-documentsbucket.s3.us-east-1.amazonaws.com',
 };
 
 /**
@@ -24,7 +25,11 @@ const ALLOWED = {
   // Sign-in (PR B): managed login in its own window, the session in storage.session.
   permissions: ['identity', 'storage'],
   // The API's own origin only: managed login answers the extension's origin itself (CORS).
-  host_permissions: ['https://abc123.execute-api.us-east-1.amazonaws.com/*'],
+  // PR C: the documents' download origin (the résumé and letter the filler attaches).
+  host_permissions: [
+    'https://abc123.execute-api.us-east-1.amazonaws.com/*',
+    'https://jobdeputy-dev-iad-documentsbucket.s3.us-east-1.amazonaws.com/*',
+  ],
   optional_permissions: [] as string[],
   optional_host_permissions: [] as string[],
 };
@@ -68,7 +73,8 @@ describe('manifest (#54, decision 0020)', () => {
   });
 
   it('asks for the API origin only, never a path beyond it or another host', () => {
-    expect(hostPermissions({ ...SETTINGS, apiUrl: 'https://api.example.com/v1' })).toEqual([
+    const { filesOrigin: _, ...noFiles } = SETTINGS;
+    expect(hostPermissions({ ...noFiles, apiUrl: 'https://api.example.com/v1' })).toEqual([
       'https://api.example.com/*',
     ]);
   });

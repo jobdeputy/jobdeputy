@@ -2,7 +2,17 @@ import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import { createApi } from '../src/api.ts';
 import { createAuth } from '../src/auth/session.ts';
-import { fromOwnPage, isRequest, type Request, type Responses } from '../src/messages.ts';
+import { readFillData } from '../src/fill/data.ts';
+import { createFiles } from '../src/fill/files.ts';
+import {
+  contentPosting,
+  type FillDataResponse,
+  fromOwnPage,
+  isContentRequest,
+  isRequest,
+  type Request,
+  type Responses,
+} from '../src/messages.ts';
 import { readReadiness } from '../src/readiness.ts';
 import { readSettings } from '../src/settings.ts';
 
@@ -27,6 +37,7 @@ export default defineBackground(() => {
       })
     : null;
   const api = settings && auth ? createApi({ settings, auth, fetch: (...a) => fetch(...a) }) : null;
+  const files = settings ? createFiles({ settings, fetch: (...a) => fetch(...a) }) : null;
 
   async function answer(request: Request): Promise<Responses[Request['type']]> {
     if (!auth || !api) return request.type === 'status' ? { state: 'unconfigured' } : null;
@@ -46,8 +57,17 @@ export default defineBackground(() => {
   }
 
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (!fromOwnPage(sender, browser.runtime.id) || !isRequest(message)) return false;
-    answer(message).then(sendResponse, () => sendResponse(null));
+    if (fromOwnPage(sender, browser.runtime.id)) {
+      if (!isRequest(message)) return false;
+      answer(message).then(sendResponse, () => sendResponse(null));
+      return true;
+    }
+    // #54 PR C: a Greenhouse form asks for its answers; nothing else is answered for a page.
+    const posting = contentPosting(sender, browser.runtime.id);
+    if (!posting || !isContentRequest(message)) return false;
+    const reply = (value: FillDataResponse) => sendResponse(value);
+    if (!api || !files) reply(null);
+    else readFillData(api, files, posting).then(reply, () => reply(null));
     return true;
   });
 });

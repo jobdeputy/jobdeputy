@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { parseCrawlUrl } from '@jobdeputy/shared';
+import { atsJobKey } from '@jobdeputy/shared/job-id';
 import { decodeEntities, htmlToText, oneLine, tidy, truncate } from './text.js';
 
 /**
@@ -289,7 +290,7 @@ export function finalizeJob(raw: RawJob, context: JobContext): ExtractedJob | un
   // and location (only when one link lists several jobs).
   const dedupeKey =
     raw.ats && externalId
-      ? `ats:${context.companyKey}:${externalId}`
+      ? atsJobKey(context.companyKey, externalId)
       : raw.sharedUrl
         ? `text:${context.companyKey}|${title}|${locations[0]?.text ?? ''}`.toLowerCase()
         : `url:${jobUrl}`;

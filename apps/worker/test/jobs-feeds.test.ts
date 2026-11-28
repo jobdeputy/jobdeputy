@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { atsJobKey, jobIdOf } from '@jobdeputy/shared/job-id';
 import { describe, expect, it } from 'vitest';
 import type { Board } from '../src/jobs/boards.js';
 import { FeedFormatError, parseFeed, workdayPostedAt } from '../src/jobs/feeds.js';
@@ -246,5 +247,19 @@ describe('a feed that changed shape', () => {
     };
     const page = parseFeed(greenhouse, JSON.stringify({ jobs: [job, job] }), 0, NOW);
     expect(page.jobs).toHaveLength(1);
+  });
+});
+
+describe('job IDs the extension works out (#54 PR C)', () => {
+  it('match the crawl: the posting on job-boards.greenhouse.io/acme/jobs/4001001', async () => {
+    const page = parseFeed(
+      { ...greenhouse, job: '4001001' },
+      fixture('greenhouse-job.json'),
+      0,
+      NOW,
+    );
+    const key = atsJobKey('greenhouse:acme', '4001001');
+    expect(page.jobs[0]?.dedupeKey).toBe(key);
+    expect(page.jobs[0]?.jobId).toBe(await jobIdOf(key));
   });
 });

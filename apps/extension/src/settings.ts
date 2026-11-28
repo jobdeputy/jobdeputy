@@ -12,6 +12,11 @@ export interface Settings {
   clientId: string;
   /** The web app, for links to finish the profile there (shared stacks have one). */
   siteUrl?: string;
+  /**
+   * #54 PR C: where the documents' download links point (the stack's `DocumentsOrigin`). The
+   * manifest asks for this origin, and files are fetched from it only. Without it, no files.
+   */
+  filesOrigin?: string;
 }
 
 type Env = Record<string, string | boolean | undefined>;
@@ -36,5 +41,14 @@ export function readSettings(env: Env): Settings | null {
   const clientId = typeof env.WXT_CLIENT_ID === 'string' ? env.WXT_CLIENT_ID : '';
   if (!apiUrl || !authDomain || !/^[a-z0-9]{20,40}$/.test(clientId)) return null;
   const siteUrl = origin(env.WXT_SITE_URL);
-  return { apiUrl, authDomain, clientId, ...(siteUrl ? { siteUrl } : {}) };
+  // An origin only: the host permission is the whole origin, so a path would mislead.
+  const files = origin(env.WXT_FILES_ORIGIN);
+  const filesOrigin = files && new URL(files).origin === files ? files : null;
+  return {
+    apiUrl,
+    authDomain,
+    clientId,
+    ...(siteUrl ? { siteUrl } : {}),
+    ...(filesOrigin ? { filesOrigin } : {}),
+  };
 }

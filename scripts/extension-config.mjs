@@ -43,6 +43,8 @@ const values = {
   WXT_AUTH_DOMAIN: output('AuthDomain'),
   WXT_CLIENT_ID: output('ExtensionClientId'),
   WXT_SITE_URL: option('--site'),
+  // #54 PR C: the documents' download links (the résumé and cover letter the filler attaches).
+  WXT_FILES_ORIGIN: output('DocumentsOrigin'),
 };
 const missing = ['WXT_API_URL', 'WXT_AUTH_DOMAIN', 'WXT_CLIENT_ID'].filter((key) => !values[key]);
 if (missing.length > 0) {

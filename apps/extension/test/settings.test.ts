@@ -39,4 +39,18 @@ describe('readSettings (#54)', () => {
       readSettings({ ...env, WXT_SITE_URL: 'http://localhost:5173' })?.siteUrl,
     ).toBeUndefined();
   });
+
+  it("reads the documents' download origin, an origin only (#54 PR C)", () => {
+    const files = 'https://bucket.s3.us-east-1.amazonaws.com';
+    expect(readSettings({ ...env, WXT_FILES_ORIGIN: `${files}/` })?.filesOrigin).toBe(files);
+    for (const bad of [
+      'http://bucket.s3.amazonaws.com',
+      `${files}/path`,
+      `${files}/?x=1`,
+      'nope',
+    ]) {
+      expect(readSettings({ ...env, WXT_FILES_ORIGIN: bad })?.filesOrigin, bad).toBeUndefined();
+    }
+    expect(readSettings(env)?.filesOrigin).toBeUndefined();
+  });
 });
