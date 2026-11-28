@@ -518,4 +518,44 @@ describe('signing in without a window (#111, decision 0021)', () => {
     close();
     expect(await own).toBe('cancelled');
   });
+
+  it('signs out even when the mark cannot be written', async () => {
+    const { auth, stored, marked } = setup();
+    await auth.signIn();
+    // storage.local refusing (quota, say) never keeps the tokens.
+    marked.set = () => {
+      throw new Error('quota');
+    };
+    await auth.signOut();
+    expect(stored.has('session')).toBe(false);
+  });
+
+  it('frees the sign-in the person starts when a silent one at work fails', async () => {
+    const { auth, launch } = setup();
+    let fail = (_: Error) => {};
+    launch.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          fail = reject;
+        }),
+    );
+    const silent = auth.signInSilently();
+    await vi.waitFor(() => expect(launch).toHaveBeenCalledTimes(1));
+    const own = auth.signIn();
+    fail(new Error('boom'));
+    expect(await silent).toBe('none');
+    expect(await own).toBe('signed-in');
+    expect(auth.signingIn).toBe(false);
+  });
+
+  it('holds off silently after an API refusal only until the browser closes', async () => {
+    const { auth, stored, marked } = setup();
+    await auth.signIn();
+    await auth.signedOutByApi();
+    expect(marked.has('signedOutHere')).toBe(false);
+    expect(await auth.signInSilently()).toBe('none');
+    // A new browser session: storage.session is empty again.
+    stored.clear();
+    expect(await auth.signInSilently()).toBe('signed-in');
+  });
 });

@@ -317,6 +317,17 @@ describe('readFillDataSigningIn (#111)', () => {
     expect(result.ok).toBe(true);
   });
 
+  it('says offline when managed login could not be reached', async () => {
+    const { api } = routes({ '/me/profile': SIGNED_OUT });
+    const result = await readFillDataSigningIn(
+      api,
+      fakeFiles().files,
+      posting,
+      async () => 'offline',
+    );
+    expect(result).toEqual({ ok: false, reason: 'offline' });
+  });
+
   it('says signed out when the silent sign-in could not sign in', async () => {
     const { api } = routes({ '/me/profile': SIGNED_OUT });
     const signInSilently = vi.fn(async () => 'none' as const);

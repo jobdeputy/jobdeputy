@@ -22,6 +22,9 @@ import { readSettings } from '../src/settings.ts';
  * #54 (decision 0020): the service worker owns sign-in and every token. The popup asks it through
  * messages (it can't sign in itself: Chrome closes it when managed login's window takes focus).
  */
+/** How long the popup's status waits for a sign-in without a window (#111). */
+const SILENT_WAIT_MS = 3000;
+
 export default defineBackground(() => {
   // A dev build says so on its toolbar button too (src/build.ts): set when the worker starts,
   // and again when Chrome starts or the extension is (re)installed, as Chrome forgets it.
@@ -64,8 +67,13 @@ export default defineBackground(() => {
         // #111: signed out here, but maybe signed in on the site: try without a window first.
         const status = await auth.status();
         if (status.state === 'signed-out' && !status.interrupted && !auth.signingIn) {
-          // Whatever goes wrong, the popup still gets the signed-out status it would have had.
-          const silent = await auth.signInSilently().catch(() => 'none' as const);
+          // At most a short wait (the popup shows nothing until it hears): past it, or whatever
+          // goes wrong, the popup gets the signed-out status, and the sign-in carries on; the next
+          // popup finds it.
+          const silent = await Promise.race([
+            auth.signInSilently().catch(() => 'none' as const),
+            new Promise<'later'>((resolve) => setTimeout(() => resolve('later'), SILENT_WAIT_MS)),
+          ]);
           if (silent === 'signed-in')
             return { ...(await auth.status()), signingIn: auth.signingIn };
         }

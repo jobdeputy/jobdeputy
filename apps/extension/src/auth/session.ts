@@ -75,6 +75,11 @@ const LAST_EMAIL = 'lastEmail';
  * remembers them, and signing out must stick, across a browser restart too (`marks`).
  */
 const SIGNED_OUT_HERE = 'signedOutHere';
+/**
+ * #111: the API refused even a fresh token. No silent sign-in until the person signs in, for this
+ * browser session only (it may be passing: an authorizer change, say).
+ */
+const REFUSED_BY_API = 'refusedByApi';
 
 /** A sign-in or refresh that couldn't reach managed login, or that it refused. */
 export class AuthError extends Error {
@@ -193,7 +198,10 @@ export function createAuth(deps: AuthDeps) {
         ...(email ? { email } : {}),
       } satisfies Session);
       await storage.remove(LAST_EMAIL);
-      if (!silent) await deps.marks.remove(SIGNED_OUT_HERE);
+      if (!silent) {
+        await deps.marks.remove(SIGNED_OUT_HERE);
+        await storage.remove(REFUSED_BY_API);
+      }
       return 'signed-in';
     } catch (error) {
       return error instanceof AuthError ? error.kind : 'failed';
@@ -265,12 +273,12 @@ export function createAuth(deps: AuthDeps) {
       if (!signingIn) {
         signingInDifferent = different;
         signingIn = (async () => {
-          // A silent sign-in at work finishes first (its window-less flow would race this one); if
-          // it signed the person in, there is nothing left to do.
-          await silently;
-          if (!different && (await session())) return 'signed-in';
-          await storage.set(PENDING, true);
           try {
+            // A silent sign-in at work finishes first (its window-less flow would race this one);
+            // if it signed the person in, there is nothing left to do.
+            await silently?.catch(() => undefined);
+            if (!different && (await session())) return 'signed-in';
+            await storage.set(PENDING, true);
             return await signInOnce(different);
           } finally {
             // Freed first: a failing storage call must never leave "Signing in…" for good.
@@ -293,6 +301,7 @@ export function createAuth(deps: AuthDeps) {
         try {
           if (await session()) return 'signed-in';
           if ((await deps.marks.get(SIGNED_OUT_HERE)) === true) return 'none';
+          if ((await storage.get(REFUSED_BY_API)) === true) return 'none';
           // Never alongside a sign-in the person started (it may hold a window for minutes).
           if (signingIn) return 'none';
           const outcome = await signInOnce(false, true);
@@ -343,7 +352,8 @@ export function createAuth(deps: AuthDeps) {
     async signOut(): Promise<void> {
       const current = await session();
       if (!current) return;
-      await deps.marks.set(SIGNED_OUT_HERE, true);
+      // Never in the way of signing out: forgetting the tokens matters most.
+      await deps.marks.set(SIGNED_OUT_HERE, true).catch(() => undefined);
       await forget(current);
       await deps
         .fetch(`${settings.authDomain}/oauth2/revoke`, {
@@ -359,7 +369,7 @@ export function createAuth(deps: AuthDeps) {
       const current = await session();
       if (!current) return;
       // Signing in silently again would only be refused again: wait for the person (#111).
-      await deps.marks.set(SIGNED_OUT_HERE, true);
+      await storage.set(REFUSED_BY_API, true).catch(() => undefined);
       await forget(current);
     },
   };
