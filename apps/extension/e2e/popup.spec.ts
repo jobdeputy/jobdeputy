@@ -40,7 +40,9 @@ test('signed in, it says who and what the deputy can fill in, read from the API'
         lastName: 'Lovelace',
         email: 'ada@example.com',
       },
-      '/me/documents': { documents: [{ status: 'ready', isDefault: true }] },
+      '/me/documents': {
+        documents: [{ documentId: 'd1', fileName: 'cv.pdf', status: 'ready', isDefault: true }],
+      },
       '/me/applicant': { version: 0, workAuthorization: [], workSetups: [] },
     };
     const seen: string[] = [];
@@ -68,14 +70,14 @@ test('signed in, it says who and what the deputy can fill in, read from the API'
       });
     });
     const page = await context.newPage();
-    await page.setViewportSize({ width: 340, height: 340 });
+    await page.setViewportSize({ width: 340, height: 380 });
     await page.goto(`chrome-extension://${id}/popup.html`);
     await expect(page.getByText('Signed in as ada@example.com')).toBeVisible();
     const items = page.getByRole('listitem');
     await expect(items).toHaveText([
-      /Your details: Ready/,
+      /Your details: Ready, 3 of 6 saved/,
       /A résumé to attach: Ready/,
-      /Application answers: Not added yet/,
+      /Application answers: Not added yet, 0 of 10 saved/,
     ]);
     expect(seen.sort()).toEqual([
       'Bearer e2e-access /me/applicant',

@@ -92,13 +92,99 @@ describe('readReadiness (#54)', () => {
         email: 'ada@example.com',
       },
       '/me/documents': {
-        documents: [{ status: 'scanning' }, { status: 'ready', isDefault: true }],
+        documents: [
+          { documentId: 'd1', fileName: 'new.pdf', status: 'scanning' },
+          { documentId: 'd2', fileName: 'cv.pdf', status: 'ready', isDefault: true },
+        ],
       },
       '/me/applicant': { version: 1 },
     });
     expect(await readReadiness(api)).toEqual({
       ok: true,
-      body: { details: true, resume: true, answers: true },
+      body: {
+        details: { answered: 3, total: 6, ready: true },
+        resume: true,
+        answers: { answered: 0, total: 10, ready: false },
+      },
+    });
+  });
+
+  it('counts the details and answers forms ask for, each once saved', async () => {
+    const api = apiAnswering({
+      '/me/profile': {
+        version: 3,
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+        email: 'ada@example.com',
+        phone: { countryCode: '+1', number: '555 0100' },
+        location: { country: 'US' },
+        links: { linkedin: 'https://www.linkedin.com/in/ada', other: [] },
+      },
+      '/me/documents': { documents: [] },
+      '/me/applicant': {
+        version: 2,
+        workAuthorization: [{ country: 'US', authorized: true, needsSponsorship: false }],
+        workSetups: [],
+        willingToRelocate: false,
+        over18: true,
+        pronouns: '  ',
+      },
+    });
+    // false is an answer; an empty list or blank text isn't. Ready once the essentials are
+    // there (name and email; work authorization), though pronouns and the rest are optional.
+    expect(await readReadiness(api)).toMatchObject({
+      ok: true,
+      body: {
+        details: { answered: 6, total: 6, ready: true },
+        answers: { answered: 3, total: 10, ready: true },
+      },
+    });
+  });
+
+  it('is ready for US forms only with a US work authorization, and fails on an unreadable profile', async () => {
+    const ukOnly = apiAnswering({
+      '/me/profile': { version: 1, firstName: 'Ada', lastName: 'L', email: 'a@example.com' },
+      '/me/documents': { documents: [] },
+      '/me/applicant': {
+        version: 1,
+        workAuthorization: [{ country: 'GB', authorized: true, needsSponsorship: false }],
+      },
+    });
+    expect(await readReadiness(ukOnly)).toMatchObject({
+      ok: true,
+      body: { answers: { answered: 1, ready: false } },
+    });
+    const unreadable = apiAnswering({
+      '/me/profile': ['not', 'a', 'profile'],
+      '/me/documents': { documents: [] },
+      '/me/applicant': { version: 0 },
+    });
+    expect(await readReadiness(unreadable)).toEqual({ ok: false, reason: 'failed' });
+  });
+
+  it('counts only what the filler can use: a half phone or an option this build lacks is not saved', async () => {
+    const api = apiAnswering({
+      '/me/profile': {
+        version: 3,
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+        email: 'ada@example.com',
+        phone: { countryCode: '+1', number: '' },
+      },
+      '/me/documents': { documents: [] },
+      '/me/applicant': {
+        version: 2,
+        workAuthorization: [],
+        heardAbout: 'a-new-option',
+        over18: true,
+      },
+    });
+    expect(await readReadiness(api)).toMatchObject({
+      ok: true,
+      body: {
+        details: { answered: 3, total: 6, ready: true },
+        answers: { answered: 1, total: 10, ready: false },
+      },
     });
   });
 
@@ -109,15 +195,19 @@ describe('readReadiness (#54)', () => {
       // default, and a default that isn't ready, are no résumé to fill with.
       '/me/documents': {
         documents: [
-          { status: 'ready', isDefault: false },
-          { status: 'rejected', isDefault: true },
+          { documentId: 'd1', fileName: 'a.pdf', status: 'ready', isDefault: false },
+          { documentId: 'd2', fileName: 'b.pdf', status: 'rejected', isDefault: true },
         ],
       },
       '/me/applicant': { version: 0 },
     });
     expect(await readReadiness(api)).toEqual({
       ok: true,
-      body: { details: false, resume: false, answers: false },
+      body: {
+        details: { answered: 1, total: 6, ready: false },
+        resume: false,
+        answers: { answered: 0, total: 10, ready: false },
+      },
     });
   });
 
@@ -137,13 +227,17 @@ describe('readReadiness (#54)', () => {
 
   it('counts an unexpected answer as not there, never a crash', async () => {
     const api = apiAnswering({
-      '/me/profile': null,
+      '/me/profile': {},
       '/me/documents': { documents: 'none' },
       '/me/applicant': {},
     });
     expect(await readReadiness(api)).toEqual({
       ok: true,
-      body: { details: false, resume: false, answers: false },
+      body: {
+        details: { answered: 0, total: 6, ready: false },
+        resume: false,
+        answers: { answered: 0, total: 10, ready: false },
+      },
     });
   });
 
