@@ -81,6 +81,57 @@ describe('answerFor (#54 PR C)', () => {
     expect(picked(visa, ['No', 'Yes, Blue Card', 'Yes, H-1B'])).toBeNull();
   });
 
+  it('reads "authorized without sponsorship" as both, never as the sponsorship question', () => {
+    const ask = (label: string, d = data) =>
+      picked(answerFor(choice('question_11', label), d), ['Yes', 'No']);
+    expect(
+      ask('Are you legally authorized to work in the United States without sponsorship?'),
+    ).toBe('Yes');
+    expect(ask('Are you eligible to work in the U.S. without the need for visa sponsorship?')).toBe(
+      'Yes',
+    );
+    const needsVisa = fillData({
+      applicant: {
+        workAuthorization: [{ country: 'US', authorized: true, needsSponsorship: true }],
+        workSetups: [],
+      },
+    });
+    expect(ask('Are you authorized to work in the US without sponsorship?', needsVisa)).toBe('No');
+    expect(ask('Will you require sponsorship?', needsVisa)).toBe('Yes');
+    // Both asked at once: which to answer is the person's call.
+    expect(
+      answerFor(
+        choice('question_12', 'Are you authorized to work here, and will you need sponsorship?'),
+        data,
+      ),
+    ).toBeNull();
+  });
+
+  it('knows short names for places, so a question about one never gets the US answer', () => {
+    const ask = (label: string) => answerFor(choice('question_13', label), data);
+    for (const label of [
+      'Are you authorized to work in the UK?',
+      'Do you have the right to work in the EU?',
+      'Are you authorized to work in the UAE?',
+      'Are you authorized to work in England or the US?',
+    ]) {
+      expect(ask(label), label).toBeNull();
+    }
+    expect(picked(ask('Are you authorized to work in the U.S.?'), ['Yes', 'No'])).toBe('Yes');
+    expect(picked(ask('Are you authorized to work in the USA?'), ['Yes', 'No'])).toBe('Yes');
+    // "us" is a word, not a country.
+    expect(picked(ask('Are you legally authorized to work for us?'), ['Yes', 'No'])).toBe('Yes');
+  });
+
+  it('never puts a link into a question that only names a site as an example', () => {
+    expect(
+      answerFor(
+        text('question_14', 'How did you hear about this role (e.g. LinkedIn, referral)?'),
+        data,
+      ),
+    ).toBeNull();
+  });
+
   it('chooses how they heard only when one option says it', () => {
     const heard = answerFor(choice('question_5', 'How did you hear about us?'), data);
     expect(picked(heard, ['Company website', 'LinkedIn', 'Referral'])).toBe('LinkedIn');

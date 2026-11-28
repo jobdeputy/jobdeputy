@@ -118,11 +118,14 @@ function Summary({
   const required = report.left.filter((field) => field.required);
   const optional = report.left.length - required.length;
   const notes = [
-    outcome.resume
-      ? text.resume[outcome.resume]
-      : outcome.unread.includes('resume')
-        ? null
-        : text.resume.none,
+    // Nothing to say when the person's own file was there, or the form asks for none.
+    outcome.resume === 'kept'
+      ? null
+      : outcome.resume
+        ? text.resume[outcome.resume]
+        : outcome.unread.includes('resume')
+          ? null
+          : text.resume.none,
     outcome.coverLetter ? text.coverLetter : null,
     ...outcome.unread.map((part) => text.unread[part]),
   ].filter((note): note is string => Boolean(note));
