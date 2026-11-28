@@ -29,6 +29,8 @@ function json(status: number, body: unknown): Response {
 /** A managed login, its token endpoint, session storage, and a clock, all in memory. */
 function setup() {
   const stored = new Map<string, unknown>();
+  /** `chrome.storage.local`: outlasts the browser. */
+  const marked = new Map<string, unknown>();
   /** Keys whose removal fails (storage torn down). */
   const failRemove = new Set<string>();
   let clock = 1_000_000;
@@ -46,7 +48,7 @@ function setup() {
     if (String(url).endsWith('/oauth2/revoke')) return new Response('', { status: 200 });
     return tokenAnswer();
   });
-  const launch = vi.fn(async (url: string) => {
+  const launch = vi.fn(async (url: string, _interactive?: boolean) => {
     const state = new URL(url).searchParams.get('state');
     return `${REDIRECT}?code=the-code&state=${state}`;
   });
@@ -62,12 +64,18 @@ function setup() {
         stored.delete(key);
       },
     },
+    marks: {
+      get: async (key) => marked.get(key),
+      set: async (key, value) => void marked.set(key, value),
+      remove: async (key) => void marked.delete(key),
+    },
     fetch: fetch as typeof globalThis.fetch,
     now: () => clock,
   });
   return {
     auth,
     stored,
+    marked,
     failRemove,
     fetch,
     forms,
@@ -396,5 +404,191 @@ describe('emailFromIdToken', () => {
     expect(emailFromIdToken(`h.${utf8}.s`)).toBe('josé@example.com');
     expect(emailFromIdToken('not.a-token')).toBeUndefined();
     expect(emailFromIdToken(undefined)).toBeUndefined();
+  });
+});
+
+describe('signing in without a window (#111, decision 0021)', () => {
+  /** Managed login doesn't know the person: no code, `login_required`. */
+  const unknownPerson = async (url: string) =>
+    `${REDIRECT}?error=login_required&state=${new URL(url).searchParams.get('state')}`;
+
+  it('signs in silently when managed login knows the person (signed in on the site)', async () => {
+    const { auth, launch, stored } = setup();
+    expect(await auth.signInSilently()).toBe('signed-in');
+    const [url, interactive] = launch.mock.calls[0] ?? [];
+    expect(interactive).toBe(false);
+    expect(Object.fromEntries(new URL(url ?? '').searchParams)).toMatchObject({
+      prompt: 'none',
+      code_challenge_method: 'S256',
+      redirect_uri: REDIRECT,
+    });
+    expect((stored.get('session') as Session).email).toBe('ada@example.com');
+    // No "sign-in at work" mark: there was no window to wait for.
+    expect(stored.has('signInPending')).toBe(false);
+  });
+
+  it('says none when managed login does not know the person, or Chrome would need them', async () => {
+    const { auth, launch, stored } = setup();
+    launch.mockImplementationOnce(unknownPerson);
+    expect(await auth.signInSilently()).toBe('none');
+    launch.mockRejectedValueOnce(new Error('User interaction required.'));
+    expect(await auth.signInSilently()).toBe('none');
+    launch.mockRejectedValueOnce(new Error('Authorization page could not be loaded.'));
+    expect(await auth.signInSilently()).toBe('offline');
+    expect(stored.has('session')).toBe(false);
+  });
+
+  it('never signs back in silently after a Sign out here, even after a restart, until the person signs in again', async () => {
+    const { auth, launch, stored, marked } = setup();
+    await auth.signIn();
+    await auth.signOut();
+    // The mark outlasts the browser (storage.local); the session store does not.
+    expect(marked.get('signedOutHere')).toBe(true);
+    stored.clear();
+    launch.mockClear();
+    expect(await auth.signInSilently()).toBe('none');
+    expect(launch).not.toHaveBeenCalled();
+    // Their own sign-in (a window) lifts it.
+    await auth.signIn();
+    expect(marked.has('signedOutHere')).toBe(false);
+    await auth.signedOutByApi();
+    // Refused by the API: no silent sign-in either, until the person signs in.
+    expect(await auth.signInSilently()).toBe('none');
+  });
+
+  it('does nothing when already signed in, and runs one at a time', async () => {
+    const { auth, launch } = setup();
+    const [first, second] = await Promise.all([auth.signInSilently(), auth.signInSilently()]);
+    expect([first, second]).toEqual(['signed-in', 'signed-in']);
+    expect(launch).toHaveBeenCalledTimes(1);
+    expect(await auth.signInSilently()).toBe('signed-in');
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets a sign-in the person starts wait for a silent one at work, then open its window', async () => {
+    const { auth, launch } = setup();
+    let answer = () => {};
+    launch.mockImplementationOnce(
+      (url) =>
+        new Promise((resolve) => {
+          answer = () =>
+            resolve(
+              `${REDIRECT}?error=login_required&state=${new URL(url).searchParams.get('state')}`,
+            );
+        }),
+    );
+    const silent = auth.signInSilently();
+    // Its window-less flow has reached managed login (after storage and PKCE).
+    await vi.waitFor(() => expect(launch).toHaveBeenCalledTimes(1));
+    const own = auth.signIn();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(launch).toHaveBeenCalledTimes(1);
+    answer();
+    expect(await silent).toBe('none');
+    expect(await own).toBe('signed-in');
+    expect(launch.mock.calls[1]?.[1]).toBe(true);
+  });
+
+  it('opens no window when the silent sign-in it waited for signed the person in', async () => {
+    const { auth, launch } = setup();
+    const silent = auth.signInSilently();
+    // Already at managed login when the person presses Sign in.
+    await vi.waitFor(() => expect(launch).toHaveBeenCalledTimes(1));
+    const own = auth.signIn();
+    expect(await silent).toBe('signed-in');
+    expect(await own).toBe('signed-in');
+    expect(launch).toHaveBeenCalledTimes(1);
+    expect(launch.mock.calls[0]?.[1]).toBe(false);
+  });
+
+  it('starts no silent sign-in while one the person started is at work, and never waits for it', async () => {
+    const { auth, launch } = setup();
+    let close = () => {};
+    launch.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          close = () => reject(new Error('The user did not approve access.'));
+        }),
+    );
+    const own = auth.signIn();
+    await vi.waitFor(() => expect(launch).toHaveBeenCalledTimes(1));
+    // Answered at once, while the person's window stays open.
+    expect(await auth.signInSilently()).toBe('none');
+    expect(launch).toHaveBeenCalledTimes(1);
+    close();
+    expect(await own).toBe('cancelled');
+  });
+
+  it('signs out even when the mark cannot be written', async () => {
+    const { auth, stored, marked } = setup();
+    await auth.signIn();
+    // storage.local refusing (quota, say) never keeps the tokens.
+    marked.set = () => {
+      throw new Error('quota');
+    };
+    await auth.signOut();
+    expect(stored.has('session')).toBe(false);
+  });
+
+  it('frees the sign-in the person starts when a silent one at work fails', async () => {
+    const { auth, launch } = setup();
+    let fail = (_: Error) => {};
+    launch.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          fail = reject;
+        }),
+    );
+    const silent = auth.signInSilently();
+    await vi.waitFor(() => expect(launch).toHaveBeenCalledTimes(1));
+    const own = auth.signIn();
+    fail(new Error('boom'));
+    expect(await silent).toBe('none');
+    expect(await own).toBe('signed-in');
+    expect(auth.signingIn).toBe(false);
+  });
+
+  it('holds off silently after an API refusal only until the browser closes', async () => {
+    const { auth, stored, marked } = setup();
+    await auth.signIn();
+    await auth.signedOutByApi();
+    expect(marked.has('signedOutHere')).toBe(false);
+    expect(await auth.signInSilently()).toBe('none');
+    // A new browser session: storage.session is empty again.
+    stored.clear();
+    expect(await auth.signInSilently()).toBe('signed-in');
+  });
+
+  it('signs out what a silent sign-in under way made, and marks even with no session', async () => {
+    const { auth, launch, stored, marked, fetch } = setup();
+    const silent = auth.signInSilently();
+    await vi.waitFor(() => expect(launch).toHaveBeenCalledTimes(1));
+    // An out-of-date popup's Sign out, while the silent sign-in finishes.
+    await auth.signOut();
+    expect(await silent).toBe('signed-in');
+    expect(stored.has('session')).toBe(false);
+    expect(marked.get('signedOutHere')).toBe(true);
+    expect(fetch.mock.calls.some(([url]) => String(url).endsWith('/oauth2/revoke'))).toBe(true);
+  });
+
+  it('revokes what a silent sign-in made before signing in as a different account', async () => {
+    const { auth, launch, fetch } = setup();
+    const silent = auth.signInSilently();
+    await vi.waitFor(() => expect(launch).toHaveBeenCalledTimes(1));
+    const different = auth.signIn({ different: true });
+    expect(await silent).toBe('signed-in');
+    expect(await different).toBe('signed-in');
+    expect(fetch.mock.calls.filter(([url]) => String(url).endsWith('/oauth2/revoke'))).toHaveLength(
+      1,
+    );
+    expect(new URL(launch.mock.calls[1]?.[0] ?? '').pathname).toBe('/logout');
+  });
+
+  it('never reports a sign-in that worked as failed when a mark cannot be cleared', async () => {
+    const { auth, marked } = setup();
+    marked.delete = () => {
+      throw new Error('storage gone');
+    };
+    expect(await auth.signIn()).toBe('signed-in');
   });
 });

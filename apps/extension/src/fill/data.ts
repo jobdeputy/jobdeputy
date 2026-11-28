@@ -6,6 +6,7 @@ import {
 } from '@jobdeputy/shared/applicant';
 import { z } from 'zod';
 import type { Api, ApiResult } from '../api.ts';
+import type { SilentOutcome } from '../auth/session.ts';
 import type { FileData, Files } from './files.ts';
 import { jobIdFor, type Posting } from './posting.ts';
 
@@ -245,4 +246,22 @@ export async function readFillData(
       unread,
     },
   };
+}
+
+/**
+ * A form's answers. Signed out here, it first tries signing in without a window (#111: the person
+ * may be signed in on the site), then reads once more; otherwise the form hears it is signed out.
+ */
+export async function readFillDataSigningIn(
+  api: Api,
+  files: Files,
+  posting: Posting,
+  signInSilently: () => Promise<SilentOutcome>,
+): Promise<ApiResult<FillData>> {
+  const first = await readFillData(api, files, posting);
+  if (first.ok || first.reason !== 'signed-out') return first;
+  // Not signed in silently (managed login unreachable included): still signed out here, and
+  // signing in is the person's next step (their own sign-in says if it can't reach it).
+  if ((await signInSilently()) !== 'signed-in') return first;
+  return readFillData(api, files, posting);
 }

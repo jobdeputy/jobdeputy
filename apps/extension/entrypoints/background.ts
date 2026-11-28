@@ -4,7 +4,7 @@ import { createApi } from '../src/api.ts';
 import { createAuth } from '../src/auth/session.ts';
 import { DEV_BUILD } from '../src/build.ts';
 import { copy } from '../src/copy.ts';
-import { readFillData } from '../src/fill/data.ts';
+import { readFillDataSigningIn } from '../src/fill/data.ts';
 import { createFiles } from '../src/fill/files.ts';
 import {
   contentPosting,
@@ -22,6 +22,11 @@ import { readSettings } from '../src/settings.ts';
  * #54 (decision 0020): the service worker owns sign-in and every token. The popup asks it through
  * messages (it can't sign in itself: Chrome closes it when managed login's window takes focus).
  */
+/** How long the popup's status waits for a sign-in without a window (#111). */
+const SILENT_WAIT_MS = 3000;
+/** How long Chrome gives a sign-in without a window at most (#111). */
+const SILENT_LIMIT_MS = 5000;
+
 export default defineBackground(() => {
   // A dev build says so on its toolbar button too (src/build.ts): set when the worker starts,
   // and again when Chrome starts or the extension is (re)installed, as Chrome forgets it.
@@ -36,11 +41,25 @@ export default defineBackground(() => {
     ? createAuth({
         settings,
         redirectUrl: browser.identity.getRedirectURL(),
-        launch: (url) => browser.identity.launchWebAuthFlow({ url, interactive: true }),
+        // `interactive` false for the silent sign-in (#111): no window; Chrome gives up when the
+        // page would need the person. True for the sign-in the person starts.
+        launch: (url, interactive) =>
+          browser.identity.launchWebAuthFlow({
+            url,
+            interactive,
+            // Never held up for long: a sign-in the person starts waits for this one.
+            ...(interactive ? {} : { timeoutMsForNonInteractive: SILENT_LIMIT_MS }),
+          }),
         storage: {
           get: async (key) => (await browser.storage.session.get(key))[key],
           set: (key, value) => browser.storage.session.set({ [key]: value }),
           remove: (key) => browser.storage.session.remove(key),
+        },
+        // One flag that must outlast the browser (#111), never a token.
+        marks: {
+          get: async (key) => (await browser.storage.local.get(key))[key],
+          set: (key, value) => browser.storage.local.set({ [key]: value }),
+          remove: (key) => browser.storage.local.remove(key),
         },
         fetch: (...args) => fetch(...args),
         now: () => Date.now(),
@@ -52,8 +71,22 @@ export default defineBackground(() => {
   async function answer(request: Request): Promise<Responses[Request['type']]> {
     if (!auth || !api) return request.type === 'status' ? { state: 'unconfigured' } : null;
     switch (request.type) {
-      case 'status':
-        return { ...(await auth.status()), signingIn: auth.signingIn };
+      case 'status': {
+        // #111: signed out here, but maybe signed in on the site: try without a window first.
+        const status = await auth.status();
+        if (status.state === 'signed-out' && !status.interrupted && !auth.signingIn) {
+          // At most a short wait (the popup shows nothing until it hears): past it, or whatever
+          // goes wrong, the popup gets the signed-out status, and the sign-in carries on; the next
+          // popup finds it.
+          const silent = await Promise.race([
+            auth.signInSilently().catch(() => 'none' as const),
+            new Promise<'later'>((resolve) => setTimeout(() => resolve('later'), SILENT_WAIT_MS)),
+          ]);
+          if (silent === 'signed-in')
+            return { ...(await auth.status()), signingIn: auth.signingIn };
+        }
+        return { ...status, signingIn: auth.signingIn };
+      }
       case 'sign-in':
         return auth.signIn({ different: request.different === true });
       case 'sign-in-wait':
@@ -76,8 +109,11 @@ export default defineBackground(() => {
     const posting = contentPosting(sender, browser.runtime.id);
     if (!posting || !isContentRequest(message)) return false;
     const reply = (value: FillDataResponse) => sendResponse(value);
-    if (!api || !files) reply(null);
-    else readFillData(api, files, posting).then(reply, () => reply(null));
+    if (!api || !files || !auth) reply(null);
+    else
+      readFillDataSigningIn(api, files, posting, () => auth.signInSilently()).then(reply, () =>
+        reply(null),
+      );
     return true;
   });
 });
