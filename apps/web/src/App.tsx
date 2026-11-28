@@ -33,10 +33,12 @@ export function App() {
   useEffect(() => {
     let current = true;
     const returning = window.location.pathname === WEB_SIGN_IN_CALLBACK_PATH;
+    // A return that could not be finished still leaves anyone already signed in signed in.
     const found = returning
-      ? session.finishSignIn().catch((error: unknown) => {
-          if (current) setFailed(error instanceof AuthError ? error.kind : 'unknown');
-          return null;
+      ? session.finishSignIn().catch(async (error: unknown) => {
+          const signedIn = await session.currentUser();
+          if (!signedIn && current) setFailed(error instanceof AuthError ? error.kind : 'unknown');
+          return signedIn;
         })
       : session.currentUser();
     found.then((email) => {

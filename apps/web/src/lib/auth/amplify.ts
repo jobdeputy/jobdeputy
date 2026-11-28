@@ -152,18 +152,19 @@ export const amplifyAuth: Auth = {
     try {
       await leave();
     } catch (error) {
-      // A session left from before (stored, but not readable at boot) blocks a new sign-in: sign
-      // it out, then leave once more.
+      // A session left from before (stored, but not readable at boot) blocks a new sign-in: forget
+      // it here (no trip to managed login, whose /logout would race this page's own leaving),
+      // then leave once more.
       if ((error as { name?: string } | null)?.name === 'UserAlreadyAuthenticatedException') {
+        clearStoredSession();
         try {
-          await signOut();
           await leave();
           return;
         } catch (again) {
-          throw new AuthError('unknown', { cause: again });
+          throw inOurTerms(again);
         }
       }
-      throw error instanceof AuthError ? error : new AuthError('unknown', { cause: error });
+      throw inOurTerms(error);
     }
   },
   finishSignIn() {
@@ -196,7 +197,19 @@ export const FINISH_LIMIT_MS = 60_000;
  */
 async function finish(): Promise<string> {
   const params = new URLSearchParams(window.location.search);
-  if (!params.has('code') && !params.has('error')) throw new AuthError('sign-in-failed');
+  // Refused or cancelled on managed login, or nothing came back: nothing to finish.
+  if (!params.has('code')) throw new AuthError('sign-in-failed');
+  // Nothing under way here (Back or Forward to an old return address, or after the browser's
+  // back-forward cache cancelled it): no word will come, so the session says at once.
+  if (!exchangeUnderWay()) {
+    const email = await within(
+      configure().then(({ fetchAuthSession }) => sessionEmail(fetchAuthSession)),
+    ).catch((error: unknown) => {
+      throw error instanceof AuthError ? error : new AuthError('offline', { cause: error });
+    });
+    if (email) return email;
+    throw new AuthError('sign-in-failed');
+  }
   let stop = () => {};
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -234,6 +247,46 @@ async function sessionEmail(
   const session = await fetchAuthSession();
   const email = session.tokens?.idToken?.payload.email;
   return typeof email === 'string' ? email : null;
+}
+
+/**
+ * Whether Amplify has a sign-in with managed login under way in this browser: its mark,
+ * `CognitoIdentityServiceProvider.<client>.inflightOAuth` (Amplify 6's key, set when leaving and
+ * cleared once the code is exchanged or the sign-in is cancelled). Read before Amplify is set up.
+ */
+export function exchangeUnderWay(): boolean {
+  try {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index) ?? '';
+      if (key.startsWith(SESSION_KEYS) && key.endsWith('.inflightOAuth')) {
+        return localStorage.getItem(key) === 'true';
+      }
+    }
+  } catch {
+    // Storage unavailable: nothing under way.
+  }
+  return false;
+}
+
+/** Forgets a stored session here only (its keys), so a new sign-in can start. */
+function clearStoredSession(): void {
+  try {
+    const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
+    for (const key of keys) {
+      if (key?.startsWith(SESSION_KEYS) && !/\.(inflightOAuth|oauthPKCE|oauthState)/.test(key)) {
+        localStorage.removeItem(key);
+      }
+    }
+  } catch {
+    // Storage unavailable: nothing stored to forget.
+  }
+}
+
+/** A failure to leave, in our terms: a network failure is `offline`. */
+function inOurTerms(error: unknown): AuthError {
+  if (error instanceof AuthError) return error;
+  const name = (error as { name?: string } | null)?.name ?? '';
+  return new AuthError(name === 'NetworkError' ? 'offline' : 'unknown', { cause: error });
 }
 
 /** Whether this browser holds a Cognito session (Amplify's localStorage keys). */

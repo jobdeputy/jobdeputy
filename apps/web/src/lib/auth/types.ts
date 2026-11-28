@@ -17,7 +17,7 @@ export type Auth = {
   accessToken(): Promise<string | null>;
   /**
    * Leaves for managed login: its sign-in form, or its create-account form (`sign-up`). Resolves
-   * once the browser is on its way; fails (`offline`, `not-set-up`) when it cannot leave.
+   * once the browser is on its way; fails (`offline`, `not-set-up`, `unknown`) when it cannot.
    */
   signIn(mode: SignInMode): Promise<void>;
   /**

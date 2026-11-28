@@ -45,7 +45,8 @@ export interface AuthProps {
   readonly extensionIds: readonly string[];
   /**
    * Origins the web app signs in from through managed login, coming back to
-   * `WEB_SIGN_IN_CALLBACK_PATH` (#111). None: the web client keeps only its direct sign-in.
+   * `WEB_SIGN_IN_CALLBACK_PATH` (#111). None (prod, until its site exists): the web client cannot
+   * sign anyone in; sessions made before only refresh.
    */
   readonly webOrigins: readonly string[];
   /** Serves managed login here as well as on the prefix domain (#111). Needs us-east-1. */

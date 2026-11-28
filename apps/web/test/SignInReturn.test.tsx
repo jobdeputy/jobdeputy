@@ -73,6 +73,16 @@ describe('back from the secure sign-in page (#111)', () => {
     );
   });
 
+  it('keeps someone already signed in signed in when a return cannot be finished', async () => {
+    returning('');
+    await renderApp(createFakeAuth({ delay: 0, signedInAs: 'you@example.com' }));
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Hi, I’m your deputy.' }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('alert', { name: /didn’t finish/ })).toBeNull();
+    expect(window.location.pathname).toBe('/');
+  });
+
   it('never finishes a sign-in anywhere but the return address', async () => {
     const auth = { ...createFakeAuth({ delay: 0 }), finishSignIn: vi.fn() };
     await renderApp(auth);

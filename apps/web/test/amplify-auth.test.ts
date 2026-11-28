@@ -30,9 +30,13 @@ vi.mock('aws-amplify/utils', () => ({
   },
 }));
 
-/** Back on the return address; Amplify's listener says `event` once it is configured. */
-function returning(event?: string, search = '?code=c&state=s') {
+/**
+ * Back on the return address with an exchange under way (Amplify's mark), unless `underWay` is
+ * false; Amplify's listener says `event` once it is configured.
+ */
+function returning(event?: string, search = '?code=c&state=s', underWay = true) {
   window.history.replaceState(null, '', `/auth/callback${search}`);
+  if (underWay) localStorage.setItem('CognitoIdentityServiceProvider.client.inflightOAuth', 'true');
   if (event) amplify.configure.mockImplementation(() => setTimeout(() => hub.say(event), 0));
 }
 
@@ -126,7 +130,8 @@ describe('amplifyAuth', () => {
     },
   );
 
-  it('signs out an unreadable session left from before, then leaves once more', async () => {
+  it('forgets an unreadable session left from before here only, then leaves once more', async () => {
+    localStorage.setItem('CognitoIdentityServiceProvider.client.abc.refreshToken', 'old');
     const auth = await load();
     amplify.signInWithRedirect
       .mockRejectedValueOnce(
@@ -134,8 +139,20 @@ describe('amplifyAuth', () => {
       )
       .mockResolvedValueOnce(undefined);
     await auth.signIn('sign-in');
-    expect(amplify.signOut).toHaveBeenCalledTimes(1);
+    // No trip through managed login's /logout, which would race the page's own leaving.
+    expect(amplify.signOut).not.toHaveBeenCalled();
+    expect(
+      localStorage.getItem('CognitoIdentityServiceProvider.client.abc.refreshToken'),
+    ).toBeNull();
     expect(amplify.signInWithRedirect).toHaveBeenCalledTimes(2);
+  });
+
+  it('calls a network failure on leaving a network problem', async () => {
+    const auth = await load();
+    amplify.signInWithRedirect.mockRejectedValue(
+      Object.assign(new Error('offline'), { name: 'NetworkError' }),
+    );
+    await expect(auth.signIn('sign-in')).rejects.toMatchObject({ kind: 'offline' });
   });
 
   it('finishes the sign-in managed login came back with, once Amplify says so, and gives its email', async () => {
@@ -154,11 +171,28 @@ describe('amplifyAuth', () => {
     await expect(auth.finishSignIn()).rejects.toMatchObject({ kind: 'sign-in-failed' });
   });
 
-  it('has nothing to finish on a return address with neither a code nor an error', async () => {
-    returning(undefined, '');
+  it.each([
+    ['', 'neither a code nor an error'],
+    ['?error=access_denied&state=s', 'an error'],
+  ])('has nothing to finish on a return address with %j (%s), at once', async (search) => {
+    returning(undefined, search);
     const auth = await load();
     await expect(auth.finishSignIn()).rejects.toMatchObject({ kind: 'sign-in-failed' });
     expect(amplify.configure).not.toHaveBeenCalled();
+  });
+
+  it('lets the session say at once when no exchange is under way (Back to an old return address)', async () => {
+    returning(undefined, '?code=c&state=s', false);
+    const auth = await load();
+    amplify.fetchAuthSession.mockResolvedValue(sessionOf('a@example.com'));
+    await expect(auth.finishSignIn()).resolves.toBe('a@example.com');
+  });
+
+  it('says a return with no exchange under way and no session did not finish, at once', async () => {
+    returning(undefined, '?code=c&state=s', false);
+    const auth = await load();
+    amplify.fetchAuthSession.mockResolvedValue({ tokens: undefined });
+    await expect(auth.finishSignIn()).rejects.toMatchObject({ kind: 'sign-in-failed' });
   });
 
   it('waits out a slow exchange, then lets the session say (a new account’s long sign-up too)', async () => {
