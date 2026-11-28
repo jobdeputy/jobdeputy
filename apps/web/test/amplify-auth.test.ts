@@ -83,17 +83,22 @@ describe('amplifyAuth', () => {
     } finally {
       open.mockRestore();
     }
-    expect(signUpUrl('https://a.example/oauth2/authorize?x=1')).toBe('https://a.example/signup?x=1');
+    expect(signUpUrl('https://a.example/oauth2/authorize?x=1')).toBe(
+      'https://a.example/signup?x=1',
+    );
   });
 
   it.each([
     [null, 404],
     [{ userPoolId: 'us-east-1_abc', userPoolClientId: 'client' }, 200],
-  ])('is not set up where the app has no config, or no sign-in address (%j)', async (body, status) => {
-    const auth = await load(body, status);
-    await expect(auth.signIn('sign-in')).rejects.toMatchObject({ kind: 'not-set-up' });
-    expect(amplify.signInWithRedirect).not.toHaveBeenCalled();
-  });
+  ])(
+    'is not set up where the app has no config, or no sign-in address (%j)',
+    async (body, status) => {
+      const auth = await load(body, status);
+      await expect(auth.signIn('sign-in')).rejects.toMatchObject({ kind: 'not-set-up' });
+      expect(amplify.signInWithRedirect).not.toHaveBeenCalled();
+    },
+  );
 
   it('signs out an unreadable session left from before instead of leaving, through managed login', async () => {
     const auth = await load();

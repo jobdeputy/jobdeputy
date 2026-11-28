@@ -21,7 +21,10 @@ test('creates an account through the sign-in page, lands signed in, and signs ou
   // Profile page's forms, axe at each): over the 30 s limit on CI's WebKit (main run 44968165243).
   test.slow();
   await openDrawer(page, 'Get started free');
-  await page.getByRole('dialog').getByRole('button', { name: 'Continue to create account' }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Continue to create account' })
+    .click();
 
   // A new account (no profile yet) starts the guided set-up (#33), at its welcome. Back from the
   // sign-in page it is a fresh page load: focus starts at the top, as on any load (the boot

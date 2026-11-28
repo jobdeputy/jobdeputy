@@ -168,10 +168,11 @@ describe('Cognito (T05)', () => {
     expect(pool?.Properties.SmsConfiguration).toBeUndefined();
   });
 
-  it('lets the web client use secure password sign-in, and hides whether accounts exist', () => {
+  it('gives the web client no direct sign-in of its own (#111), and hides whether accounts exist', () => {
     t.hasResourceProperties('AWS::Cognito::UserPoolClient', {
       ClientName: 'web',
-      ExplicitAuthFlows: ['ALLOW_USER_SRP_AUTH', 'ALLOW_REFRESH_TOKEN_AUTH'],
+      // Only managed login's code, then refresh.
+      ExplicitAuthFlows: ['ALLOW_REFRESH_TOKEN_AUTH'],
       GenerateSecret: false,
       PreventUserExistenceErrors: 'ENABLED',
     });

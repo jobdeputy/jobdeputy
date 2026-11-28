@@ -115,14 +115,15 @@ export class Auth extends Construct {
       refreshTokenValidity: Duration.days(30),
     };
 
-    // The browser app, a public client (no secret). Secure remote password sign-in until it moves
-    // to managed login (#111 PR B). Where it has origins, managed login too: authorization code
-    // only (Amplify sends PKCE), back to the site's own callback, and sign-out back to the site.
+    // The browser app, a public client (no secret). It signs in only through managed login (#111):
+    // authorization code only (Amplify sends PKCE), back to the site's own callback, and sign-out
+    // back to the site. No direct sign-in flow: `authFlows` leaves only refresh (sessions made
+    // before #111 refresh on). Without origins (prod, until its site exists) it cannot sign in.
     const webOAuth = props.webOrigins.length > 0;
     this.webCallbackUrls = props.webOrigins.map((origin) => origin + WEB_SIGN_IN_CALLBACK_PATH);
     this.webClient = this.userPool.addClient('WebClient', {
       userPoolClientName: 'web',
-      authFlows: { userSrp: true },
+      authFlows: { userSrp: false },
       generateSecret: false,
       preventUserExistenceErrors: true,
       enableTokenRevocation: true,

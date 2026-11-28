@@ -39,7 +39,7 @@ describe('AuthPanel', () => {
     const { go } = renderPanel('sign-in');
     expect(screen.getByRole('heading', { name: 'Welcome back.' })).toBeTruthy();
     expect(screen.getByText(/secure sign-in page/)).toBeTruthy();
-    expect(screen.getByText(/signs in the JobDeputy browser extension too/)).toBeTruthy();
+    expect(screen.getByText(/signs in the browser extension too/)).toBeTruthy();
     press('Continue to sign in');
     await waitFor(() => expect(go).toHaveBeenCalledWith('/auth/callback?code=fake&state=sign-in'));
   });

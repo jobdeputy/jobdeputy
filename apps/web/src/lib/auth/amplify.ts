@@ -114,7 +114,9 @@ export const amplifyAuth: Auth = {
     try {
       // One limit for the whole check, so a stall (a token refresh on bad wifi) cannot hold the
       // page up.
-      return await within(configure().then(({ fetchAuthSession }) => sessionEmail(fetchAuthSession)));
+      return await within(
+        configure().then(({ fetchAuthSession }) => sessionEmail(fetchAuthSession)),
+      );
     } catch {
       return null;
     }
@@ -185,7 +187,9 @@ export const amplifyAuth: Auth = {
 };
 
 /** The signed-in person's email from their ID token (managed login gives no login ID), or null. */
-async function sessionEmail(fetchAuthSession: Amplified['fetchAuthSession']): Promise<string | null> {
+async function sessionEmail(
+  fetchAuthSession: Amplified['fetchAuthSession'],
+): Promise<string | null> {
   const session = await fetchAuthSession();
   const email = session.tokens?.idToken?.payload.email;
   return typeof email === 'string' ? email : null;

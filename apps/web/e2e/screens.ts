@@ -347,7 +347,10 @@ async function revealed(page: Page) {
 
 async function toSetUp(page: Page) {
   // The test build's sign-in page: back at once as new@example.com (src/lib/auth/fake.ts).
-  await page.getByRole('dialog').getByRole('button', { name: 'Continue to create account' }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Continue to create account' })
+    .click();
   await page.getByRole('heading', { level: 1, name: 'Hi, I’m your deputy.' }).waitFor();
 }
 

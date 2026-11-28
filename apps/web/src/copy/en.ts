@@ -98,14 +98,14 @@ export const en = {
   },
   auth: {
     close: 'Close',
-    /** #111: what the button does, under the title. */
-    next: 'You’ll continue on JobDeputy’s secure sign-in page. You can reset a forgotten password there, and it signs in the JobDeputy browser extension too.',
     signIn: {
       kicker: 'Secure sign-in',
       title: 'Welcome back.',
       subtitle: 'Your searches, saved roles, and next steps are right where you left them.',
       submit: 'Continue to sign in',
       pending: 'Opening sign-in…',
+      /** #111: under the button, what it opens. */
+      note: 'Opens JobDeputy’s secure sign-in page, where you can also reset a forgotten password. It signs in the browser extension too.',
       switch: 'New here? Create an account',
     },
     signUp: {
@@ -115,6 +115,7 @@ export const en = {
         'Start with secure access. Your profile, résumés, and search preferences come next.',
       submit: 'Continue to create account',
       pending: 'Opening sign-up…',
+      note: 'Opens JobDeputy’s secure sign-in page to create your account. It signs in the browser extension too.',
       switch: 'Have an account? Sign in',
     },
     /** Above the button, or under Sign out. */

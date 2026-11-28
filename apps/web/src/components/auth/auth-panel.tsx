@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Button } from '@/components/ui/button.tsx';
 import { SheetDescription, SheetTitle } from '@/components/ui/sheet.tsx';
 import { copy } from '@/copy/index.ts';
@@ -9,9 +9,10 @@ import { cn } from '@/lib/utils.ts';
 const { auth: text } = copy;
 
 /**
- * The drawer's way in (#14, #111): what happens next, and one button that leaves for the secure
+ * The drawer's way in (#14, #111): one button that leaves for the secure
  * sign-in page (Cognito managed login, shared with the extension), where people sign in, create
- * an account, confirm it and reset a password. A link switches between signing in and creating an
+ * an account, confirm it and reset a password, with a note under it saying so. A link switches
+ * between signing in and creating an
  * account. The button shows its pending state (#17) until the page has gone; a failure to leave,
  * or a sign-in that came back unfinished (`failed`), shows above the button and is read out.
  */
@@ -28,6 +29,7 @@ export function AuthPanel({
   const [refusal, setRefusal] = useState<string | null>(failed ? text.errors[failed] : null);
   const [pending, setPending] = useState(false);
   const waiting = useDelayedPending(pending);
+  const noteId = useId();
   const action = mode === 'sign-in' ? text.signIn : text.signUp;
 
   // Back from the sign-in page with the browser's back button, this page may come back as it was
@@ -68,8 +70,6 @@ export function AuthPanel({
       </div>
 
       <div className="mt-7 grid max-w-[430px] gap-4">
-        <p className="m-0 text-sm leading-normal text-muted-foreground">{text.next}</p>
-
         {/* Live regions stay in the accessibility tree when empty (visually hidden, never
             display:none), so their first words are read. */}
         <p role="status" className="sr-only">
@@ -82,9 +82,20 @@ export function AuthPanel({
           {refusal}
         </p>
 
-        <Button size="lg" pending={pending} pendingLabel={action.pending} onClick={leave}>
-          {action.submit}
-        </Button>
+        <div className="grid gap-2">
+          <Button
+            size="lg"
+            pending={pending}
+            pendingLabel={action.pending}
+            onClick={leave}
+            aria-describedby={noteId}
+          >
+            {action.submit}
+          </Button>
+          <p id={noteId} className="m-0 text-[0.8125rem] leading-normal text-muted-foreground">
+            {action.note}
+          </p>
+        </div>
 
         <div className="flex flex-wrap justify-between gap-x-4 gap-y-2 text-sm">
           <LinkButton

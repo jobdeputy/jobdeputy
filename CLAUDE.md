@@ -14,7 +14,7 @@ JobDeputy discovers jobs from any URL a user gives, keeps the relevant ones, and
 |---|---|
 | Which file does what (read first, instead of searching) | [docs/code-map.md](docs/code-map.md) |
 | Tasks: goal, research, decision, done criteria, and status | [GitHub issues](https://github.com/jobdeputy/jobdeputy/issues), one per task |
-| How a feature flows end to end (sequence diagrams, where data is stored) | [docs/flows/](docs/flows/crawl.md): crawl (T06, T07), relevance (T08), tailoring (#51), applications (#52), extension sign-in (#54) |
+| How a feature flows end to end (sequence diagrams, where data is stored) | [docs/flows/](docs/flows/crawl.md): crawl (T06, T07), relevance (T08), tailoring (#51), applications (#52), extension sign-in (#54), web sign-in (#111) |
 | Tables, attributes, and S3 paths | [docs/data-model.md](docs/data-model.md) |
 | What to test where, and rules against flaky tests | [docs/testing.md](docs/testing.md) |
 | UI colours, fonts, and motion tokens | `apps/web/src/styles/tokens.css` |
