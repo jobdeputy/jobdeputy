@@ -657,7 +657,8 @@ describe('adding résumés on the Résumés page', { timeout: 30_000 }, () => {
       ),
     ).toBeTruthy();
     await waitFor(() => expect(statusText()).toContain('Tenth is ready.'));
-    expect(screen.getByText('10 of 10')).toBeTruthy();
+    // The count follows the library's refetch, which can land a render after the status line.
+    expect(await screen.findByText('10 of 10')).toBeTruthy();
     expect(screen.getByText('Your library is full')).toBeTruthy();
     const choose = screen.getByRole('button', { name: 'Choose files' });
     expect(choose.getAttribute('aria-disabled')).toBe('true');

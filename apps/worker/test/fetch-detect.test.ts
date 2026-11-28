@@ -54,11 +54,13 @@ describe('hasPasswordField', () => {
     expect(hasPasswordField(html)).toBe(false);
   });
 
-  it('stays fast on many unclosed inputs', () => {
+  // A backtracking pattern would take minutes here (quadratic in 200,000 tags), so a generous
+  // limit still catches it; a tight one failed on a busy machine (2.7 s, linear).
+  it('stays fast on many unclosed inputs', { timeout: 20_000 }, () => {
     const html = '<input '.repeat(200_000);
     const started = performance.now();
     expect(hasPasswordField(html)).toBe(false);
-    expect(performance.now() - started).toBeLessThan(2_000);
+    expect(performance.now() - started).toBeLessThan(10_000);
   });
 });
 

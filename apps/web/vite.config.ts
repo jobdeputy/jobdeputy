@@ -34,5 +34,8 @@ export default defineConfig(({ mode }) => ({
     env: { TZ: 'America/New_York' },
     // Playwright owns e2e/; Vitest runs only the unit tests.
     include: ['test/**/*.test.{ts,tsx}'],
+    setupFiles: ['test/setup.ts'],
+    // A whole test may wait on several of those under load (docs/testing.md: generous timeouts).
+    testTimeout: 15_000,
   },
 }));
