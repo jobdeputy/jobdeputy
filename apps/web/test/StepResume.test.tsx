@@ -127,7 +127,7 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     expect(await screen.findByText('I’ll tailor from this one.')).toBeTruthy();
     expect(item().getByText('PDF · 180 kB')).toBeTruthy();
     await waitFor(() => expect(statusText()).toContain('Alex_Morgan_Resume.pdf is ready.'));
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
     // The set-up done, the app opens on Job matches (#49).
     expect(
       await screen.findByRole('heading', { level: 1, name: 'The best jobs at each company.' }),
@@ -156,7 +156,7 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
       ),
     );
     // The server carries on: the person may move on.
-    expect(screen.getByRole('button', { name: 'Continue' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Continue' })).toBeTruthy();
     expect(item().getByRole('button', { name: 'Remove Alex_Morgan_Resume.pdf' })).toBeTruthy();
   });
 
@@ -239,7 +239,8 @@ describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
     expect(item().getByText('Ready')).toBeTruthy();
     // Not news: it was ready before the step opened.
     expect(statusText()).not.toContain('is ready');
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    // The footer hears that a file is in from the list's effect, a render after "Ready" shows.
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
     expect(onDone).toHaveBeenCalledOnce();
   });
 
