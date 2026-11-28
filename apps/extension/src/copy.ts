@@ -38,6 +38,8 @@ export const copy = {
       answers: 'Application answers',
       done: 'Ready',
       missing: 'Not added yet',
+      /** Details and application answers: how many of those forms ask for are saved. */
+      count: '{answered} of {total} saved',
       add: 'Add in JobDeputy',
       offline: 'Couldn’t reach JobDeputy. Check your connection.',
       failed: 'Couldn’t read your details.',

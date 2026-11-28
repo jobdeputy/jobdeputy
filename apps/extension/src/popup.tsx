@@ -233,7 +233,18 @@ function SignedIn({
         {readiness?.ok && (
           <ul className="m-0 grid list-none gap-1.5 p-0">
             {PLACES.map(({ key, label, path }) => {
-              const done = readiness.body[key];
+              const value = readiness.body[key];
+              // Details and answers are counted ("3 of 10 saved"); the résumé is there or not.
+              const counted = typeof value === 'object' ? value : null;
+              const done = counted ? counted.answered === counted.total : value === true;
+              const status = counted
+                ? fill(text.ready.count, {
+                    answered: String(counted.answered),
+                    total: String(counted.total),
+                  })
+                : done
+                  ? text.ready.done
+                  : text.ready.missing;
               return (
                 <li key={key} className="flex items-center gap-2 text-sm">
                   <span
@@ -242,9 +253,16 @@ function SignedIn({
                   >
                     {done ? '✓' : ''}
                   </span>
-                  <span className="min-w-0 flex-1">
-                    {label}
-                    <span className="sr-only">: {done ? text.ready.done : text.ready.missing}</span>
+                  <span className="grid min-w-0 flex-1">
+                    <span>
+                      {label}
+                      <span className="sr-only">: </span>
+                    </span>
+                    {counted ? (
+                      <span className="text-xs text-muted-foreground">{status}</span>
+                    ) : (
+                      <span className="sr-only">{status}</span>
+                    )}
                   </span>
                   {!done && siteUrl && (
                     <a
@@ -256,7 +274,7 @@ function SignedIn({
                       {text.ready.add}
                     </a>
                   )}
-                  {!done && !siteUrl && (
+                  {!done && !siteUrl && !counted && (
                     <span aria-hidden="true" className="text-xs text-muted-foreground">
                       {text.ready.missing}
                     </span>

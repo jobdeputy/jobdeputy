@@ -98,7 +98,39 @@ describe('readReadiness (#54)', () => {
     });
     expect(await readReadiness(api)).toEqual({
       ok: true,
-      body: { details: true, resume: true, answers: true },
+      body: {
+        details: { answered: 3, total: 6 },
+        resume: true,
+        answers: { answered: 0, total: 10 },
+      },
+    });
+  });
+
+  it('counts the details and answers forms ask for, each once saved', async () => {
+    const api = apiAnswering({
+      '/me/profile': {
+        version: 3,
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+        email: 'ada@example.com',
+        phone: { countryCode: '+1', number: '555 0100' },
+        location: { country: 'US' },
+        links: { linkedin: 'https://www.linkedin.com/in/ada', other: [] },
+      },
+      '/me/documents': { documents: [] },
+      '/me/applicant': {
+        version: 2,
+        workAuthorization: [{ country: 'US', authorized: true, needsSponsorship: false }],
+        workSetups: [],
+        willingToRelocate: false,
+        over18: true,
+        pronouns: '  ',
+      },
+    });
+    // false is an answer; an empty list or blank text isn't.
+    expect(await readReadiness(api)).toMatchObject({
+      ok: true,
+      body: { details: { answered: 6, total: 6 }, answers: { answered: 3, total: 10 } },
     });
   });
 
@@ -117,7 +149,11 @@ describe('readReadiness (#54)', () => {
     });
     expect(await readReadiness(api)).toEqual({
       ok: true,
-      body: { details: false, resume: false, answers: false },
+      body: {
+        details: { answered: 1, total: 6 },
+        resume: false,
+        answers: { answered: 0, total: 10 },
+      },
     });
   });
 
@@ -143,7 +179,11 @@ describe('readReadiness (#54)', () => {
     });
     expect(await readReadiness(api)).toEqual({
       ok: true,
-      body: { details: false, resume: false, answers: false },
+      body: {
+        details: { answered: 0, total: 6 },
+        resume: false,
+        answers: { answered: 0, total: 10 },
+      },
     });
   });
 

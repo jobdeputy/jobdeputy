@@ -26,7 +26,11 @@ function worker(answers: {
 const signedOut: Status = { state: 'signed-out', signingIn: false };
 const ready: ApiResult<Readiness> = {
   ok: true,
-  body: { details: true, resume: false, answers: false },
+  body: {
+    details: { answered: 6, total: 6 },
+    resume: false,
+    answers: { answered: 3, total: 10 },
+  },
 };
 
 describe('Popup (#54)', () => {
@@ -138,9 +142,9 @@ describe('Popup (#54)', () => {
     const list = await screen.findByRole('list');
     const items = within(list).getAllByRole('listitem');
     expect(items.map((item) => item.textContent)).toEqual([
-      '✓Your details: Ready',
+      '✓Your details: 6 of 6 saved',
       'A résumé to attach: Not added yetAdd in JobDeputy',
-      'Application answers: Not added yetAdd in JobDeputy',
+      'Application answers: 3 of 10 savedAdd in JobDeputy',
     ]);
     const links = within(list).getAllByRole('link', { name: 'Add in JobDeputy' });
     expect(links.map((link) => link.getAttribute('href'))).toEqual([
@@ -159,7 +163,10 @@ describe('Popup (#54)', () => {
     await screen.findByText('Signed in');
     await screen.findByRole('list');
     expect(screen.queryByRole('link')).toBeNull();
+    // The résumé says it's missing (shown, and said to screen readers with its label); the
+    // counted ones say how many are saved.
     expect(screen.getAllByText('Not added yet')).toHaveLength(2);
+    expect(screen.getByText('3 of 10 saved')).toBeTruthy();
   });
 
   it('says when the details could not be read, and reads them again on Try again', async () => {
