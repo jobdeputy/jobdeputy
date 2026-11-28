@@ -32,6 +32,19 @@ export async function stackOutputs(): Promise<Record<string, string>> {
   return Object.fromEntries(outputs.map((o) => [o.OutputKey ?? '', o.OutputValue ?? '']));
 }
 
+/**
+ * Where managed login must be for this stack (#54, #111): `https://auth.<site>` on the cell that
+ * has the site, the pool's prefix domain in this Region elsewhere.
+ */
+export function signInUrlPattern(outputs: Record<string, string>): RegExp {
+  if (outputs.SiteOrigin) {
+    return new RegExp(
+      `^https://auth\\.${new URL(outputs.SiteOrigin).host.replaceAll('.', '\\.')}$`,
+    );
+  }
+  return new RegExp(`^https://[a-z0-9-]+\\.auth\\.${region}\\.amazoncognito\\.com$`);
+}
+
 export interface TestUser {
   email: string;
   accessToken: string;

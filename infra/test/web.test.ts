@@ -171,14 +171,17 @@ describe('web app hosting (decision 0011)', () => {
     expect(value).toMatch(/userPoolId.*Ref.*AuthUserPool/);
     expect(value).toMatch(/userPoolClientId.*Ref.*AuthUserPoolWebClient/);
     expect(value).toMatch(/apiUrl.*HttpApi.*ApiEndpoint/);
-    // And the origins the site may call there: exactly its API and its documents bucket.
+    // #111: managed login on the site's own sign-in domain.
+    expect(value).toMatch(/authDomain.*https:\/\/.*Ref.*AuthUserPoolSignInDomain/);
+    // And the origins the site may call there: exactly its API, its documents bucket, and
+    // managed login (Amplify calls its token and revoke endpoints, #111).
     const origins = JSON.stringify(
       Object.values(cell.findResources('AWS::SSM::Parameter')).find(
         (r) => r.Properties.Name === webConnectParameter('dev', 'iad'),
       )?.Properties.Value,
     );
     expect(origins).toMatch(
-      /HttpApi.*ApiEndpoint.*https:\/\/.*DocumentsBucket.*RegionalDomainName/,
+      /HttpApi.*ApiEndpoint.*https:\/\/.*DocumentsBucket.*RegionalDomainName.*https:\/\/.*AuthUserPoolSignInDomain/,
     );
     // …and the site reads it at deploy time, after the cell: no stack export, so the pool and
     // client can still be replaced.

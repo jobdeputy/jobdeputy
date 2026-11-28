@@ -4,7 +4,7 @@ import {
   extensionRedirectUrl,
 } from '@jobdeputy/shared/extension';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { region, stackOutputs } from './stack.js';
+import { region, signInUrlPattern, stackOutputs } from './stack.js';
 
 /**
  * The extension's sign-in wiring (#54, decision 0020), as deployed on a dev stack (which trusts
@@ -37,9 +37,8 @@ describe.skipIf(!outputs.ExtensionClientId)('extension sign-in (deployed, #54)',
     domain = outputs.AuthDomain ?? '';
     clientId = outputs.ExtensionClientId ?? '';
     poolId = outputs.UserPoolId ?? '';
-    expect(domain).toMatch(
-      new RegExp(`^https://[a-z0-9-]+\\.auth\\.${region}\\.amazoncognito\\.com$`),
-    );
+    // The site's cell serves it at auth.<site> (#111); other stacks on their prefix domain.
+    expect(domain).toMatch(signInUrlPattern(outputs));
     expect(clientId).not.toBe('');
   });
 

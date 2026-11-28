@@ -3,9 +3,9 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   brandingSvg,
-  EXTENSION_BRANDING_SETTINGS,
+  LOGIN_BRANDING_SETTINGS,
   squareSvg,
-} from '../lib/constructs/extension-branding.js';
+} from '../lib/constructs/login-branding.js';
 import { REPO_ROOT } from '../lib/constructs/node-function.js';
 
 const tokens = readFileSync(join(REPO_ROOT, 'apps/web/src/styles/tokens.css'), 'utf8');
@@ -18,14 +18,14 @@ function colours(value: unknown): string[] {
   return [];
 }
 
-describe('managed login branding (#54)', () => {
+describe('managed login branding (#54, #111)', () => {
   it("uses only the web app's colours (tokens.css), solid or as ink at an opacity", () => {
     const solid = new Set(
       [...tokens.matchAll(/#([0-9a-f]{6}|[0-9a-f]{3})\b/g)].map(([, hex = '']) =>
         hex.length === 3 ? [...hex].map((digit) => digit + digit).join('') : hex,
       ),
     );
-    for (const colour of new Set(colours(EXTENSION_BRANDING_SETTINGS))) {
+    for (const colour of new Set(colours(LOGIN_BRANDING_SETTINGS))) {
       const [rgb, alpha] = [colour.slice(0, 6), colour.slice(6)];
       if (alpha === 'ff') {
         // dangerWash is the one tint: danger ink on white at about 8%.
@@ -39,8 +39,8 @@ describe('managed login branding (#54)', () => {
   });
 
   it('is light only, like the web app', () => {
-    expect(EXTENSION_BRANDING_SETTINGS.categories.global.colorSchemeMode).toBe('LIGHT');
-    expect(JSON.stringify(EXTENSION_BRANDING_SETTINGS)).not.toContain('darkMode');
+    expect(LOGIN_BRANDING_SETTINGS.categories.global.colorSchemeMode).toBe('LIGHT');
+    expect(JSON.stringify(LOGIN_BRANDING_SETTINGS)).not.toContain('darkMode');
   });
 
   it('drops only what managed login refuses from the mark', () => {

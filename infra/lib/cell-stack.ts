@@ -3,6 +3,7 @@ import {
   crawlKeys,
   DEFAULT_CRAWL_LIMITS,
   DERIVED_PREFIX,
+  LOCAL_WEB_ORIGIN,
   SCANNED_PREFIX,
   VOLUNTARY_KMS_PURPOSE,
 } from '@jobdeputy/shared';
@@ -56,7 +57,7 @@ import { CELLS, type CellId } from '../config/cells.js';
 import type { StageName } from '../config/stages.js';
 import { AiKeys } from './constructs/ai-keys.js';
 import { AsyncPipeline } from './constructs/async-pipeline.js';
-import { Auth } from './constructs/auth.js';
+import { Auth, type SignInDomain } from './constructs/auth.js';
 import { Documents } from './constructs/documents.js';
 import { LlmMonitoring } from './constructs/llm-monitoring.js';
 import { AppFunction } from './constructs/node-function.js';
@@ -75,6 +76,11 @@ export interface CellStackProps extends StackProps {
    * documents bucket answer CORS for that origin only (#33). Left out, no browser may call them.
    */
   readonly siteOrigin?: string;
+  /**
+   * #111 (decision 0021): managed login's address in the site's zone (auth.<site>), for the cell
+   * the site signs people in to. Left out, managed login stays on the pool's Cognito prefix domain.
+   */
+  readonly signInDomain?: SignInDomain;
   /** Receive alarm emails. Come from JD_ALERT_EMAIL (comma-separated), never from the repository. */
   readonly alertEmails?: readonly string[];
 }
@@ -170,6 +176,13 @@ export class CellStack extends Stack {
       removalPolicy,
       deletionProtection: isProd,
       testsClient: props.stage === 'dev',
+      // #111: the web app signs in through managed login and comes back to its own origin; dev
+      // stacks also let a web app on Vite's dev server sign in.
+      webOrigins: [
+        ...(props.siteOrigin ? [props.siteOrigin] : []),
+        ...(props.stage === 'dev' ? [LOCAL_WEB_ORIGIN] : []),
+      ],
+      ...(props.signInDomain ? { signInDomain: props.signInDomain } : {}),
       // #54: the dev ID's key is public, so only dev stacks trust it.
       extensionIds:
         props.stage === 'dev'
@@ -809,13 +822,20 @@ export class CellStack extends Stack {
           userPoolClientId: auth.webClient.userPoolClientId,
           // No trailing slash: the app adds paths that start with one.
           apiUrl: httpApi.apiEndpoint,
+          // #111: managed login's address, where the web app signs in (https://auth.<site>).
+          ...(auth.signInUrl ? { authDomain: auth.signInUrl } : {}),
         }),
       });
       new StringParameter(this, 'WebConnectSrc', {
         parameterName: this.webConfig.connectSrc,
         description:
           'The origins the web app calls in this cell, for its CSP (read by the web stack).',
-        stringValue: [httpApi.apiEndpoint, documentsOrigin].join(' '),
+        // #111: managed login's token and revoke endpoints too (the web app calls them).
+        stringValue: [
+          httpApi.apiEndpoint,
+          documentsOrigin,
+          ...(auth.signInUrl ? [auth.signInUrl] : []),
+        ].join(' '),
       });
     }
     if (ping) {
@@ -994,11 +1014,15 @@ export class CellStack extends Stack {
       value: documents.malwarePlan.attrMalwareProtectionPlanId,
     });
     new CfnOutput(this, 'WebClientId', { value: auth.webClient.userPoolClientId });
-    // The extension's build settings (#54).
+    // The extension's build settings (#54), with AuthDomain below.
     if (auth.extension) {
-      new CfnOutput(this, 'AuthDomain', { value: auth.extension.domain.baseUrl() });
       new CfnOutput(this, 'ExtensionClientId', { value: auth.extension.client.userPoolClientId });
     }
+    // Managed login's address (#54, #111): auth.<site> where the cell has one, else the pool's
+    // prefix domain. The extension builds against it; the web app reads it from its config.
+    if (auth.signInUrl) new CfnOutput(this, 'AuthDomain', { value: auth.signInUrl });
+    // The web app's origin, whose /auth/callback the web client may return to (#111).
+    if (props.siteOrigin) new CfnOutput(this, 'SiteOrigin', { value: props.siteOrigin });
     if (auth.testsClient) {
       new CfnOutput(this, 'TestsClientId', { value: auth.testsClient.userPoolClientId });
     }

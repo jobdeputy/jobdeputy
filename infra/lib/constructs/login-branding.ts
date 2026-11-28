@@ -5,7 +5,7 @@ import type { Construct } from 'constructs';
 import { REPO_ROOT } from './node-function.js';
 
 /**
- * #54: managed login's look for the extension's sign-in, in the web app's colours
+ * #54, #111: managed login's look (each client has its own branding, the same for both), in the web app's colours
  * (apps/web/src/styles/tokens.css). Managed login takes `RRGGBBAA` colours and fills in every
  * setting left out with its own default; the web app is light only, so is this. Fonts can't be
  * changed there.
@@ -25,7 +25,7 @@ const greenSoft = 'ccebdcff';
 const dangerInk = '9c4028ff';
 const dangerWash = 'fdf0ebff';
 
-export const EXTENSION_BRANDING_SETTINGS = {
+export const LOGIN_BRANDING_SETTINGS = {
   categories: {
     global: {
       colorSchemeMode: 'LIGHT',
@@ -138,7 +138,7 @@ export function squareSvg(svg: string): string {
   return svg.replace(box[0], `viewBox="${square}"`);
 }
 
-export function extensionBranding(
+export function loginBranding(
   scope: Construct,
   id: string,
   props: { userPoolId: string; clientId: string },
@@ -154,7 +154,7 @@ export function extensionBranding(
     userPoolId: props.userPoolId,
     clientId: props.clientId,
     useCognitoProvidedValues: false,
-    settings: EXTENSION_BRANDING_SETTINGS,
+    settings: LOGIN_BRANDING_SETTINGS,
     assets: [asset('FORM_LOGO', mark), asset('FAVICON_SVG', squareSvg(mark))],
   });
 }

@@ -2,7 +2,7 @@
 
 The browser extension signs in through Cognito **managed login** with its own app client (authorization code + PKCE), and only its service worker holds the tokens. Decision: [0020](../decisions/0020-browser-extension-sign-in-and-permissions.md). PR C adds the Greenhouse filler.
 
-- **Task:** [#54](https://github.com/jobdeputy/jobdeputy/issues/54). Managed login, the client and its branding: PR B1. The extension's sign-in and reads: PR B2.
+- **Task:** [#54](https://github.com/jobdeputy/jobdeputy/issues/54). Managed login, the client and its branding: PR B1. The extension's sign-in and reads: PR B2. One sign-in with the web app on `auth.<site>`: [#111](https://github.com/jobdeputy/jobdeputy/issues/111) ([0021](../decisions/0021-one-sign-in-through-managed-login.md)).
 - **Keep it true:** a PR that changes this flow updates this file.
 
 ## Signing in
@@ -11,7 +11,7 @@ The browser extension signs in through Cognito **managed login** with its own ap
 sequenceDiagram
   participant P as Popup
   participant W as Service worker
-  participant L as Managed login<br/>(jobdeputy-<stack ID part>.auth…)
+  participant L as Managed login<br/>(auth.dev.jobdeputy.com, or the stack's prefix domain)
   participant S as storage.session
   P->>W: sign-in (a message; only the extension's own pages are answered)
   Note over P: Chrome closes the popup when the sign-in window takes focus:<br/>the worker carries on
