@@ -103,9 +103,7 @@ function item() {
 // Generous: some tests wait on the step's checks (on a 50 ms beat here).
 describe('Set it up, step 3: résumé', { timeout: 30_000 }, () => {
   it('comes after step 2, uploads a résumé, and ends the set-up', async () => {
-    const auth = createFakeAuth({ delay: 0 });
-    await auth.signUp('new@example.com', 'a long enough password');
-    await auth.confirmSignUp('new@example.com', 'a long enough password', '123456');
+    const auth = createFakeAuth({ delay: 0, signedInAs: 'new@example.com' });
     const api = createFakeApi({ delay: 0, checkMs: 0 });
     await renderApp(auth, {}, api);
     fireEvent.click(await screen.findByRole('button', { name: 'Let’s start' }));

@@ -687,9 +687,7 @@ describe('adding résumés on the Résumés page', { timeout: 30_000 }, () => {
 
 describe('the Résumés page in the app', () => {
   it('is in the sidebar, at its own address, named in the tab', async () => {
-    const auth = createFakeAuth({ delay: 0 });
-    await auth.signUp('new@example.com', 'a long enough password');
-    await auth.confirmSignUp('new@example.com', 'a long enough password', '123456');
+    const auth = createFakeAuth({ delay: 0, signedInAs: 'new@example.com' });
     const api = createFakeApi({ delay: 0, checkMs: 0 });
     await api.request('PUT', '/me/profile', { version: 0, firstName: 'Alex', lastName: 'Morgan' });
     await renderApp(auth, {}, api);

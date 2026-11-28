@@ -12,9 +12,7 @@ afterEach(() => {
 
 describe('useApi', () => {
   it('calls with the token of whoever the screen’s sign-in says is signed in', async () => {
-    const auth = createFakeAuth({ delay: 0 });
-    await auth.signUp('a@example.com', 'a long enough password');
-    await auth.confirmSignUp('a@example.com', 'a long enough password', '123456');
+    const auth = createFakeAuth({ delay: 0, signedInAs: 'a@example.com' });
     const fetch = vi.fn(async (url: string, _init?: RequestInit) =>
       url === '/config.json'
         ? new Response(

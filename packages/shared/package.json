@@ -7,6 +7,7 @@
     "./ai": "./src/ai.ts",
     "./applicant": "./src/applicant.ts",
     "./applications": "./src/applications.ts",
+    "./auth": "./src/auth.ts",
     "./cover-letter": "./src/cover-letter.ts",
     "./crawl": "./src/crawl.ts",
     "./documents": "./src/documents.ts",

@@ -1,6 +1,5 @@
-import { type ComponentProps, useId, useState } from 'react';
+import { type ComponentProps, useId } from 'react';
 import { ChevronDownIcon } from '@/components/icons.tsx';
-import { copy } from '@/copy/index.ts';
 import { cn } from '@/lib/utils.ts';
 
 /** The input's box (the prototype's `.field input`), shared by one-line and multi-line fields. */
@@ -96,23 +95,6 @@ function FieldFrame({
         </p>
       )}
     </div>
-  );
-}
-
-/** A password field with a show / hide toggle (the prototype's `.password-toggle`). */
-export function PasswordField(props: Omit<ComponentProps<typeof Field>, 'type' | 'children'>) {
-  const [shown, setShown] = useState(false);
-  return (
-    <Field {...props} type={shown ? 'text' : 'password'}>
-      <button
-        type="button"
-        aria-label={shown ? copy.auth.hidePassword : copy.auth.showPassword}
-        onClick={() => setShown((value) => !value)}
-        className="absolute end-2.5 top-1/2 grid min-h-11 min-w-11 -translate-y-1/2 cursor-pointer place-items-center rounded-[11px] px-[7px] text-xs font-[680] text-muted-foreground hover:bg-paper hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring focus-visible:outline-solid"
-      >
-        <span aria-hidden="true">{shown ? copy.auth.hide : copy.auth.show}</span>
-      </button>
-    </Field>
   );
 }
 

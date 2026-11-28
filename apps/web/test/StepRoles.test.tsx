@@ -73,9 +73,7 @@ function alertText(): string {
 
 describe('Set it up, step 2: target roles', () => {
   it('comes after step 1, saves the titles chosen, and moves on to step 3', async () => {
-    const auth = createFakeAuth({ delay: 0 });
-    await auth.signUp('new@example.com', 'a long enough password');
-    await auth.confirmSignUp('new@example.com', 'a long enough password', '123456');
+    const auth = createFakeAuth({ delay: 0, signedInAs: 'new@example.com' });
     const api = createFakeApi({ delay: 0 });
     await renderApp(auth, {}, api);
     fireEvent.click(await screen.findByRole('button', { name: 'Let’s start' }));
@@ -98,9 +96,7 @@ describe('Set it up, step 2: target roles', () => {
   });
 
   it('goes back from step 2 to step 1, its answers still there', async () => {
-    const auth = createFakeAuth({ delay: 0 });
-    await auth.signUp('new@example.com', 'a long enough password');
-    await auth.confirmSignUp('new@example.com', 'a long enough password', '123456');
+    const auth = createFakeAuth({ delay: 0, signedInAs: 'new@example.com' });
     await renderApp(auth);
     fireEvent.click(await screen.findByRole('button', { name: 'Let’s start' }));
     await screen.findByLabelText('First name');

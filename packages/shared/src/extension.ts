@@ -49,7 +49,7 @@ export const EXTENSION_API_ROUTES: readonly string[] = [
 ];
 
 /**
- * The scope the web app's and the tests' tokens carry: Cognito gives it to a direct (SRP or admin)
- * sign-in, and to the web client's managed login sign-in, which asks for it (#111, `WEB_SCOPES`).
+ * The scope the web app's and the tests' tokens carry: Cognito gives it to the web client's managed
+ * login sign-in, which asks for it (#111, `WEB_SCOPES`), and to a direct (admin) sign-in.
  */
 export const WEB_SCOPE = 'aws.cognito.signin.user.admin';

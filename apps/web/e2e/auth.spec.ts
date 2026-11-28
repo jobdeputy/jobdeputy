@@ -2,9 +2,9 @@ import { expect, type Page, test } from '@playwright/test';
 import { expectNoAccessibilityViolations, expectNoHorizontalScroll, openHome } from './checks.ts';
 
 /**
- * The sign-in and sign-up forms (#14 slice 2) in real browsers. The test build swaps Cognito for
- * in-memory accounts (src/lib/auth/fake.ts): code 123456 confirms, exists@example.com is taken
- * (password "correct horse battery").
+ * The way in (#14, #111) in real browsers. People sign in on Cognito's managed login page; the
+ * test build's fake (src/lib/auth/fake.ts) leaves for /auth/callback at once instead, as
+ * you@example.com (sign in) or new@example.com (create an account).
  */
 
 /** Opens the drawer from the first visible button with this name. */
@@ -14,27 +14,23 @@ async function openDrawer(page: Page, name: string) {
   await expect(page.getByRole('dialog')).toBeVisible();
 }
 
-test('creates an account, confirms it with the code, lands signed in, and signs out', async ({
+test('creates an account through the sign-in page, lands signed in, and signs out', async ({
   page,
 }) => {
   // The whole journey (sign-up, the set-up's three steps with the résumé check's 3 s, then the
   // Profile page's forms, axe at each): over the 30 s limit on CI's WebKit (main run 44968165243).
   test.slow();
   await openDrawer(page, 'Get started free');
-  const drawer = page.getByRole('dialog');
-  await drawer.getByLabel('Email').fill('new@example.com');
-  await drawer.getByLabel('Password', { exact: true }).fill('a long enough password');
-  await drawer.getByRole('button', { name: 'Create account' }).click();
-  await expect(drawer.getByRole('heading', { name: 'Enter your code.' })).toBeVisible();
-  // The new step starts at its field.
-  await expect(drawer.getByLabel('Code from your email')).toBeFocused();
-  await drawer.getByLabel('Code from your email').fill('123456');
-  await drawer.getByRole('button', { name: 'Confirm' }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Continue to create account' })
+    .click();
 
-  // A new account (no profile yet) starts the guided set-up (#33), at its welcome.
+  // A new account (no profile yet) starts the guided set-up (#33), at its welcome. Back from the
+  // sign-in page it is a fresh page load: focus starts at the top, as on any load (the boot
+  // loader keeps the page inert until it has gone).
   const title = page.getByRole('heading', { level: 1, name: 'Hi, I’m your deputy.' });
   await expect(title).toBeVisible();
-  await expect(title).toBeFocused();
   await expect(page.getByText('new@example.com')).toBeVisible();
   await expect(page.getByText('United States (US)')).toBeVisible();
   await expectNoAccessibilityViolations(page);
@@ -258,40 +254,32 @@ test('creates an account, confirms it with the code, lands signed in, and signs 
   ).toBeVisible();
 });
 
-test('marks wrong fields, says why, and passes axe while it does', async ({ page }) => {
-  await openDrawer(page, 'Get started free');
+test('says what happens next, and passes axe', async ({ page }) => {
+  await openDrawer(page, 'Sign in');
   const drawer = page.getByRole('dialog');
-  await drawer.getByLabel('Email').fill('not-an-email');
-  await drawer.getByRole('button', { name: 'Create account' }).click();
-  await expect(drawer.getByLabel('Email')).toHaveAttribute('aria-invalid', 'true');
-  await expect(drawer.getByText('Enter an email like name@example.com.')).toBeVisible();
-  await expect(drawer.getByLabel('Email')).toBeFocused();
+  await expect(drawer.getByRole('heading', { name: 'Welcome back.' })).toBeVisible();
+  await expect(drawer.getByText(/secure sign-in page/)).toBeVisible();
   await expectNoAccessibilityViolations(page);
   await expectNoHorizontalScroll(page);
 });
 
-test('refuses wrong details, then signs in', async ({ page }) => {
+test('signs in through the sign-in page, and comes back home', async ({ page }) => {
   await openDrawer(page, 'Sign in');
-  const drawer = page.getByRole('dialog');
-  await drawer.getByLabel('Email').fill('exists@example.com');
-  await drawer.getByLabel('Password', { exact: true }).fill('not the password');
-  await drawer.getByRole('button', { name: 'Sign in' }).click();
-  await expect(drawer.getByRole('alert')).toHaveText(
-    'That email and password don’t match an account.',
-  );
-  await drawer.getByLabel('Password', { exact: true }).fill('correct horse battery');
-  await drawer.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Continue to sign in' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Hi, I’m your deputy.' })).toBeVisible();
+  await expect(page.getByText('you@example.com')).toBeVisible();
+  // The return address is gone, and Back does not offer it.
+  await expect(page).toHaveURL(/\/$/);
 });
 
-test('shows the button working while the account is being created', async ({ page }) => {
-  await openDrawer(page, 'Get started free');
+test('a sign-in that came back unfinished reopens the drawer saying so', async ({ page }) => {
+  await page.goto('/auth/callback?error=access_denied');
   const drawer = page.getByRole('dialog');
-  await drawer.getByLabel('Email').fill('slow@example.com');
-  await drawer.getByLabel('Password', { exact: true }).fill('a long enough password');
-  await drawer.getByRole('button', { name: 'Create account' }).click();
-  // "slow" makes the fake take 1.5 s, well past the 300 ms delay: the pending state shows.
-  await expect(drawer.getByRole('button', { name: 'Creating your account…' })).toBeVisible();
+  await expect(drawer.getByRole('alert')).toHaveText('Sign-in didn’t finish. Try again.');
+  await expect(page).toHaveURL(/\/$/);
+  await expectNoAccessibilityViolations(page);
+  await drawer.getByRole('button', { name: 'Continue to sign in' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Hi, I’m your deputy.' })).toBeVisible();
 });
 
 // The real sign-in tells a site without its config ("not set up") from someone else's page by

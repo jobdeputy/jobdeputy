@@ -844,8 +844,11 @@ export class CellStack extends Stack {
           // No trailing slash: the app adds paths that start with one.
           apiUrl: httpApi.apiEndpoint,
           // #111: managed login's host, where the web app signs in (auth.<site>): a bare host
-          // name, as Amplify's oauth.domain takes.
-          ...(auth.signInUrl ? { authDomain: Fn.select(2, Fn.split('/', auth.signInUrl)) } : {}),
+          // name, as Amplify's oauth.domain takes. Only where the web client may sign in there:
+          // without it the app says sign-in isn't available, never sends anyone to a dead end.
+          ...(auth.signInUrl && auth.webCallbackUrls.length > 0
+            ? { authDomain: Fn.select(2, Fn.split('/', auth.signInUrl)) }
+            : {}),
         }),
       });
       new StringParameter(this, 'WebConnectSrc', {

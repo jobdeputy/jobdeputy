@@ -3,8 +3,9 @@ import { AuthPanel } from '@/components/auth/auth-panel.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { Sheet, SheetClose, SheetContent } from '@/components/ui/sheet.tsx';
 import { copy } from '@/copy/index.ts';
+import type { AuthErrorKind, SignInMode } from '@/lib/auth/index.ts';
 
-export type AuthMode = 'sign-in' | 'sign-up';
+export type AuthMode = SignInMode;
 
 const DRAWER_ID = 'auth-drawer';
 
@@ -38,23 +39,24 @@ export function AuthButton({
 }
 
 /**
- * The sign-in / sign-up drawer the landing page opens (round 7 `.auth-panel`): the forms, one step
- * at a time (AuthPanel). Its content mounts afresh each time it opens, so a new opening starts
- * clean, in the mode its button asked for.
+ * The sign-in / sign-up drawer the landing page opens (round 7 `.auth-panel`): the way to the
+ * secure sign-in page (AuthPanel, #111). Its content mounts afresh each time it opens, so a new
+ * opening starts clean, in the mode its button asked for.
  */
 export function AuthDrawer({
   mode,
   open,
   onOpenChange,
   onCloseAutoFocus,
-  onSignedIn,
+  failed,
 }: {
   mode: AuthMode;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Where focus goes once the drawer has closed; Radix cannot know which button opened it. */
   onCloseAutoFocus: (event: Event) => void;
-  onSignedIn: (email: string) => void;
+  /** The last sign-in came back unfinished: the drawer says why. */
+  failed?: AuthErrorKind;
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -73,7 +75,7 @@ export function AuthDrawer({
             <span aria-hidden="true">×</span>
           </Button>
         </SheetClose>
-        <AuthPanel start={mode} onSignedIn={onSignedIn} />
+        <AuthPanel start={mode} {...(failed ? { failed } : {})} />
       </SheetContent>
     </Sheet>
   );

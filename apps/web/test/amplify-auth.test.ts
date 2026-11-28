@@ -1,24 +1,51 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CALL_LIMIT_MS } from '../src/lib/auth/amplify.ts';
+import { CALL_LIMIT_MS, FINISH_LIMIT_MS, signUpUrl } from '../src/lib/auth/amplify.ts';
 
 const amplify = vi.hoisted(() => ({
   configure: vi.fn(),
-  signUp: vi.fn(),
-  confirmSignUp: vi.fn(),
-  autoSignIn: vi.fn(),
-  signIn: vi.fn(),
+  signInWithRedirect: vi.fn(),
   signOut: vi.fn(),
-  resetPassword: vi.fn(),
-  confirmResetPassword: vi.fn(),
-  resendSignUpCode: vi.fn(),
-  getCurrentUser: vi.fn(),
   fetchAuthSession: vi.fn(),
+  getCurrentUser: vi.fn(),
 }));
 vi.mock('aws-amplify', () => ({ Amplify: { configure: amplify.configure } }));
 vi.mock('aws-amplify/auth', () => amplify);
+vi.mock('aws-amplify/auth/enable-oauth-listener', () => ({}));
+/** Amplify's Hub, where its OAuth listener says how the code exchange went. */
+const hub = vi.hoisted(() => {
+  const listeners = new Set<(capsule: { payload: { event: string } }) => void>();
+  return {
+    listeners,
+    say: (event: string) => {
+      for (const listener of listeners) listener({ payload: { event } });
+    },
+  };
+});
+vi.mock('aws-amplify/utils', () => ({
+  Hub: {
+    listen: (_channel: string, listener: (capsule: { payload: { event: string } }) => void) => {
+      hub.listeners.add(listener);
+      return () => hub.listeners.delete(listener);
+    },
+  },
+}));
 
-const CONFIG = { userPoolId: 'us-east-1_abc', userPoolClientId: 'client' };
+/**
+ * Back on the return address with an exchange under way (Amplify's mark), unless `underWay` is
+ * false; Amplify's listener says `event` once it is configured.
+ */
+function returning(event?: string, search = '?code=c&state=s', underWay = true) {
+  window.history.replaceState(null, '', `/auth/callback${search}`);
+  if (underWay) localStorage.setItem('CognitoIdentityServiceProvider.client.inflightOAuth', 'true');
+  if (event) amplify.configure.mockImplementation(() => setTimeout(() => hub.say(event), 0));
+}
+
+const CONFIG = {
+  userPoolId: 'us-east-1_abc',
+  userPoolClientId: 'client',
+  authDomain: 'auth.dev.example.com',
+};
 
 /** A fresh adapter (it keeps its configuration for the page), with /config.json answering `body`. */
 async function load(
@@ -31,73 +58,202 @@ async function load(
   return (await import('../src/lib/auth/amplify.ts')).amplifyAuth;
 }
 
+/** A session whose ID token says `email`. */
+const sessionOf = (email: unknown) => ({ tokens: { idToken: { payload: { email } } } });
+
 beforeEach(() => {
   for (const mock of Object.values(amplify)) mock.mockReset();
+  hub.listeners.clear();
   localStorage.clear();
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  window.history.replaceState(null, '', '/');
 });
 
 describe('amplifyAuth', () => {
-  it('sets Amplify up from the app config, signing in by email', async () => {
+  it('sets Amplify up for managed login from the app config: code + PKCE, back to this origin', async () => {
     const auth = await load();
-    amplify.signIn.mockResolvedValue({ isSignedIn: true, nextStep: { signInStep: 'DONE' } });
-    await expect(auth.signIn('a@example.com', 'pw')).resolves.toBe('done');
+    amplify.signInWithRedirect.mockResolvedValue(undefined);
+    await expect(auth.signIn('sign-in')).resolves.toBeUndefined();
     expect(amplify.configure).toHaveBeenCalledWith({
       Auth: {
         Cognito: {
           userPoolId: 'us-east-1_abc',
           userPoolClientId: 'client',
-          loginWith: { email: true },
+          loginWith: {
+            oauth: {
+              domain: 'auth.dev.example.com',
+              scopes: ['openid', 'email', 'aws.cognito.signin.user.admin'],
+              redirectSignIn: [`${window.location.origin}/auth/callback`],
+              redirectSignOut: [`${window.location.origin}/`],
+              responseType: 'code',
+            },
+          },
         },
       },
     });
+    // Signing in: managed login's own page, as Amplify opens it.
+    expect(amplify.signInWithRedirect).toHaveBeenCalledWith(undefined);
   });
 
-  it('is not set up where the app has no config', async () => {
-    const auth = await load(null, 404);
-    await expect(auth.signIn('a@example.com', 'pw')).rejects.toMatchObject({ kind: 'not-set-up' });
-    expect(amplify.signIn).not.toHaveBeenCalled();
+  it('opens managed login’s create-account form for a new account, with the same sign-in', async () => {
+    const auth = await load();
+    const open = vi.spyOn(window.location, 'assign').mockImplementation(() => {});
+    try {
+      amplify.signInWithRedirect.mockImplementation(async (input) => {
+        await input.options.authSessionOpener(
+          'https://auth.dev.example.com/oauth2/authorize?client_id=client&code_challenge=x&state=s',
+        );
+      });
+      await auth.signIn('sign-up');
+      expect(open).toHaveBeenCalledWith(
+        'https://auth.dev.example.com/signup?client_id=client&code_challenge=x&state=s',
+      );
+    } finally {
+      open.mockRestore();
+    }
+    expect(signUpUrl('https://a.example/oauth2/authorize?x=1')).toBe(
+      'https://a.example/signup?x=1',
+    );
   });
 
   it.each([
-    ['NotAuthorizedException', 'wrong-details'],
-    ['UserNotFoundException', 'wrong-details'],
-    ['UsernameExistsException', 'account-exists'],
-    ['CodeMismatchException', 'wrong-code'],
-    ['ExpiredCodeException', 'expired-code'],
-    ['LimitExceededException', 'too-many-tries'],
-    ['InvalidPasswordException', 'weak-password'],
-    ['NetworkError', 'offline'],
-    ['SomethingNew', 'unknown'],
-  ])('turns Cognito’s %s into %s', async (name, kind) => {
+    [null, 404],
+    [{ userPoolId: 'us-east-1_abc', userPoolClientId: 'client' }, 200],
+  ])(
+    'is not set up where the app has no config, or no sign-in address (%j)',
+    async (body, status) => {
+      const auth = await load(body, status);
+      await expect(auth.signIn('sign-in')).rejects.toMatchObject({ kind: 'not-set-up' });
+      expect(amplify.signInWithRedirect).not.toHaveBeenCalled();
+    },
+  );
+
+  it('forgets an unreadable session left from before here only, then leaves once more', async () => {
+    localStorage.setItem('CognitoIdentityServiceProvider.client.abc.refreshToken', 'old');
     const auth = await load();
-    amplify.signUp.mockRejectedValue(Object.assign(new Error(name), { name }));
-    await expect(auth.signUp('a@example.com', 'pw')).rejects.toMatchObject({ kind });
+    amplify.signInWithRedirect
+      .mockRejectedValueOnce(
+        Object.assign(new Error('signed in'), { name: 'UserAlreadyAuthenticatedException' }),
+      )
+      .mockResolvedValueOnce(undefined);
+    await auth.signIn('sign-in');
+    // No trip through managed login's /logout, which would race the page's own leaving.
+    expect(amplify.signOut).not.toHaveBeenCalled();
+    expect(
+      localStorage.getItem('CognitoIdentityServiceProvider.client.abc.refreshToken'),
+    ).toBeNull();
+    expect(amplify.signInWithRedirect).toHaveBeenCalledTimes(2);
   });
 
-  it('sends an unconfirmed account to its code', async () => {
+  it('goes home to a readable session in the way (another tab signed in), never wiping it', async () => {
+    localStorage.setItem('CognitoIdentityServiceProvider.client.abc.refreshToken', 'theirs');
     const auth = await load();
-    amplify.signIn.mockResolvedValue({
-      isSignedIn: false,
-      nextStep: { signInStep: 'CONFIRM_SIGN_UP' },
-    });
-    await expect(auth.signIn('a@example.com', 'pw')).resolves.toBe('confirm');
+    amplify.signInWithRedirect.mockRejectedValue(
+      Object.assign(new Error('signed in'), { name: 'UserAlreadyAuthenticatedException' }),
+    );
+    amplify.fetchAuthSession.mockResolvedValue(sessionOf('b@example.com'));
+    const open = vi.spyOn(window.location, 'assign').mockImplementation(() => {});
+    try {
+      await auth.signIn('sign-in');
+      expect(open).toHaveBeenCalledWith('/');
+    } finally {
+      open.mockRestore();
+    }
+    expect(localStorage.getItem('CognitoIdentityServiceProvider.client.abc.refreshToken')).toBe(
+      'theirs',
+    );
+    expect(amplify.signInWithRedirect).toHaveBeenCalledTimes(1);
   });
 
-  it('signs in after the code: automatically, or with the password where it cannot', async () => {
+  it('calls a network failure on leaving a network problem', async () => {
     const auth = await load();
-    amplify.confirmSignUp.mockResolvedValue({ nextStep: { signUpStep: 'COMPLETE_AUTO_SIGN_IN' } });
-    amplify.autoSignIn.mockResolvedValue({ isSignedIn: true });
-    await auth.confirmSignUp('a@example.com', 'pw', '123456');
-    expect(amplify.signIn).not.toHaveBeenCalled();
+    amplify.signInWithRedirect.mockRejectedValue(
+      Object.assign(new Error('offline'), { name: 'NetworkError' }),
+    );
+    await expect(auth.signIn('sign-in')).rejects.toMatchObject({ kind: 'offline' });
+  });
 
-    amplify.autoSignIn.mockRejectedValue(new Error('no auto sign-in in this tab'));
-    amplify.signIn.mockResolvedValue({ isSignedIn: true, nextStep: { signInStep: 'DONE' } });
-    await auth.confirmSignUp('a@example.com', 'pw', '123456');
-    expect(amplify.signIn).toHaveBeenCalledWith({ username: 'a@example.com', password: 'pw' });
+  it('finishes the sign-in managed login came back with, once Amplify says so, and gives its email', async () => {
+    returning('signInWithRedirect');
+    const auth = await load();
+    amplify.fetchAuthSession.mockResolvedValue(sessionOf('a@example.com'));
+    await expect(auth.finishSignIn()).resolves.toBe('a@example.com');
+    // Once per page load, however often asked (React's strict mode asks twice).
+    await expect(auth.finishSignIn()).resolves.toBe('a@example.com');
+    expect(amplify.configure).toHaveBeenCalledTimes(1);
+  });
+
+  it('says a sign-in that Amplify could not finish did not finish', async () => {
+    returning('signInWithRedirect_failure');
+    const auth = await load();
+    await expect(auth.finishSignIn()).rejects.toMatchObject({ kind: 'sign-in-failed' });
+  });
+
+  it.each([
+    ['', 'neither a code nor an error'],
+    ['?error=access_denied&state=s', 'an error'],
+  ])('has nothing to finish on a return address with %j (%s), at once', async (search) => {
+    returning(undefined, search);
+    const auth = await load();
+    await expect(auth.finishSignIn()).rejects.toMatchObject({ kind: 'sign-in-failed' });
+    expect(amplify.configure).not.toHaveBeenCalled();
+  });
+
+  it('lets the session say at once when no exchange is under way (Back to an old return address)', async () => {
+    returning(undefined, '?code=c&state=s', false);
+    const auth = await load();
+    amplify.fetchAuthSession.mockResolvedValue(sessionOf('a@example.com'));
+    await expect(auth.finishSignIn()).resolves.toBe('a@example.com');
+  });
+
+  it('says a return with no exchange under way and no session did not finish, at once', async () => {
+    returning(undefined, '?code=c&state=s', false);
+    const auth = await load();
+    amplify.fetchAuthSession.mockResolvedValue({ tokens: undefined });
+    await expect(auth.finishSignIn()).rejects.toMatchObject({ kind: 'sign-in-failed' });
+  });
+
+  it('waits out a slow exchange, then lets the session say (a new account’s long sign-up too)', async () => {
+    returning();
+    const auth = await load();
+    // Set up first (its fetch is real time); the listener never says.
+    amplify.signInWithRedirect.mockResolvedValue(undefined);
+    await auth.signIn('sign-in');
+    vi.useFakeTimers();
+    try {
+      amplify.fetchAuthSession.mockResolvedValue(sessionOf('a@example.com'));
+      const email = auth.finishSignIn();
+      await vi.advanceTimersByTimeAsync(FINISH_LIMIT_MS);
+      await expect(email).resolves.toBe('a@example.com');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('says a sign-in with no session after the wait did not finish', async () => {
+    returning();
+    const auth = await load();
+    amplify.signInWithRedirect.mockResolvedValue(undefined);
+    await auth.signIn('sign-in');
+    vi.useFakeTimers();
+    try {
+      amplify.fetchAuthSession.mockResolvedValue({ tokens: undefined });
+      const result = expect(auth.finishSignIn()).rejects.toMatchObject({ kind: 'sign-in-failed' });
+      await vi.advanceTimersByTimeAsync(FINISH_LIMIT_MS);
+      await result;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('calls a session read that fails after the exchange a network problem', async () => {
+    returning('signInWithRedirect');
+    const auth = await load();
+    amplify.fetchAuthSession.mockRejectedValue(new Error('NetworkError'));
+    await expect(auth.finishSignIn()).rejects.toMatchObject({ kind: 'offline' });
   });
 
   it('finds nobody signed in without loading Amplify when no session is stored', async () => {
@@ -107,53 +263,34 @@ describe('amplifyAuth', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('reads the signed-in email from a stored session', async () => {
+  it('reads the signed-in email from a stored session’s ID token', async () => {
     localStorage.setItem('CognitoIdentityServiceProvider.client.LastAuthUser', 'abc');
     const auth = await load();
-    amplify.getCurrentUser.mockResolvedValue({
-      username: 'abc',
-      signInDetails: { loginId: 'a@example.com' },
-    });
+    amplify.fetchAuthSession.mockResolvedValue(sessionOf('a@example.com'));
     await expect(auth.currentUser()).resolves.toBe('a@example.com');
+    // A session without the claim is still someone's: its login ID or username.
+    amplify.fetchAuthSession.mockResolvedValue(sessionOf(undefined));
+    amplify.getCurrentUser.mockResolvedValue({ username: 'abc' });
+    await expect(auth.currentUser()).resolves.toBe('abc');
+    amplify.fetchAuthSession.mockResolvedValue({ tokens: undefined });
+    await expect(auth.currentUser()).resolves.toBeNull();
   });
 
-  it('clears a stale session that blocks a new sign-in, and signs in once more', async () => {
+  it('signs out through Amplify (which goes on to managed login’s /logout), or says it could not', async () => {
     const auth = await load();
-    const blocked = Object.assign(new Error('already'), {
-      name: 'UserAlreadyAuthenticatedException',
-    });
-    amplify.signIn
-      .mockRejectedValueOnce(blocked)
-      .mockResolvedValueOnce({ isSignedIn: true, nextStep: { signInStep: 'DONE' } });
-    await expect(auth.signIn('a@example.com', 'pw')).resolves.toBe('done');
-    expect(amplify.signOut).toHaveBeenCalledTimes(1);
-  });
-
-  it('says the account is confirmed when signing in straight after the code fails', async () => {
-    const auth = await load();
-    amplify.confirmSignUp.mockResolvedValue({ nextStep: { signUpStep: 'DONE' } });
-    amplify.signIn.mockRejectedValue(Object.assign(new Error('net'), { name: 'NetworkError' }));
-    await expect(auth.confirmSignUp('a@example.com', 'pw', '123456')).rejects.toMatchObject({
-      kind: 'confirmed',
-    });
-  });
-
-  it('sends someone on to sign in when the sign-in after the code asks for more', async () => {
-    const auth = await load();
-    amplify.confirmSignUp.mockResolvedValue({ nextStep: { signUpStep: 'DONE' } });
-    amplify.signIn.mockResolvedValue({
-      isSignedIn: false,
-      nextStep: { signInStep: 'CONFIRM_SIGN_IN_WITH_TOTP_CODE' },
-    });
-    await expect(auth.confirmSignUp('a@example.com', 'pw', '123456')).rejects.toMatchObject({
-      kind: 'confirmed',
-    });
+    amplify.signOut.mockResolvedValue(undefined);
+    await expect(auth.signOut()).resolves.toBeUndefined();
+    amplify.signOut.mockRejectedValue(Object.assign(new Error('x'), { name: 'NetworkError' }));
+    await expect(auth.signOut()).rejects.toMatchObject({ kind: 'offline' });
+    // Anything else is not a connection problem.
+    amplify.signOut.mockRejectedValue(Object.assign(new Error('x'), { name: 'InvalidOrigin' }));
+    await expect(auth.signOut()).rejects.toMatchObject({ kind: 'unknown' });
   });
 
   it('gives up on a config that does not come in 8 s', async () => {
     const auth = await load();
-    amplify.signIn.mockResolvedValue({ isSignedIn: true, nextStep: { signInStep: 'DONE' } });
-    await auth.signIn('a@example.com', 'pw');
+    amplify.signInWithRedirect.mockResolvedValue(undefined);
+    await auth.signIn('sign-in');
     const [, init] = vi.mocked(fetch).mock.calls[0] ?? [];
     expect((init as RequestInit).signal).toBeInstanceOf(AbortSignal);
   });
@@ -171,7 +308,7 @@ describe('amplifyAuth', () => {
       })),
     );
     const { amplifyAuth } = await import('../src/lib/auth/amplify.ts');
-    await expect(amplifyAuth.signIn('a@example.com', 'pw')).rejects.toMatchObject({
+    await expect(amplifyAuth.signIn('sign-in')).rejects.toMatchObject({
       kind: 'offline',
     });
   });
@@ -183,7 +320,7 @@ describe('amplifyAuth', () => {
       vi.fn(async () => new Response('', { status: 503 })),
     );
     const { amplifyAuth } = await import('../src/lib/auth/amplify.ts');
-    await expect(amplifyAuth.signIn('a@example.com', 'pw')).rejects.toMatchObject({
+    await expect(amplifyAuth.signIn('sign-in')).rejects.toMatchObject({
       kind: 'offline',
     });
   });
@@ -200,7 +337,7 @@ describe('amplifyAuth', () => {
       ),
     );
     const { amplifyAuth } = await import('../src/lib/auth/amplify.ts');
-    await expect(amplifyAuth.signIn('a@example.com', 'pw')).rejects.toMatchObject({
+    await expect(amplifyAuth.signIn('sign-in')).rejects.toMatchObject({
       kind: 'not-set-up',
     });
   });
@@ -212,14 +349,14 @@ describe('amplifyAuth', () => {
       vi.fn(async () => new Response('<!doctype html><title>Hotel wifi</title>', { status: 200 })),
     );
     const { amplifyAuth } = await import('../src/lib/auth/amplify.ts');
-    await expect(amplifyAuth.signIn('a@example.com', 'pw')).rejects.toMatchObject({
+    await expect(amplifyAuth.signIn('sign-in')).rejects.toMatchObject({
       kind: 'offline',
     });
   });
 
   it('calls a rate limit on the config a network problem', async () => {
     const auth = await load(null, 429);
-    await expect(auth.signIn('a@example.com', 'pw')).rejects.toMatchObject({ kind: 'offline' });
+    await expect(auth.signIn('sign-in')).rejects.toMatchObject({ kind: 'offline' });
   });
 
   it('recognises the app’s own page by its boot loader, which index.html has', () => {
@@ -228,57 +365,16 @@ describe('amplifyAuth', () => {
 
   it('calls a config from someone else that parses (a proxy’s JSON) a network problem', async () => {
     const auth = await load({ error: 'login required' });
-    await expect(auth.signIn('a@example.com', 'pw')).rejects.toMatchObject({ kind: 'offline' });
-  });
-
-  it('gives up on a new code that never comes back, as a network problem', async () => {
-    const auth = await load();
-    // Set up first (its fetch is real time), then a resend that hangs.
-    amplify.signIn.mockResolvedValue({ isSignedIn: true, nextStep: { signInStep: 'DONE' } });
-    await auth.signIn('a@example.com', 'pw');
-    vi.useFakeTimers();
-    try {
-      amplify.resendSignUpCode.mockReturnValue(new Promise(() => {}));
-      const result = expect(auth.resendSignUpCode('a@example.com')).rejects.toMatchObject({
-        kind: 'no-answer',
-      });
-      await vi.advanceTimersByTimeAsync(CALL_LIMIT_MS);
-      await result;
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('waits for a confirm’s real answer, however long (it may yet succeed)', async () => {
-    const auth = await load();
-    amplify.signIn.mockResolvedValue({ isSignedIn: true, nextStep: { signInStep: 'DONE' } });
-    await auth.signIn('a@example.com', 'pw');
-    vi.useFakeTimers();
-    try {
-      let settled = false;
-      amplify.confirmSignUp.mockReturnValue(new Promise(() => {}));
-      auth.confirmSignUp('a@example.com', 'pw', '123456').then(
-        () => {
-          settled = true;
-        },
-        () => {
-          settled = true;
-        },
-      );
-      await vi.advanceTimersByTimeAsync(CALL_LIMIT_MS * 3);
-      expect(settled).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
+    await expect(auth.signIn('sign-in')).rejects.toMatchObject({ kind: 'offline' });
   });
 
   it('shows the page signed out when the session check never answers', async () => {
     const auth = await load();
     localStorage.setItem('CognitoIdentityServiceProvider.client.LastAuthUser', 'abc');
-    amplify.getCurrentUser.mockReturnValue(new Promise(() => {}));
+    amplify.fetchAuthSession.mockReturnValue(new Promise(() => {}));
     // Set up first (its fetch is real time), then the check that hangs.
-    amplify.signIn.mockResolvedValue({ isSignedIn: true, nextStep: { signInStep: 'DONE' } });
-    await auth.signIn('a@example.com', 'pw');
+    amplify.signInWithRedirect.mockResolvedValue(undefined);
+    await auth.signIn('sign-in');
     vi.useFakeTimers();
     try {
       const user = auth.currentUser();
@@ -298,10 +394,10 @@ describe('amplifyAuth', () => {
         .mockReturnValueOnce(new Promise(() => {}))
         .mockResolvedValueOnce(new Response(JSON.stringify(CONFIG))),
     );
-    amplify.signIn.mockResolvedValue({ isSignedIn: true, nextStep: { signInStep: 'DONE' } });
+    amplify.signInWithRedirect.mockResolvedValue(undefined);
     vi.useFakeTimers();
     try {
-      const first = expect(amplifyAuth.signIn('a@example.com', 'pw')).rejects.toMatchObject({
+      const first = expect(amplifyAuth.signIn('sign-in')).rejects.toMatchObject({
         kind: 'offline',
       });
       await vi.advanceTimersByTimeAsync(CALL_LIMIT_MS);
@@ -309,7 +405,7 @@ describe('amplifyAuth', () => {
     } finally {
       vi.useRealTimers();
     }
-    await expect(amplifyAuth.signIn('a@example.com', 'pw')).resolves.toBe('done');
+    await expect(amplifyAuth.signIn('sign-in')).resolves.toBeUndefined();
   });
 
   it('never lets a set-up given up on configure Amplify late', async () => {
@@ -326,10 +422,10 @@ describe('amplifyAuth', () => {
         )
         .mockResolvedValue(new Response(JSON.stringify(CONFIG))),
     );
-    amplify.signIn.mockResolvedValue({ isSignedIn: true, nextStep: { signInStep: 'DONE' } });
+    amplify.signInWithRedirect.mockResolvedValue(undefined);
     vi.useFakeTimers();
     try {
-      const first = expect(auth.signIn('a@example.com', 'pw')).rejects.toMatchObject({
+      const first = expect(auth.signIn('sign-in')).rejects.toMatchObject({
         kind: 'offline',
       });
       await vi.advanceTimersByTimeAsync(CALL_LIMIT_MS);
@@ -337,7 +433,7 @@ describe('amplifyAuth', () => {
     } finally {
       vi.useRealTimers();
     }
-    await auth.signIn('a@example.com', 'pw');
+    await auth.signIn('sign-in');
     expect(amplify.configure).toHaveBeenCalledTimes(1);
     // The first one's config comes in at last: it is dropped, not applied. (Its body is ready at
     // once, so one task is enough for that set-up to run to its end.)
