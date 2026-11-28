@@ -835,12 +835,15 @@ export function createFakeApi({
       if (jobId && method === 'GET') {
         const job = myJobs().find((each) => each.jobId === jobId);
         if (!job) throw new ApiError('not-found', { status: 404 });
+        // The board's own ID for the posting: the last part of its address (#54 PR D).
+        const externalId = String(job.jobUrl).split('/').pop();
+        const withId: Record<string, unknown> = { ...job, ...(externalId ? { externalId } : {}) };
         // The third job's board shared no description.
         return (
-          String(job.title).startsWith('Staff')
-            ? { ...job, hasDescription: false }
+          String(withId.title).startsWith('Staff')
+            ? { ...withId, hasDescription: false }
             : {
-                ...job,
+                ...withId,
                 hasDescription: true,
                 description: FAKE_DESCRIPTION,
                 descriptionTruncated: false,
@@ -924,7 +927,8 @@ function fakeCompanies(views: Record<string, unknown>[]): Record<string, unknown
     if (crawl.status !== 'succeeded' || /nothing-fits/i.test(String(crawl.url))) continue;
     const url = new URL(String(crawl.url));
     const slug = url.pathname.split('/').filter(Boolean)[0] ?? url.hostname.split('.')[0] ?? 'x';
-    const key = `fake:${slug.toLowerCase()}`;
+    // A Greenhouse board is named as the crawl names it (#54 PR D: Auto apply needs it).
+    const key = `${url.hostname.includes('greenhouse') ? 'greenhouse' : 'fake'}:${slug.toLowerCase()}`;
     if (seen.has(key)) continue;
     seen.add(key);
     const name = slug.charAt(0).toUpperCase() + slug.slice(1).replace(/-/g, ' ');

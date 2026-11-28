@@ -22,6 +22,29 @@ sequenceDiagram
   Note over Web: sorts any column in the browser: every row is there
 ```
 
+## Auto apply (#54 PR D3)
+
+The job's pane hands the job to the browser extension ([extension flow](extension.md#auto-apply-and-recording-the-application-54-pr-d)); the person still submits on the employer's form.
+
+```mermaid
+sequenceDiagram
+  actor User
+  participant Web as Web app (job pane)
+  participant X as Extension (service worker)
+  participant API as Jobs API
+  Web->>X: hello (chrome.runtime.sendMessage, each ID in /config.json extensionIds)
+  X-->>Web: version, signed in (none answers: missing; no IDs: Soon)
+  Web->>API: GET /me/jobs/{jobId} (a Greenhouse job: its externalId)
+  User->>Web: Auto apply
+  Web->>X: auto-apply {jobId, url: job-boards.greenhouse.io/<board>/jobs/<externalId>}
+  X-->>Web: ok (it opened and fills the form) / signed-out / not-greenhouse / wrong-job / failed
+  Web->>User: ok: "Did you apply on the employer site?" (as Manual apply); else why, said below
+  Note over Web: back on the page (focus): GET /me/matches again;<br/>a job the extension recorded has left it, and the pane closes, saying so
+```
+
+- Auto apply is unavailable, saying why, for a job not on Greenhouse, while its company cools down, and without the extension (then it says to add it). Signed out of the extension, it can still be pressed: the extension tries a sign-in without a window first.
+- The form's address is built from the job's board and posting ID (`greenhouseFormUrl`), never `jobUrl`, which is often the company's careers page.
+
 ## Applying by hand, and moving a stage
 
 ```mermaid

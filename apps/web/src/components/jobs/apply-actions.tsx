@@ -1,3 +1,4 @@
+import { greenhouseFormUrl } from '@jobdeputy/shared/extension';
 import { useEffect, useId, useRef, useState } from 'react';
 import { coolingUntil, momentHere } from '@/components/jobs/cooldown.ts';
 import { Button, buttonVariants } from '@/components/ui/button.tsx';
@@ -10,7 +11,9 @@ import {
   type JobSummary,
   setStage,
   stageGone,
+  useJob,
 } from '@/lib/api/jobs.ts';
+import { type ExtensionState, useExtension, useExtensionLink } from '@/lib/extension.ts';
 import { cn } from '@/lib/utils.ts';
 
 const text = copy.matchesPage.apply;
@@ -21,6 +24,14 @@ const text = copy.matchesPage.apply;
  * apply on the employer site?" (the prototype's check): I applied marks the job applied, and it
  * leaves Matches (`onApplied`); Not yet puts the question away. **Auto apply** shows, unavailable,
  * until the browser extension (#54).
+ *
+ * #54 PR D (decision 0020): with the extension installed (one this cell trusts, `useExtension`),
+ * **Auto apply** hands it the job and its Greenhouse form (built from the board and the posting's
+ * ID, never the stored address); the extension opens it in a new tab and fills it in, and the
+ * person submits. The same "Did you apply?" question then shows, and Matches is read again when
+ * the page has the focus back (`onReturn`): a job the extension recorded leaves it. Auto apply is
+ * unavailable, saying why, for a job that isn't on Greenhouse, while cooling down, and without
+ * the extension; where the site has no extension yet it says Soon.
  *
  * The question takes the focus when it shows, so it is the first thing met on coming back from
  * the employer's tab. A job found changed elsewhere (409 `stage-changed`: applied in another
@@ -38,6 +49,7 @@ export function ApplyActions({
   onApplied,
   onGone,
   onFailed,
+  onReturn,
 }: {
   job: JobSummary;
   /** Matches' cooldown rule, to say it. */
@@ -47,9 +59,23 @@ export function ApplyActions({
   /** Not in Matches any more: applied to elsewhere, or taken down. */
   onGone: () => void;
   onFailed: () => void;
+  /** Back on this page after Auto apply: Matches read again (the extension may have recorded it). */
+  onReturn?: () => void;
 }) {
   const api = useApi();
+  const extension = useExtension();
+  const link = useExtensionLink();
+  // The full job (the pane reads it too): the posting's ID, for its Greenhouse form. Only for a
+  // Greenhouse job, where the site has an extension to hand it to.
+  const greenhouse = job.companyKey.startsWith('greenhouse:');
+  const wantsForm =
+    greenhouse && extension.data !== undefined && extension.data.state !== 'unsupported';
+  const full = useJob(wantsForm ? job.jobId : null);
+  const formUrl = greenhouseFormUrl(job.companyKey, full.data?.externalId);
   const [asking, setAsking] = useState(false);
+  const [handing, setHanding] = useState(false);
+  /** Auto apply opened the form: the page coming back into focus reads Matches again. */
+  const [handedOff, setHandedOff] = useState(false);
   const [saving, setSaving] = useState(false);
   // What went wrong, and how many times (a new failure is a new alert, read out again).
   const [failure, setFailure] = useState<{
@@ -81,6 +107,52 @@ export function ApplyActions({
   useEffect(() => {
     if (until === undefined) setFailure((was) => (was?.cooling ? null : was));
   }, [until]);
+  // Matches read again once, on coming back to this page after the handoff.
+  const returned = useRef(onReturn);
+  returned.current = onReturn;
+  useEffect(() => {
+    if (!handedOff) return;
+    const back = () => {
+      setHandedOff(false);
+      returned.current?.();
+    };
+    window.addEventListener('focus', back);
+    return () => window.removeEventListener('focus', back);
+  }, [handedOff]);
+  async function autoApply() {
+    if (!formUrl) return;
+    setHanding(true);
+    setFailure(null);
+    const answer = await link.autoApply(job.jobId, formUrl);
+    setHanding(false);
+    if (answer.ok || answer.reason === 'no-answer') {
+      // Silent but reached: it may have opened the form, so ask as if it had (never twice).
+      // Already back on this page (a slow answer): read Matches now; else when it comes back.
+      if (document.hasFocus()) returned.current?.();
+      else setHandedOff(true);
+      ask();
+      if (!answer.ok) {
+        setFailure((was) => ({
+          cooling: false,
+          words: text.autoFailed.late,
+          count: (was?.count ?? 0) + 1,
+        }));
+      }
+      return;
+    }
+    // What the extension says now (signed out, gone).
+    void extension.refetch();
+    setFailure((was) => ({
+      cooling: false,
+      words:
+        answer.reason === 'signed-out'
+          ? text.autoFailed.signedOut
+          : answer.reason === 'unreachable'
+            ? text.autoFailed.noAnswer
+            : text.autoFailed.cantOpen,
+      count: (was?.count ?? 0) + 1,
+    }));
+  }
   function ask() {
     setAsking(true);
     // A save under way keeps its answer to come; otherwise a fresh question.
@@ -111,6 +183,14 @@ export function ApplyActions({
       onFailed();
     }
   }
+  /** Whether Auto apply can be pressed, and what it says. */
+  const auto = autoState(
+    extension.data,
+    until !== undefined,
+    formUrl,
+    // Only a Greenhouse job waits for its posting's ID, or says it couldn't read it.
+    greenhouse ? (full.isError ? 'failed' : full.isPending ? 'loading' : 'read') : 'other',
+  );
   function notYet() {
     setAsking(false);
     setFailure(null);
@@ -151,11 +231,23 @@ export function ApplyActions({
           )}
         </a>
         {/* Unavailable, not disabled: it can still be reached, and says why. */}
-        <Button variant="outline" aria-disabled aria-describedby={ids.auto}>
+        <Button
+          variant="outline"
+          {...(auto.available
+            ? {
+                pending: handing,
+                pendingLabel: text.autoOpening,
+                onClick: () => void autoApply(),
+              }
+            : { 'aria-disabled': true })}
+          aria-describedby={ids.auto}
+        >
           {text.auto}
-          <span className="rounded-full bg-paper-deep px-2 py-0.5 text-[0.6875rem]/[1.3] font-[750] tracking-[0.08em] text-ink-soft uppercase">
-            {text.soon}
-          </span>
+          {auto.soon && (
+            <span className="rounded-full bg-paper-deep px-2 py-0.5 text-[0.6875rem]/[1.3] font-[750] tracking-[0.08em] text-ink-soft uppercase">
+              {text.soon}
+            </span>
+          )}
         </Button>
       </div>
       <div className="grid gap-1 text-sm text-muted-foreground">
@@ -163,7 +255,7 @@ export function ApplyActions({
           {until !== undefined ? coolingLine(job, until, cooldown) : text.manualHint}
         </p>
         <p id={ids.auto} className="m-0">
-          {text.autoHint}
+          {auto.hint}
         </p>
       </div>
       {asking && (
@@ -214,4 +306,36 @@ function coolingLine(job: JobSummary, until: string, cooldown: Cooldown | undefi
         days: plural(text.days, cooldown.days),
       })
     : fill(text.coolingShort, values);
+}
+
+/** Auto apply: available, its words, and whether it says Soon (#54 PR D). */
+function autoState(
+  extension: ExtensionState | undefined,
+  cooling: boolean,
+  formUrl: string | null,
+  /** A Greenhouse job's posting: being read, couldn't be, or read; `other`, not Greenhouse. */
+  jobRead: 'loading' | 'failed' | 'read' | 'other',
+): { available: boolean; hint: string; soon: boolean } {
+  const off = (hint: string) => ({ available: false, hint, soon: false });
+  if (!extension) return off(text.autoChecking);
+  if (extension.state === 'unsupported')
+    return { available: false, hint: text.autoHint, soon: true };
+  if (cooling) return off(text.autoCooling);
+  if (!formUrl) {
+    return off(
+      jobRead === 'loading'
+        ? text.autoChecking
+        : jobRead === 'failed'
+          ? text.autoJobFailed
+          : jobRead === 'read'
+            ? text.autoNoForm
+            : text.autoNotGreenhouse,
+    );
+  }
+  if (extension.state === 'missing') return off(text.autoMissing);
+  return {
+    available: true,
+    hint: extension.signedIn ? text.autoReady : text.autoSignIn,
+    soon: false,
+  };
 }

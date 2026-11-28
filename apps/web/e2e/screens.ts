@@ -93,6 +93,15 @@ export const SCREENS: Screen[] = [
     still: true,
     steps: toMatchesApplied,
   },
+  // #54 PR D3: Auto apply handed the job to the extension (the test build's, installed and
+  // signed in): the pane asks whether you applied.
+  {
+    name: 'matches-auto-apply',
+    path: '/',
+    open: 'Get started free',
+    still: true,
+    steps: toMatchesAutoApply,
+  },
   // #51 PR C: the company's tailored résumé in the pane: ready (80% or more), and below 80%
   // with the keywords still missing (I have this).
   {
@@ -569,6 +578,15 @@ async function toJobsApplyAsk(page: Page) {
   const employer = page.waitForEvent('popup');
   await page.getByRole('link', { name: /^Manual apply/ }).click();
   await (await employer).close();
+  await page.getByRole('group', { name: 'Did you apply on the employer site?' }).waitFor();
+}
+
+/** #54 PR D3: Auto apply, ready, then pressed: the extension opens the form; the pane asks. */
+async function toMatchesAutoApply(page: Page) {
+  await toJobsPreview(page);
+  const auto = page.getByRole('button', { name: /^Auto apply/ });
+  await page.getByText(/fills it in with your saved answers/).waitFor();
+  await auto.click();
   await page.getByRole('group', { name: 'Did you apply on the employer site?' }).waitFor();
 }
 

@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { EXTENSION_DEV_IDS, extensionOrigin, extensionRedirectUrl } from '../src/extension.js';
+import {
+  EXTENSION_DEV_IDS,
+  extensionOrigin,
+  extensionRedirectUrl,
+  greenhouseFormUrl,
+} from '../src/extension.js';
 import { EXTENSION_DEV_KEY } from '../src/extension-key.js';
 
 /** Chrome's rule: the first 32 hex digits of the key's SHA-256, each digit 0–f written as a–p. */
@@ -28,5 +33,24 @@ describe('extension identity (#54, decision 0020)', () => {
   it('builds the callback and origin Chrome uses for an ID', () => {
     expect(extensionRedirectUrl('abc')).toBe('https://abc.chromiumapp.org/');
     expect(extensionOrigin('abc')).toBe('chrome-extension://abc');
+  });
+});
+
+describe('greenhouseFormUrl (#54 PR D)', () => {
+  it("builds a Greenhouse job's own form on the board's host", () => {
+    expect(greenhouseFormUrl('greenhouse:acme', '4001001')).toBe(
+      'https://job-boards.greenhouse.io/acme/jobs/4001001',
+    );
+  });
+
+  it.each([
+    ['lever:acme', '1'],
+    ['greenhouse:acme', undefined],
+    ['greenhouse:acme', 'abc'],
+    ['greenhouse:', '1'],
+    ['greenhouse:ac/me', '1'],
+    ['greenhouse:acme', `1${'0'.repeat(20)}`],
+  ])('none for %s %s', (companyKey, externalId) => {
+    expect(greenhouseFormUrl(companyKey, externalId)).toBeNull();
   });
 });

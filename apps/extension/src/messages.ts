@@ -1,3 +1,4 @@
+import type { AutoApplyAnswer, ExtensionHello } from '@jobdeputy/shared/extension';
 import type { ApiResult } from './api.ts';
 import type { AuthStatus, SignInOutcome } from './auth/session.ts';
 import type { FillData } from './fill/data.ts';
@@ -86,15 +87,9 @@ export type ExternalRequest =
   | { type: 'hello' }
   | { type: 'auto-apply'; jobId: string; url: string };
 
-export interface HelloResponse {
-  /** The extension's version, so the site can tell an old one. */
-  version: string;
-  signedIn: boolean;
-}
-
-export type AutoApplyResponse =
-  | { ok: true }
-  | { ok: false; reason: 'signed-out' | 'not-greenhouse' | 'wrong-job' | 'failed' };
+/** Shared with the web app (`@jobdeputy/shared/extension`): one shape on both sides. */
+export type HelloResponse = ExtensionHello;
+export type AutoApplyResponse = AutoApplyAnswer;
 
 const JOB_ID = /^[0-9a-f]{32}$/;
 

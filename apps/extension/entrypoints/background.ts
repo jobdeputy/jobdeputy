@@ -181,12 +181,15 @@ export default defineBackground(() => {
       const signedIn = auth ? (await auth.status()).state === 'signed-in' : false;
       return { version: browser.runtime.getManifest().version, signedIn };
     }
-    if (!handoff) return { ok: false, reason: 'signed-out' };
+    // A build without sign-in settings: nothing to sign in to, so not "signed out".
+    if (!handoff) return { ok: false, reason: 'failed' };
     return handoff.autoApply(request.jobId, request.url);
   }
   browser.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
     if (!fromSite(sender, origins) || !isExternalRequest(message)) return false;
-    answerSite(message).then(sendResponse, () => sendResponse(null));
+    // A failure is said as one: null would read as "no answer", as if a tab might have opened.
+    const failed = message.type === 'auto-apply' ? { ok: false, reason: 'failed' } : null;
+    answerSite(message).then(sendResponse, () => sendResponse(failed));
     return true;
   });
 });

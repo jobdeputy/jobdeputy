@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { greenhouseFormUrl } from '@jobdeputy/shared/extension';
+import { atsJobKey, jobIdOf } from '@jobdeputy/shared/job-id';
 import { describe, expect, it } from 'vitest';
 import { greenhouseConfirmation, greenhousePosting, jobIdFor } from '../src/fill/posting.ts';
 
@@ -66,4 +68,13 @@ describe('greenhouseConfirmation (#54 PR D)', () => {
   ])('is not one: %s', (address) => {
     expect(greenhouseConfirmation(address)).toBeNull();
   });
+});
+
+it("takes the web app's form address for Auto apply as the same job the crawl made (#54 PR D3)", async () => {
+  const url = greenhouseFormUrl('greenhouse:acme', '4001001');
+  const posting = greenhousePosting(url ?? '');
+  expect(posting).toEqual({ companyKey: 'greenhouse:acme', postingId: '4001001' });
+  expect(await jobIdFor(posting ?? { companyKey: '', postingId: '' })).toBe(
+    await jobIdOf(atsJobKey('greenhouse:acme', '4001001')),
+  );
 });

@@ -67,6 +67,8 @@ export function fitOf(job: Pick<JobSummary, 'relevance'>): Fit {
  * characters (`descriptionTruncated`). Absent when the board shared none.
  */
 export interface Job extends JobSummary {
+  /** The board's own ID for the posting (#54 PR D: Auto apply builds a Greenhouse form from it). */
+  externalId?: string;
   description?: string;
   descriptionTruncated?: boolean;
 }
