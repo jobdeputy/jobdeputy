@@ -88,7 +88,10 @@ export const TEST_USERS_GROUP = 'integration-tests';
  */
 export const WEB_SIGN_IN_CALLBACK_PATH = '/auth/callback';
 
-/** Vite's dev server: dev stacks also let a web app run on it sign in (#111). Never prod. */
+/**
+ * Vite's dev server: dev stacks also let a web app run on it sign in (#111). Never prod. Open it
+ * at exactly this origin (not 127.0.0.1): managed login returns only here.
+ */
 export const LOCAL_WEB_ORIGIN = 'http://localhost:5173';
 
 /**

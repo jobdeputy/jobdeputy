@@ -15,7 +15,7 @@ import { CfnFunction } from 'aws-cdk-lib/aws-lambda';
 import { LogGroup } from 'aws-cdk-lib/aws-logs';
 import { describe, expect, it } from 'vitest';
 import { MAX_RECEIVES as WORKER_MAX_RECEIVES } from '../../apps/worker/src/ping-worker.js';
-import { buildApp, parseAlertEmails } from '../lib/build-app.js';
+import { buildApp, parseAlertEmails, signInDomainFromContext } from '../lib/build-app.js';
 import { MAX_RECEIVES } from '../lib/cell-stack.js';
 import { REPO_ROOT } from '../lib/constructs/node-function.js';
 import { checkGuards } from '../lib/guards.js';
@@ -314,9 +314,13 @@ describe('Cognito (T05)', () => {
     ]) {
       expect(after.some((id) => id.startsWith(client))).toBe(true);
     }
-    for (const branding of Object.values(t.findResources('AWS::Cognito::ManagedLoginBranding'))) {
-      expect(branding.DependsOn).toContain(customId);
-    }
+    // …one look after the other.
+    const looks = t.findResources('AWS::Cognito::ManagedLoginBranding');
+    const [webLook, extensionLook] = ['WebBranding', 'ExtensionBranding'].map(
+      (name) => Object.keys(looks).find((id) => id.startsWith(`Auth${name}`)) ?? '',
+    );
+    expect(looks[webLook ?? '']?.DependsOn).toContain(customId);
+    expect(looks[extensionLook ?? '']?.DependsOn).toContain(webLook);
     // The domain's own attribute: no lookup function.
     expect(Object.keys(t.findResources('Custom::AWS'))).toEqual([]);
     // The extension builds against it, and the web app reads it from its config.
@@ -340,6 +344,12 @@ describe('Cognito (T05)', () => {
     first.resourceCountIs('AWS::Cognito::UserPoolDomain', 1);
     first.resourceCountIs('AWS::CertificateManager::Certificate', 0);
     expect(first.findOutputs('SignInDomain')).toEqual({});
+    expect(signInDomainFromContext(undefined)).toBe(true);
+    expect(signInDomainFromContext('on')).toBe(true);
+    expect(signInDomainFromContext('off')).toBe(false);
+    for (const value of ['false', '0', 'Off', true]) {
+      expect(() => signInDomainFromContext(value)).toThrow(/Use on or off/);
+    }
   });
 
   it("has the site's zone stack write the zone ID the cell reads (#111)", () => {

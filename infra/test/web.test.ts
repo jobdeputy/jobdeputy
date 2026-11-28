@@ -172,7 +172,10 @@ describe('web app hosting (decision 0011)', () => {
     expect(value).toMatch(/userPoolClientId.*Ref.*AuthUserPoolWebClient/);
     expect(value).toMatch(/apiUrl.*HttpApi.*ApiEndpoint/);
     // #111: managed login on the site's own sign-in domain.
-    expect(value).toMatch(/authDomain.*https:\/\/.*Ref.*AuthUserPoolSignInDomain/);
+    // A bare host name (Amplify's oauth.domain): the third part of https://auth.<site>.
+    expect(value).toMatch(
+      /authDomain.*Fn::Select.*2.*Fn::Split.*\/.*https:\/\/.*Ref.*AuthUserPoolSignInDomain/,
+    );
     // And the origins the site may call there: exactly its API, its documents bucket, and
     // managed login (Amplify calls its token and revoke endpoints, #111).
     const origins = JSON.stringify(

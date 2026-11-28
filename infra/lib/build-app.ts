@@ -169,6 +169,13 @@ function cliSynthesizer(): IStackSynthesizer {
   return new CliCredentialsStackSynthesizer() as unknown as IStackSynthesizer;
 }
 
+/** `-c signInDomain=on|off` (#111); left out, on. Anything else is refused, never guessed. */
+export function signInDomainFromContext(value: unknown): boolean {
+  if (value === undefined || value === 'on') return true;
+  if (value === 'off') return false;
+  throw new Error(`Unknown signInDomain "${String(value)}". Use on or off.`);
+}
+
 export function stageFromContext(value: unknown): StageName {
   const stage = value ?? 'dev';
   if (!isStageName(stage)) throw new Error(`Unknown stage "${String(stage)}". Use dev or prod.`);

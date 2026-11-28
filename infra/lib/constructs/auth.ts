@@ -176,13 +176,16 @@ export class Auth extends Construct {
       // One change to the pool's managed login at a time: the clients, then the custom domain
       // (minutes to make), then each client's look.
       for (const { client } of oauthClients) domains.custom?.node.addDependency(client);
-      // Managed login's look, set per client: the same for both (login-branding.ts).
+      // Managed login's look, set per client: the same for both (login-branding.ts), one after
+      // the other.
+      let previous: Construct = domains.custom ?? domains.prefix;
       for (const { id, client } of oauthClients) {
         const branding = loginBranding(this, id, {
           userPoolId: this.userPool.userPoolId,
           clientId: client.userPoolClientId,
         });
-        branding.node.addDependency(domains.custom ?? domains.prefix);
+        branding.node.addDependency(previous);
+        previous = branding;
       }
     }
 

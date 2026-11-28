@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { App } from 'aws-cdk-lib';
 import { GITHUB_OIDC_SUBJECT_PREFIX } from '../config/github.js';
 import { WEB_DIST_DIR } from '../config/web.js';
-import { buildApp, stageFromContext } from '../lib/build-app.js';
+import { buildApp, signInDomainFromContext, stageFromContext } from '../lib/build-app.js';
 import { CicdStack } from '../lib/cicd-stack.js';
 import { REPO_ROOT } from '../lib/constructs/node-function.js';
 
@@ -19,7 +19,7 @@ buildApp({
   cliCredentials,
   webContentDir: join(REPO_ROOT, WEB_DIST_DIR),
   // #111: `-c signInDomain=off` for a stage's first deploy (decision 0021).
-  signInDomain: app.node.tryGetContext('signInDomain') !== 'off',
+  signInDomain: signInDomainFromContext(app.node.tryGetContext('signInDomain')),
   ...(owner ? { owner } : {}),
 });
 

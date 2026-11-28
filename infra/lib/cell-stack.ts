@@ -17,6 +17,7 @@ import {
   Aspects,
   CfnOutput,
   Duration,
+  Fn,
   RemovalPolicy,
   Stack,
   type StackProps,
@@ -842,8 +843,9 @@ export class CellStack extends Stack {
           userPoolClientId: auth.webClient.userPoolClientId,
           // No trailing slash: the app adds paths that start with one.
           apiUrl: httpApi.apiEndpoint,
-          // #111: managed login's address, where the web app signs in (https://auth.<site>).
-          ...(auth.signInUrl ? { authDomain: auth.signInUrl } : {}),
+          // #111: managed login's host, where the web app signs in (auth.<site>): a bare host
+          // name, as Amplify's oauth.domain takes.
+          ...(auth.signInUrl ? { authDomain: Fn.select(2, Fn.split('/', auth.signInUrl)) } : {}),
         }),
       });
       new StringParameter(this, 'WebConnectSrc', {
