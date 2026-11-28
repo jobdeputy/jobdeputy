@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { choose } from '../src/greenhouse/dom.ts';
 import { fillForm, LEFT_MARK, markLeft, scan } from '../src/greenhouse/fill.ts';
 import { fillData } from './greenhouse-data.ts';
 import { GreenhouseForm } from './greenhouse-form.tsx';
@@ -105,6 +106,24 @@ describe('fields only the person answers (#54 PR C round 1)', () => {
     expect((form.querySelector('[name="attest"]') as HTMLInputElement).checked).toBe(false);
   });
 
+  it('names a lone checkbox by its own label, and cleans an aria-label', async () => {
+    document.body.innerHTML = `<form id="application-form">
+      <fieldset><legend>Privacy</legend>
+        <div class="field-wrapper"><label><input type="checkbox" name="gdpr" required>
+          I consent to processing</label></div>
+        <div class="field-wrapper"><label><input type="checkbox" name="retain" required>
+          Keep my data for future roles</label></div></fieldset>
+      <div class="field-wrapper"><input id="mobile" type="tel" aria-label="Mobile  *" aria-required="true"></div>
+    </form>`;
+    const form = document.getElementById('application-form') as HTMLElement;
+    const report = await fillForm(form, fillData({ person: { links: {} } }), { waitMs: 20 });
+    expect(report.left.map((field) => field.label)).toEqual([
+      'I consent to processing',
+      'Keep my data for future roles',
+      'Mobile',
+    ]);
+  });
+
   it('counts a "select all that apply" group as one question, answered once any box is ticked', async () => {
     document.body.innerHTML = `<form id="application-form">
       <fieldset aria-required="true"><legend>Where could you work from?</legend>
@@ -143,7 +162,8 @@ describe('fields only the person answers (#54 PR C round 1)', () => {
     const why = document.getElementById('why') as HTMLInputElement;
     why.value = 'Because';
     why.dispatchEvent(new Event('input', { bubbles: true }));
-    expect(wrapper.hasAttribute(LEFT_MARK)).toBe(false);
+    // Checked once the page has drawn (a frame later).
+    await waitFor(() => expect(wrapper.hasAttribute(LEFT_MARK)).toBe(false));
     expect(document.getElementById('jobdeputy-left-style')?.textContent).toContain('#f36b3f');
   });
 });
@@ -194,5 +214,16 @@ describe('a working form with Greenhouse’s choice widget (react-select)', () =
     expect(screen.queryByText('English')).toBeNull();
     // The React state took the typed values (the native setter), not only the DOM.
     expect((document.getElementById('first_name') as HTMLInputElement).value).toBe('Sam');
+
+    // The person picks a choice left for them: its outline goes once the page has drawn it,
+    // though a pick fires no input event.
+    markLeft(form, '#f36b3f');
+    const worked = document.getElementById('question_4') as HTMLInputElement;
+    const outlined = () => worked.closest('.field-wrapper')?.hasAttribute(LEFT_MARK);
+    expect(outlined()).toBe(true);
+    globalThis.IS_REACT_ACT_ENVIRONMENT = false;
+    await choose(worked, (options) => options.indexOf('No'));
+    globalThis.IS_REACT_ACT_ENVIRONMENT = actEnvironment;
+    await waitFor(() => expect(outlined()).toBe(false));
   });
 });

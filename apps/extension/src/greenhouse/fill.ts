@@ -36,11 +36,16 @@ interface Field {
   required: boolean;
 }
 
-function textOf(node: Element | null | undefined): string {
-  return (node?.textContent ?? '')
-    .replace(/\s*\*\s*$/, '')
+/** A label as people read it: one line, without the required mark. */
+function clean(text: string | null | undefined): string {
+  return (text ?? '')
     .replace(/\s+/g, ' ')
+    .replace(/\s*\*\s*$/, '')
     .trim();
+}
+
+function textOf(node: Element | null | undefined): string {
+  return clean(node?.textContent);
 }
 
 function labelOf(element: Input): string {
@@ -51,12 +56,20 @@ function labelOf(element: Input): string {
       doc.getElementById(`upload-label-${element.id}`) ??
       doc.querySelector(`label[for="${CSS.escape(element.id)}"]`))
     : null;
-  return textOf(byId ?? element.closest('label')) || (element.getAttribute('aria-label') ?? '');
+  return textOf(byId ?? element.closest('label')) || clean(element.getAttribute('aria-label'));
 }
 
-/** A radio or checkbox group's question: its fieldset's legend or its group's label. */
+/**
+ * A radio or checkbox group's question: its fieldset's legend or its group's label, when the
+ * group holds this question's boxes. A lone checkbox (a consent box in a "Privacy" section)
+ * is its own question: its own label.
+ */
 function groupLabelOf(element: Input): string {
   const group = element.closest('fieldset, [role="radiogroup"], [role="group"]');
+  const named = element.name
+    ? group?.querySelectorAll(`input[name="${CSS.escape(element.name)}"]`).length
+    : 0;
+  if (element.type === 'checkbox' && (named ?? 0) < 2) return labelOf(element);
   const labelledBy = group?.getAttribute('aria-labelledby');
   return (
     textOf(group?.querySelector('legend')) ||
@@ -228,12 +241,22 @@ export function markLeft(form: HTMLElement, color: string): void {
   }
   if (form.dataset.jobdeputyWatch) return;
   form.dataset.jobdeputyWatch = '1';
-  // Only once every field in that outline holds an answer: typing a search, or ticking then
-  // unticking a box, leaves it.
-  const answered = (event: Event) => {
-    const wrapper = (event.target as Element | null)?.closest?.(`[${LEFT_MARK}]`);
-    if (wrapper && !scan(wrapper).some(isEmpty)) wrapper.removeAttribute(LEFT_MARK);
+  // An outline goes once every required field in it holds an answer. Choices are made by a
+  // click or a key and drawn by the page afterwards (no input event), so the outlines are
+  // checked again once the page has drawn: after the person's events and the page's changes.
+  let queued = false;
+  const recheck = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => {
+      queued = false;
+      for (const wrapper of form.querySelectorAll<HTMLElement>(`[${LEFT_MARK}]`)) {
+        const open = scan(wrapper).some((field) => field.required && isEmpty(field));
+        if (!open) wrapper.removeAttribute(LEFT_MARK);
+      }
+    });
   };
-  form.addEventListener('input', answered, true);
-  form.addEventListener('change', answered, true);
+  for (const type of ['input', 'change', 'click', 'keyup'])
+    form.addEventListener(type, recheck, true);
+  new MutationObserver(recheck).observe(form, { childList: true, subtree: true });
 }

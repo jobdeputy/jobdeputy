@@ -106,6 +106,11 @@ describe('answerFor (#54 PR C)', () => {
       ),
     ).toBe('Yes');
     expect(ask('What is your current work authorization status in the US?')).toBe('Yes');
+    // Asks about sponsorship, with a hint mentioning "without sponsorship": still sponsorship.
+    const hinted =
+      'Will you now or in the future require sponsorship? (Select No if you can work without sponsorship)';
+    expect(ask(hinted, needsVisa)).toBe('Yes');
+    expect(ask(hinted)).toBe('No');
     // Both asked at once: which to answer is the person's call.
     expect(
       answerFor(
@@ -130,6 +135,11 @@ describe('answerFor (#54 PR C)', () => {
       'Are you legally authorized to work in the United States? (Role based in New Jersey)',
       'Are you authorized to work in the United States? Office in Atlanta, Georgia',
       'Are you authorized to work in the U.S.? Remote within New England',
+      // "US" in capitals names the country ("us" in lowercase is a word).
+      'Are you legally authorized to work in the US? This role is in Atlanta, Georgia',
+      // New England, New Jersey, New Mexico are US places, not Britain, Jersey or Mexico.
+      'Are you authorized to work? Remote within New England',
+      'Are you authorized to work? This role is in New Jersey or New Mexico',
     ]) {
       expect(picked(ask(label), ['Yes', 'No']), label).toBe('Yes');
     }
@@ -137,6 +147,19 @@ describe('answerFor (#54 PR C)', () => {
     expect(picked(ask('Are you authorized to work in the USA?'), ['Yes', 'No'])).toBe('Yes');
     // "us" is a word, not a country.
     expect(picked(ask('Are you legally authorized to work for us?'), ['Yes', 'No'])).toBe('Yes');
+  });
+
+  it('never types yes or no into a box that only mentions sponsorship in passing', () => {
+    expect(
+      answerFor(text('question_15', 'LinkedIn profile URL (note: no visa sponsorship)'), data),
+    ).toEqual({ kind: 'text', value: 'https://www.linkedin.com/in/sam' });
+    expect(
+      answerFor(text('question_16', 'Why Acme? We do not offer sponsorship.'), data),
+    ).toBeNull();
+    expect(answerFor(text('question_17', 'Are you willing to relocate?'), data)).toEqual({
+      kind: 'text',
+      value: 'No',
+    });
   });
 
   it('never puts a link into a question that only names a site as an example', () => {

@@ -14,16 +14,26 @@ import css from './style.css?inline';
 
 /** How long a form may take to appear after the page loads. */
 const FORM_WAIT_MS = 10_000;
+/** How long an announced navigation may take to change the address before it's ignored. */
+const NAVIGATION_WAIT_MS = 5_000;
 
 const findForm = () => document.querySelector<HTMLFormElement>('form#application-form');
 
-/** The application form, once the page shows it (null if it never does: not an application). */
-function waitForForm(): Promise<HTMLFormElement | null> {
-  const now = findForm();
+/**
+ * The application form, once the page shows it (null if it never does: not an application).
+ * After a move from one job to another, not the previous job's form, which the board may not
+ * have replaced yet.
+ */
+function waitForForm(previous: HTMLFormElement | null = null): Promise<HTMLFormElement | null> {
+  const find = () => {
+    const form = findForm();
+    return form && form !== previous ? form : null;
+  };
+  const now = find();
   if (now) return Promise.resolve(now);
   return new Promise((resolve) => {
     const observer = new MutationObserver(() => {
-      const form = findForm();
+      const form = find();
       if (form) {
         observer.disconnect();
         clearTimeout(timer);
@@ -62,8 +72,9 @@ export default defineContentScript({
       field?.focus({ preventScroll: true });
     };
 
-    /** The posting the panel is on (`companyKey/postingId`), or null. */
+    /** The posting the panel is on (`companyKey/postingId`), or null, and its form. */
     let on: string | null = null;
+    let onForm: HTMLFormElement | null = null;
 
     /** `address`: the page's new one (it can arrive before `location` shows it). */
     async function show(address: string) {
@@ -72,11 +83,13 @@ export default defineContentScript({
       // The same job (only its #hash or ?query changed): the panel, and what it says, stay.
       if (key !== null && key === on && ui) return;
       const at = ++shown;
+      const previous = on !== null && key !== on ? onForm : null;
       on = key;
+      onForm = null;
       ui?.remove();
       ui = null;
       if (!posting) return;
-      const form = await waitForForm();
+      const form = await waitForForm(previous);
       if (!form || ctx.isInvalid || at !== shown) return;
       const next = await createShadowRootUi<Root>(ctx, {
         name: 'jobdeputy-panel',
@@ -109,11 +122,23 @@ export default defineContentScript({
         },
       });
       if (at !== shown) return;
+      onForm = form;
       ui = next;
       ui.mount();
     }
 
-    ctx.addEventListener(window, 'wxt:locationchange', (event) => void show(event.newUrl.href));
+    // The board's navigation is announced before it happens, and some never do (a download
+    // link, a stopped load): acted on only once the page's address is the new one.
+    ctx.addEventListener(window, 'wxt:locationchange', (event) => {
+      const target = event.newUrl.href;
+      const until = Date.now() + NAVIGATION_WAIT_MS;
+      const check = () => {
+        if (ctx.isInvalid) return;
+        if (location.href === target) void show(target);
+        else if (Date.now() < until) requestAnimationFrame(check);
+      };
+      check();
+    });
     await show(location.href);
   },
 });

@@ -66,8 +66,18 @@ async function serve(context: BrowserContext) {
   await context.route(`${settings.filesOrigin}/**`, (route) =>
     route.fulfill({ body: PDF, contentType: 'application/pdf' }),
   );
+  await context.route('https://job-boards.greenhouse.io/acme/benefits.pdf', (route) =>
+    route.fulfill({
+      body: PDF,
+      contentType: 'application/pdf',
+      headers: { 'content-disposition': 'attachment; filename="benefits.pdf"' },
+    }),
+  );
   await context.route(POSTING, (route) =>
-    route.fulfill({ body: page(FORM), contentType: 'text/html' }),
+    route.fulfill({
+      body: page(`<a href="/acme/benefits.pdf" download>Our benefits</a>${FORM}`),
+      contentType: 'text/html',
+    }),
   );
   await context.route(EMBED, (route) =>
     route.fulfill({ body: page(FORM), contentType: 'text/html' }),
@@ -76,14 +86,21 @@ async function serve(context: BrowserContext) {
   await context.route('https://job-boards.greenhouse.io/acme', (route) =>
     route.fulfill({
       contentType: 'text/html',
-      body: page(`<a href="/acme/jobs/4001001" id="open">Senior Engineer</a>
+      body: page(`<a href="/acme/jobs/4001001" data-job>Senior Engineer</a>
+        <a href="/acme/jobs/4001002" data-job>Staff Engineer</a>
         <template id="form">${FORM}</template>
         <script>
-          document.getElementById('open').addEventListener('click', (event) => {
-            event.preventDefault();
-            history.pushState({}, '', '/acme/jobs/4001001');
-            document.body.append(document.getElementById('form').content.cloneNode(true));
-          });
+          // As the board does: the address first, the job's form a moment later.
+          for (const link of document.querySelectorAll('[data-job]')) {
+            link.addEventListener('click', (event) => {
+              event.preventDefault();
+              history.pushState({}, '', link.getAttribute('href'));
+              setTimeout(() => {
+                document.getElementById('application-form')?.remove();
+                document.body.append(document.getElementById('form').content.cloneNode(true));
+              }, 300);
+            });
+          }
         </script>`),
     }),
   );
@@ -153,6 +170,11 @@ test('on a Greenhouse form, the panel fills it, attaches the résumé, and lists
     });
     await expect(tab).toHaveURL(`${POSTING}#app`);
     await expect(panel.getByText(/^Filled \d+ fields\.$/)).toBeVisible();
+    // A download link announces a navigation that never happens: the panel stays.
+    const download = tab.waitForEvent('download');
+    await tab.getByRole('link', { name: 'Our benefits' }).click();
+    await download;
+    await expect(panel.getByText(/^Filled \d+ fields\.$/)).toBeVisible();
 
     // A left question, from the list: the page scrolls to it and focuses it.
     const first = panel.getByRole('list').last().getByRole('button').first();
@@ -205,6 +227,15 @@ test('opening a job inside the board, without a page load, brings the panel', as
     const panel = tab.getByRole('region', { name: 'JobDeputy' });
     await panel.getByRole('button', { name: 'Fill this application' }).click();
     await expect(panel.getByText(/^Filled \d+ fields\.$/)).toBeVisible();
+    expect(await value(tab, 'first_name')).toBe('Sam');
+
+    // On to another job: a fresh panel, on the new job's form (not the old one it replaces).
+    await tab.getByRole('link', { name: 'Staff Engineer' }).click();
+    await expect(tab).toHaveURL('https://job-boards.greenhouse.io/acme/jobs/4001002');
+    const fresh = tab.getByRole('region', { name: 'JobDeputy' });
+    await fresh.getByRole('button', { name: 'Fill this application' }).click();
+    await expect(fresh.getByText(/^Filled \d+ fields\.$/)).toBeVisible();
+    await expect(tab.locator('form#application-form')).toHaveCount(1);
     expect(await value(tab, 'first_name')).toBe('Sam');
     // Only one panel: the board's page had none to leave behind.
     await expect(tab.getByRole('region', { name: 'JobDeputy' })).toHaveCount(1);

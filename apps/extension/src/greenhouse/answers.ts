@@ -48,11 +48,19 @@ function choice(pick: (options: string[]) => number | null): Want {
 }
 
 /** A yes/no answer as the question asks it: a choice, or the word in a text box. */
+/** A label that is a yes/no question, as a text box can be: "Are you…", "Will you…". */
+const ASKS_YES_NO = /^(are|will|do|does|did|have|has|can|could|would|is)\b/;
+
+/**
+ * A yes/no answer as the question asks it: a choice, or the word in a text box when the label
+ * is itself a yes/no question (never into a box that only mentions the topic in passing).
+ */
 function yesNoWant(question: Question, answer: boolean | undefined): Want | null {
   if (answer === undefined) return null;
-  return question.kind === 'choice'
-    ? choice(yesNo(answer))
-    : { kind: 'text', value: answer ? 'Yes' : 'No' };
+  if (question.kind === 'choice') return choice(yesNo(answer));
+  return ASKS_YES_NO.test(norm(question.label))
+    ? { kind: 'text', value: answer ? 'Yes' : 'No' }
+    : null;
 }
 
 function textWant(question: Question, value: string | undefined): Want | null {
@@ -104,19 +112,27 @@ function everyPlace(): Map<string, string[]> {
   return places;
 }
 
+/**
+ * Whether a label names a place. Not right after "new": New England, New South Wales, New
+ * Jersey and New Mexico are US and Australian places, not Britain, Wales, Jersey or Mexico.
+ */
 const mentions = (label: string, name: string) =>
-  new RegExp(`(^|[^a-z])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z])`).test(label);
+  new RegExp(`(^|[^a-z])(?<!\\bnew )${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z])`).test(
+    label,
+  );
 
 /**
  * The work authorization a question is about: the one saved country it names; the US when it
  * names no place at all (the US-only launch, decision 0017); none otherwise (only places with
  * no saved answer, like the UK or the EU, or several saved ones).
  */
-function authorizationFor(data: FillData, label: string) {
+function authorizationFor(data: FillData, label: string, raw: string) {
   const list = data.applicant?.workAuthorization ?? [];
   const named = [...everyPlace()]
     .filter(([, names]) => names.some((name) => mentions(label, name)))
     .map(([code]) => code);
+  // "US" in capitals names the country; lowercase "us" is the word ("tell us").
+  if (/(^|[^A-Za-z])US($|[^A-Za-z])/.test(raw) && !named.includes('US')) named.push('US');
   // A saved country the question names wins, even when another name matches too (a US state
   // called like a country: New Jersey, Georgia); two saved ones named is the person's call.
   const saved = list.filter((entry) => named.includes(entry.country));
@@ -257,25 +273,36 @@ function byId(question: Question, data: FillData): Want | null | undefined {
 const ASKS_AUTHORIZED = /(authori[sz]ed|eligible|permitted) to work|right to work/;
 /** Names work authorization, maybe only as the goal ("…sponsorship to maintain work authorization"). */
 const NAMES_AUTHORIZATION = /work authori[sz]ation/;
-/** Asks whether sponsorship is needed. */
-const ASKS_SPONSORSHIP = /sponsor/;
-/** "…without sponsorship": asks about authorization with no sponsorship, not about sponsorship. */
+/** Names sponsorship at all. */
+const NAMES_SPONSORSHIP = /sponsor/;
+/**
+ * Asks whether sponsorship is needed, as a question: "will you / do you require … sponsorship",
+ * "sponsorship required?", "Require sponsorship?". Not "…without the need for sponsorship".
+ */
+const ASKS_NEED =
+  /(will|would|do|does) you[^?]{0,40}(require|need)[^?]{0,40}sponsor|^(require|need)[^?]{0,40}sponsor|sponsorship[^?]{0,20}(required|needed)/;
+/** "…without sponsorship": asks about authorization with no sponsorship. */
 const WITHOUT_SPONSORSHIP = /without[^?]{0,30}sponsor/;
 
 /**
  * Work authorization and sponsorship, worded every way forms word them:
- * - "authorized … without sponsorship?": yes only when authorized and no sponsorship is needed;
+ * - "will you need sponsorship (to keep your work authorization)?": the sponsorship answer, even
+ *   with a hint like "(select No if you can work without sponsorship)";
  * - "authorized to work …, and will you need sponsorship?": two questions in one, left;
- * - "will you need sponsorship (to keep your work authorization)?": the sponsorship answer;
+ * - "authorized … without sponsorship?": yes only when authorized and no sponsorship is needed;
  * - "are you authorized to work / your work authorization?": the authorization answer.
  */
 function authorizationWant(q: Question, d: FillData, label: string): Want | null {
-  const auth = authorizationFor(d, label);
+  const auth = authorizationFor(d, label, q.label);
   if (!auth) return null;
-  if (WITHOUT_SPONSORSHIP.test(label))
-    return yesNoWant(q, auth.authorized && !auth.needsSponsorship);
-  if (ASKS_SPONSORSHIP.test(label)) {
+  if (ASKS_NEED.test(label)) {
     return ASKS_AUTHORIZED.test(label) ? null : yesNoWant(q, auth.needsSponsorship);
+  }
+  if (WITHOUT_SPONSORSHIP.test(label)) {
+    return yesNoWant(q, auth.authorized && !auth.needsSponsorship);
+  }
+  if (NAMES_SPONSORSHIP.test(label) && !ASKS_AUTHORIZED.test(label)) {
+    return yesNoWant(q, auth.needsSponsorship);
   }
   return yesNoWant(q, auth.authorized);
 }
@@ -293,12 +320,6 @@ const RULES: { asks: RegExp; want: (q: Question, d: FillData, label: string) => 
         : null;
     },
   },
-  {
-    asks: new RegExp(
-      `${ASKS_AUTHORIZED.source}|${NAMES_AUTHORIZATION.source}|${ASKS_SPONSORSHIP.source}`,
-    ),
-    want: authorizationWant,
-  },
   { asks: /linkedin/, want: (q, d) => textWant(q, d.person.links.linkedin) },
   { asks: /github/, want: (q, d) => textWant(q, d.person.links.github) },
   {
@@ -314,6 +335,13 @@ const RULES: { asks: RegExp; want: (q: Question, d: FillData, label: string) => 
     want: (q, d) => textWant(q, d.person.preferredName),
   },
   { asks: /pronoun/, want: (q, d) => textWant(q, d.applicant?.pronouns) },
+  // After the link, name and pronoun rules: their labels may mention sponsorship in passing.
+  {
+    asks: new RegExp(
+      `${ASKS_AUTHORIZED.source}|${NAMES_AUTHORIZATION.source}|${NAMES_SPONSORSHIP.source}`,
+    ),
+    want: authorizationWant,
+  },
   { asks: /relocat/, want: (q, d) => yesNoWant(q, d.applicant?.willingToRelocate) },
   {
     asks: /\b18 years|at least 18|over (the age of )?18|age of 18|18 or older/,
