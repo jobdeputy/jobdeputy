@@ -3,7 +3,14 @@ import { join } from 'node:path';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { choose } from '../src/greenhouse/dom.ts';
-import { fillForm, LEFT_MARK, markLeft, scan } from '../src/greenhouse/fill.ts';
+import {
+  fillForm,
+  LEFT_MARK,
+  markLeft,
+  progress,
+  scan,
+  watchProgress,
+} from '../src/greenhouse/fill.ts';
 import { fillData } from './greenhouse-data.ts';
 import { GreenhouseForm } from './greenhouse-form.tsx';
 
@@ -125,6 +132,33 @@ describe('fields only the person answers (#54 PR C round 1)', () => {
       'Keep my data for future roles',
       'Mobile',
     ]);
+  });
+
+  it('counts a file and its "enter manually" box as one question, answered either way', async () => {
+    document.body.innerHTML = `<form id="application-form">
+      <div class="field-wrapper"><div id="upload-label-cover_letter">Cover Letter</div>
+        <input id="cover_letter" type="file"><textarea id="cover_letter_text"></textarea></div>
+      <div class="field-wrapper"><label for="why">Why Acme?</label><input id="why" type="text"></div>
+    </form>`;
+    const form = document.getElementById('application-form') as HTMLElement;
+    expect(progress(form)).toEqual({ total: 2, answered: 0 });
+    (document.getElementById('cover_letter_text') as HTMLTextAreaElement).value = 'Dear team';
+    expect(progress(form)).toEqual({ total: 2, answered: 1 });
+    const report = await fillForm(form, fillData({ coverLetter: null }), { waitMs: 20 });
+    expect(report.left.map((field) => field.id)).toEqual(['why']);
+  });
+
+  it('tells the panel the new count as the person answers', async () => {
+    document.body.innerHTML = `<form id="application-form"><div class="field-wrapper">
+      <label for="why">Why Acme?</label><input id="why" type="text"></div></form>`;
+    const form = document.getElementById('application-form') as HTMLElement;
+    const seen = vi.fn();
+    const stop = watchProgress(form, seen);
+    const why = document.getElementById('why') as HTMLInputElement;
+    why.value = 'Because';
+    why.dispatchEvent(new Event('input', { bubbles: true }));
+    await waitFor(() => expect(seen).toHaveBeenLastCalledWith({ total: 1, answered: 1 }));
+    stop();
   });
 
   it('counts a "select all that apply" group as one question, answered once any box is ticked', async () => {

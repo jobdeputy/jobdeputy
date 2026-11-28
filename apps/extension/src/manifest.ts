@@ -1,4 +1,5 @@
 import { EXTENSION_DEV_KEY } from '@jobdeputy/shared/extension-key';
+import { copy } from './copy.ts';
 import { GREENHOUSE_MATCHES } from './fill/posting.ts';
 import type { Settings } from './settings.ts';
 
@@ -43,13 +44,13 @@ export function hostPermissions(settings: Settings | null): string[] {
 export function manifestFor(settings: Settings | null, { store = false } = {}) {
   return {
     // A dev build is named so on the extensions page and in the toolbar's tooltip.
-    name: store ? 'JobDeputy' : 'JobDeputy Dev',
+    name: store ? copy.popup.title : copy.popup.devName,
     description: 'Fills job applications with your saved answers. You review and submit.',
     ...(store ? {} : { key: EXTENSION_DEV_KEY }),
     permissions: permissions(settings),
     host_permissions: hostPermissions(settings),
     optional_permissions: [...OPTIONAL_PERMISSIONS],
     optional_host_permissions: [...OPTIONAL_HOST_PERMISSIONS],
-    action: { default_title: store ? 'JobDeputy' : 'JobDeputy Dev' },
+    action: { default_title: store ? copy.popup.title : copy.popup.devName },
   };
 }

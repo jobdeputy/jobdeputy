@@ -6,8 +6,10 @@ export { fill };
 export const copy = {
   popup: {
     title: 'JobDeputy',
-    /** On a dev build, beside the title and on the toolbar button. */
+    /** On a dev build: beside the title, on the toolbar button, and as its name. */
     dev: 'Dev',
+    devBadge: 'DEV',
+    devName: 'JobDeputy Dev',
     devLabel: 'Development build',
     line: 'Your deputy fills in job applications with your saved answers. You review and click Submit.',
     version: 'Version {version}',

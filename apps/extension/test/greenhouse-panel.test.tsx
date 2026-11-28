@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Panel } from '../src/greenhouse/panel.tsx';
 import { type Outcome, runFill } from '../src/greenhouse/run.ts';
@@ -48,6 +48,45 @@ describe('the panel on a Greenhouse form (#54 PR C)', () => {
     // Filling again is a quieter action once it has run.
     fireEvent.click(screen.getByRole('button', { name: 'Fill again' }));
     await waitFor(() => expect(fillForm).toHaveBeenCalledTimes(2));
+  });
+
+  it('keeps the count true as the person answers after the fill, and never claims more filled', async () => {
+    let push: ((now: { total: number; answered: number }) => void) | undefined;
+    const stop = vi.fn();
+    render(
+      <Panel
+        fillForm={async () => ({ ...filled, report: { ...filled.report, answered: 2 } })}
+        goTo={() => {}}
+        watchProgress={(onChange) => {
+          push = onChange;
+          return stop;
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Fill this application' }));
+    expect(await screen.findByText('2 of 40 questions answered')).toBeTruthy();
+    // Filled 3, but only 2 hold an answer now (the page cleared one): never "3 of them".
+    expect(screen.getByText('JobDeputy filled 2 of them.')).toBeTruthy();
+    act(() => push?.({ total: 40, answered: 15 }));
+    expect(screen.getByText('15 of 40 questions answered')).toBeTruthy();
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('15');
+    cleanup();
+    expect(stop).toHaveBeenCalled();
+  });
+
+  it('shows no progress bar on a form with no questions', async () => {
+    render(
+      <Panel
+        fillForm={async () => ({
+          ...filled,
+          report: { ...filled.report, total: 0, answered: 0, filled: [] },
+        })}
+        goTo={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Fill this application' }));
+    expect(await screen.findByText('0 of 0 questions answered')).toBeTruthy();
+    expect(screen.queryByRole('progressbar')).toBeNull();
   });
 
   it('says why it could not fill: signed out, offline, or failed', async () => {

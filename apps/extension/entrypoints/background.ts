@@ -3,6 +3,7 @@ import { defineBackground } from 'wxt/utils/define-background';
 import { createApi } from '../src/api.ts';
 import { createAuth } from '../src/auth/session.ts';
 import { DEV_BUILD } from '../src/build.ts';
+import { copy } from '../src/copy.ts';
 import { readFillData } from '../src/fill/data.ts';
 import { createFiles } from '../src/fill/files.ts';
 import {
@@ -22,8 +23,14 @@ import { readSettings } from '../src/settings.ts';
  * messages (it can't sign in itself: Chrome closes it when managed login's window takes focus).
  */
 export default defineBackground(() => {
-  // A dev build says so on its toolbar button too (src/build.ts).
-  if (DEV_BUILD) void browser.action.setBadgeText({ text: 'DEV' });
+  // A dev build says so on its toolbar button too (src/build.ts): set when the worker starts,
+  // and again when Chrome starts or the extension is (re)installed, as Chrome forgets it.
+  const badge = () => {
+    if (DEV_BUILD) void browser.action.setBadgeText({ text: copy.popup.devBadge });
+  };
+  badge();
+  browser.runtime.onStartup.addListener(badge);
+  browser.runtime.onInstalled.addListener(badge);
   const settings = readSettings(import.meta.env);
   const auth = settings
     ? createAuth({

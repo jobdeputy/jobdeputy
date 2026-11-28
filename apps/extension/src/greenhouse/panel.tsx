@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { copy, fill } from '../copy.ts';
 import { DevTag } from '../dev-tag.tsx';
 import type { Outcome } from './run.ts';
@@ -19,9 +19,12 @@ const quiet =
 export function Panel({
   fillForm,
   goTo,
+  watchProgress,
   embedded = false,
 }: {
   fillForm: () => Promise<Outcome>;
+  /** Follows the form's progress after a fill (the person answering); returns a stop. */
+  watchProgress?: (onChange: (now: Progress) => void) => () => void;
   /** Scrolls to a field left for the person and focuses it. */
   goTo: (id: string) => void;
   /** Inside a company site's frame: shown above the form, not pinned to the corner. */
@@ -87,7 +90,9 @@ export function Panel({
           {text[outcome.reason === 'signed-out' ? 'signedOut' : outcome.reason]}
         </p>
       )}
-      {outcome?.ok && <Summary outcome={outcome} goTo={goTo} />}
+      {outcome?.ok && (
+        <Summary outcome={outcome} goTo={goTo} {...(watchProgress ? { watchProgress } : {})} />
+      )}
 
       {outcome?.ok ? (
         <button
@@ -110,15 +115,26 @@ export function Panel({
   );
 }
 
+type Progress = { total: number; answered: number };
+
 function Summary({
   outcome,
   goTo,
+  watchProgress,
 }: {
   outcome: Extract<Outcome, { ok: true }>;
   goTo: (id: string) => void;
+  watchProgress?: (onChange: (now: Progress) => void) => () => void;
 }) {
   const { report } = outcome;
-  const count = report.filled.length;
+  // The count as of the fill, then kept true as the person answers the rest.
+  const [now, setNow] = useState<Progress>({ total: report.total, answered: report.answered });
+  useEffect(() => {
+    setNow({ total: report.total, answered: report.answered });
+    return watchProgress?.(setNow);
+  }, [report, watchProgress]);
+  // Never more filled than answered (a page can clear a field it took).
+  const count = Math.min(report.filled.length, now.answered);
   const required = report.left.filter((field) => field.required);
   const optional = report.left.length - required.length;
   const notes = [
@@ -137,23 +153,26 @@ function Summary({
     <div className="grid gap-3" role="status">
       <div className="grid gap-1.5">
         <p className="m-0 text-sm font-[650]">
-          {fill(text.progress, { answered: String(report.answered), total: String(report.total) })}
+          {fill(text.progress, { answered: String(now.answered), total: String(now.total) })}
         </p>
-        <div
-          role="progressbar"
-          aria-label={text.progressLabel}
-          aria-valuemin={0}
-          aria-valuemax={report.total}
-          aria-valuenow={report.answered}
-          className="h-1.5 overflow-hidden rounded-full bg-surface-strong"
-        >
+        {/* Only with questions to count (a bar's top must be above its bottom). */}
+        {now.total > 0 && (
           <div
-            className="h-full rounded-full bg-green transition-[width] duration-300 ease-settle motion-reduce:transition-none"
-            style={{
-              width: `${report.total ? Math.round((report.answered / report.total) * 100) : 0}%`,
-            }}
-          />
-        </div>
+            role="progressbar"
+            aria-label={text.progressLabel}
+            aria-valuemin={0}
+            aria-valuemax={now.total}
+            aria-valuenow={now.answered}
+            className="h-1.5 overflow-hidden rounded-full bg-surface-strong"
+          >
+            <div
+              className="h-full rounded-full bg-green transition-[width] duration-300 ease-settle motion-reduce:transition-none"
+              style={{
+                width: `${Math.round((now.answered / now.total) * 100)}%`,
+              }}
+            />
+          </div>
+        )}
         <p className="m-0 text-sm text-muted-foreground">
           {count === 0
             ? text.filledNone

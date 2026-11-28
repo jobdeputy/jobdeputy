@@ -218,13 +218,74 @@ export async function fillForm(
   }
   for (const marked of form.querySelectorAll(`[${LEFT_MARK}]`)) marked.removeAttribute(LEFT_MARK);
   const all = scan(form);
-  const left = all.filter(isEmpty).map((field) => {
-    // Outlined only when required: the panel lists those, and the page matches it.
-    const [element] = field.elements;
-    if (field.required && element) wrapperOf(element).setAttribute(LEFT_MARK, '');
-    return { id: field.key, label: field.label, required: field.required };
-  });
-  return { filled, total: all.length, answered: all.length - left.length, left, files };
+  const left = all
+    .filter(isEmpty)
+    .filter(notAnsweredElsewhere(all))
+    .map((field) => {
+      // Outlined only when required: the panel lists those, and the page matches it.
+      const [element] = field.elements;
+      if (field.required && element) wrapperOf(element).setAttribute(LEFT_MARK, '');
+      return { id: field.key, label: field.label, required: field.required };
+    });
+  return { filled, ...progress(form), left, files };
+}
+
+/**
+ * Whether a field is a question's other way to answer: Greenhouse's "Enter manually" box beside a
+ * file (`resume_text` or `resume-text` for `resume`). It and the file are one question.
+ */
+function alternativeOf(field: Field, all: Field[]): Field | undefined {
+  const base = field.key.replace(/[-_]text$/, '');
+  return base === field.key ? undefined : all.find((other) => other.key === base);
+}
+
+/** Leaves out an empty field whose question is answered the other way (a file, or its text). */
+function notAnsweredElsewhere(all: Field[]) {
+  return (field: Field) => {
+    const file = alternativeOf(field, all);
+    if (file) return isEmpty(file);
+    const text = all.find((other) => alternativeOf(other, all) === field);
+    return !text || isEmpty(text);
+  };
+}
+
+/** The form's questions (a file and its text box are one), and how many hold an answer now. */
+export function progress(form: ParentNode): { total: number; answered: number } {
+  const all = scan(form);
+  const questions = all.filter((field) => !alternativeOf(field, all));
+  const answered = questions.filter((field) => {
+    if (!isEmpty(field)) return true;
+    const text = all.find((other) => alternativeOf(other, all) === field);
+    return Boolean(text && !isEmpty(text));
+  }).length;
+  return { total: questions.length, answered };
+}
+
+/**
+ * Calls `onChange` with the form's progress whenever the person answers (or the page redraws), so
+ * the panel's count stays true after the fill. Returns a function that stops watching.
+ */
+export function watchProgress(
+  form: HTMLElement,
+  onChange: (now: { total: number; answered: number }) => void,
+): () => void {
+  let queued = false;
+  const update = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => {
+      queued = false;
+      onChange(progress(form));
+    });
+  };
+  const types = ['input', 'change', 'click', 'keyup'];
+  for (const type of types) form.addEventListener(type, update, true);
+  const observer = new MutationObserver(update);
+  observer.observe(form, { childList: true, subtree: true });
+  return () => {
+    for (const type of types) form.removeEventListener(type, update, true);
+    observer.disconnect();
+  };
 }
 
 /**
