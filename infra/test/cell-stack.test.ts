@@ -522,8 +522,9 @@ describe('HTTP API (T04)', () => {
   });
 
   it("lets the extension's tokens only read, but for the writes named here (#54, decision 0020)", () => {
-    // Each write is a decision of its own. PR D adds its one: 'PUT /me/jobs/{jobId}/stage'.
-    const writes: string[] = [];
+    // Each write is a decision of its own. PR D's one records an application (the API takes only
+    // EXTENSION_STAGE_CHANGE from an extension token).
+    const writes: string[] = ['PUT /me/jobs/{jobId}/stage'];
     expect(EXTENSION_API_ROUTES.filter((route) => !route.startsWith('GET '))).toEqual(writes);
   });
 

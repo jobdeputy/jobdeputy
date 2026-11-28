@@ -46,7 +46,19 @@ export const EXTENSION_API_ROUTES: readonly string[] = [
   'GET /me/tailorings/{documentId}',
   'GET /me/cover-letters',
   'GET /me/cover-letters/{documentId}',
+  // PR D: on a Greenhouse confirmation page, the panel asks "Mark as applied?" only for a job in
+  // the user's list with stage New, and records it. Its one write, and the API takes from an
+  // extension token only `EXTENSION_STAGE_CHANGE` (the web app's tokens move a job anywhere).
+  'GET /me/jobs/{jobId}',
+  'PUT /me/jobs/{jobId}/stage',
 ];
+
+/**
+ * PR D (decision 0020): the only stage change the API accepts from an extension token, recording
+ * an application to a job at stage New (also one hidden or closed: the user really applied).
+ * Every other change (undo, later stages) stays the web app's.
+ */
+export const EXTENSION_STAGE_CHANGE = { stage: 'applied', from: 'new' } as const;
 
 /**
  * The scope the web app's and the tests' tokens carry: Cognito gives it to the web client's managed

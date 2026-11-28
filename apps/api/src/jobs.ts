@@ -36,6 +36,7 @@ import {
   toRankedJob,
   validationProblem,
 } from '@jobdeputy/shared';
+import { EXTENSION_STAGE_CHANGE } from '@jobdeputy/shared/extension';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, Context } from 'aws-lambda';
 import { ulid } from 'ulid';
 import { refuseWritesWhileDeleting } from './account-guard.js';
@@ -169,6 +170,20 @@ export function jobView(j: Job) {
     firstCrawlId: j.firstCrawlId,
     lastCrawlId: j.lastCrawlId,
     ...(j.notes !== undefined ? { notes: j.notes } : {}),
+  };
+}
+
+/**
+ * #54 PR D (decision 0020): what an extension token sees of a job, enough for the confirmation
+ * page's "Mark as applied?" (is it in the user's jobs, at stage New) and nothing else of it.
+ */
+export function extensionJobView(j: Job) {
+  return {
+    jobId: j.jobId,
+    title: j.title,
+    ...(j.companyName !== undefined ? { companyName: j.companyName } : {}),
+    status: j.status,
+    ...(j.stageAt !== undefined ? { stageAt: j.stageAt } : {}),
   };
 }
 
@@ -353,6 +368,8 @@ export async function route(event: Event, deps: JobsDeps): Promise<HttpResponse>
   const requestId = event.requestContext.requestId;
   const caller = callerFromEvent(event);
   if (!caller) return problem(401, 'Unauthorized', { requestId });
+  // Extension tokens reach only two of these routes (EXTENSION_API_ROUTES) and see less of a job.
+  const toView = caller.webScope ? jobView : extensionJobView;
   const blocked = await refuseWritesWhileDeleting(
     event.routeKey,
     caller.userId,
@@ -389,7 +406,7 @@ export async function route(event: Event, deps: JobsDeps): Promise<HttpResponse>
       if (!id.success) return validationProblem(id.error, requestId);
       const job = await deps.repo.get(caller.userId, id.data);
       if (!job) return problem(404, 'Not found', { requestId });
-      return json(200, jobView(job));
+      return json(200, toView(job));
     }
     case 'GET /me/matches': {
       if (Object.keys(event.queryStringParameters ?? {}).length > 0) {
@@ -421,6 +438,18 @@ export async function route(event: Event, deps: JobsDeps): Promise<HttpResponse>
       const body = jobStageBody.safeParse(raw);
       if (!body.success) return validationProblem(body.error, requestId);
       const { stage, from } = body.data;
+      // Decision 0020: an extension token only records an application to a job at stage New (hidden
+      // or closed too: the user really applied on the employer's site).
+      if (
+        !caller.webScope &&
+        (stage !== EXTENSION_STAGE_CHANGE.stage || from !== EXTENSION_STAGE_CHANGE.from)
+      ) {
+        return problem(403, 'Forbidden', {
+          detail: 'The extension can only mark a new job as applied. Change it in JobDeputy.',
+          code: 'extension-stage',
+          requestId,
+        });
+      }
       try {
         const result = await deps.repo.setStage(
           caller.userId,
@@ -430,10 +459,8 @@ export async function route(event: Event, deps: JobsDeps): Promise<HttpResponse>
             'job.stage_changed',
             { type: 'job', id: id.data },
             `Stage ${from} → ${stage}`,
-            {
-              from,
-              stage,
-            },
+            // Which client moved it: the extension records applications too (#54 PR D).
+            { from, stage, client: caller.webScope ? 'web' : 'extension' },
           ),
           () => expiresAt(deps),
           // Read only when applying or undoing: later stages never need the admin's limits.
@@ -448,7 +475,7 @@ export async function route(event: Event, deps: JobsDeps): Promise<HttpResponse>
             code: 'cooling-down',
             until: result.until,
             requestId,
-            job: jobView(result.job),
+            job: toView(result.job),
           });
         }
         if (result.kind === 'not-found') return problem(404, 'Not found', { requestId });
@@ -458,10 +485,10 @@ export async function route(event: Event, deps: JobsDeps): Promise<HttpResponse>
             detail: 'This job was changed elsewhere. Reload, then try again.',
             code: 'stage-changed',
             requestId,
-            job: jobView(result.job),
+            job: toView(result.job),
           });
         }
-        return json(200, jobView(result.job));
+        return json(200, toView(result.job));
       } catch (error) {
         const busy = concurrentUpdateProblem(error, requestId);
         if (busy) return busy;

@@ -7,6 +7,7 @@ import type {
   StageResult,
 } from '@jobdeputy/db';
 import { DEFAULT_CRAWL_LIMITS, MATCH_SCORE_VERSION } from '@jobdeputy/shared';
+import { WEB_SCOPE } from '@jobdeputy/shared/extension';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { describe, expect, it, vi } from 'vitest';
 import { COMPANY_PAGE_READS, type JobsDeps, route } from '../src/jobs.js';
@@ -14,16 +15,20 @@ import { COMPANY_PAGE_READS, type JobsDeps, route } from '../src/jobs.js';
 const J1 = 'a'.repeat(32);
 const NOW = new Date('2026-10-10T12:00:00.000Z');
 
+/** The web app's token scope by default; `EXTENSION_SCOPE` for the extension's (decision 0020). */
+const EXTENSION_SCOPE = 'openid email';
+
 function event(
   routeKey: string,
   extra: Record<string, unknown> = {},
   sub: string | null = 'user-a',
+  scope = WEB_SCOPE,
 ) {
   return {
     routeKey,
     requestContext: {
       requestId: 'req-1',
-      ...(sub ? { authorizer: { jwt: { claims: { sub, username: `${sub}-n` } } } } : {}),
+      ...(sub ? { authorizer: { jwt: { claims: { sub, username: `${sub}-n`, scope } } } } : {}),
     },
     isBase64Encoded: false,
     ...extra,
@@ -673,7 +678,7 @@ describe('PUT /me/jobs/{jobId}/stage (#52)', () => {
         entry: expect.objectContaining({
           name: 'job.stage_changed',
           entity: { type: 'job', id: J1 },
-          detail: { from: 'new', stage: 'applied' },
+          detail: { from: 'new', stage: 'applied', client: 'web' },
         }),
       },
       expect.any(Function),
@@ -768,6 +773,82 @@ describe('PUT /me/jobs/{jobId}/stage (#52)', () => {
     }
     expect((await put({ stage: 'applied', from: 'new' }, d, '../x')).statusCode).toBe(400);
     expect(d.repo.setStage).not.toHaveBeenCalled();
+  });
+
+  it("records an application from the extension's token (#54 PR D, decision 0020)", async () => {
+    const d = deps({
+      setStage: vi.fn(async () => ({ kind: 'ok' as const, job: job({ status: 'applied' }) })),
+    });
+    const res = await route(
+      event(
+        'PUT /me/jobs/{jobId}/stage',
+        { pathParameters: { jobId: J1 }, body: JSON.stringify({ stage: 'applied', from: 'new' }) },
+        'user-a',
+        EXTENSION_SCOPE,
+      ),
+      d,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(d.repo.setStage).toHaveBeenCalledWith(
+      'user-a',
+      J1,
+      { stage: 'applied', from: 'new' },
+      {
+        table: 'audit',
+        entry: expect.objectContaining({
+          detail: { from: 'new', stage: 'applied', client: 'extension' },
+        }),
+      },
+      expect.any(Function),
+      expect.anything(),
+    );
+    // It sees only what the confirmation page needs of the job.
+    expect(JSON.parse(res.body as string)).toEqual({
+      jobId: J1,
+      title: 'Backend Engineer',
+      companyName: 'Acme',
+      status: 'applied',
+    });
+  });
+
+  it.each([
+    ['an undo', { stage: 'new', from: 'applied' }],
+    ['a later stage', { stage: 'interviewing', from: 'applied' }],
+    ['a withdrawal', { stage: 'withdrawn', from: 'applied' }],
+    ['new to new', { stage: 'new', from: 'new' }],
+  ])("403 for any other change from the extension's token: %s", async (_, body) => {
+    for (const scope of [EXTENSION_SCOPE, '']) {
+      const d = deps();
+      const res = await route(
+        event(
+          'PUT /me/jobs/{jobId}/stage',
+          { pathParameters: { jobId: J1 }, body: JSON.stringify(body) },
+          'user-a',
+          scope,
+        ),
+        d,
+      );
+      expect(res.statusCode).toBe(403);
+      expect(JSON.parse(res.body as string)).toMatchObject({ code: 'extension-stage' });
+      expect(d.repo.setStage).not.toHaveBeenCalled();
+    }
+    // The web app's token makes the same change (the rule is the extension's alone).
+    const web = deps({ setStage: vi.fn(async () => ({ kind: 'ok' as const, job: job() })) });
+    expect((await put(body, web)).statusCode).toBe(200);
+  });
+
+  it("reads a job for the extension's token (the confirmation page's check)", async () => {
+    const d = deps({ get: vi.fn(async () => job()) });
+    const res = await route(
+      event('GET /me/jobs/{jobId}', { pathParameters: { jobId: J1 } }, 'user-a', EXTENSION_SCOPE),
+      d,
+    );
+    expect(res.statusCode).toBe(200);
+    // Not the description, notes, crawls, or match data: only what the check needs.
+    expect(Object.keys(JSON.parse(res.body as string)).sort()).toEqual(
+      ['companyName', 'jobId', 'status', 'title'].sort(),
+    );
+    expect(JSON.parse(res.body as string)).toMatchObject({ jobId: J1, status: 'new' });
   });
 
   it('410 while the account is being deleted; reads still work', async () => {
