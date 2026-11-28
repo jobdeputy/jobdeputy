@@ -51,9 +51,6 @@ describe('files (#54 PR C)', () => {
     expect(await f.read(42, 'a.pdf')).toBeNull();
     expect(await f.read(LINK, 'resume.exe')).toBeNull();
     expect(fetch).not.toHaveBeenCalled();
-    const none = files(() => new Response('x'), { filesOrigin: undefined });
-    expect(await none.files.read(LINK, 'a.pdf')).toBeNull();
-    expect(none.fetch).not.toHaveBeenCalled();
   });
 
   it('is null when the download fails, is empty, or is too big', async () => {

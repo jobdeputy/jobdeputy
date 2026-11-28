@@ -8,6 +8,7 @@ const settings = {
   apiUrl: 'https://api.jobdeputy.test',
   authDomain: 'https://auth.jobdeputy.test',
   clientId: 'e2etestclient0000000000000',
+  filesOrigin: 'https://files.jobdeputy.test',
 };
 
 function fakeAuth(tokens: (string | null | Error)[]) {

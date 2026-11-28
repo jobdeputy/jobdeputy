@@ -27,10 +27,7 @@ export const OPTIONAL_HOST_PERMISSIONS: readonly string[] = [];
  */
 export function hostPermissions(settings: Settings | null): string[] {
   if (!settings) return [];
-  return [
-    `${new URL(settings.apiUrl).origin}/*`,
-    ...(settings.filesOrigin ? [`${settings.filesOrigin}/*`] : []),
-  ];
+  return [`${new URL(settings.apiUrl).origin}/*`, `${settings.filesOrigin}/*`];
 }
 
 /**

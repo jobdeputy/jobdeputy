@@ -14,9 +14,10 @@ export interface Settings {
   siteUrl?: string;
   /**
    * #54 PR C: where the documents' download links point (the stack's `DocumentsOrigin`). The
-   * manifest asks for this origin, and files are fetched from it only. Without it, no files.
+   * manifest asks for this origin, and files are fetched from it only. Required: a build without
+   * it would fail every file quietly.
    */
-  filesOrigin?: string;
+  filesOrigin: string;
 }
 
 type Env = Record<string, string | boolean | undefined>;
@@ -39,16 +40,10 @@ export function readSettings(env: Env): Settings | null {
   const apiUrl = origin(env.WXT_API_URL);
   const authDomain = origin(env.WXT_AUTH_DOMAIN);
   const clientId = typeof env.WXT_CLIENT_ID === 'string' ? env.WXT_CLIENT_ID : '';
-  if (!apiUrl || !authDomain || !/^[a-z0-9]{20,40}$/.test(clientId)) return null;
-  const siteUrl = origin(env.WXT_SITE_URL);
   // An origin only: the host permission is the whole origin, so a path would mislead.
   const files = origin(env.WXT_FILES_ORIGIN);
   const filesOrigin = files && new URL(files).origin === files ? files : null;
-  return {
-    apiUrl,
-    authDomain,
-    clientId,
-    ...(siteUrl ? { siteUrl } : {}),
-    ...(filesOrigin ? { filesOrigin } : {}),
-  };
+  if (!apiUrl || !authDomain || !filesOrigin || !/^[a-z0-9]{20,40}$/.test(clientId)) return null;
+  const siteUrl = origin(env.WXT_SITE_URL);
+  return { apiUrl, authDomain, clientId, filesOrigin, ...(siteUrl ? { siteUrl } : {}) };
 }

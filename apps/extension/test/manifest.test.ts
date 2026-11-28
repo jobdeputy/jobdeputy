@@ -73,9 +73,9 @@ describe('manifest (#54, decision 0020)', () => {
   });
 
   it('asks for the API origin only, never a path beyond it or another host', () => {
-    const { filesOrigin: _, ...noFiles } = SETTINGS;
-    expect(hostPermissions({ ...noFiles, apiUrl: 'https://api.example.com/v1' })).toEqual([
+    expect(hostPermissions({ ...SETTINGS, apiUrl: 'https://api.example.com/v1' })).toEqual([
       'https://api.example.com/*',
+      'https://jobdeputy-dev-iad-documentsbucket.s3.us-east-1.amazonaws.com/*',
     ]);
   });
 

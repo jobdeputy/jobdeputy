@@ -63,7 +63,7 @@ export function createFiles(deps: { settings: Settings; fetch: typeof fetch }) {
     async read(link: unknown, name: string): Promise<FileData | null> {
       const type = fileType(name);
       const origin = deps.settings.filesOrigin;
-      if (!type || !origin || typeof link !== 'string') return null;
+      if (!type || typeof link !== 'string') return null;
       let url: URL;
       try {
         url = new URL(link);

@@ -18,8 +18,8 @@ import { jobIdFor, type Posting } from './posting.ts';
  */
 export interface FillData {
   person: Person;
-  /** The application answers (#53), or null when none are saved. */
-  applicant: ApplicantAnswers | null;
+  /** The application answers (#53) this build can read, or null when none are saved. */
+  applicant: Partial<ApplicantAnswers> | null;
   /**
    * The self-ID answers, only once the person saved them (never the defaults), and only those
    * the API could read back: one it read as `decline` for that reason is left out (unread).
@@ -66,13 +66,37 @@ const person = z.object({
 export type Person = z.infer<typeof person>;
 
 const { version: _a, ...applicantShape } = applicantInput.shape;
-const applicant = z.object({ version: z.number(), ...applicantShape });
 const { version: _v, ...voluntaryShape } = voluntaryInput.shape;
-const voluntary = z.object({
-  version: z.number(),
-  ...voluntaryShape,
-  unreadable: z.array(z.string()).optional(),
-});
+
+/**
+ * Saved answers read one by one: a value this build doesn't know (an option added since it was
+ * released, say) drops only that answer, never its neighbours, and is counted as dropped.
+ */
+function answersOf<S extends Record<string, z.ZodType>>(shape: S) {
+  return z
+    .object({ version: z.number().int() })
+    .loose()
+    .transform((raw) => {
+      const fields = raw as Record<string, unknown>;
+      const values: Record<string, unknown> = {};
+      let dropped = false;
+      for (const [key, schema] of Object.entries(shape)) {
+        const field = schema.safeParse(fields[key]);
+        if (field.success) {
+          if (field.data !== undefined) values[key] = field.data;
+        } else if (fields[key] !== undefined) dropped = true;
+      }
+      const { unreadable } = fields;
+      return {
+        version: raw.version,
+        values: values as Partial<{ [K in keyof S]: z.infer<S[K]> }>,
+        dropped,
+        unreadable: Array.isArray(unreadable) ? unreadable.map(String) : [],
+      };
+    });
+}
+const applicant = answersOf(applicantShape);
+const voluntary = answersOf(voluntaryShape);
 
 const generated = z.object({
   documentId: z.string(),
@@ -186,27 +210,24 @@ export async function readFillData(
   // Signed out only while reading the files: still nothing handed over.
   if (signedOut) return { ok: false, reason: 'signed-out' };
   const unread: Unread[] = [];
-  if (answers === FAILED) unread.push('answers');
-  const {
-    version: selfIdVersion,
-    unreadable = [],
-    ...declared
-  } = selfId === FAILED ? { version: 0 } : selfId;
+  if (answers === FAILED || answers.dropped) unread.push('answers');
   // Only what the API read back as saved: an answer it couldn't is never sent as decline.
-  const saved = Object.fromEntries(
-    Object.entries(declared).filter(([key]) => !unreadable.includes(key)),
-  ) as Partial<VoluntaryAnswers>;
-  if (selfId === FAILED || unreadable.length > 0) unread.push('voluntary');
+  const saved =
+    selfId === FAILED
+      ? {}
+      : (Object.fromEntries(
+          Object.entries(selfId.values).filter(([key]) => !selfId.unreadable.includes(key)),
+        ) as Partial<VoluntaryAnswers>);
+  if (selfId === FAILED || selfId.dropped || selfId.unreadable.length > 0) unread.push('voluntary');
   if (resume === FAILED) unread.push('resume');
   if (letterFile === FAILED) unread.push('cover-letter');
-  const { version: answersVersion, ...applicantAnswers } =
-    answers === FAILED ? { version: 0 } : answers;
   return {
     ok: true,
     body: {
       person: profile,
-      applicant: answersVersion > 0 ? (applicantAnswers as ApplicantAnswers) : null,
-      voluntary: selfIdVersion > 0 && Object.keys(saved).length > 0 ? saved : null,
+      applicant: answers !== FAILED && answers.version > 0 ? answers.values : null,
+      voluntary:
+        selfId !== FAILED && selfId.version > 0 && Object.keys(saved).length > 0 ? saved : null,
       resume: resume === FAILED ? null : resume,
       coverLetter: letterFile === FAILED ? null : (letterFile ?? null),
       unread,

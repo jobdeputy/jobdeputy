@@ -230,6 +230,25 @@ describe('readFillData (#54 PR C)', () => {
     }
   });
 
+  it('drops only an answer this build does not know, and says answers were not all read', async () => {
+    const { api } = routes({
+      '/me/applicant': ok({ ...APPLICANT, heardAbout: 'a-new-option', over18: 'yes?' }),
+      '/me/voluntary': ok({ ...VOLUNTARY, race: 'a-new-option' }),
+    });
+    const result = await readFillData(api, fakeFiles().files, posting);
+    expect(result.ok && result.body.applicant).toEqual({
+      workAuthorization: [{ country: 'US', authorized: true, needsSponsorship: false }],
+      workSetups: ['remote'],
+    });
+    expect(result.ok && result.body.voluntary).toEqual({
+      gender: 'decline',
+      hispanicLatino: 'no',
+      veteran: 'not_protected',
+      disability: 'decline',
+    });
+    expect(result.ok && result.body.unread).toEqual(['answers', 'voluntary']);
+  });
+
   it('leaves out self-ID answers the API could not read back (never sent as decline)', async () => {
     const some = routes({
       '/me/voluntary': ok({ ...VOLUNTARY, gender: 'decline', unreadable: ['gender'] }),
