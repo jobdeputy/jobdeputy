@@ -155,8 +155,8 @@ describe('tailored résumés (deployed)', () => {
     expect(version.scores[0].missingUnproven).toContain('AWS');
 
     // Both files download from their 5-minute links, on the extension's download host.
-    for (const link of Object.values(version.downloads)) {
-      expect(new URL(link as string).origin).toBe(documentsOrigin);
+    for (const link of [version.downloads.pdf, version.downloads.docx]) {
+      expect(new URL(link).origin).toBe(documentsOrigin);
     }
     const pdf = new Uint8Array(await (await fetch(version.downloads.pdf)).arrayBuffer());
     expect(new TextDecoder().decode(pdf.slice(0, 5))).toBe('%PDF-');
@@ -225,8 +225,8 @@ describe('tailored résumés (deployed)', () => {
     );
     expect(letter.text).toContain('Built REST APIs in TypeScript.');
     expect(letter.text).toMatch(/Sincerely,\nSam Example$/);
-    for (const link of Object.values(letter.downloads)) {
-      expect(new URL(link as string).origin).toBe(documentsOrigin);
+    for (const link of [letter.downloads.pdf, letter.downloads.docx]) {
+      expect(new URL(link).origin).toBe(documentsOrigin);
     }
     const letterPdf = new Uint8Array(await (await fetch(letter.downloads.pdf)).arrayBuffer());
     expect(new TextDecoder().decode(letterPdf.slice(0, 5))).toBe('%PDF-');

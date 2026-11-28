@@ -358,8 +358,12 @@ describe('HTTP API (T04)', () => {
   });
 
   it("outputs the documents' download origin for the extension's host permission (#54 PR C)", () => {
+    const [bucket] = Object.keys(t.findResources('AWS::S3::Bucket')).filter((id) =>
+      id.startsWith('DocumentsBucket'),
+    );
+    expect(bucket).toBeDefined();
     expect(t.findOutputs('DocumentsOrigin').DocumentsOrigin?.Value).toEqual({
-      'Fn::Join': ['', ['https://', { 'Fn::GetAtt': [expect.any(String), 'RegionalDomainName'] }]],
+      'Fn::Join': ['', ['https://', { 'Fn::GetAtt': [bucket, 'RegionalDomainName'] }]],
     });
   });
 
