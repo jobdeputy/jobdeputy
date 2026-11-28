@@ -70,9 +70,9 @@ const SESSION = 'session';
 const PENDING = 'signInPending';
 const LAST_EMAIL = 'lastEmail';
 /**
- * #111: set by Sign out here (or when the API refuses even a fresh token), cleared by the next
- * sign-in the person starts. Until then the extension never signs in silently: managed login still
- * remembers them, and signing out must stick, across a browser restart too (`marks`).
+ * #111: set by Sign out here, cleared by the next sign-in the person starts. Until then the
+ * extension never signs in silently: managed login still remembers them, and signing out must
+ * stick, across a browser restart too (`marks`).
  */
 const SIGNED_OUT_HERE = 'signedOutHere';
 /**
@@ -199,8 +199,9 @@ export function createAuth(deps: AuthDeps) {
       } satisfies Session);
       await storage.remove(LAST_EMAIL);
       if (!silent) {
-        await deps.marks.remove(SIGNED_OUT_HERE);
-        await storage.remove(REFUSED_BY_API);
+        // Signed in already: a mark left behind must not turn that into a failure.
+        await deps.marks.remove(SIGNED_OUT_HERE).catch(() => undefined);
+        await storage.remove(REFUSED_BY_API).catch(() => undefined);
       }
       return 'signed-in';
     } catch (error) {
@@ -238,6 +239,18 @@ export function createAuth(deps: AuthDeps) {
   }
 
   /** Forgets the tokens, remembering who it was (until the browser closes) to offer them back. */
+  /** Forgets a session here at once, then revokes its refresh token (best effort). */
+  async function revokeAndForget(current: Session): Promise<void> {
+    await forget(current);
+    await deps
+      .fetch(`${settings.authDomain}/oauth2/revoke`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ client_id: settings.clientId, token: current.refreshToken }),
+      })
+      .catch(() => undefined);
+  }
+
   async function forget(current: Session): Promise<void> {
     await storage.remove(SESSION);
     if (current.email) await storage.set(LAST_EMAIL, current.email);
@@ -277,7 +290,10 @@ export function createAuth(deps: AuthDeps) {
             // A silent sign-in at work finishes first (its window-less flow would race this one);
             // if it signed the person in, there is nothing left to do.
             await silently?.catch(() => undefined);
-            if (!different && (await session())) return 'signed-in';
+            const signedIn = await session();
+            if (signedIn && !different) return 'signed-in';
+            // A different account replaces the one it signed in: revoked, not left behind.
+            if (signedIn) await revokeAndForget(signedIn);
             await storage.set(PENDING, true);
             return await signInOnce(different);
           } finally {
@@ -350,18 +366,12 @@ export function createAuth(deps: AuthDeps) {
      * the next sign-in the person starts (#111); the site's own sign-in is not touched.
      */
     async signOut(): Promise<void> {
-      const current = await session();
-      if (!current) return;
-      // Never in the way of signing out: forgetting the tokens matters most.
+      // Marked first (never in the way: forgetting the tokens matters most), then any silent
+      // sign-in already under way is let finish, and whatever it made is signed out too.
       await deps.marks.set(SIGNED_OUT_HERE, true).catch(() => undefined);
-      await forget(current);
-      await deps
-        .fetch(`${settings.authDomain}/oauth2/revoke`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ client_id: settings.clientId, token: current.refreshToken }),
-        })
-        .catch(() => undefined);
+      await silently?.catch(() => undefined);
+      const current = await session();
+      if (current) await revokeAndForget(current);
     },
 
     /** The API refused even a fresh token (the account is gone): signed out. */

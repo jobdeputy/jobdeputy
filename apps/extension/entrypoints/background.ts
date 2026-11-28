@@ -24,6 +24,8 @@ import { readSettings } from '../src/settings.ts';
  */
 /** How long the popup's status waits for a sign-in without a window (#111). */
 const SILENT_WAIT_MS = 3000;
+/** How long Chrome gives a sign-in without a window at most (#111). */
+const SILENT_LIMIT_MS = 5000;
 
 export default defineBackground(() => {
   // A dev build says so on its toolbar button too (src/build.ts): set when the worker starts,
@@ -41,7 +43,13 @@ export default defineBackground(() => {
         redirectUrl: browser.identity.getRedirectURL(),
         // `interactive` false for the silent sign-in (#111): no window; Chrome gives up when the
         // page would need the person. True for the sign-in the person starts.
-        launch: (url, interactive) => browser.identity.launchWebAuthFlow({ url, interactive }),
+        launch: (url, interactive) =>
+          browser.identity.launchWebAuthFlow({
+            url,
+            interactive,
+            // Never held up for long: a sign-in the person starts waits for this one.
+            ...(interactive ? {} : { timeoutMsForNonInteractive: SILENT_LIMIT_MS }),
+          }),
         storage: {
           get: async (key) => (await browser.storage.session.get(key))[key],
           set: (key, value) => browser.storage.session.set({ [key]: value }),

@@ -558,4 +558,37 @@ describe('signing in without a window (#111, decision 0021)', () => {
     stored.clear();
     expect(await auth.signInSilently()).toBe('signed-in');
   });
+
+  it('signs out what a silent sign-in under way made, and marks even with no session', async () => {
+    const { auth, launch, stored, marked, fetch } = setup();
+    const silent = auth.signInSilently();
+    await vi.waitFor(() => expect(launch).toHaveBeenCalledTimes(1));
+    // An out-of-date popup's Sign out, while the silent sign-in finishes.
+    await auth.signOut();
+    expect(await silent).toBe('signed-in');
+    expect(stored.has('session')).toBe(false);
+    expect(marked.get('signedOutHere')).toBe(true);
+    expect(fetch.mock.calls.some(([url]) => String(url).endsWith('/oauth2/revoke'))).toBe(true);
+  });
+
+  it('revokes what a silent sign-in made before signing in as a different account', async () => {
+    const { auth, launch, fetch } = setup();
+    const silent = auth.signInSilently();
+    await vi.waitFor(() => expect(launch).toHaveBeenCalledTimes(1));
+    const different = auth.signIn({ different: true });
+    expect(await silent).toBe('signed-in');
+    expect(await different).toBe('signed-in');
+    expect(fetch.mock.calls.filter(([url]) => String(url).endsWith('/oauth2/revoke'))).toHaveLength(
+      1,
+    );
+    expect(new URL(launch.mock.calls[1]?.[0] ?? '').pathname).toBe('/logout');
+  });
+
+  it('never reports a sign-in that worked as failed when a mark cannot be cleared', async () => {
+    const { auth, marked } = setup();
+    marked.delete = () => {
+      throw new Error('storage gone');
+    };
+    expect(await auth.signIn()).toBe('signed-in');
+  });
 });
