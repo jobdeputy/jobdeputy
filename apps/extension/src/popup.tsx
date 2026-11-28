@@ -236,7 +236,9 @@ function SignedIn({
               const value = readiness.body[key];
               // Details and answers are counted ("3 of 10 saved"); the résumé is there or not.
               const counted = typeof value === 'object' ? value : null;
-              const done = counted ? counted.answered === counted.total : value === true;
+              // Ticked once what nearly every form asks is saved; the count says the rest.
+              const done = counted ? counted.ready : value === true;
+              const more = counted !== null && counted.answered < counted.total;
               const status = counted
                 ? fill(text.ready.count, {
                     answered: String(counted.answered),
@@ -258,7 +260,17 @@ function SignedIn({
                       {label}
                       <span className="sr-only">: </span>
                     </span>
-                    {counted ? (
+                    {counted && done && more && siteUrl ? (
+                      // Ready, with more a form might ask: the count leads to where they're added.
+                      <a
+                        className="justify-self-start text-xs text-muted-foreground underline-offset-2 hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+                        href={`${siteUrl}${path}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {status}
+                      </a>
+                    ) : counted ? (
                       <span className="text-xs text-muted-foreground">{status}</span>
                     ) : (
                       <span className="sr-only">{status}</span>

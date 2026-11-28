@@ -6,7 +6,6 @@ import {
 } from '@jobdeputy/shared/applicant';
 import { z } from 'zod';
 import type { Api, ApiResult } from '../api.ts';
-import { isAttachable } from '../readiness.ts';
 import type { FileData, Files } from './files.ts';
 import { jobIdFor, type Posting } from './posting.ts';
 
@@ -37,7 +36,8 @@ export type Unread = 'answers' | 'voluntary' | 'resume' | 'cover-letter';
 // Read defensively: an odd shape counts as not there (or unread), never as a crash. Unknown
 // fields (version, updatedAt) are dropped.
 const text = z.string().trim().min(1).max(2000);
-const person = z.object({
+/** The profile as the filler reads it (the popup counts with it too, so the two agree). */
+export const person = z.object({
   firstName: text.optional().catch(undefined),
   lastName: text.optional().catch(undefined),
   preferredName: text.optional().catch(undefined),
@@ -95,7 +95,10 @@ function answersOf<S extends Record<string, z.ZodType>>(shape: S) {
       };
     });
 }
-const applicant = answersOf(applicantShape);
+/** The application answers as the filler reads them (the popup counts with it too). */
+export const applicant = answersOf(applicantShape);
+/** Every application answer a form may ask, from the shared schema. */
+export const APPLICANT_KEYS = Object.keys(applicantShape);
 const voluntary = answersOf(voluntaryShape);
 
 const generated = z.object({
@@ -123,6 +126,14 @@ const download = z.object({ downloadUrl: z.string() });
 const FAILED = Symbol('failed');
 type Read<T> = T | typeof FAILED;
 type Failure = Extract<ApiResult<never>, { ok: false }>['reason'];
+
+/**
+ * The résumé the filler attaches when a company has no tailored one: the default, once ready.
+ * The popup's "résumé ready" uses the same rule, so it never promises a file the filler lacks.
+ */
+export function isAttachable(doc: { status?: unknown; isDefault?: unknown } | null): boolean {
+  return doc?.isDefault === true && doc.status === 'ready';
+}
 
 /** The newest ready version with a file name (ISO times sort as text). */
 function newestReady(list: z.infer<typeof generated>[]) {

@@ -45,7 +45,7 @@ sequenceDiagram
   W->>A: GET /me/profile, /me/documents, /me/applicant (Bearer, the API's host permission: no CORS)
   Note over A: extension tokens reach only EXTENSION_API_ROUTES, reads only:<br/>these three, and (#54 PR C) /me/voluntary, /me/documents/{id},<br/>/me/tailorings(+/{id}), /me/cover-letters(+/{id}) for the filler;<br/>every other route asks for the web scope (403)
   A-->>W: 200, or 401: refresh once and try again; 401 again: signed out
-  W-->>P: details, a ready résumé, answers saved (each: ready or not yet)
+  W-->>P: details and application answers saved ("3 of 10", read as the filler reads them;<br/>ready once name and email / work authorization are there), a ready résumé
 ```
 
 ## Reading what a Greenhouse form is filled with (#54 PR C)

@@ -99,9 +99,9 @@ describe('readReadiness (#54)', () => {
     expect(await readReadiness(api)).toEqual({
       ok: true,
       body: {
-        details: { answered: 3, total: 6 },
+        details: { answered: 3, total: 6, ready: true },
         resume: true,
-        answers: { answered: 0, total: 10 },
+        answers: { answered: 0, total: 10, ready: false },
       },
     });
   });
@@ -127,10 +127,40 @@ describe('readReadiness (#54)', () => {
         pronouns: '  ',
       },
     });
-    // false is an answer; an empty list or blank text isn't.
+    // false is an answer; an empty list or blank text isn't. Ready once the essentials are
+    // there (name and email; work authorization), though pronouns and the rest are optional.
     expect(await readReadiness(api)).toMatchObject({
       ok: true,
-      body: { details: { answered: 6, total: 6 }, answers: { answered: 3, total: 10 } },
+      body: {
+        details: { answered: 6, total: 6, ready: true },
+        answers: { answered: 3, total: 10, ready: true },
+      },
+    });
+  });
+
+  it('counts only what the filler can use: a half phone or an option this build lacks is not saved', async () => {
+    const api = apiAnswering({
+      '/me/profile': {
+        version: 3,
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+        email: 'ada@example.com',
+        phone: { countryCode: '+1', number: '' },
+      },
+      '/me/documents': { documents: [] },
+      '/me/applicant': {
+        version: 2,
+        workAuthorization: [],
+        heardAbout: 'a-new-option',
+        over18: true,
+      },
+    });
+    expect(await readReadiness(api)).toMatchObject({
+      ok: true,
+      body: {
+        details: { answered: 3, total: 6, ready: true },
+        answers: { answered: 1, total: 10, ready: false },
+      },
     });
   });
 
@@ -150,9 +180,9 @@ describe('readReadiness (#54)', () => {
     expect(await readReadiness(api)).toEqual({
       ok: true,
       body: {
-        details: { answered: 1, total: 6 },
+        details: { answered: 1, total: 6, ready: false },
         resume: false,
-        answers: { answered: 0, total: 10 },
+        answers: { answered: 0, total: 10, ready: false },
       },
     });
   });
@@ -180,9 +210,9 @@ describe('readReadiness (#54)', () => {
     expect(await readReadiness(api)).toEqual({
       ok: true,
       body: {
-        details: { answered: 0, total: 6 },
+        details: { answered: 0, total: 6, ready: false },
         resume: false,
-        answers: { answered: 0, total: 10 },
+        answers: { answered: 0, total: 10, ready: false },
       },
     });
   });

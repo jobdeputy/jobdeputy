@@ -27,9 +27,9 @@ const signedOut: Status = { state: 'signed-out', signingIn: false };
 const ready: ApiResult<Readiness> = {
   ok: true,
   body: {
-    details: { answered: 6, total: 6 },
+    details: { answered: 6, total: 6, ready: true },
     resume: false,
-    answers: { answered: 3, total: 10 },
+    answers: { answered: 3, total: 10, ready: false },
   },
 };
 
@@ -152,6 +152,26 @@ describe('Popup (#54)', () => {
       'https://dev.jobdeputy.com/profile',
     ]);
     for (const link of links) expect(link.getAttribute('target')).toBe('_blank');
+  });
+
+  it('ticks a section once its essentials are saved, and its count leads to the rest', async () => {
+    const { send } = worker({
+      status: { state: 'signed-in', signingIn: false },
+      readiness: {
+        ok: true,
+        body: {
+          details: { answered: 4, total: 6, ready: true },
+          resume: true,
+          answers: { answered: 7, total: 10, ready: true },
+        },
+      },
+    });
+    render(<Popup version="0.1.0" send={send} siteUrl="https://dev.jobdeputy.com" />);
+    const answers = await screen.findByRole('link', { name: '7 of 10 saved' });
+    expect(answers.getAttribute('href')).toBe('https://dev.jobdeputy.com/profile');
+    expect(screen.getByRole('link', { name: '4 of 6 saved' })).toBeTruthy();
+    // Nothing missing that every form asks: no "Add in JobDeputy".
+    expect(screen.queryByRole('link', { name: 'Add in JobDeputy' })).toBeNull();
   });
 
   it('says what is missing without links when the build has no site', async () => {
