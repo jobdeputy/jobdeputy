@@ -21,6 +21,8 @@ const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.doc
 const PROCESS_TIMEOUT_MS = 300_000;
 
 let api: string;
+/** The download links' origin, which the extension asks for as a host (#54 PR C). */
+let documentsOrigin: string;
 let alice: TestUser;
 let bob: TestUser;
 /** Only the default hand-over's: whose default no other test touches. */
@@ -29,6 +31,7 @@ let carol: TestUser;
 beforeAll(async () => {
   const outputs = await stackOutputs();
   api = outputs.ApiUrl ?? '';
+  documentsOrigin = outputs.DocumentsOrigin ?? '';
   await waitForMalwareScanning(outputs);
   [alice, bob, carol] = await Promise.all([
     createTestUser(outputs),
@@ -74,6 +77,8 @@ describe.concurrent('résumés (deployed)', () => {
     });
     expect(doc.text.charCount).toBeGreaterThan(10);
 
+    // The extension's host permission for downloads is this origin, so it must be the link's.
+    expect(new URL(doc.downloadUrl).origin).toBe(documentsOrigin);
     const download = await fetch(doc.downloadUrl);
     expect(download.status).toBe(200);
     expect(download.headers.get('content-disposition')).toBe(

@@ -357,6 +357,16 @@ describe('HTTP API (T04)', () => {
     expect(keys).toContain('DELETE /me');
   });
 
+  it("outputs the documents' download origin for the extension's host permission (#54 PR C)", () => {
+    expect(t.findOutputs('DocumentsOrigin').DocumentsOrigin?.Value).toEqual({
+      'Fn::Join': ['', ['https://', { 'Fn::GetAtt': [expect.any(String), 'RegionalDomainName'] }]],
+    });
+  });
+
+  it("lets the extension's tokens only read (#54, decision 0020)", () => {
+    for (const route of EXTENSION_API_ROUTES) expect(route).toMatch(/^GET /);
+  });
+
   it('requires a Cognito token on every product API route', () => {
     // The dev test site is a separate API (see below); the product API has no open route.
     const routes = Object.fromEntries(
